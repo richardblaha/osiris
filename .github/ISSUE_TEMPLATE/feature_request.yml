@@ -1,0 +1,41 @@
+name: Feature request
+description: Suggest an idea for Osiris IDE
+labels: ["enhancement", "triage"]
+body:
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "extensions/osiris-ai"
+        - "extensions/osiris-dexpi"
+        - "extensions/osiris-step"
+        - "apps/osiris-desktop"
+        - "apps/osiris-web"
+        - "packages / toolchain"
+        - "new capability"
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that Osiris makes hard or impossible today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution
+      options:
+        - label: I'm willing to open a PR for this

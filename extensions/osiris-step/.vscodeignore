@@ -1,0 +1,16 @@
+.vscode/**
+.turbo/**
+src/**
+webview/**
+test/**
+node_modules/**
+tsconfig.json
+tsconfig.tsbuildinfo
+*.tsbuildinfo
+esbuild.mjs
+vitest.config.ts
+.vscodeignore
+**/*.ts
+**/*.tsx
+**/*.map
+!dist/extension.js

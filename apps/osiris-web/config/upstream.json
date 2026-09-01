@@ -1,0 +1,6 @@
+{
+  "//": "Pinned OpenVSCode Server upstream. Keep the minor line aligned with apps/osiris-desktop where practical.",
+  "repository": "https://github.com/gitpod-io/openvscode-server.git",
+  "tag": "openvscode-server-v1.94.2",
+  "checkoutDir": ".build/server"
+}

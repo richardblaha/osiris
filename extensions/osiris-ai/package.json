@@ -1,0 +1,166 @@
+{
+  "name": "osiris-ai",
+  "displayName": "Osiris AI",
+  "version": "0.1.0",
+  "description": "AI agent orchestration with Model Context Protocol (MCP) support and a custom agent panel for Osiris IDE.",
+  "license": "MIT",
+  "publisher": "osiris-ide",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Machine Learning",
+    "Chat",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "osiris-ai",
+          "title": "Osiris AI",
+          "icon": "media/robot.svg"
+        }
+      ]
+    },
+    "views": {
+      "osiris-ai": [
+        {
+          "id": "osiris-ai.panel",
+          "name": "Agent",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "osiris-ai.openPanel",
+        "title": "Osiris AI: Open Agent Panel",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris-ai.runAgent",
+        "title": "Osiris AI: Run Agent on a Prompt",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris-ai.reloadMcp",
+        "title": "Osiris AI: Reload MCP Servers",
+        "category": "Osiris"
+      }
+    ],
+    "configuration": {
+      "title": "Osiris AI",
+      "properties": {
+        "osiris-ai.provider": {
+          "type": "string",
+          "enum": [
+            "echo",
+            "openai-compatible"
+          ],
+          "default": "echo",
+          "description": "Agent backend. 'echo' is offline and deterministic; 'openai-compatible' calls the endpoint in osiris-ai.endpoint."
+        },
+        "osiris-ai.endpoint": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of an OpenAI-compatible chat/completions endpoint."
+        },
+        "osiris-ai.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model identifier passed to the provider."
+        },
+        "osiris-ai.apiKeyEnv": {
+          "type": "string",
+          "default": "OSIRIS_AI_API_KEY",
+          "description": "Name of the environment variable holding the provider API key."
+        },
+        "osiris-ai.maxIterations": {
+          "type": "number",
+          "default": 8,
+          "description": "Maximum agent tool-use iterations per run."
+        },
+        "osiris-ai.mcpServers": {
+          "type": "array",
+          "default": [],
+          "description": "MCP servers to launch and expose as agent tools.",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "transport"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "transport": {
+                "type": "string",
+                "enum": [
+                  "stdio",
+                  "http"
+                ]
+              },
+              "command": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "url": {
+                "type": "string"
+              },
+              "timeoutMs": {
+                "type": "number"
+              },
+              "enabled": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src webview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "package": "npm run build && vsce package --no-dependencies --out osiris-ai.vsix",
+    "clean": "rimraf dist media/panel.js media/panel.css *.vsix"
+  },
+  "dependencies": {
+    "@osiris/shared-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@osiris/tsconfig": "workspace:*",
+    "@types/node": "^22.7.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.1.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

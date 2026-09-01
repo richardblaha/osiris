@@ -1,0 +1,27 @@
+{
+  "name": "@osiris/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Electron desktop packaging for Osiris IDE (VSCodium overlay + electron-builder).",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "prepare:shell": "node scripts/clone-upstream.mjs && node scripts/apply-branding.mjs",
+    "build": "node scripts/check-ready.mjs",
+    "build:shell": "node scripts/build.mjs",
+    "package": "node scripts/package.mjs",
+    "dev": "node scripts/dev.mjs",
+    "lint": "eslint scripts",
+    "typecheck": "echo \"@osiris/desktop: scripts are plain .mjs, nothing to typecheck\"",
+    "test": "node --test \"scripts/**/*.test.mjs\"",
+    "clean": "rimraf .build dist_electron"
+  },
+  "dependencies": {
+    "@osiris/branding": "workspace:*"
+  },
+  "devDependencies": {
+    "electron-builder": "^25.1.8",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1"
+  }
+}

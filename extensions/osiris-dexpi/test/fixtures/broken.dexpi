@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlantModel>
+  <PlantInformation/>
+  <Equipment ID="E-100" ComponentName="No Class, No Position"/>
+  <Equipment ID="E-100" ComponentClass="Tank">
+    <Position><Location X="10" Y="10"/></Position>
+  </Equipment>
+  <PipingNetworkSystem ID="PNS-1">
+    <PipingNetworkSegment ID="SEG-1">
+      <Connection FromID="DOES-NOT-EXIST" ToID="E-100"/>
+      <Connection ToID="E-100"/>
+    </PipingNetworkSegment>
+    <PipingNetworkSegment ID="SEG-2"/>
+  </PipingNetworkSystem>
+</PlantModel>

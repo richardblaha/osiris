@@ -1,0 +1,112 @@
+{
+  "name": "osiris-step",
+  "displayName": "Osiris STEP",
+  "version": "0.1.0",
+  "description": "ISO 10303-21 (.step / .stp) parser with a 3D WebGL preview for Osiris IDE.",
+  "license": "MIT",
+  "publisher": "osiris-ide",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Programming Languages",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "languages": [
+      {
+        "id": "step",
+        "aliases": [
+          "STEP",
+          "ISO 10303-21",
+          "Part 21"
+        ],
+        "extensions": [
+          ".step",
+          ".stp",
+          ".p21"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "osiris-step.preview",
+        "displayName": "Osiris STEP 3D Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.step"
+          },
+          {
+            "filenamePattern": "*.stp"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "osiris-step.preview",
+        "title": "STEP: Open 3D Preview",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris-step.showHeader",
+        "title": "STEP: Show File Header",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris-step.stats",
+        "title": "STEP: Entity Statistics",
+        "category": "Osiris"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "osiris-step.preview",
+          "when": "resourceExtname == .step || resourceExtname == .stp",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Osiris STEP",
+      "properties": {
+        "osiris-step.maxPreviewEntities": {
+          "type": "number",
+          "default": 200000,
+          "description": "Skip geometry extraction for files with more entities than this."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src webview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "package": "npm run build && vsce package --no-dependencies --out osiris-step.vsix",
+    "clean": "rimraf dist media/preview.js *.vsix"
+  },
+  "dependencies": {
+    "@osiris/shared-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@osiris/tsconfig": "workspace:*",
+    "@types/node": "^22.7.5",
+    "@types/three": "^0.169.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.1.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1",
+    "three": "^0.169.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

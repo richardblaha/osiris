@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlantModel>
+  <PlantInformation OriginatingSystem="Osiris Test" SchemaVersion="4.0.0" Date="2026-09-01"/>
+  <Equipment ID="E-100" ComponentClass="Tank" ComponentName="Feed Tank">
+    <Position>
+      <Location X="100" Y="200" Z="0" Units="Millimetre"/>
+    </Position>
+    <Extent>
+      <Min X="0" Y="0"/>
+      <Max X="60" Y="80"/>
+    </Extent>
+    <Nozzle ID="E-100-N1" ComponentClass="Nozzle">
+      <Position><Location X="100" Y="280"/></Position>
+    </Nozzle>
+    <Nozzle ID="E-100-N2" ComponentClass="Nozzle">
+      <Position><Location X="160" Y="240"/></Position>
+    </Nozzle>
+  </Equipment>
+  <Equipment ID="P-200" ComponentClass="Pump" ComponentName="Transfer Pump">
+    <Position>
+      <Location X="400" Y="200"/>
+    </Position>
+    <Extent>
+      <Min X="0" Y="0"/>
+      <Max X="40" Y="40"/>
+    </Extent>
+    <Nozzle ID="P-200-N1" ComponentClass="Nozzle">
+      <Position><Location X="400" Y="220"/></Position>
+    </Nozzle>
+  </Equipment>
+  <PipingNetworkSystem ID="PNS-1">
+    <PipingNetworkSegment ID="SEG-1">
+      <Connection FromID="E-100-N2" ToID="P-200-N1"/>
+      <CenterLine>
+        <Coordinate X="160" Y="240"/>
+        <Coordinate X="300" Y="240"/>
+        <Coordinate X="300" Y="220"/>
+        <Coordinate X="400" Y="220"/>
+      </CenterLine>
+    </PipingNetworkSegment>
+  </PipingNetworkSystem>
+</PlantModel>

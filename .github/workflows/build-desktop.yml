@@ -1,0 +1,57 @@
+name: Build Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  desktop:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Linux build deps
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev rpm librsvg2-bin icnsutils icoutils
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @osiris/branding build
+
+      - name: Generate raster icons from branding SVG
+        shell: bash
+        run: |
+          mkdir -p apps/osiris-desktop/build/icons
+          if command -v rsvg-convert >/dev/null; then
+            rsvg-convert -w 512 -h 512 packages/branding/assets/osiris.svg -o apps/osiris-desktop/build/icons/512x512.png
+          fi
+
+      - name: Prepare shell (clone VSCodium + brand)
+        run: pnpm --filter @osiris/desktop run prepare:shell
+
+      - name: Build + package
+        run: |
+          pnpm --filter @osiris/desktop build:shell
+          pnpm --filter @osiris/desktop package
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osiris-desktop-${{ matrix.os }}
+          path: apps/osiris-desktop/dist_electron/**/*
+          if-no-files-found: warn

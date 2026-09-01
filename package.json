@@ -1,0 +1,39 @@
+{
+  "name": "osiris-ide",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Osiris IDE — a custom VS Code distribution (desktop + web) with first-party AI, DEXPI and STEP tooling.",
+  "license": "MIT",
+  "homepage": "https://github.com/osiris-ide/osiris",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/osiris-ide/osiris.git"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "package": "turbo run package",
+    "clean": "turbo run clean && rimraf node_modules/.cache .turbo",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,cjs,json,md,yml,yaml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,cjs,json,md,yml,yaml}\""
+  },
+  "devDependencies": {
+    "@osiris/eslint-config": "workspace:*",
+    "@osiris/tsconfig": "workspace:*",
+    "@types/node": "^22.7.5",
+    "@vitest/coverage-v8": "^2.1.3",
+    "eslint": "^9.12.0",
+    "prettier": "^3.3.3",
+    "rimraf": "^6.0.1",
+    "turbo": "^2.1.3",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

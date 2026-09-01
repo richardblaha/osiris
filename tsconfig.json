@@ -1,0 +1,12 @@
+{
+  "//": "Solution-style root config. `pnpm typecheck` runs per-package; this ties refs together for editors and `tsc -b`.",
+  "files": [],
+  "references": [
+    { "path": "packages/shared-core" },
+    { "path": "packages/branding" },
+    { "path": "packages/shell-theme" },
+    { "path": "extensions/osiris-ai" },
+    { "path": "extensions/osiris-dexpi" },
+    { "path": "extensions/osiris-step" }
+  ]
+}

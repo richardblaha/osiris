@@ -1,0 +1,16 @@
+# Default owners for everything in the repo.
+*                           @osiris-ide/maintainers
+
+/toolchain/                 @osiris-ide/maintainers
+/packages/branding/         @osiris-ide/design @osiris-ide/maintainers
+/packages/shell-theme/      @osiris-ide/maintainers
+/packages/shared-core/      @osiris-ide/maintainers
+
+/extensions/osiris-ai/      @osiris-ide/ai
+/extensions/osiris-dexpi/   @osiris-ide/plant-tools
+/extensions/osiris-step/    @osiris-ide/plant-tools
+
+/apps/osiris-desktop/       @osiris-ide/packaging
+/apps/osiris-web/           @osiris-ide/packaging
+
+/.github/                   @osiris-ide/maintainers

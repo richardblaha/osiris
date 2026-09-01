@@ -1,0 +1,60 @@
+name: Bug report
+description: Something in Osiris IDE is broken
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. For **security** issues, use the process in
+        [SECURITY.md](../blob/main/SECURITY.md) instead of a public issue.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - "extensions/osiris-ai"
+        - "extensions/osiris-dexpi"
+        - "extensions/osiris-step"
+        - "apps/osiris-desktop"
+        - "apps/osiris-web"
+        - "packages/branding or shell-theme"
+        - "build / monorepo tooling"
+        - "not sure"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Osiris version / commit
+      placeholder: "0.1.0 or a git SHA"
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Where does it happen?
+      options: ["Desktop (Electron)", "Web (browser)", "Both", "Extension Dev Host"]
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open '...'
+        2. Run command '...'
+        3. See error
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected vs actual behaviour
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Output from "Osiris AI" / "DEXPI" / "STEP" output channels, or the dev tools console.
+      render: shell

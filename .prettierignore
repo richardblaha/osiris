@@ -1,0 +1,12 @@
+node_modules
+dist
+out
+lib
+coverage
+.turbo
+.build
+**/media/*.js
+**/media/*.css
+pnpm-lock.yaml
+*.vsix
+**/test/fixtures/**

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PlantModel>
+  <Equipment ID="E-1">
+    <Position><Location X="1" Y="2"/></Position>
+  </Equipment>
+</PlantModelWrongClose>

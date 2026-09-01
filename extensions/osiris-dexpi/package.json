@@ -1,0 +1,116 @@
+{
+  "name": "osiris-dexpi",
+  "displayName": "Osiris DEXPI",
+  "version": "0.1.0",
+  "description": "DEXPI (XML / P&ID) parser, SVG visualizer and schema validator for Osiris IDE.",
+  "license": "MIT",
+  "publisher": "osiris-ide",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Linters",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:xml",
+    "onCommand:osiris-dexpi.validate"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "dexpi",
+        "aliases": [
+          "DEXPI",
+          "P&ID"
+        ],
+        "extensions": [
+          ".dexpi"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "osiris-dexpi.preview",
+        "displayName": "Osiris DEXPI P&ID Preview",
+        "selector": [
+          {
+            "filenamePattern": "*.dexpi"
+          },
+          {
+            "filenamePattern": "*.xml"
+          }
+        ],
+        "priority": "option"
+      }
+    ],
+    "commands": [
+      {
+        "command": "osiris-dexpi.open",
+        "title": "DEXPI: Open P&ID Preview",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris-dexpi.validate",
+        "title": "DEXPI: Validate Document",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris-dexpi.exportSvg",
+        "title": "DEXPI: Export P&ID as SVG",
+        "category": "Osiris"
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "osiris-dexpi.open",
+          "when": "resourceExtname == .dexpi || resourceExtname == .xml",
+          "group": "navigation"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Osiris DEXPI",
+      "properties": {
+        "osiris-dexpi.validateOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run the structural validator whenever a DEXPI document is saved."
+        },
+        "osiris-dexpi.schemaPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional path to a Proteus/DEXPI XSD for additional schema validation."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src webview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "package": "npm run build && vsce package --no-dependencies --out osiris-dexpi.vsix",
+    "clean": "rimraf dist media/preview.js *.vsix"
+  },
+  "dependencies": {
+    "@osiris/shared-core": "workspace:*",
+    "fast-xml-parser": "^4.5.0"
+  },
+  "devDependencies": {
+    "@osiris/tsconfig": "workspace:*",
+    "@types/node": "^22.7.5",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.1.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

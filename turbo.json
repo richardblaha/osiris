@@ -1,0 +1,31 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "stream",
+  "globalDependencies": ["tsconfig.json", ".nvmrc", "toolchain/**"],
+  "globalEnv": ["OSIRIS_TELEMETRY", "OSIRIS_UPSTREAM_TAG"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", "out/**", "media/**", "lib/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "package": {
+      "dependsOn": ["build"],
+      "outputs": ["*.vsix", "release/**"]
+    },
+    "clean": {
+      "cache": false
+    }
+  }
+}

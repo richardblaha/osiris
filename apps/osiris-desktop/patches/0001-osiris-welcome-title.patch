@@ -1,0 +1,23 @@
+Osiris IDE — sample tracked patch
+=================================
+
+This is a demonstration patch showing how Osiris carries downstream changes on
+top of the pinned VSCodium tag. `scripts/apply-branding.mjs` runs `git apply
+--3way` for every `patches/*.patch`; a patch that no longer applies is skipped
+with a warning (so an upstream bump never hard-fails the branding step — you
+re-roll the patch instead).
+
+Replace the body below with a real unified diff generated against the upstream
+checkout, e.g.:
+
+    cd apps/osiris-desktop/.build/vscodium
+    # ...make your change...
+    git diff > ../../patches/0002-my-change.patch
+
+--- a/src/vs/workbench/browser/parts/titlebar/titlebarPart.ts
++++ b/src/vs/workbench/browser/parts/titlebar/titlebarPart.ts
+@@ -1,3 +1,4 @@
++// Osiris IDE downstream marker — replace this placeholder patch with a real diff.
+ /*---------------------------------------------------------------------------------------------
+  *  Copyright (c) Microsoft Corporation. All rights reserved.
+  *  Licensed under the MIT License. See License.txt in the project root for license information.

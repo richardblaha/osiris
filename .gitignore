@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+out/
+lib/
+media/*.js
+media/*.js.map
+media/*.css
+coverage/
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Upstream shell build sandboxes (never committed)
+.build/
+apps/*/.build/
+
+# Packaged artifacts
+*.vsix
+release/
+apps/osiris-desktop/dist_electron/
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.local

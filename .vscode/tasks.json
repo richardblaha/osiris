@@ -1,0 +1,32 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build: osiris-ai",
+      "type": "shell",
+      "command": "pnpm --filter osiris-ai build",
+      "problemMatcher": "$esbuild",
+      "group": "build"
+    },
+    {
+      "label": "build: osiris-dexpi",
+      "type": "shell",
+      "command": "pnpm --filter osiris-dexpi build",
+      "problemMatcher": "$esbuild",
+      "group": "build"
+    },
+    {
+      "label": "build: osiris-step",
+      "type": "shell",
+      "command": "pnpm --filter osiris-step build",
+      "problemMatcher": "$esbuild",
+      "group": "build"
+    },
+    {
+      "label": "test: all",
+      "type": "shell",
+      "command": "pnpm test",
+      "group": "test"
+    }
+  ]
+}
