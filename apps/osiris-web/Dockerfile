@@ -5,7 +5,8 @@ FROM node:22-bookworm AS build
 WORKDIR /osiris
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git python3 make g++ pkg-config libx11-dev libxkbfile-dev libsecret-1-dev ca-certificates \
+      git python3 make g++ pkg-config \
+      libx11-dev libxkbfile-dev libsecret-1-dev libkrb5-dev ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 RUN corepack enable
@@ -14,8 +15,9 @@ RUN corepack enable
 COPY . .
 RUN pnpm install --frozen-lockfile --filter @osiris/web... \
     && pnpm --filter @osiris/branding build \
+    && pnpm --filter @osiris/branding render:icons \
     && pnpm --filter @osiris/web run prepare:shell \
-    && pnpm --filter @osiris/web build
+    && pnpm --filter @osiris/web build:shell
 
 # ---- runtime stage ----
 FROM node:22-bookworm-slim AS runtime
@@ -26,7 +28,13 @@ LABEL org.opencontainers.image.title="Osiris IDE (web)" \
 RUN groupadd --gid 1001 osiris && useradd --uid 1001 --gid osiris --create-home osiris
 WORKDIR /home/osiris/app
 
-COPY --from=build --chown=osiris:osiris /osiris/apps/osiris-web ./apps/osiris-web
+# Ship only the runtime wrapper + the built server bundle — not the multi-GB
+# upstream source checkout under .build/server.
+COPY --from=build --chown=osiris:osiris /osiris/apps/osiris-web/server ./apps/osiris-web/server
+COPY --from=build --chown=osiris:osiris /osiris/apps/osiris-web/scripts ./apps/osiris-web/scripts
+COPY --from=build --chown=osiris:osiris /osiris/apps/osiris-web/config ./apps/osiris-web/config
+COPY --from=build --chown=osiris:osiris /osiris/apps/osiris-web/package.json ./apps/osiris-web/package.json
+COPY --from=build --chown=osiris:osiris /osiris/apps/osiris-web/.build/vscode-reh-web-linux-x64 ./apps/osiris-web/.build/vscode-reh-web-linux-x64
 COPY --from=build --chown=osiris:osiris /osiris/packages/branding ./packages/branding
 
 ENV OSIRIS_TELEMETRY=off \

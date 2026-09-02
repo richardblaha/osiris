@@ -1,13 +1,24 @@
 # @osiris/branding
 
-Everything that makes an Osiris build _look_ like Osiris:
+Everything that makes an Osiris build _look_ like Osiris. This package **is** the
+bundled theme extension (`contributes.themes` + `configurationDefaults`) and the
+asset pipeline the two app builds pull from.
 
-- **Themes** — `Osiris Dark` / `Osiris Light` (also contributed as a VS Code theme
-  extension so a plain Code - OSS build can load them).
+- **Themes** — `Osiris Dark` / `Osiris Light`, plus `configurationDefaults` that
+  pin `workbench.colorTheme`, `editor.fontFamily` (Fira Code) and
+  `editor.fontLigatures`. `product.overlay.json` also sets `initialColorTheme` so
+  the very first window is dark before extensions activate.
 - **`product.overlay.json`** — the subset of VSCodium's `product.json` that Osiris
-  overrides (name, app ids, URL protocol, Open VSX gallery, telemetry off).
-  `apps/*/scripts/apply-branding.mjs` deep-merges it into the cloned upstream.
-- **`assets/`** — the master `osiris.svg` logo plus the raster-icon export recipe.
+  overrides (name, app ids, `.osiris*` data dirs, URL protocol, Open VSX gallery,
+  telemetry off, initial theme). `apps/*/scripts/apply-branding.mjs` deep-merges it.
+- **`assets/`** — master `osiris.svg`, the padded `osiris-icon.svg` every raster is
+  derived from, the empty-editor watermarks, and the bundled Fira Code face.
+- **`scripts/render-icons.mjs`** — rasterises the whole icon set from
+  `osiris-icon.svg` (sharp / png-to-ico / @fiahfy/icns). `pnpm --filter
+  @osiris/branding render:icons`.
+- **`scripts/apply-to-checkout.mjs`** — `copyBrandingIntoCheckout(dir, { kind })`:
+  copies icons + font into a cloned upstream tree and appends the Fira Code
+  `@font-face`. Imported by both apps' `apply-branding.mjs`.
 - **`src/metadata.ts`** — the single source of truth for product identity, colours
   and links, consumed by the apps and mirrored to `assets/metadata.json`.
 

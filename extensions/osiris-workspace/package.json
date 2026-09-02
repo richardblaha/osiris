@@ -1,0 +1,98 @@
+{
+  "name": "osiris-workspace",
+  "displayName": "Osiris Workspace",
+  "version": "0.1.0",
+  "description": "DevContainer enforcement, the osiris-devcontainer remote authority resolver, and session handover (Handover to Server / Fetch to Local) for Osiris IDE.",
+  "license": "MIT",
+  "publisher": "osiris-ide",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "osiris.openFolder",
+        "title": "Osiris: Open Folder in DevContainer…",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris.workspace.handoverToServer",
+        "title": "Osiris: Handover Session to Server",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris.workspace.fetchToLocal",
+        "title": "Osiris: Fetch Session to Local",
+        "category": "Osiris"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "osiris.workspace.fetchToLocal",
+          "when": "osiris.sessionLocation == server"
+        },
+        {
+          "command": "osiris.workspace.handoverToServer",
+          "when": "osiris.sessionLocation == local"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Osiris Workspace",
+      "properties": {
+        "osiris.devcontainer.enforce": {
+          "type": "boolean",
+          "default": true,
+          "description": "Block folders opened outside an Osiris DevContainer and offer to reopen them inside one."
+        },
+        "osiris.devcontainer.serverPort": {
+          "type": "number",
+          "default": 8000,
+          "description": "Port the in-container VS Code server listens on."
+        },
+        "osiris.server.url": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the Osiris Server used for session handover (e.g. https://osiris.example.com)."
+        },
+        "osiris.server.tokenEnv": {
+          "type": "string",
+          "default": "OSIRIS_SERVER_TOKEN",
+          "description": "Name of the environment variable holding the Osiris Server bearer token."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "package": "npm run build && vsce package --no-dependencies --out osiris-workspace.vsix",
+    "clean": "rimraf dist *.vsix"
+  },
+  "dependencies": {
+    "@osiris/protocol": "workspace:*",
+    "@osiris/shared-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@osiris/tsconfig": "workspace:*",
+    "@types/node": "^22.7.5",
+    "@types/vscode": "^1.90.0",
+    "@vscode/vsce": "^3.1.1",
+    "esbuild": "^0.24.0",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

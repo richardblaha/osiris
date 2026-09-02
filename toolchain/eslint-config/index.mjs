@@ -42,9 +42,12 @@ export default [
       '**/test/**',
       '**/*.config.*',
       '**/esbuild.mjs',
-      // CLI-style scripts and the web server wrapper legitimately write to stdout.
+      // CLI-style scripts, the web server wrapper and the desktop runtime hook
+      // legitimately write to stdout.
       'apps/*/scripts/**',
       'apps/*/server/**',
+      'apps/*/runtime/**',
+      'packages/*/scripts/**',
     ],
     rules: {
       '@typescript-eslint/no-explicit-any': 'off',

@@ -29,18 +29,13 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev rpm librsvg2-bin icnsutils icoutils
+          sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev rpm
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @osiris/branding build
 
-      - name: Generate raster icons from branding SVG
-        shell: bash
-        run: |
-          mkdir -p apps/osiris-desktop/build/icons
-          if command -v rsvg-convert >/dev/null; then
-            rsvg-convert -w 512 -h 512 packages/branding/assets/osiris.svg -o apps/osiris-desktop/build/icons/512x512.png
-          fi
+      - name: Render icon set from branding SVG (sharp / png-to-ico / icns)
+        run: pnpm --filter @osiris/branding render:icons
 
       - name: Prepare shell (clone VSCodium + brand)
         run: pnpm --filter @osiris/desktop run prepare:shell

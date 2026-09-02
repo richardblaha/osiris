@@ -23,6 +23,13 @@
       "group": "build"
     },
     {
+      "label": "build: osiris-workspace",
+      "type": "shell",
+      "command": "pnpm --filter osiris-workspace build",
+      "problemMatcher": "$esbuild",
+      "group": "build"
+    },
+    {
       "label": "test: all",
       "type": "shell",
       "command": "pnpm test",

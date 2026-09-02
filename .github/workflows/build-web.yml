@@ -22,10 +22,11 @@ jobs:
 
       - run: |
           sudo apt-get update
-          sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev
+          sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev libkrb5-dev
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @osiris/branding build
+      - run: pnpm --filter @osiris/branding render:icons
       - run: pnpm --filter @osiris/web run prepare:shell
       - run: pnpm --filter @osiris/web build:shell
 
@@ -35,8 +36,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: osiris-web-server
-          path: apps/osiris-web/.build/server/vscode-reh-web-*
-          if-no-files-found: warn
+          path: apps/osiris-web/.build/vscode-reh-web-*
+          if-no-files-found: error
 
   docker:
     runs-on: ubuntu-latest

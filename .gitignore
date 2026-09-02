@@ -19,6 +19,9 @@ coverage/
 .build/
 apps/*/.build/
 
+# Rasterised icon set — regenerated from assets/osiris-icon.svg by render-icons.mjs
+packages/branding/assets/generated/
+
 # Packaged artifacts
 *.vsix
 release/

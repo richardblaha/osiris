@@ -17,6 +17,10 @@
   "linuxIconName": "osiris",
   "urlProtocol": "osiris",
   "quality": "stable",
+  "initialColorTheme": {
+    "themeType": "dark",
+    "colorThemeName": "Osiris Dark"
+  },
   "licenseName": "MIT",
   "licenseUrl": "https://github.com/osiris-ide/osiris/blob/main/LICENSE",
   "reportIssueUrl": "https://github.com/osiris-ide/osiris/issues/new/choose",

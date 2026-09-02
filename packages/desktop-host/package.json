@@ -1,0 +1,45 @@
+{
+  "name": "@osiris/desktop-host",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The Electron main-process glue for Osiris: runtime bootstrap (orchestrator + telemetry), the DevContainer open-folder guard, and the session-handover command handlers.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@osiris/agent-core": "workspace:*",
+    "@osiris/container-sync": "workspace:*",
+    "@osiris/orchestrator": "workspace:*",
+    "@osiris/protocol": "workspace:*",
+    "@osiris/shared-core": "workspace:*",
+    "@osiris/telemetry": "workspace:*",
+    "dockerode": "^5.0.1"
+  },
+  "devDependencies": {
+    "@osiris/tsconfig": "workspace:*",
+    "@types/dockerode": "^4.0.1",
+    "@types/node": "^22.7.5",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

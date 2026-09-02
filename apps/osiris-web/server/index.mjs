@@ -12,7 +12,6 @@
  * `node server/index.mjs --help` works in CI smoke tests.
  */
 import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readUpstreamConfig, findServerEntrypoint } from '../scripts/lib.mjs';
@@ -55,7 +54,7 @@ Usage: osiris-web [options] [-- <upstream server args>]
 
 Prepare + build the runtime first:
   pnpm --filter @osiris/web run prepare:shell
-  pnpm --filter @osiris/web build
+  pnpm --filter @osiris/web build:shell
 `);
 }
 
@@ -77,11 +76,11 @@ async function main() {
   };
 
   const { checkoutDir } = await readUpstreamConfig();
-  const entrypoint = existsSync(checkoutDir) ? findServerEntrypoint(checkoutDir) : undefined;
+  const entrypoint = findServerEntrypoint(checkoutDir);
 
   if (!entrypoint) {
     console.error(
-      '[osiris-web] no built server found. Run `pnpm --filter @osiris/web run prepare:shell && pnpm --filter @osiris/web build` first.',
+      '[osiris-web] no built server found. Run `pnpm --filter @osiris/web run prepare:shell && pnpm --filter @osiris/web build:shell` first.',
     );
     process.exitCode = 1;
     return;
@@ -99,7 +98,11 @@ async function main() {
   console.error(`[osiris-web] starting ${path.basename(entrypoint)} on ${opts.host}:${opts.port}`);
   const runner = entrypoint.endsWith('.js')
     ? spawn(process.execPath, [entrypoint, ...args], { stdio: 'inherit', env })
-    : spawn(entrypoint, args, { stdio: 'inherit', env });
+    : spawn(entrypoint, args, {
+        stdio: 'inherit',
+        env,
+        shell: process.platform === 'win32', // needed to invoke a .cmd launcher
+      });
 
   runner.on('exit', (code) => process.exit(code ?? 0));
   const stop = () => runner.kill('SIGTERM');

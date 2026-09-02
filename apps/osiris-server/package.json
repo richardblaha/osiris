@@ -1,0 +1,43 @@
+{
+  "name": "@osiris/server",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Osiris Server — central Git hosting, workspaces and the session-handover migration protocol (Fastify).",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "osiris-server": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "start": "node dist/index.js",
+    "dev": "node --watch --import @osiris/telemetry/register dist/index.js",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@osiris/container-sync": "workspace:*",
+    "@osiris/protocol": "workspace:*",
+    "@osiris/shared-core": "workspace:*",
+    "@osiris/telemetry": "workspace:*",
+    "dockerode": "^5.0.1",
+    "fastify": "^5.12.1",
+    "git-http-backend": "^1.1.2"
+  },
+  "devDependencies": {
+    "@osiris/tsconfig": "workspace:*",
+    "@types/dockerode": "^4.0.1",
+    "@types/node": "^22.7.5",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

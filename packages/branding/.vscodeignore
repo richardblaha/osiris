@@ -1,5 +1,6 @@
 src/**
 test/**
+scripts/**
 tsconfig.json
 vitest.config.ts
 .eslintrc*
@@ -7,3 +8,9 @@ vitest.config.ts
 **/*.ts
 !dist/**/*.d.ts
 node_modules/**
+
+# Build-pipeline assets — consumed by apply-branding.mjs, not needed inside the theme .vsix
+assets/generated/**
+assets/fonts/**
+assets/osiris-icon.svg
+assets/letterpress-*.svg

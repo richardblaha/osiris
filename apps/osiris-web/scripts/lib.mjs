@@ -50,13 +50,31 @@ export async function readProductOverlay() {
   return overlay;
 }
 
-/** Resolve the built server entrypoint inside the checkout, if present. */
+/**
+ * Directory the gulp `vscode-reh-web-<platform>-<arch>-min` task writes the
+ * built server into — a sibling of the source checkout, e.g.
+ * `.build/vscode-reh-web-linux-x64`.
+ */
+export function rehBuildDir(checkoutDir) {
+  return path.join(path.dirname(checkoutDir), `vscode-reh-web-${process.platform}-${process.arch}`);
+}
+
+/**
+ * Resolve the server entrypoint to run. Prefers the built REH bundle (its
+ * `bin/` launcher execs the bundled Node), then falls back to the source
+ * checkout so `dev`-style runs still work. Returns `undefined` when nothing
+ * has been built yet.
+ */
 export function findServerEntrypoint(checkoutDir) {
+  const isWin = process.platform === 'win32';
+  const built = rehBuildDir(checkoutDir);
   const candidates = [
-    'out/server-main.js',
-    'server.js',
-    'bin/openvscode-server',
-    'scripts/code-server.sh',
-  ].map((rel) => path.join(checkoutDir, rel));
+    path.join(built, 'bin', isWin ? 'osiris-server.cmd' : 'osiris-server'),
+    path.join(built, 'bin', isWin ? 'openvscode-server.cmd' : 'openvscode-server'),
+    path.join(built, 'out', 'server-main.js'),
+    path.join(checkoutDir, 'out', 'server-main.js'),
+    path.join(checkoutDir, 'server.js'),
+    path.join(checkoutDir, 'scripts', 'code-server.sh'),
+  ];
   return candidates.find((candidate) => existsSync(candidate));
 }

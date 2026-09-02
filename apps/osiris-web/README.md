@@ -7,11 +7,15 @@ the Osiris `product.json` overlay — no VS Code source is vendored.
 ## Run locally
 
 ```bash
+# system deps (Debian/Ubuntu): pkg-config libx11-dev libxkbfile-dev libsecret-1-dev libkrb5-dev
 pnpm --filter @osiris/web run prepare:shell    # clone gitpod-io/openvscode-server @ config/upstream.json + brand
-pnpm --filter @osiris/web build                # build the web server bundle (heavy)
+pnpm --filter @osiris/web build:shell          # build the web server bundle (heavy, ~30 min)
 node apps/osiris-web/server/index.mjs --port 3000
 # open http://localhost:3000
 ```
+
+`build:shell` writes the bundle to `apps/osiris-web/.build/vscode-reh-web-<platform>-<arch>/`;
+the wrapper picks it up from there automatically.
 
 `server/index.mjs` is a thin wrapper: it parses a stable CLI (`--port`, `--host`,
 `--token`), forces `OSIRIS_TELEMETRY=off`, sets the server data dir, prints a

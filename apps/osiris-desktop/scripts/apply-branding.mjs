@@ -6,10 +6,14 @@
  *   3. apply every tracked patch in `patches/`.
  */
 import { execFileSync } from 'node:child_process';
-import { readdir, readFile, writeFile, copyFile, mkdir } from 'node:fs/promises';
+import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { appRoot, repoRoot, mergeDeep, readProductOverlay, readUpstreamConfig } from './lib.mjs';
+import {
+  copyBrandingIntoCheckout,
+  copyElectronBuilderIcons,
+} from '@osiris/branding/apply-to-checkout';
+import { appRoot, mergeDeep, readProductOverlay, readUpstreamConfig } from './lib.mjs';
 
 const { checkoutDir } = await readUpstreamConfig();
 if (!existsSync(checkoutDir)) {
@@ -24,17 +28,9 @@ const merged = mergeDeep(baseProduct, overlay);
 await writeFile(productPath, `${JSON.stringify(merged, null, 2)}\n`);
 console.log(`[osiris-desktop] product.json: ${Object.keys(overlay).length} keys overlaid`);
 
-// 2. branding assets --------------------------------------------------------
-const brandingAssets = path.join(repoRoot, 'packages', 'branding', 'assets');
-const iconTargetDir = path.join(checkoutDir, 'src', 'vs', 'workbench', 'browser', 'media');
-await mkdir(iconTargetDir, { recursive: true });
-for (const asset of ['osiris.svg']) {
-  const from = path.join(brandingAssets, asset);
-  if (existsSync(from)) {
-    await copyFile(from, path.join(iconTargetDir, asset));
-    console.log(`[osiris-desktop] copied ${asset}`);
-  }
-}
+// 2. branding assets — icons, empty-editor watermark, bundled Fira Code -------
+await copyBrandingIntoCheckout(checkoutDir, { kind: 'desktop' });
+await copyElectronBuilderIcons(path.join(appRoot, 'build'));
 
 // 3. patches --------------------------------------------------------------
 const patchesDir = path.join(appRoot, 'patches');

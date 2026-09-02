@@ -1,33 +1,36 @@
 # Osiris branding assets
 
-| File            | Purpose                                                        | Source            |
-| --------------- | -------------------------------------------------------------- | ----------------- |
-| `osiris.svg`    | Master logo (3D cyan/magenta pyramid). **Canonical.**          | hand-authored     |
-| `icon-1024.png` | Raster app icon, 1024×1024 (Linux, base for others)            | exported from SVG |
-| `osiris.icns`   | macOS bundle icon                                              | exported from PNG |
-| `osiris.ico`    | Windows executable icon                                        | exported from PNG |
-| `metadata.json` | _(generated)_ mirror of `src/metadata.ts` for non-TS consumers | build step        |
+| File | Purpose | Source |
+| --- | --- | --- |
+| `osiris.svg` | Master logo — 3D cyan/magenta pyramid. **Canonical.** | hand-authored |
+| `osiris-icon.svg` | Padded app-icon variant (pyramid on the `#121212` rounded ground). Source for every raster target. | hand-authored |
+| `letterpress-{dark,light,hc}.svg` | Single-tone empty-editor watermark, one per workbench theme kind. | hand-authored |
+| `fonts/FiraCode-VF.woff2` | Bundled editor font (variable, weights 300–700) so a fresh install needs no system font. | tonsky/FiraCode, OFL-1.1 |
+| `fonts/OFL.txt` | SIL Open Font License for the above. Shipped into the checkout as `ThirdPartyNotices-FiraCode.txt`. | — |
+| `metadata.json` | _(generated)_ mirror of `src/metadata.ts` for non-TS consumers. | build step |
+| `generated/` | _(git-ignored)_ the full rasterised icon set. | `scripts/render-icons.mjs` |
 
-## Regenerating the raster icons
+## Rasterising the icon set
 
-The SVG is the single source of truth. Regenerate rasters with any of:
+`osiris-icon.svg` is the single source of truth. `scripts/render-icons.mjs`
+(sharp + png-to-ico + @fiahfy/icns — no system tooling) produces everything under
+`assets/generated/`:
 
 ```bash
-# using librsvg + iconutil (macOS) / icotool (Linux)
-rsvg-convert -w 1024 -h 1024 osiris.svg -o icon-1024.png
-
-# macOS .icns
-mkdir osiris.iconset
-for s in 16 32 128 256 512; do
-  rsvg-convert -w $s   -h $s   osiris.svg -o osiris.iconset/icon_${s}x${s}.png
-  rsvg-convert -w $((s*2)) -h $((s*2)) osiris.svg -o osiris.iconset/icon_${s}x${s}@2x.png
-done
-iconutil -c icns osiris.iconset
-
-# Windows .ico
-icotool -c -o osiris.ico \
-  icon-16.png icon-32.png icon-48.png icon-64.png icon-128.png icon-256.png
+pnpm --filter @osiris/branding render:icons
 ```
 
-The raster files are intentionally **not** committed as binaries in this scaffold —
-CI's `build-desktop` job runs the conversion from `osiris.svg` before packaging.
+| Output | Target |
+| --- | --- |
+| `png/icon-{16..1024}.png` | generic ladder, PWA manifest, docs |
+| `linux/code.png` | `resources/linux/code.png` in the checkout |
+| `darwin/code.icns` | `resources/darwin/code.icns` |
+| `win32/code.ico`, `code_{70x70,150x150}.png` | `resources/win32/*` |
+| `server/favicon.ico`, `code-{192,512}.png` | `resources/server/*` (both distributions) |
+| `electron/icon.{ico,icns}`, `electron/icons/*.png` | `apps/osiris-desktop/build/*` for electron-builder |
+
+`apps/*/scripts/apply-branding.mjs` call `render-icons` automatically (via
+`@osiris/branding/apply-to-checkout`) when `generated/` is absent, then copy each
+file to its upstream path and append the Fira Code `@font-face` to the workbench
+stylesheet. CI (`build-desktop`, `build-web`) runs `render:icons` explicitly
+before `prepare:shell`.
