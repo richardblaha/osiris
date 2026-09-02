@@ -1,4 +1,4 @@
-import { mkdir, rm, stat, writeFile } from 'node:fs/promises';
+import { cp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createLogger } from '@osiris/shared-core';
 import type { GitRunner } from './git-runner.js';
@@ -18,6 +18,8 @@ export interface EnsureWorktreeOptions {
   branch?: string;
   /** State folders to seed when creating the branch. */
   seedStates?: string[];
+  /** Directory whose contents seed the orphan branch on first creation (e.g. `<repo>/.osiris/backlog`). */
+  seedFrom?: string;
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -45,15 +47,25 @@ async function seedBacklog(
   git: GitRunner,
   worktreePath: string,
   states: string[],
+  seedFrom?: string,
 ): Promise<void> {
-  await writeFile(
-    join(worktreePath, 'PROCESS.md'),
-    '# Backlog process\n\nSee `@osiris/dot-osiris` template for the full convention. States are the\nsub-folders here; tasks are `[<type>]-<id>-<slug>.md` files. Managed on the\n`osiris/backlog` orphan branch.\n',
-    'utf8',
-  );
+  // If the workspace already has a `.osiris/backlog/` (from `osiris init`), carry
+  // its PROCESS.md + state folders + example tasks onto the orphan branch.
+  if (seedFrom && (await exists(seedFrom))) {
+    await cp(seedFrom, worktreePath, { recursive: true });
+  }
+  if (!(await exists(join(worktreePath, 'PROCESS.md')))) {
+    await writeFile(
+      join(worktreePath, 'PROCESS.md'),
+      '# Backlog process\n\nStates are the sub-folders here; tasks are `[<type>]-<id>-<slug>.md`\nfiles. Managed on the `osiris/backlog` orphan branch.\n',
+      'utf8',
+    );
+  }
   for (const state of states) {
     await mkdir(join(worktreePath, state), { recursive: true });
-    await writeFile(join(worktreePath, state, '.gitkeep'), '', 'utf8');
+    if (!(await exists(join(worktreePath, state, '.gitkeep')))) {
+      await writeFile(join(worktreePath, state, '.gitkeep'), '', 'utf8');
+    }
   }
   await git.run(['add', '-A'], { cwd: worktreePath });
   await git.run(['commit', '-m', 'chore(backlog): initialise orphan branch'], { cwd: worktreePath });
@@ -114,7 +126,7 @@ export async function ensureBacklogWorktree(
     await git.run(['rm', '-rf', '--quiet', '.'], { cwd: worktreePath });
   }
 
-  await seedBacklog(git, worktreePath, states);
+  await seedBacklog(git, worktreePath, states, options.seedFrom);
   log.info('created orphan branch %s at %s', branch, worktreePath);
   return { worktreePath, branch, createdBranch: true };
 }

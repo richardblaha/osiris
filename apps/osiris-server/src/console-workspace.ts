@@ -1,68 +1,43 @@
 import { readFile } from 'node:fs/promises';
-import {
-  listOsirisDir,
-  osirisPaths,
-  resolveOsirisFile,
-  type OsirisPaths,
-} from '@osiris/dot-osiris';
+import { listOsirisDir, osirisPaths, resolveOsirisFile, type OsirisPaths } from '@osiris/dot-osiris';
 import { BacklogRepo } from '@osiris/backlog';
 import {
-  ChromaMemoryStore,
-  DEFAULT_HNSW,
-  InMemoryMemoryStore,
-  createEmbedding,
+  buildEmbedding,
+  buildMemoryStore,
+  parseMemoryConfig,
   reindex,
   searchMemory,
-  type EmbeddingFn,
+  type MemoryConfig,
   type MemoryStore,
 } from '@osiris/memory';
-import { expandEnv, loadAgentRegistry, loadCrew } from '@osiris/crew';
+import { loadAgentRegistry, loadCrew } from '@osiris/crew';
 import type { CrewEvent, CrewRunRequest, CrewRunResult, MemorySearchRequest } from '@osiris/protocol';
 import { createLogger } from '@osiris/shared-core';
 import type { ConsoleDeps } from './routes/console.js';
 
 const log = createLogger('server:workspace');
 
-interface MemoryJson {
-  chroma?: { url?: string; collection?: string };
-  index?: { chunkSize?: number; chunkOverlap?: number; hnsw?: Partial<typeof DEFAULT_HNSW> };
-  embedding?: { provider?: string; model?: string; endpoint?: string; dimensions?: number };
-}
-
-async function loadMemoryConfig(paths: OsirisPaths, env: NodeJS.ProcessEnv): Promise<MemoryJson> {
-  const resolved = await resolveOsirisFile(paths, 'memory.json');
-  if (!resolved) return {};
-  try {
-    return JSON.parse(expandEnv(resolved.content, env)) as MemoryJson;
-  } catch {
-    return {};
-  }
-}
-
 async function memoryCorpus(paths: OsirisPaths): Promise<{ relPath: string; content: string }[]> {
   const files = await listOsirisDir(paths, 'memory', {
     recursive: true,
     filter: (rel) => rel.endsWith('.md') && rel !== 'README.md',
   });
-  const out: { relPath: string; content: string }[] = [];
-  for (const file of files) {
-    out.push({ relPath: file.relPath, content: await readFile(file.path, 'utf8') });
-  }
-  return out;
+  return Promise.all(
+    files.map(async (f) => ({ relPath: f.relPath, content: await readFile(f.path, 'utf8') })),
+  );
 }
 
 /**
  * Wire the console API to a real workspace on disk: the backlog orphan branch,
- * the `.osiris/memory/` corpus (ChromaDB when `OSIRIS_CHROMA_URL` is set, else an
- * in-process store) and the crew from `.osiris/agents/` + `crew.json`.
- * Everything expensive is opened lazily and memoised.
+ * the `.osiris/memory/` corpus (ChromaDB when a URL is configured, else a
+ * file-backed store under `.osiris/temp/`) and the crew from `.osiris/agents/` +
+ * `crew.json`. Everything expensive is opened lazily and memoised.
  */
 export function createWorkspaceConsoleDeps(
   workspaceRoot: string,
   env: NodeJS.ProcessEnv = process.env,
 ): ConsoleDeps {
   const paths = osirisPaths(workspaceRoot);
-  const cachePath = paths.tempFile('memory-index.json');
 
   let backlogPromise: Promise<BacklogRepo> | undefined;
   const getBacklog = (): Promise<BacklogRepo> => {
@@ -70,41 +45,30 @@ export function createWorkspaceConsoleDeps(
     return backlogPromise;
   };
 
-  let memoryPromise:
-    | Promise<{ store: MemoryStore; embed: EmbeddingFn; config: MemoryJson }>
-    | undefined;
-  const getMemory = (): Promise<{ store: MemoryStore; embed: EmbeddingFn; config: MemoryJson }> => {
+  let memoryPromise: Promise<{ config: MemoryConfig; store: MemoryStore }> | undefined;
+  const getMemory = (): Promise<{ config: MemoryConfig; store: MemoryStore }> => {
     memoryPromise ??= (async () => {
-      const config = await loadMemoryConfig(paths, env);
-      const embed = createEmbedding({
-        provider: (config.embedding?.provider as 'hash') ?? 'hash',
-        model: config.embedding?.model,
-        endpoint: config.embedding?.endpoint,
-        dimensions: config.embedding?.dimensions,
+      const raw = (await resolveOsirisFile(paths, 'memory.json'))?.content;
+      const config = parseMemoryConfig(raw, env);
+      const store = await buildMemoryStore(config, {
+        env,
+        filePath: paths.tempFile('memory-store.json'),
       });
-      const chromaUrl = env.OSIRIS_CHROMA_URL ?? config.chroma?.url;
-      const store: MemoryStore =
-        chromaUrl && /^https?:\/\//.test(chromaUrl)
-          ? new ChromaMemoryStore({
-              url: chromaUrl,
-              collection: config.chroma?.collection ?? 'osiris-memory',
-            })
-          : new InMemoryMemoryStore();
-      if (store instanceof InMemoryMemoryStore) {
-        log.warn('no ChromaDB URL — using the in-process memory store (not persisted)');
+      if (store.constructor.name !== 'ChromaMemoryStore') {
+        log.warn('no ChromaDB URL configured — using a local file-backed memory store');
       }
-      return { store, embed, config };
+      return { config, store };
     })();
     return memoryPromise;
   };
 
-  const doSearch = async (req: MemorySearchRequest): Promise<
-    { id: string; document: string; source: string; headingPath: string; score: number }[]
-  > => {
-    const { store, embed } = await getMemory();
+  const doSearch = async (
+    req: MemorySearchRequest,
+  ): Promise<{ id: string; document: string; source: string; headingPath: string; score: number }[]> => {
+    const { config, store } = await getMemory();
     const hits = await searchMemory(req.query, {
       store,
-      embed,
+      embed: buildEmbedding(config),
       k: req.k,
       where: req.source ? { source: req.source } : undefined,
     });
@@ -129,16 +93,15 @@ export function createWorkspaceConsoleDeps(
     },
 
     async reindexMemory() {
-      const { store, embed, config } = await getMemory();
-      const report = await reindex(await memoryCorpus(paths), {
+      const { config, store } = await getMemory();
+      return reindex(await memoryCorpus(paths), {
         store,
-        embed,
-        cachePath,
-        hnsw: { ...DEFAULT_HNSW, ...config.index?.hnsw },
-        chunkSize: config.index?.chunkSize,
-        chunkOverlap: config.index?.chunkOverlap,
+        embed: buildEmbedding(config),
+        cachePath: paths.tempFile('memory-index.json'),
+        hnsw: config.index.hnsw,
+        chunkSize: config.index.chunkSize,
+        chunkOverlap: config.index.chunkOverlap,
       });
-      return report;
     },
 
     async runCrew(req: CrewRunRequest, onEvent: (e: CrewEvent) => void): Promise<CrewRunResult> {

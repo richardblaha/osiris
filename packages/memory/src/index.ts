@@ -3,6 +3,7 @@ export * from './chunk.js';
 export * from './cache.js';
 export * from './embed.js';
 export * from './store.js';
+export * from './config.js';
 export * from './indexer.js';
 export * from './search.js';
 

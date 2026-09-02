@@ -8,6 +8,7 @@
     { "path": "packages/memory" },
     { "path": "packages/crew" },
     { "path": "packages/backlog" },
+    { "path": "packages/cli" },
     { "path": "packages/telemetry" },
     { "path": "packages/orchestrator" },
     { "path": "packages/agent-core" },

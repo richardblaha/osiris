@@ -1,7 +1,7 @@
 {
   "$schema": "https://osiris-ide.dev/schema/memory.json",
   "chroma": {
-    "url": "${OSIRIS_CHROMA_URL:-http://localhost:8000}",
+    "url": "${OSIRIS_CHROMA_URL:-}",
     "collection": "osiris-memory"
   },
   "index": {

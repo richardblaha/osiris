@@ -61,8 +61,13 @@ function cosineDistance(a: number[], b: number[]): number {
 
 /** In-process store with exact cosine search. The tested default; also handy for CI. */
 export class InMemoryMemoryStore implements MemoryStore {
-  private readonly records = new Map<string, MemoryRecord>();
+  protected readonly records = new Map<string, MemoryRecord>();
   hnsw: HnswConfig = DEFAULT_HNSW;
+
+  /** Every stored record (unordered). */
+  all(): MemoryRecord[] {
+    return [...this.records.values()];
+  }
 
   async ensureCollection(hnsw: HnswConfig): Promise<void> {
     this.hnsw = hnsw;
@@ -97,6 +102,51 @@ export class InMemoryMemoryStore implements MemoryStore {
 
   async count(): Promise<number> {
     return this.records.size;
+  }
+}
+
+/**
+ * `InMemoryMemoryStore` that persists its records to a JSON file, so a CLI
+ * invocation can search what a previous `reindex` wrote without a running
+ * ChromaDB. Load with `FileMemoryStore.open(path)`.
+ */
+export class FileMemoryStore extends InMemoryMemoryStore {
+  private loading = false;
+
+  private constructor(private readonly path: string) {
+    super();
+  }
+
+  static async open(path: string): Promise<FileMemoryStore> {
+    const store = new FileMemoryStore(path);
+    store.loading = true;
+    try {
+      const { readFile } = await import('node:fs/promises');
+      const rows = JSON.parse(await readFile(path, 'utf8')) as MemoryRecord[];
+      await store.upsert(rows);
+    } catch {
+      /* first run */
+    }
+    store.loading = false;
+    return store;
+  }
+
+  private async flush(): Promise<void> {
+    if (this.loading) return;
+    const { mkdir, writeFile } = await import('node:fs/promises');
+    const { dirname } = await import('node:path');
+    await mkdir(dirname(this.path), { recursive: true });
+    await writeFile(this.path, JSON.stringify(this.all()), 'utf8');
+  }
+
+  override async upsert(records: MemoryRecord[]): Promise<void> {
+    await super.upsert(records);
+    if (records.length) await this.flush();
+  }
+
+  override async deleteByIds(ids: string[]): Promise<void> {
+    await super.deleteByIds(ids);
+    await this.flush();
   }
 }
 

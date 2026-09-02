@@ -18,6 +18,8 @@ export interface BacklogRepoOptions {
   /** Override the worktree location (default `.osiris/temp/backlog-worktree`). */
   worktreePath?: string;
   seedStates?: string[];
+  /** Seed the orphan branch from this dir on first creation (default `<repo>/.osiris/backlog`). */
+  seedFrom?: string;
 }
 
 export interface TaskHistoryEntry {
@@ -48,6 +50,7 @@ export class BacklogRepo {
       worktreePath,
       branch: options.branch ?? BACKLOG_BRANCH,
       seedStates: options.seedStates,
+      seedFrom: options.seedFrom ?? osirisPaths(options.repoRoot).backlog,
     });
     return new BacklogRepo(git, worktreePath, branch);
   }
