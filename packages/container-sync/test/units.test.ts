@@ -71,6 +71,8 @@ describe('renderOsirisDevcontainer', () => {
     expect(json).toContain(`"${DEFAULT_WEB_IDE_FEATURE}": { "port": 9001 }`);
     expect(json).toContain('"appPort": ["127.0.0.1:9001:9001"]');
     expect(json).toContain('"postStartCommand": "osiris-web-ide start || true"');
+    expect(json).toContain('ghcr.io/devcontainers/features/node:1');
+    expect(json).toContain('ghcr.io/devcontainers/features/python:1');
   });
 
   it('accepts a custom feature ref', () => {

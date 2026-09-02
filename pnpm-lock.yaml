@@ -119,6 +119,9 @@ importers:
 
   extensions/osiris-ai:
     dependencies:
+      '@osiris/agent-core':
+        specifier: workspace:^
+        version: link:../../packages/agent-core
       '@osiris/shared-core':
         specifier: workspace:*
         version: link:../../packages/shared-core

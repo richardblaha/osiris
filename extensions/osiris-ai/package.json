@@ -146,6 +146,7 @@
     "clean": "rimraf dist media/panel.js media/panel.css *.vsix"
   },
   "dependencies": {
+    "@osiris/agent-core": "workspace:^",
     "@osiris/shared-core": "workspace:*"
   },
   "devDependencies": {

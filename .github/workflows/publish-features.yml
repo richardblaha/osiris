@@ -1,4 +1,4 @@
-name: Publish DevContainer Features
+name: DevContainer Features
 
 on:
   push:
@@ -6,6 +6,9 @@ on:
     paths:
       - "features/src/**"
       - ".github/workflows/publish-features.yml"
+  pull_request:
+    paths:
+      - "features/src/**"
   workflow_dispatch:
 
 permissions:
@@ -13,17 +16,28 @@ permissions:
   packages: write
 
 jobs:
-  publish:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Test the features against a base image
+        uses: devcontainers/action@v1
+        with:
+          validate-only: "true"
+          base-path-to-features: "./features/src"
 
-      - name: Publish to ghcr.io/osiris-ide/osiris
+  publish:
+    needs: test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Publish to ghcr.io/${{ github.repository }}
         uses: devcontainers/action@v1
         with:
           publish-features: "true"
           base-path-to-features: "./features/src"
           oci-registry: ghcr.io
-          features-namespace: osiris-ide/osiris
+          features-namespace: ${{ github.repository }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

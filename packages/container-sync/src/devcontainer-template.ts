@@ -4,8 +4,13 @@ import { createLogger } from '@osiris/shared-core';
 
 const log = createLogger('container-sync:template');
 
-/** Default OCI ref of the Osiris "web IDE" DevContainer feature (openvscode-server). */
-export const DEFAULT_WEB_IDE_FEATURE = 'ghcr.io/osiris-ide/osiris/web-ide:1';
+/**
+ * Default OCI ref of the Osiris "web IDE" DevContainer feature (openvscode-server).
+ * Must match `features-namespace` in `.github/workflows/publish-features.yml`
+ * (currently `ghcr.io/<owner>/<repo>/web-ide`). Override per-install with the
+ * `osiris.devcontainer.webIdeFeature` setting or `webIdeFeatureRef`.
+ */
+export const DEFAULT_WEB_IDE_FEATURE = 'ghcr.io/richardblaha/osiris/web-ide:1';
 
 export interface DevcontainerTemplateOptions {
   /** Port the in-container VS Code server listens on and that is published to host loopback. */
@@ -33,8 +38,10 @@ export function renderOsirisDevcontainer(options: DevcontainerTemplateOptions = 
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "ghcr.io/devcontainers/features/python:1": { "version": "3.12", "installTools": false },
     "${feature}": { "port": ${port} }
   },
+  // node (npx) + python cover most MCP servers; add more features for others.
   "appPort": ["127.0.0.1:${port}:${port}"],
   "remoteUser": "vscode",
   "updateRemoteUserUID": true,

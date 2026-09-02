@@ -5,7 +5,10 @@
  */
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { ensureDevcontainerConfig } from '@osiris/container-sync/devcontainer-template';
+import {
+  DEFAULT_WEB_IDE_FEATURE,
+  ensureDevcontainerConfig,
+} from '@osiris/container-sync/devcontainer-template';
 import { createLogger } from '@osiris/shared-core';
 import { HASH_LABEL, PORT_LABEL } from './resolver.js';
 
@@ -48,8 +51,6 @@ export function parseUpResult(stdout: string): UpDevContainerResult {
   };
 }
 
-const DEFAULT_FEATURE = 'ghcr.io/osiris-ide/osiris/web-ide:1';
-
 /**
  * Ensure the DevContainer for `hostPath` is up (writing the Osiris fallback
  * config first if the project has none), tag it with the Osiris id-labels, and
@@ -57,7 +58,7 @@ const DEFAULT_FEATURE = 'ghcr.io/osiris-ide/osiris/web-ide:1';
  */
 export async function upDevContainer(input: UpDevContainerInput): Promise<UpDevContainerResult> {
   const exec = input.exec ?? defaultExec;
-  const feature = input.webIdeFeatureRef ?? DEFAULT_FEATURE;
+  const feature = input.webIdeFeatureRef ?? DEFAULT_WEB_IDE_FEATURE;
 
   const config = await ensureDevcontainerConfig(input.hostPath, {
     serverPort: input.serverPort,

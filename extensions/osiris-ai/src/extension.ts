@@ -1,7 +1,10 @@
 import * as vscode from 'vscode';
 import { createLogger, type McpServerConfig } from '@osiris/shared-core';
-import { EchoProviderAdapter, OpenAiCompatibleAdapter } from './agent/providers.js';
-import type { ProviderAdapter } from './agent/types.js';
+import {
+  EchoProviderAdapter,
+  OpenAiCompatibleAdapter,
+  type ProviderAdapter,
+} from '@osiris/agent-core';
 import { McpRegistry } from './mcp/registry.js';
 import { AgentViewProvider } from './panel/AgentViewProvider.js';
 

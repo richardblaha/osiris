@@ -5,6 +5,7 @@
   "description": "Provider-agnostic agent loop (Anthropic, OpenAI-compatible, Ollama) plus a portable conversation/task snapshot for session handover.",
   "license": "MIT",
   "type": "module",
+  "sideEffects": false,
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {

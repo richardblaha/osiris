@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AgentOrchestrator } from '../src/agent/orchestrator.js';
-import { EchoProviderAdapter } from '../src/agent/providers.js';
-import type { ProviderAdapter, Tool } from '../src/agent/types.js';
+import {
+  AgentOrchestrator,
+  EchoProviderAdapter,
+  type ProviderAdapter,
+  type Tool,
+} from '@osiris/agent-core';
 
 const clockTool: Tool = {
   name: 'clock.now',

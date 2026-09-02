@@ -1,5 +1,5 @@
 import { createLogger, type McpServerConfig, type McpToolDescriptor } from '@osiris/shared-core';
-import type { Tool } from '../agent/types.js';
+import type { Tool } from '@osiris/agent-core';
 import { McpError, McpStdioClient, type SpawnLike } from './client.js';
 
 const log = createLogger('ai:mcp-registry');
