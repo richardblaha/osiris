@@ -16,6 +16,13 @@ export const DEFAULT_OLLAMA_IMAGE = 'ollama/ollama:0.33.2';
  */
 export const DEFAULT_LOCAL_MODEL = 'qwen3:4b';
 
+/**
+ * Embedding model auto-pulled alongside the chat model. `nomic-embed-text`
+ * (~274 MB) — powers `@osiris/memory` retrieval and backlog dedupe far better
+ * than the built-in hash fallback. Small relative to the chat model.
+ */
+export const DEFAULT_LOCAL_EMBED_MODEL = 'nomic-embed-text';
+
 export interface PullProgress {
   /** Ollama status line, e.g. `pulling manifest`, `pulling <digest>`, `verifying sha256 digest`. */
   status: string;
@@ -128,4 +135,18 @@ export async function ensureOllamaModel(
 
   log.info('model %s ready', model);
   return { pulled: true };
+}
+
+/**
+ * {@link ensureOllamaModel} for several tags in sequence. Skips falsy entries so
+ * callers can pass an optional embedding model straight through.
+ */
+export async function ensureOllamaModels(
+  models: readonly (string | undefined | false)[],
+  options: EnsureModelOptions = {},
+): Promise<void> {
+  for (const model of models) {
+    if (!model) continue;
+    await ensureOllamaModel(model, options);
+  }
 }

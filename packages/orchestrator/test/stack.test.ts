@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { defaultStack, stackModel } from '../src/stack.js';
-import { DEFAULT_LOCAL_MODEL, DEFAULT_OLLAMA_IMAGE } from '../src/ollama.js';
+import { defaultStack, stackEmbedModel, stackModel } from '../src/stack.js';
+import {
+  DEFAULT_LOCAL_EMBED_MODEL,
+  DEFAULT_LOCAL_MODEL,
+  DEFAULT_OLLAMA_IMAGE,
+} from '../src/ollama.js';
 import { toComposeDocument } from '../src/compose.js';
 import { topoSort } from '../src/topo.js';
 
@@ -34,6 +38,14 @@ describe('defaultStack', () => {
 
   it('honours a custom model tag', () => {
     expect(stackModel(defaultStack({ model: 'qwen3:1.7b' }))).toBe('qwen3:1.7b');
+  });
+
+  it('records an embedding model by default and lets it be disabled', () => {
+    expect(stackEmbedModel(defaultStack())).toBe(DEFAULT_LOCAL_EMBED_MODEL);
+    expect(stackEmbedModel(defaultStack({ embedModel: 'mxbai-embed-large' }))).toBe(
+      'mxbai-embed-large',
+    );
+    expect(stackEmbedModel(defaultStack({ embedModel: null }))).toBeUndefined();
   });
 });
 

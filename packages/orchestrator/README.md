@@ -30,10 +30,15 @@ on the `ollama` service. The default is **`qwen3:4b`** (Apache-2.0, ~2.6 GB at
 Q4_K_M) — small enough to ship with the install, capable enough for Osiris
 orchestration and features like the backlog.
 
+An embedding model (`nomic-embed-text`, ~274 MB) is pulled alongside it by
+default — it powers `@osiris/memory` retrieval far better than the built-in hash
+fallback. Disable with `defaultStack({ embedModel: null })` / `--no-embed-model`.
+
 `ensureOllamaModel()` is idempotent: one `GET /api/tags` when the model is
-already there, a streamed `POST /api/pull` (with progress) when it is not. The
-blobs live in the `osiris-ollama` volume, so the download happens once per
-install and survives container recreation.
+already there, a streamed `POST /api/pull` (with progress) when it is not.
+`ensureOllamaModels([...])` runs several in sequence. The blobs live in the
+`osiris-ollama` volume, so the download happens once per install and survives
+container recreation.
 
 ## CLI
 

@@ -73,6 +73,43 @@ describe('OllamaAdapter', () => {
     expect(events.at(-1)).toEqual({ type: 'done', finishReason: 'stop' });
   });
 
+  it('sends keep_alive, merged options and an optional format', async () => {
+    let sentBody: Record<string, unknown> = {};
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      sentBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return ndjsonResponse([JSON.stringify({ done: true })]);
+    }) as unknown as typeof fetch;
+
+    const schema = { type: 'object', properties: { ok: { type: 'boolean' } } };
+    await collect(
+      new OllamaAdapter({
+        model: 'qwen3:4b',
+        fetchImpl,
+        format: schema,
+        options: { num_ctx: 4096 },
+        keepAlive: '1h',
+      }).generate({ messages: [], tools: [] }),
+    );
+
+    expect(sentBody.keep_alive).toBe('1h');
+    expect(sentBody.format).toEqual(schema);
+    expect(sentBody.options).toEqual({ temperature: 0, num_ctx: 4096 });
+  });
+
+  it('surfaces an error chunk from the stream as a done/error event', async () => {
+    const fetchImpl = (async () =>
+      ndjsonResponse([JSON.stringify({ error: 'model runner has stopped' })])) as unknown as typeof fetch;
+
+    const events = await collect(
+      new OllamaAdapter({ model: 'llama3', fetchImpl }).generate({ messages: [], tools: [] }),
+    );
+    expect(events.at(-1)).toEqual({
+      type: 'done',
+      finishReason: 'error',
+      error: 'model runner has stopped',
+    });
+  });
+
   it('emits a tool call and reports tool-calls', async () => {
     const fetchImpl = (async () =>
       ndjsonResponse([

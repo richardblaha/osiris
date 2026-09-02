@@ -6,7 +6,7 @@ session be **frozen and resumed** on another machine.
 | Module            | Exports                                                                              |
 | ----------------- | ---------------------------------------------------------------------------------- |
 | `orchestrator.ts` | `AgentOrchestrator` — ask → stream text → run tool calls → repeat until stop / `maxIterations` |
-| `providers/`      | `AnthropicAdapter` (official SDK, adaptive thinking), `OpenAiCompatibleAdapter` (OpenAI · Mistral · gateways), `OllamaAdapter` (native `/api/chat`), `EchoProviderAdapter` (offline) |
+| `providers/`      | `AnthropicAdapter` (official SDK, adaptive thinking), `OpenAiCompatibleAdapter` (OpenAI · Mistral · gateways), `OllamaAdapter` (native `/api/chat` — `format` for JSON-schema grammar, `options`, `keep_alive`), `EchoProviderAdapter` (offline) |
 | `snapshot.ts`     | `AgentSnapshot` (conversation · tasks · working set · provider — **no API keys**), `JsonSnapshotStore`, `MemorySnapshotStore`, `pendingTasks()` |
 | `session.ts`      | `AgentSession` — owns the snapshot, records turns, tracks tasks, `persist()` for handover |
 

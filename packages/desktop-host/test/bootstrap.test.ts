@@ -25,6 +25,7 @@ describe('bootstrapOsirisRuntime', () => {
     delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
     delete process.env.OSIRIS_OLLAMA_URL;
     delete process.env.OSIRIS_LOCAL_MODEL;
+    delete process.env.OSIRIS_LOCAL_EMBED_MODEL;
     const controller = fakeController();
     const shutdown = vi.fn(async () => undefined);
     const ensureModelImpl = vi.fn(async () => ({ pulled: true }));
@@ -43,7 +44,9 @@ describe('bootstrapOsirisRuntime', () => {
       'qwen3:4b',
       expect.objectContaining({ baseUrl: 'http://localhost:11434' }),
     );
+    expect(ensureModelImpl).toHaveBeenCalledWith('nomic-embed-text', expect.anything());
     expect(process.env.OSIRIS_LOCAL_MODEL).toBe('qwen3:4b');
+    expect(process.env.OSIRIS_LOCAL_EMBED_MODEL).toBe('nomic-embed-text');
     expect(runtime.stack.services.length).toBeGreaterThan(0);
 
     await runtime.dispose();

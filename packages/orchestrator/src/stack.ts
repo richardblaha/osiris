@@ -5,7 +5,7 @@
  * {@link toComposeDocument} (a plain `docker compose` file).
  */
 
-import { DEFAULT_LOCAL_MODEL, DEFAULT_OLLAMA_IMAGE } from './ollama.js';
+import { DEFAULT_LOCAL_EMBED_MODEL, DEFAULT_LOCAL_MODEL, DEFAULT_OLLAMA_IMAGE } from './ollama.js';
 
 export interface PortMapping {
   host: number;
@@ -56,6 +56,12 @@ export interface DefaultStackOptions {
    * `OSIRIS_LOCAL_MODEL`; read it back with {@link stackModel}.
    */
   model?: string;
+  /**
+   * Embedding model to auto-pull. Defaults to {@link DEFAULT_LOCAL_EMBED_MODEL};
+   * pass `null` or `''` to skip it. Recorded as `OSIRIS_LOCAL_EMBED_MODEL`;
+   * read it back with {@link stackEmbedModel}.
+   */
+  embedModel?: string | null;
 }
 
 const OTLP_ENDPOINT = 'http://otel-collector:4318';
@@ -98,7 +104,11 @@ export function defaultStack(options: DefaultStackOptions = {}): StackSpec {
       {
         name: 'ollama',
         image: options.ollamaImage ?? DEFAULT_OLLAMA_IMAGE,
-        env: { OSIRIS_LOCAL_MODEL: options.model ?? DEFAULT_LOCAL_MODEL },
+        env: {
+          OSIRIS_LOCAL_MODEL: options.model ?? DEFAULT_LOCAL_MODEL,
+          OSIRIS_LOCAL_EMBED_MODEL:
+            options.embedModel === null ? '' : (options.embedModel ?? DEFAULT_LOCAL_EMBED_MODEL),
+        },
         ports: [{ host: 11434, container: 11434 }],
         volumes: [{ source: 'osiris-ollama', target: '/root/.ollama' }],
         health: { url: 'http://localhost:11434/api/tags', retries: 30, intervalMs: 2000 },
@@ -121,4 +131,13 @@ export function defaultStack(options: DefaultStackOptions = {}): StackSpec {
 export function stackModel(spec: StackSpec): string {
   const ollama = spec.services.find((svc) => svc.name === 'ollama');
   return ollama?.env?.OSIRIS_LOCAL_MODEL ?? DEFAULT_LOCAL_MODEL;
+}
+
+/**
+ * The embedding model recorded on a stack's `ollama` service, or `undefined`
+ * when embeddings were disabled with `defaultStack({ embedModel: null })`.
+ */
+export function stackEmbedModel(spec: StackSpec): string | undefined {
+  const ollama = spec.services.find((svc) => svc.name === 'ollama');
+  return ollama?.env?.OSIRIS_LOCAL_EMBED_MODEL || undefined;
 }

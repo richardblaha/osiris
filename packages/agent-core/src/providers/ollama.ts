@@ -5,7 +5,25 @@ export interface OllamaOptions {
   baseUrl?: string;
   model: string;
   fetchImpl?: typeof fetch;
+  /**
+   * Ollama `format`: `'json'` for loose JSON mode, or a JSON schema object for
+   * grammar-constrained decoding. The single biggest reliability lever for small
+   * local models asked to emit structured output.
+   */
+  format?: 'json' | Record<string, unknown>;
+  /**
+   * Ollama runtime `options` (merged over the defaults
+   * `{ temperature: 0, num_ctx: 8192 }`) — e.g. `num_ctx`, `temperature`, `top_p`.
+   */
+  options?: Record<string, unknown>;
+  /**
+   * Ollama `keep_alive` — how long the model stays resident after a request.
+   * Default `'30m'` so multi-step orchestration doesn't reload between turns.
+   */
+  keepAlive?: string;
 }
+
+const DEFAULT_OPTIONS: Record<string, unknown> = { temperature: 0, num_ctx: 8192 };
 
 /**
  * Client for Ollama's native `/api/chat` endpoint (NDJSON stream, tool calling).
@@ -15,16 +33,23 @@ export class OllamaAdapter implements ProviderAdapter {
   readonly id = 'ollama';
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly runtimeOptions: Record<string, unknown>;
+  private readonly keepAlive: string;
 
   constructor(private readonly options: OllamaOptions) {
     this.baseUrl = (options.baseUrl ?? 'http://localhost:11434').replace(/\/$/, '');
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.runtimeOptions = { ...DEFAULT_OPTIONS, ...(options.options ?? {}) };
+    this.keepAlive = options.keepAlive ?? '30m';
   }
 
   async *generate(request: GenerateRequest): AsyncIterable<ProviderEvent> {
     const body = {
       model: this.options.model,
       stream: true,
+      keep_alive: this.keepAlive,
+      options: this.runtimeOptions,
+      ...(this.options.format !== undefined ? { format: this.options.format } : {}),
       messages: request.messages.map((m) => ({
         role: m.role,
         content: m.content,
@@ -74,6 +99,10 @@ export class OllamaAdapter implements ProviderAdapter {
         } catch {
           continue;
         }
+        if (chunk.error) {
+          yield { type: 'done', finishReason: 'error', error: chunk.error };
+          return;
+        }
         if (chunk.message?.content) {
           yield { type: 'text', text: chunk.message.content };
         }
@@ -100,5 +129,6 @@ interface OllamaChatChunk {
     content?: string;
     tool_calls?: { function: { name: string; arguments?: unknown } }[];
   };
+  error?: string;
   done?: boolean;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { ensureOllamaModel, type PullProgress } from '../src/ollama.js';
+import { ensureOllamaModel, ensureOllamaModels, type PullProgress } from '../src/ollama.js';
 
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -82,6 +82,18 @@ describe('ensureOllamaModel', () => {
   it('throws when /api/tags is unreachable', async () => {
     const fetchImpl = vi.fn(async () => jsonResponse({}, 503)) as unknown as typeof fetch;
     await expect(ensureOllamaModel('qwen3:4b', { fetchImpl })).rejects.toThrow(/HTTP 503/);
+  });
+
+  it('ensureOllamaModels pulls each tag and skips falsy entries', async () => {
+    const pulled: string[] = [];
+    const fetchImpl = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/api/tags')) return jsonResponse({ models: [] });
+      pulled.push(JSON.parse(String(init?.body)).model as string);
+      return ndjsonResponse([{ status: 'success' }]);
+    }) as unknown as typeof fetch;
+
+    await ensureOllamaModels(['qwen3:4b', undefined, 'nomic-embed-text', false], { fetchImpl });
+    expect(pulled).toEqual(['qwen3:4b', 'nomic-embed-text']);
   });
 
   it('surfaces an error chunk from the pull stream', async () => {

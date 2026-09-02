@@ -4,6 +4,7 @@ import {
   Orchestrator,
   defaultStack,
   ensureOllamaModel,
+  stackEmbedModel,
   stackModel,
   type DefaultStackOptions,
   type StackSpec,
@@ -49,7 +50,9 @@ export interface OsirisRuntime {
  * endpoints into `process.env` so the extension host inherits them. Call the
  * returned `dispose()` on app quit.
  */
-export async function bootstrapOsirisRuntime(options: BootstrapOptions = {}): Promise<OsirisRuntime> {
+export async function bootstrapOsirisRuntime(
+  options: BootstrapOptions = {},
+): Promise<OsirisRuntime> {
   const start = options.startTelemetryImpl ?? startTelemetry;
   const telemetry = await start({
     serviceName: 'osiris-desktop',
@@ -69,33 +72,45 @@ export async function bootstrapOsirisRuntime(options: BootstrapOptions = {}): Pr
   process.env.OSIRIS_LOCATION ??= 'local';
 
   const model = options.localModel ?? stackModel(stack);
+  const embedModel = stackEmbedModel(stack);
+  process.env.OSIRIS_LOCAL_MODEL ??= model;
+  if (embedModel) process.env.OSIRIS_LOCAL_EMBED_MODEL ??= embedModel;
+
   if (options.pullLocalModel ?? true) {
     const ensureModel = options.ensureModelImpl ?? ensureOllamaModel;
-    try {
-      const { pulled } = await ensureModel(model, {
-        baseUrl: ollamaUrl,
-        onProgress: ({ status, fraction }) =>
-          log.info(
-            'model %s: %s%s',
-            model,
-            status,
-            fraction !== undefined ? ` ${Math.round(fraction * 100)}%` : '',
-          ),
-      });
-      process.env.OSIRIS_LOCAL_MODEL ??= model;
-      log.info('local model %s %s', model, pulled ? 'pulled' : 'present');
-    } catch (err) {
-      log.warn('local model %s unavailable: %s', model, String(err));
+    for (const tag of [model, embedModel]) {
+      if (!tag) continue;
+      try {
+        const { pulled } = await ensureModel(tag, {
+          baseUrl: ollamaUrl,
+          onProgress: ({ status, fraction }) =>
+            log.info(
+              'model %s: %s%s',
+              tag,
+              status,
+              fraction !== undefined ? ` ${Math.round(fraction * 100)}%` : '',
+            ),
+        });
+        log.info('local model %s %s', tag, pulled ? 'pulled' : 'present');
+      } catch (err) {
+        log.warn('local model %s unavailable: %s', tag, String(err));
+      }
     }
   }
 
-  log.info('osiris runtime up — %d services, telemetry %s', stack.services.length, telemetry.enabled ? 'on' : 'off');
+  log.info(
+    'osiris runtime up — %d services, telemetry %s',
+    stack.services.length,
+    telemetry.enabled ? 'on' : 'off',
+  );
 
   return {
     stack,
     telemetry,
     dispose: async () => {
-      await controller.down(stack).catch((err: unknown) => log.warn('stack down failed: %s', String(err)));
+      await controller
+        .down(stack)
+        .catch((err: unknown) => log.warn('stack down failed: %s', String(err)));
       await telemetry.shutdown();
     },
   };

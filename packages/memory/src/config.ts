@@ -50,7 +50,13 @@ export function parseMemoryConfig(
     embedding: {
       provider: embedding.provider ?? base.embedding.provider,
       model: embedding.model,
-      endpoint: embedding.endpoint,
+      // An Ollama embedding config with no explicit endpoint uses the shared
+      // Osiris Ollama server (published as OSIRIS_OLLAMA_URL by the runtime).
+      endpoint:
+        embedding.endpoint ||
+        ((embedding.provider ?? base.embedding.provider) === 'ollama'
+          ? env.OSIRIS_OLLAMA_URL
+          : undefined),
       apiKey: embedding.apiKey,
       dimensions: embedding.dimensions ?? base.embedding.dimensions,
     },

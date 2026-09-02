@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { createLogger, type McpServerConfig } from '@osiris/shared-core';
 import {
   EchoProviderAdapter,
+  OllamaAdapter,
   OpenAiCompatibleAdapter,
   type ProviderAdapter,
 } from '@osiris/agent-core';
@@ -18,8 +19,41 @@ function config() {
   return vscode.workspace.getConfiguration('osiris-ai');
 }
 
+function ollamaUrl(): string {
+  return (
+    config().get<string>('ollamaUrl', '').trim() ||
+    process.env.OSIRIS_OLLAMA_URL ||
+    'http://localhost:11434'
+  );
+}
+
+/** Set by {@link probeOllama}; makeProvider falls back to echo while false. */
+let ollamaReachable = false;
+
+async function probeOllama(): Promise<void> {
+  if (config().get<string>('provider', 'ollama') !== 'ollama') return;
+  try {
+    const res = await fetch(`${ollamaUrl().replace(/\/$/, '')}/api/tags`);
+    ollamaReachable = res.ok;
+  } catch {
+    ollamaReachable = false;
+  }
+  if (!ollamaReachable) {
+    void vscode.window.showWarningMessage(
+      `osiris-ai.provider is "ollama" but ${ollamaUrl()} is unreachable; falling back to the echo provider.`,
+    );
+  }
+}
+
 function makeProvider(): ProviderAdapter {
-  const kind = config().get<string>('provider', 'echo');
+  const kind = config().get<string>('provider', 'ollama');
+  if (kind === 'ollama') {
+    if (!ollamaReachable) return new EchoProviderAdapter();
+    return new OllamaAdapter({
+      baseUrl: ollamaUrl(),
+      model: config().get<string>('ollamaModel', 'qwen3:4b'),
+    });
+  }
   if (kind === 'openai-compatible') {
     const endpoint = config().get<string>('endpoint', '').trim();
     if (!endpoint) {
@@ -86,10 +120,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       if (e.affectsConfiguration('osiris-ai.mcpServers')) {
         void reloadMcp();
       }
+      if (
+        e.affectsConfiguration('osiris-ai.provider') ||
+        e.affectsConfiguration('osiris-ai.ollamaUrl')
+      ) {
+        void probeOllama();
+      }
     }),
   );
 
-  await reloadMcp();
+  await Promise.all([reloadMcp(), probeOllama()]);
 }
 
 export function deactivate(): void {

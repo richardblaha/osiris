@@ -60,10 +60,11 @@
           "type": "string",
           "enum": [
             "echo",
+            "ollama",
             "openai-compatible"
           ],
-          "default": "echo",
-          "description": "Agent backend. 'echo' is offline and deterministic; 'openai-compatible' calls the endpoint in osiris-ai.endpoint."
+          "default": "ollama",
+          "description": "Agent backend. 'ollama' uses the local model in the Osiris stack (see osiris-ai.ollamaModel); 'echo' is offline and deterministic; 'openai-compatible' calls the endpoint in osiris-ai.endpoint. 'ollama' falls back to 'echo' when the server is unreachable."
         },
         "osiris-ai.endpoint": {
           "type": "string",
@@ -73,7 +74,17 @@
         "osiris-ai.model": {
           "type": "string",
           "default": "",
-          "description": "Model identifier passed to the provider."
+          "description": "Model identifier passed to the openai-compatible provider."
+        },
+        "osiris-ai.ollamaUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Ollama base URL. Empty uses OSIRIS_OLLAMA_URL (set by the Osiris runtime) or http://localhost:11434."
+        },
+        "osiris-ai.ollamaModel": {
+          "type": "string",
+          "default": "qwen3:4b",
+          "description": "Ollama model tag for the 'ollama' provider. Must be present in the local Ollama library (the Osiris stack pulls the default on first run)."
         },
         "osiris-ai.apiKeyEnv": {
           "type": "string",

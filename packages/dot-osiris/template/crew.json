@@ -9,6 +9,11 @@
   },
   "providers": {
     "vscode-lm": { "kind": "vscode-lm" },
-    "echo": { "kind": "echo" }
+    "echo": { "kind": "echo" },
+    "ollama": {
+      "kind": "ollama",
+      "endpoint": "${OSIRIS_OLLAMA_URL:-http://localhost:11434}",
+      "model": "${OSIRIS_LOCAL_MODEL:-qwen3:4b}"
+    }
   }
 }
