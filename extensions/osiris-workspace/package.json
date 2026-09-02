@@ -39,6 +39,11 @@
         "command": "osiris.agent.setApiKey",
         "title": "Osiris: Set Agent API Key…",
         "category": "Osiris"
+      },
+      {
+        "command": "osiris.showStart",
+        "title": "Osiris: Start Page",
+        "category": "Osiris"
       }
     ],
     "menus": {
@@ -76,6 +81,16 @@
           "items": { "type": "string" },
           "default": ["OSIRIS_AI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
           "description": "Environment variables holding agent API keys. Stored in the OS keychain and injected into the DevContainer."
+        },
+        "osiris.startup.restoreLast": {
+          "type": "boolean",
+          "default": false,
+          "description": "When Osiris opens with no folder, reopen the most recent project in its DevContainer."
+        },
+        "osiris.startup.showStartView": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show the Osiris Start page when opening with no folder (and restoreLast is off)."
         },
         "osiris.server.url": {
           "type": "string",

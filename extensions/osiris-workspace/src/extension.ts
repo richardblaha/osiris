@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import * as vscode from 'vscode';
 import { createLogger } from '@osiris/shared-core';
@@ -7,6 +8,8 @@ import { OSIRIS_AUTHORITY, buildFolderUri, isOsirisRemote, parseAuthorityHash } 
 import { resolveDevContainerEndpoint } from './resolver.js';
 import { resolveServerConfig } from './server-config.js';
 import { upDevContainer } from './devcontainer-cli.js';
+import { RecentProjectsStore } from './recent-projects.js';
+import { showStartView } from './start-view.js';
 
 const log = createLogger('workspace');
 
@@ -30,12 +33,14 @@ function canResolveAuthorities(): boolean {
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
   log.info('activating osiris-workspace (remote: %s)', vscode.env.remoteName ?? 'none');
 
+  const recent = new RecentProjectsStore(context.globalState);
+
   if (canResolveAuthorities()) {
     context.subscriptions.push(
       vscode.workspace.registerRemoteAuthorityResolver(OSIRIS_AUTHORITY, {
         async resolve(authority) {
           const hash = parseAuthorityHash(authority);
-          const endpoint = await resolveDevContainerEndpoint(hash);
+          const endpoint = await resolveOrRebuild(context, recent, hash);
           return new vscode.ResolvedAuthority(endpoint.host, endpoint.port);
         },
       }),
@@ -46,7 +51,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(status);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('osiris.openFolder', () => openFolderInDevContainer(context)),
+    vscode.commands.registerCommand('osiris.openFolder', () => openFolderInDevContainer(context, recent)),
+    vscode.commands.registerCommand('osiris.showStart', () =>
+      showStartView(context, {
+        recent,
+        openInDevContainer: (hostPath) => openInDevContainer(context, recent, hostPath),
+      }),
+    ),
     vscode.commands.registerCommand('osiris.workspace.handoverToServer', () =>
       transferSession('to-server'),
     ),
@@ -63,7 +74,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       vscode.commands.registerCommand(
         'osiris.desktop.ensureDevContainer',
         (payload: { hostPath: string; serverPort?: number }) =>
-          ensureDevContainerLocally(context, payload),
+          ensureDevContainerLocally(context, recent, payload),
       ),
     );
   }
@@ -74,8 +85,52 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   setLocationContext(location);
   updateStatus(status, location);
 
-  if (config().get<boolean>('devcontainer.enforce', true) && !isOsirisRemote(vscode.env.remoteName)) {
-    await guardLocalWindow(context);
+  const remote = isOsirisRemote(vscode.env.remoteName);
+  const hasFolder = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+
+  if (!remote && !hasFolder && !vscode.env.remoteName) {
+    await handleEmptyWindow(context, recent);
+  } else if (config().get<boolean>('devcontainer.enforce', true) && !remote && hasFolder) {
+    await guardLocalWindow(context, recent);
+  }
+}
+
+/** No folder open in a local window: restore the last project or show Osiris Start. */
+async function handleEmptyWindow(
+  context: vscode.ExtensionContext,
+  recent: RecentProjectsStore,
+): Promise<void> {
+  const projects = await recent.prune(pathExists);
+  if (config().get<boolean>('startup.restoreLast', false) && projects[0]) {
+    log.info('restoring last project: %s', projects[0].hostPath);
+    await openInDevContainer(context, recent, projects[0].hostPath);
+    return;
+  }
+  if (config().get<boolean>('startup.showStartView', true)) {
+    showStartView(context, {
+      recent,
+      openInDevContainer: (hostPath) => openInDevContainer(context, recent, hostPath),
+    });
+  }
+}
+
+/** Resolve the endpoint for `hash`; if the container is gone, rebuild it from the recent list. */
+async function resolveOrRebuild(
+  context: vscode.ExtensionContext,
+  recent: RecentProjectsStore,
+  hash: string,
+): Promise<{ host: string; port: number }> {
+  try {
+    return await resolveDevContainerEndpoint(hash);
+  } catch (err) {
+    const project = recent.find(hash);
+    if (!project) throw err;
+    log.info('devcontainer %s not found — rebuilding from %s', hash, project.hostPath);
+    await ensureDevContainerLocally(context, recent, {
+      hostPath: project.hostPath,
+      serverPort: project.serverPort,
+    });
+    return resolveDevContainerEndpoint(hash);
   }
 }
 
@@ -95,7 +150,10 @@ function updateStatus(item: vscode.StatusBarItem, location: Location): void {
   item.show();
 }
 
-async function guardLocalWindow(context: vscode.ExtensionContext): Promise<void> {
+async function guardLocalWindow(
+  context: vscode.ExtensionContext,
+  recent: RecentProjectsStore,
+): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) return;
 
@@ -107,49 +165,51 @@ async function guardLocalWindow(context: vscode.ExtensionContext): Promise<void>
   );
 
   if (choice === 'Reopen in DevContainer') {
-    await reopenInDevContainer(context, folder);
+    await openInDevContainer(context, recent, folder.uri.fsPath);
   } else if (choice === 'Close Folder') {
     await vscode.commands.executeCommand('workbench.action.closeFolder');
   }
 }
 
-async function openFolderInDevContainer(context: vscode.ExtensionContext): Promise<void> {
+async function openFolderInDevContainer(
+  context: vscode.ExtensionContext,
+  recent: RecentProjectsStore,
+): Promise<void> {
   const picked = await vscode.window.showOpenDialog({
     canSelectFolders: true,
     canSelectFiles: false,
     canSelectMany: false,
     openLabel: 'Open in Osiris DevContainer',
   });
-  const target = picked?.[0];
-  if (target) {
-    await reopenInDevContainer(context, { uri: target, name: basename(target.fsPath), index: 0 });
-  }
+  if (picked?.[0]) await openInDevContainer(context, recent, picked[0].fsPath);
 }
 
-async function reopenInDevContainer(
+/** Build/attach the DevContainer for `hostPath` and open the remote window on it. */
+async function openInDevContainer(
   context: vscode.ExtensionContext,
-  folder: vscode.WorkspaceFolder,
+  recent: RecentProjectsStore,
+  hostPath: string,
 ): Promise<void> {
-  const hostPath = folder.uri.fsPath;
-
-  // `osiris.desktop.ensureDevContainer` is registered by the local (ui) host.
+  const name = basename(hostPath);
   const ensured = await tryExecuteCommand<{ hash: string }>('osiris.desktop.ensureDevContainer', {
     hostPath,
     serverPort: config().get<number>('devcontainer.serverPort', 8000),
   });
   const hash = ensured?.hash ?? localHash(hostPath);
 
-  const uri = vscode.Uri.parse(buildFolderUri(hash, folder.name));
-  log.info('reopening %s as %s', hostPath, uri.toString());
+  const uri = vscode.Uri.parse(buildFolderUri(hash, name));
+  log.info('opening %s as %s', hostPath, uri.toString());
   await vscode.commands.executeCommand('vscode.openFolder', uri, { forceReuseWindow: true });
 }
 
 /**
  * The `osiris.desktop.ensureDevContainer` handler: bring the DevContainer up via
- * the `devcontainer` CLI, injecting the agent's API keys from the keychain.
+ * the `devcontainer` CLI, injecting the agent's API keys from the keychain, and
+ * record the project so it can be restored / rebuilt later.
  */
 async function ensureDevContainerLocally(
   context: vscode.ExtensionContext,
+  recent: RecentProjectsStore,
   payload: { hostPath: string; serverPort?: number },
 ): Promise<{ hash: string; containerId: string }> {
   const serverPort = payload.serverPort ?? config().get<number>('devcontainer.serverPort', 8000);
@@ -167,6 +227,7 @@ async function ensureDevContainerLocally(
         webIdeFeatureRef: config().get<string>('devcontainer.webIdeFeature') || undefined,
       }),
   );
+  await recent.remember({ hostPath: payload.hostPath, name: basename(payload.hostPath), hash, serverPort });
   log.info('devcontainer %s ready (%s)', hash, result.containerId.slice(0, 12));
   return { hash, containerId: result.containerId };
 }
@@ -292,4 +353,8 @@ function localHash(absolutePath: string): string {
 function basename(p: string): string {
   const parts = p.split(/[\\/]/).filter(Boolean);
   return parts.at(-1) ?? p;
+}
+
+function pathExists(p: string): boolean {
+  return existsSync(p);
 }
