@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { createLogger, type McpServerConfig } from '@osiris/shared-core';
 import {
+  AnthropicAdapter,
   EchoProviderAdapter,
   OllamaAdapter,
   OpenAiCompatibleAdapter,
@@ -27,11 +28,20 @@ function ollamaUrl(): string {
   );
 }
 
-/** Set by {@link probeOllama}; makeProvider falls back to echo while false. */
+/** The `osiris.models.chat` spec from the onboarding wizard, if set. */
+function chatSpec(): string {
+  return vscode.workspace.getConfiguration('osiris.models').get<string>('chat', '').trim();
+}
+
+function usesOllama(): boolean {
+  return chatSpec().startsWith('ollama/') || config().get<string>('provider', 'ollama') === 'ollama';
+}
+
+/** Set by {@link probeOllama}; the ollama path falls back to echo while false. */
 let ollamaReachable = false;
 
 async function probeOllama(): Promise<void> {
-  if (config().get<string>('provider', 'ollama') !== 'ollama') return;
+  if (!usesOllama()) return;
   try {
     const res = await fetch(`${ollamaUrl().replace(/\/$/, '')}/api/tags`);
     ollamaReachable = res.ok;
@@ -40,12 +50,47 @@ async function probeOllama(): Promise<void> {
   }
   if (!ollamaReachable) {
     void vscode.window.showWarningMessage(
-      `osiris-ai.provider is "ollama" but ${ollamaUrl()} is unreachable; falling back to the echo provider.`,
+      `Osiris AI: the chat model runs on Ollama but ${ollamaUrl()} is unreachable; falling back to the echo provider.`,
     );
   }
 }
 
+/** Build an adapter from a `<provider>/<model>` spec (the wizard's `osiris.models.chat`). */
+function adapterForSpec(spec: string): ProviderAdapter | undefined {
+  const m = /^([\w-]+)\/([\w.:-]+)$/.exec(spec);
+  if (!m) return undefined;
+  const [, provider, model] = m as unknown as [string, string, string];
+  switch (provider) {
+    case 'ollama':
+      return ollamaReachable
+        ? new OllamaAdapter({ baseUrl: ollamaUrl(), model })
+        : new EchoProviderAdapter();
+    case 'anthropic':
+      return new AnthropicAdapter({ model }); // SDK reads ANTHROPIC_API_KEY from the env
+    case 'openai-compatible': {
+      const endpoint = config().get<string>('endpoint', '').trim();
+      if (!endpoint) return undefined;
+      return new OpenAiCompatibleAdapter({
+        endpoint,
+        model,
+        apiKey: process.env[config().get<string>('apiKeyEnv', 'OSIRIS_AI_API_KEY')],
+      });
+    }
+    case 'echo':
+      return new EchoProviderAdapter();
+    default:
+      return undefined; // e.g. vscode-lm — not available to the panel
+  }
+}
+
 function makeProvider(): ProviderAdapter {
+  const spec = chatSpec();
+  if (spec) {
+    const adapter = adapterForSpec(spec);
+    if (adapter) return adapter;
+    log.warn('osiris.models.chat "%s" is not usable in the panel; using the legacy provider', spec);
+  }
+
   const kind = config().get<string>('provider', 'ollama');
   if (kind === 'ollama') {
     if (!ollamaReachable) return new EchoProviderAdapter();
@@ -122,7 +167,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
       if (
         e.affectsConfiguration('osiris-ai.provider') ||
-        e.affectsConfiguration('osiris-ai.ollamaUrl')
+        e.affectsConfiguration('osiris-ai.ollamaUrl') ||
+        e.affectsConfiguration('osiris.models.chat')
       ) {
         void probeOllama();
       }

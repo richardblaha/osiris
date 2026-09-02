@@ -64,7 +64,7 @@
             "openai-compatible"
           ],
           "default": "ollama",
-          "description": "Agent backend. 'ollama' uses the local model in the Osiris stack (see osiris-ai.ollamaModel); 'echo' is offline and deterministic; 'openai-compatible' calls the endpoint in osiris-ai.endpoint. 'ollama' falls back to 'echo' when the server is unreachable."
+          "description": "Legacy chat backend, used only when 'osiris.models.chat' is unset (configure that via Osiris: Configure Models…). 'ollama' uses the local model in the Osiris stack; 'echo' is offline and deterministic; 'openai-compatible' calls osiris-ai.endpoint. 'ollama' falls back to 'echo' when the server is unreachable."
         },
         "osiris-ai.endpoint": {
           "type": "string",

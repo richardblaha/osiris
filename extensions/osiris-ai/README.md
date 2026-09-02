@@ -8,7 +8,11 @@ support and a custom agent panel.
 - **Agent panel** — a React webview in the activity bar. Type a prompt; the agent
   streams its reply, shows every tool call inline, and can be cancelled.
 - **Provider-agnostic orchestrator** — a bounded tool-use loop
-  (`osiris-ai.maxIterations`) over any `ProviderAdapter`. Ships three:
+  (`osiris-ai.maxIterations`) over any `ProviderAdapter`. The chat model comes
+  from **`osiris.models.chat`** (set via *Osiris: Configure Models…*) — a
+  `<provider>/<model>` spec resolved to an `ollama` / `anthropic` /
+  `openai-compatible` / `echo` adapter. When it is unset the legacy
+  `osiris-ai.provider` applies:
   - `ollama` — the local model in the Osiris stack (default;
     `osiris-ai.ollamaModel`, `osiris-ai.ollamaUrl`, else `OSIRIS_OLLAMA_URL`).
     Falls back to `echo` when the server is unreachable.

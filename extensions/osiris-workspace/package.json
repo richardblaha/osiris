@@ -49,6 +49,11 @@
         "command": "osiris.lm.status",
         "title": "Osiris: Language Model Status",
         "category": "Osiris"
+      },
+      {
+        "command": "osiris.configureModels",
+        "title": "Osiris: Configure Models…",
+        "category": "Osiris"
       }
     ],
     "menus": {
@@ -112,6 +117,71 @@
           "type": "string",
           "default": "OSIRIS_SERVER_TOKEN",
           "description": "Name of the environment variable holding the Osiris Server bearer token."
+        },
+        "osiris.models.defaultProvider": {
+          "type": "string",
+          "default": "ollama/qwen3:4b",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model used for any task class left unset (\"<provider>/<model>\"). Ships with the bundled local model so Osiris works offline."
+        },
+        "osiris.models.chat": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "markdownDescription": "Model for the chat / general assistant. `<provider>/<model>`, e.g. `anthropic/claude-sonnet-5`. Empty = use `osiris.models.defaultProvider`."
+        },
+        "osiris.models.codegen": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model for code generation & editing."
+        },
+        "osiris.models.review": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model for code review / refactoring."
+        },
+        "osiris.models.tests": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model for test generation."
+        },
+        "osiris.models.docs": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model for documentation / comments."
+        },
+        "osiris.models.debug": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model for debugging / log analysis."
+        },
+        "osiris.models.commit": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model for commit messages / PR descriptions."
+        },
+        "osiris.models.planning": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model for planning, decomposition and architecture."
+        },
+        "osiris.models.research": {
+          "type": "string",
+          "default": "",
+          "pattern": "^([\\w-]+/[\\w.:-]+)?$",
+          "description": "Model for research / prior-art exploration."
+        },
+        "osiris.models.remindIncomplete": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show a reminder at startup while some task classes have no model set."
         }
       }
     }

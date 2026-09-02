@@ -17,6 +17,8 @@ import { RecentProjectsStore } from './recent-projects.js';
 import { showStartView } from './start-view.js';
 import { ensureLmProxy, lmProxyRemoteEnv } from './lm-proxy-host.js';
 import { createVscodeLmBridge, hasLanguageModelApi } from './lm-bridge.js';
+import { TASK_CLASSES } from '@osiris/protocol';
+import { taskModelEnv, unsetTaskClasses } from './model-config.js';
 
 const log = createLogger('workspace');
 
@@ -57,15 +59,28 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
   context.subscriptions.push(status);
 
+  const startDeps = {
+    recent,
+    openInDevContainer: (hostPath: string) => openInDevContainer(context, recent, hostPath),
+  };
+
+  const modelsStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 5);
+  context.subscriptions.push(modelsStatus);
+  refreshModelsStatus(modelsStatus);
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('osiris.models')) refreshModelsStatus(modelsStatus);
+    }),
+  );
+  void nudgeIncompleteModels();
+
   context.subscriptions.push(
     vscode.commands.registerCommand('osiris.openFolder', () =>
       openFolderInDevContainer(context, recent),
     ),
-    vscode.commands.registerCommand('osiris.showStart', () =>
-      showStartView(context, {
-        recent,
-        openInDevContainer: (hostPath) => openInDevContainer(context, recent, hostPath),
-      }),
+    vscode.commands.registerCommand('osiris.showStart', () => showStartView(context, startDeps)),
+    vscode.commands.registerCommand('osiris.configureModels', () =>
+      showStartView(context, startDeps, { focus: 'models' }),
     ),
     vscode.commands.registerCommand('osiris.workspace.handoverToServer', () =>
       transferSession('to-server'),
@@ -161,6 +176,50 @@ function updateStatus(item: vscode.StatusBarItem, location: Location): void {
   item.show();
 }
 
+/** Status-bar nudge while some task classes still fall back to the default local model. */
+function refreshModelsStatus(item: vscode.StatusBarItem): void {
+  const unset = unsetTaskClasses(vscode.workspace.getConfiguration('osiris.models'));
+  if (unset.length === 0) {
+    item.hide();
+    return;
+  }
+  item.text = `$(warning) Models ${TASK_CLASSES.length - unset.length}/${TASK_CLASSES.length}`;
+  item.tooltip = `${unset.length} task class(es) use the default local model — click to configure`;
+  item.command = 'osiris.configureModels';
+  item.show();
+}
+
+/**
+ * One-shot startup reminder (bod 6). Skipped when it would duplicate the Start
+ * page's own Models section (empty window with the Start view enabled), or when
+ * the user chose "don't remind me".
+ */
+async function nudgeIncompleteModels(): Promise<void> {
+  const cfg = vscode.workspace.getConfiguration('osiris.models');
+  if (cfg.get<boolean>('remindIncomplete', true) === false) return;
+  const unset = unsetTaskClasses(cfg);
+  if (unset.length === 0) return;
+
+  const hasFolder = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
+  const startViewWillShow =
+    !hasFolder &&
+    !vscode.env.remoteName &&
+    config().get<boolean>('startup.showStartView', true) &&
+    !config().get<boolean>('startup.restoreLast', false);
+  if (startViewWillShow) return;
+
+  const pick = await vscode.window.showInformationMessage(
+    'Some task models are not set — Osiris is using the default local model (Qwen 4B).',
+    'Configure',
+    "Don't remind me",
+  );
+  if (pick === 'Configure') {
+    await vscode.commands.executeCommand('osiris.configureModels');
+  } else if (pick === "Don't remind me") {
+    await cfg.update('remindIncomplete', false, vscode.ConfigurationTarget.Global);
+  }
+}
+
 async function guardLocalWindow(
   context: vscode.ExtensionContext,
   recent: RecentProjectsStore,
@@ -226,7 +285,11 @@ async function ensureDevContainerLocally(
   const serverPort = payload.serverPort ?? config().get<number>('devcontainer.serverPort', 8000);
   const hash = localHash(payload.hostPath);
   const proxy = await ensureLmProxy(context);
-  const remoteEnv = { ...(await collectAgentSecrets(context)), ...lmProxyRemoteEnv(proxy) };
+  const remoteEnv = {
+    ...(await collectAgentSecrets(context)),
+    ...taskModelEnv(vscode.workspace.getConfiguration('osiris.models')),
+    ...lmProxyRemoteEnv(proxy),
+  };
 
   const result = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Osiris: preparing DevContainer' },
