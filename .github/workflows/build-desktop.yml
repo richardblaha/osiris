@@ -2,8 +2,7 @@ name: Build Desktop
 
 on:
   workflow_dispatch:
-  push:
-    tags: ["v*"]
+  workflow_call:
 
 permissions:
   contents: read

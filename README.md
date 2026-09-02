@@ -176,12 +176,18 @@ docker build -t osiris-web apps/osiris-web && docker run -p 3000:3000 osiris-web
 
 ## Build matrix
 
-| Target                | Command                                 | CI workflow         | Output                            |
-| --------------------- | --------------------------------------- | ------------------- | --------------------------------- |
-| Packages / exts       | `pnpm build`                            | `ci.yml`            | `dist/`, `media/`, `*.vsix`       |
-| Desktop (Lin/Mac/Win) | `pnpm --filter @osiris/desktop package` | `build-desktop.yml` | AppImage / deb / rpm / dmg / nsis |
-| Web + Docker          | `pnpm --filter @osiris/web build`       | `build-web.yml`     | server bundle + container image   |
-| Release               | tag `v*`                                | `release.yml`       | GitHub Release with all artifacts |
+| Target                | Command                                 | CI workflow         | Output                                            |
+| --------------------- | --------------------------------------- | ------------------- | ------------------------------------------------- |
+| Packages / exts       | `pnpm build`                            | `ci.yml`            | `dist/`, `media/`, `*.vsix`                       |
+| Desktop (Lin/Mac/Win) | `pnpm --filter @osiris/desktop package` | `build-desktop.yml` | AppImage / deb / rpm / dmg / nsis                 |
+| Web + Docker          | `pnpm --filter @osiris/web build`       | `build-web.yml`     | server bundle + container image                   |
+| Release               | tag `v*`                                | `release.yml`       | draft GitHub Release with every artifact attached |
+
+`release.yml` is the only tag-driven entrypoint: it packs the extensions and
+calls the now-reusable `build-desktop.yml` / `build-web.yml` (`workflow_call` +
+`workflow_dispatch`), then attaches every `.vsix`, the desktop installers and the
+`vscode-reh-web-*` bundle to the draft release. Tags with a hyphen
+(`v1.2.0-alpha.1`) are marked pre-release.
 
 ## Contributing
 

@@ -85,10 +85,14 @@ A `!` after the scope or a `BREAKING CHANGE:` footer marks a breaking change.
 
 Releases are tag-driven. A maintainer:
 
-1. Bumps versions and updates `CHANGELOG.md` files.
-2. Tags `vX.Y.Z` and pushes.
-3. `release.yml` builds desktop + web artifacts, packs the extensions, and
-   publishes a GitHub Release.
+1. Bumps versions and updates the top-level `CHANGELOG.md` and the
+   `extensions/*/CHANGELOG.md` files.
+2. Tags `vX.Y.Z` (or `vX.Y.Z-alpha.N` for a pre-release) and pushes.
+3. `release.yml` packs the extensions and calls the reusable `build-desktop.yml`
+   and `build-web.yml` workflows, then creates a **draft** GitHub Release with
+   every `.vsix`, the desktop installers and the web server bundle attached.
+   A tag containing a hyphen is marked as a pre-release.
+4. A maintainer reviews the draft and publishes it.
 
 ## Reporting bugs / requesting features
 
