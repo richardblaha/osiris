@@ -165,9 +165,15 @@ export class ChromaMemoryStore implements MemoryStore {
   async ensureCollection(hnsw: HnswConfig): Promise<void> {
     const mod = (await import('chromadb')) as unknown as {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      ChromaClient: new (opts: { path: string }) => any;
+      ChromaClient: new (opts: Record<string, unknown>) => any;
     };
-    const client = new mod.ChromaClient({ path: this.options.url });
+    // chromadb >= 3 wants ssl/host/port, not the deprecated `path`.
+    const url = new URL(this.options.url);
+    const client = new mod.ChromaClient({
+      ssl: url.protocol === 'https:',
+      host: url.hostname,
+      port: Number(url.port || (url.protocol === 'https:' ? 443 : 8000)),
+    });
     this.collection = await client.getOrCreateCollection({
       name: this.options.collection,
       metadata: {
@@ -176,8 +182,10 @@ export class ChromaMemoryStore implements MemoryStore {
         'hnsw:construction_ef': hnsw.efConstruction,
         'hnsw:search_ef': hnsw.efSearch,
       },
-      // We always supply embeddings explicitly.
-      embeddingFunction: { generate: async (texts: string[]) => texts.map(() => [] as number[]) },
+      // Osiris always supplies embeddings explicitly; this stub keeps the client happy.
+      embeddingFunction: {
+        generate: async (texts: string[]) => texts.map(() => [] as number[]),
+      },
     });
     log.info('chroma collection %s ready at %s', this.options.collection, this.options.url);
   }

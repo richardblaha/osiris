@@ -36,3 +36,6 @@ Thumbs.db
 
 # Osiris — agent scratchpads, never committed
 .osiris/temp/
+
+# osiris-server scratch workspace (docker-created)
+apps/osiris-server/example-workspace/

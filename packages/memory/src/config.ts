@@ -1,6 +1,9 @@
+import { createLogger } from '@osiris/shared-core';
 import { DEFAULT_HNSW, type HnswConfig, type MemoryStore } from './store.js';
 import { ChromaMemoryStore, FileMemoryStore, InMemoryMemoryStore } from './store.js';
 import { createEmbedding, type EmbeddingConfig, type EmbeddingFn } from './embed.js';
+
+const log = createLogger('memory:config');
 
 export interface MemoryConfig {
   chroma: { url: string; collection: string };
@@ -64,25 +67,44 @@ export function parseMemoryConfig(
 }
 
 export interface BuildStoreOptions {
-  /** Persist an in-process store here when ChromaDB is not configured. */
+  /** Persist an in-process store here when ChromaDB is not used / not reachable. */
   filePath?: string;
   env?: NodeJS.ProcessEnv;
+  /**
+   * When a ChromaDB URL is configured, connect eagerly and fall back to the
+   * file/in-memory store if it is unreachable or incompatible. Default `true`.
+   */
+  probeChroma?: boolean;
+}
+
+async function localStore(options: BuildStoreOptions): Promise<MemoryStore> {
+  return options.filePath ? FileMemoryStore.open(options.filePath) : new InMemoryMemoryStore();
 }
 
 /**
- * Pick a `MemoryStore` for `config`: ChromaDB when a URL is set, otherwise a
- * file-backed store (if `filePath` given) or a pure in-memory one.
+ * Pick a `MemoryStore` for `config`: ChromaDB when a URL is set and reachable,
+ * otherwise a file-backed store (if `filePath` given) or a pure in-memory one.
  */
 export async function buildMemoryStore(
   config: MemoryConfig,
   options: BuildStoreOptions = {},
 ): Promise<MemoryStore> {
   const url = options.env?.OSIRIS_CHROMA_URL ?? config.chroma.url;
-  if (url && /^https?:\/\//.test(url)) {
-    return new ChromaMemoryStore({ url, collection: config.chroma.collection });
+  if (!url || !/^https?:\/\//.test(url)) return localStore(options);
+
+  const chroma = new ChromaMemoryStore({ url, collection: config.chroma.collection });
+  if (options.probeChroma === false) return chroma;
+  try {
+    await chroma.ensureCollection(config.index.hnsw);
+    return chroma;
+  } catch (cause) {
+    log.warn(
+      'ChromaDB at %s unavailable (%s) — falling back to a local store',
+      url,
+      (cause as Error).message,
+    );
+    return localStore(options);
   }
-  if (options.filePath) return FileMemoryStore.open(options.filePath);
-  return new InMemoryMemoryStore();
 }
 
 export function buildEmbedding(config: MemoryConfig): EmbeddingFn {

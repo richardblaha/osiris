@@ -1,0 +1,38 @@
+# Osiris Server + ChromaDB. From the repo root:
+#   docker compose -f apps/osiris-server/docker-compose.yml up --build
+services:
+  osiris-server:
+    build:
+      context: ../..
+      dockerfile: apps/osiris-server/Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      OSIRIS_SERVER_TOKEN: ${OSIRIS_SERVER_TOKEN:-}
+      OSIRIS_PUBLIC_URL: ${OSIRIS_PUBLIC_URL:-http://localhost:8080}
+      OSIRIS_CHROMA_URL: http://chromadb:8000
+      OSIRIS_WORKSPACE_ROOT: /workspace
+      OSIRIS_CREW_PROVIDER: ${OSIRIS_CREW_PROVIDER:-echo}
+    volumes:
+      - osiris-state:/data
+      # The project whose backlog / memory / crew the console API drives. Defaults
+      # to a scratch volume; point it at a real checkout with
+      #   OSIRIS_WORKSPACE=/abs/path/to/project docker compose … up
+      - ${OSIRIS_WORKSPACE:-osiris-workspace}:/workspace
+    depends_on:
+      - chromadb
+
+  chromadb:
+    image: chromadb/chroma:1.0.15
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - osiris-chroma:/chroma/chroma
+    ports:
+      - "8000:8000"
+
+volumes:
+  osiris-state:
+  osiris-chroma:
+  osiris-workspace:

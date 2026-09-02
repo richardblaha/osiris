@@ -1,0 +1,22 @@
+**/node_modules
+**/dist
+**/out
+**/lib
+**/.turbo
+**/coverage
+**/*.tsbuildinfo
+
+# Upstream shell build sandboxes — multi-GB, never needed in an image
+.build
+apps/*/.build
+
+.git
+*.vsix
+release
+apps/osiris-desktop/dist_electron
+packages/branding/assets/generated
+
+**/.DS_Store
+*.log
+.env
+.env.local
