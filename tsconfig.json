@@ -5,6 +5,7 @@
     { "path": "packages/shared-core" },
     { "path": "packages/protocol" },
     { "path": "packages/dot-osiris" },
+    { "path": "packages/memory" },
     { "path": "packages/telemetry" },
     { "path": "packages/orchestrator" },
     { "path": "packages/agent-core" },
