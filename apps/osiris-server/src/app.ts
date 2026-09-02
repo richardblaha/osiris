@@ -26,6 +26,8 @@ import {
 import { formatSseEvent } from './sse.js';
 import { leaseExpiresAt } from './lease.js';
 import { registerGitHosting } from './git.js';
+import { registerConsoleRoutes, type ConsoleDeps } from './routes/console.js';
+import { registerSpa } from './spa.js';
 
 const log = createLogger('server');
 
@@ -42,6 +44,10 @@ export interface BuildServerOptions {
   registry?: { url: string; repository: string; token: string };
   /** Enable smart-HTTP Git hosting under `/git/` from this directory of bare repos. */
   gitReposDir?: string;
+  /** Mount the crew / backlog / memory console API under `/api/v1`. */
+  console?: ConsoleDeps;
+  /** Serve the Osiris console SPA (its built `dist/`) at `/`. */
+  spaDir?: string;
 }
 
 function ifMatch(raw: string | string[] | undefined): string | undefined {
@@ -102,6 +108,14 @@ export function buildServer(options: BuildServerOptions): FastifyInstance {
 
   if (options.gitReposDir) {
     registerGitHosting(app, { reposDir: options.gitReposDir, token: options.token });
+  }
+
+  if (options.console) {
+    registerConsoleRoutes(app, options.console);
+  }
+
+  if (options.spaDir) {
+    void registerSpa(app, options.spaDir);
   }
 
   app.post(`${API_BASE}/sessions`, async (request, reply) => {

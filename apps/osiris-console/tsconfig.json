@@ -1,0 +1,11 @@
+{
+  "extends": "@osiris/tsconfig/react.json",
+  "compilerOptions": {
+    "types": ["vite/client"],
+    "noEmit": true,
+    "declarationMap": false,
+    "sourceMap": false,
+    "incremental": false
+  },
+  "include": ["src/**/*", "vite.config.ts"]
+}

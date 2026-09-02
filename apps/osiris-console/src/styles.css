@@ -1,0 +1,152 @@
+:root {
+  --bg: #121212;
+  --surface: #1c1c1e;
+  --surface-2: #252528;
+  --border: #333;
+  --text: #e6e6e6;
+  --muted: #9a9a9a;
+  --accent: #e0a83d;
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 14px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+header h1 {
+  font-size: 16px;
+  margin: 0;
+  letter-spacing: 0.02em;
+}
+
+nav button {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  padding: 4px 8px;
+}
+
+nav button[data-active='true'] {
+  color: var(--text);
+  border-bottom: 2px solid var(--accent);
+}
+
+main {
+  padding: 20px;
+}
+
+.board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 1fr);
+  gap: 14px;
+  align-items: start;
+  overflow-x: auto;
+}
+
+.column {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.column h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 4px 4px 10px;
+}
+
+.card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  cursor: grab;
+}
+
+.card:active {
+  cursor: grabbing;
+}
+
+.card .type {
+  font-size: 11px;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.column.drop-target {
+  border-color: var(--accent);
+}
+
+input,
+textarea,
+select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  padding: 6px 8px;
+}
+
+button.primary {
+  background: var(--accent);
+  border: none;
+  border-radius: 6px;
+  color: #1a1a1a;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  padding: 6px 12px;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 14px;
+}
+
+pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}
+
+.agent,
+.hit {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: var(--surface);
+}
+
+.muted {
+  color: var(--muted);
+}

@@ -23,7 +23,12 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@fastify/static": "^8.0.3",
+    "@osiris/backlog": "workspace:*",
     "@osiris/container-sync": "workspace:*",
+    "@osiris/crew": "workspace:*",
+    "@osiris/dot-osiris": "workspace:*",
+    "@osiris/memory": "workspace:*",
     "@osiris/protocol": "workspace:*",
     "@osiris/shared-core": "workspace:*",
     "@osiris/telemetry": "workspace:*",

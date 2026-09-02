@@ -1,12 +1,19 @@
 #!/usr/bin/env node
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { startTelemetry } from '@osiris/telemetry';
 import { createLogger } from '@osiris/shared-core';
 import { buildServer } from './app.js';
 import { FileSessionStore } from './session-store.js';
 import { FileVolumeStore } from './executors.js';
+import { createWorkspaceConsoleDeps, resolveWorkspaceRoot } from './console-workspace.js';
 
 const log = createLogger('server');
+
+function firstExisting(paths: string[]): string | undefined {
+  return paths.find((p) => existsSync(p));
+}
 
 async function main(): Promise<void> {
   const telemetry = await startTelemetry({
@@ -30,11 +37,26 @@ async function main(): Promise<void> {
     log.warn('OSIRIS_STATE_DIR is unset — session state is in-memory and lost on restart');
   }
 
+  const workspaceRoot = resolveWorkspaceRoot();
+  const consoleEnabled =
+    process.env.OSIRIS_CONSOLE !== '0' &&
+    (process.env.OSIRIS_WORKSPACE_ROOT !== undefined || existsSync(join(workspaceRoot, '.osiris')));
+  if (consoleEnabled) {
+    log.info('console API enabled for workspace %s', workspaceRoot);
+  }
+
   const app = buildServer({
     token,
     publicBaseUrl,
     leaseSweepMs: 30_000,
     gitReposDir: process.env.OSIRIS_GIT_REPOS_DIR,
+    console: consoleEnabled ? createWorkspaceConsoleDeps(workspaceRoot) : undefined,
+    spaDir:
+      process.env.OSIRIS_CONSOLE_SPA_DIR ??
+      firstExisting([
+        fileURLToPath(new URL('../public/', import.meta.url)),
+        fileURLToPath(new URL('../../osiris-console/dist/', import.meta.url)),
+      ]),
     store: stateDir ? new FileSessionStore(join(stateDir, 'sessions')) : undefined,
     volumes: stateDir ? new FileVolumeStore(join(stateDir, 'volumes')) : undefined,
     registry: process.env.OSIRIS_REGISTRY

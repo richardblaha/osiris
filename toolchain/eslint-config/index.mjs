@@ -55,7 +55,7 @@ export default [
     },
   },
   {
-    files: ['**/webview/**', '**/media/**'],
+    files: ['**/webview/**', '**/media/**', 'apps/osiris-console/src/**', 'apps/osiris-console/*.ts'],
     languageOptions: {
       globals: {
         ...globals.browser,
