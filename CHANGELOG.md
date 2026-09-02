@@ -6,6 +6,17 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
 
+## [0.1.0-alpha.2] - 2026-09-03
+
+### CI / Release
+
+- `release.yml` is now the single tag-driven entrypoint: it packs the extensions
+  and calls `build-desktop.yml` / `build-web.yml` as reusable workflows, then
+  attaches every `.vsix`, the desktop installers and the `vscode-reh-web-*`
+  bundle to the draft GitHub Release — publishing is one click.
+- `build-desktop.yml` / `build-web.yml` lose their standalone `v*` tag trigger
+  (kept `workflow_dispatch`, added `workflow_call`).
+
 ## [0.1.0-alpha.1] - 2026-09-03
 
 First tagged pre-release of the 0.1.0 line. Cuts installers, the web server
@@ -56,4 +67,5 @@ bundle and the packed extensions from a single `v*` tag.
 - `release.yml` cuts a GitHub Release from a `v*` tag; `build-desktop.yml` and
   `build-web.yml` attach the installers and the web bundle for the same tag.
 
+[0.1.0-alpha.2]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.2
 [0.1.0-alpha.1]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.1
