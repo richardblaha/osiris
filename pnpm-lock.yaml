@@ -303,6 +303,9 @@ importers:
       '@osiris/container-sync':
         specifier: workspace:*
         version: link:../../packages/container-sync
+      '@osiris/lm-proxy':
+        specifier: workspace:*
+        version: link:../../packages/lm-proxy
       '@osiris/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol

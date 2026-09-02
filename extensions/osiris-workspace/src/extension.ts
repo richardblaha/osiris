@@ -4,12 +4,19 @@ import { resolve as resolvePath } from 'node:path';
 import * as vscode from 'vscode';
 import { createLogger } from '@osiris/shared-core';
 import { HandoverClient } from '@osiris/protocol';
-import { OSIRIS_AUTHORITY, buildFolderUri, isOsirisRemote, parseAuthorityHash } from './authority.js';
+import {
+  OSIRIS_AUTHORITY,
+  buildFolderUri,
+  isOsirisRemote,
+  parseAuthorityHash,
+} from './authority.js';
 import { resolveDevContainerEndpoint } from './resolver.js';
 import { resolveServerConfig } from './server-config.js';
 import { upDevContainer } from './devcontainer-cli.js';
 import { RecentProjectsStore } from './recent-projects.js';
 import { showStartView } from './start-view.js';
+import { ensureLmProxy, lmProxyRemoteEnv } from './lm-proxy-host.js';
+import { createVscodeLmBridge, hasLanguageModelApi } from './lm-bridge.js';
 
 const log = createLogger('workspace');
 
@@ -51,7 +58,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(status);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('osiris.openFolder', () => openFolderInDevContainer(context, recent)),
+    vscode.commands.registerCommand('osiris.openFolder', () =>
+      openFolderInDevContainer(context, recent),
+    ),
     vscode.commands.registerCommand('osiris.showStart', () =>
       showStartView(context, {
         recent,
@@ -65,6 +74,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       transferSession('to-local'),
     ),
     vscode.commands.registerCommand('osiris.agent.setApiKey', () => setAgentApiKey(context)),
+    vscode.commands.registerCommand('osiris.lm.status', () => showLmStatus(context)),
   );
 
   // The local (ui) extension host owns Docker-side work — a container window
@@ -145,7 +155,8 @@ function updateStatus(item: vscode.StatusBarItem, location: Location): void {
     server: '$(cloud) Osiris: Server',
   };
   item.text = label[location];
-  item.command = location === 'server' ? 'osiris.workspace.fetchToLocal' : 'osiris.workspace.handoverToServer';
+  item.command =
+    location === 'server' ? 'osiris.workspace.fetchToLocal' : 'osiris.workspace.handoverToServer';
   item.tooltip = 'Osiris session location — click to move it';
   item.show();
 }
@@ -214,7 +225,8 @@ async function ensureDevContainerLocally(
 ): Promise<{ hash: string; containerId: string }> {
   const serverPort = payload.serverPort ?? config().get<number>('devcontainer.serverPort', 8000);
   const hash = localHash(payload.hostPath);
-  const remoteEnv = await collectAgentSecrets(context);
+  const proxy = await ensureLmProxy(context);
+  const remoteEnv = { ...(await collectAgentSecrets(context)), ...lmProxyRemoteEnv(proxy) };
 
   const result = await vscode.window.withProgress(
     { location: vscode.ProgressLocation.Notification, title: 'Osiris: preparing DevContainer' },
@@ -227,7 +239,12 @@ async function ensureDevContainerLocally(
         webIdeFeatureRef: config().get<string>('devcontainer.webIdeFeature') || undefined,
       }),
   );
-  await recent.remember({ hostPath: payload.hostPath, name: basename(payload.hostPath), hash, serverPort });
+  await recent.remember({
+    hostPath: payload.hostPath,
+    name: basename(payload.hostPath),
+    hash,
+    serverPort,
+  });
   log.info('devcontainer %s ready (%s)', hash, result.containerId.slice(0, 12));
   return { hash, containerId: result.containerId };
 }
@@ -246,6 +263,25 @@ async function collectAgentSecrets(
     log.info('injecting %d agent secret(s) into the container', Object.keys(out).length);
   }
   return out;
+}
+
+/** Show which editor language models the crew can use, and the proxy state. */
+async function showLmStatus(context: vscode.ExtensionContext): Promise<void> {
+  if (!hasLanguageModelApi()) {
+    void vscode.window.showWarningMessage(
+      'Osiris: this editor has no Language Model API. Crew runs fall back to OSIRIS_CREW_PROVIDER (ollama/echo).',
+    );
+    return;
+  }
+  const models = await createVscodeLmBridge().listModels();
+  const proxy = await ensureLmProxy(context);
+  const lines = models.map(
+    (m) => `• ${m.id}${m.maxInputTokens ? ` (${m.maxInputTokens} tok)` : ''}`,
+  );
+  void vscode.window.showInformationMessage(
+    `Osiris LM: ${models.length} model(s) — ${lines.join(', ') || 'none'}. ` +
+      (proxy ? `Proxy for containers: ${proxy.containerUrl}` : 'Proxy not started.'),
+  );
 }
 
 async function setAgentApiKey(context: vscode.ExtensionContext): Promise<void> {
@@ -293,7 +329,11 @@ async function transferSession(direction: 'to-server' | 'to-local'): Promise<voi
   const hash = localHash(folder.uri.fsPath);
 
   await vscode.window.withProgress(
-    { location: vscode.ProgressLocation.Notification, title: `Osiris: ${direction}`, cancellable: false },
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Osiris: ${direction}`,
+      cancellable: false,
+    },
     async (progress) => {
       try {
         setLocationContext('in-transit');
@@ -308,10 +348,13 @@ async function transferSession(direction: 'to-server' | 'to-local'): Promise<voi
         if (direction === 'to-server') {
           const prep = await client.prepareHandover(session.sessionId);
           progress.report({ message: 'freezing and uploading…' });
-          const done = await tryExecuteCommand<{ webUrl: string }>('osiris.desktop.performHandover', {
-            sessionId: session.sessionId,
-            prepare: prep,
-          });
+          const done = await tryExecuteCommand<{ webUrl: string }>(
+            'osiris.desktop.performHandover',
+            {
+              sessionId: session.sessionId,
+              prepare: prep,
+            },
+          );
           if (done?.webUrl) {
             const open = await vscode.window.showInformationMessage(
               'Session is now running on the Osiris Server.',

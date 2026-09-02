@@ -44,6 +44,11 @@
         "command": "osiris.showStart",
         "title": "Osiris: Start Page",
         "category": "Osiris"
+      },
+      {
+        "command": "osiris.lm.status",
+        "title": "Osiris: Language Model Status",
+        "category": "Osiris"
       }
     ],
     "menus": {
@@ -78,8 +83,14 @@
         },
         "osiris.agent.secretEnvKeys": {
           "type": "array",
-          "items": { "type": "string" },
-          "default": ["OSIRIS_AI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "OSIRIS_AI_API_KEY",
+            "ANTHROPIC_API_KEY",
+            "OPENAI_API_KEY"
+          ],
           "description": "Environment variables holding agent API keys. Stored in the OS keychain and injected into the DevContainer."
         },
         "osiris.startup.restoreLast": {
@@ -116,6 +127,7 @@
   },
   "dependencies": {
     "@osiris/container-sync": "workspace:*",
+    "@osiris/lm-proxy": "workspace:*",
     "@osiris/protocol": "workspace:*",
     "@osiris/shared-core": "workspace:*"
   },

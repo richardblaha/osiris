@@ -81,7 +81,11 @@ export function resolveProvider(spec: string, options: ProviderResolutionOptions
     const proxyUrl = declared.endpoint ?? env.OSIRIS_LM_PROXY_URL;
     if (proxyUrl) {
       log.info('"%s" via the VS Code LM proxy at %s', spec, proxyUrl);
-      return new OpenAiCompatibleAdapter({ endpoint: proxyUrl, model });
+      return new OpenAiCompatibleAdapter({
+        endpoint: proxyUrl,
+        model,
+        apiKey: env.OSIRIS_LM_PROXY_TOKEN,
+      });
     }
     // 3. Headless fallback (CLI/CI with no editor at all).
     const fallback = options.headlessFallback ?? { kind: 'echo' };

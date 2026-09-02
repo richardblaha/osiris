@@ -59,10 +59,20 @@ const CHUNK = (delta: unknown, finish: string | null = null): unknown => ({
  *
  * Routes: `GET /v1/models`, `POST /v1/chat/completions` (stream + non-stream).
  */
-export function createLmProxyHandler(bridge: LmModelBridge) {
+export interface LmProxyOptions {
+  /** When set, requests must send `Authorization: Bearer <token>`. */
+  token?: string;
+}
+
+export function createLmProxyHandler(bridge: LmModelBridge, options: LmProxyOptions = {}) {
   return async (req: IncomingMessage, res: ServerResponse): Promise<void> => {
     const url = (req.url ?? '').split('?')[0];
     try {
+      if (options.token && req.headers.authorization !== `Bearer ${options.token}`) {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: 'unauthorized' }));
+        return;
+      }
       if (req.method === 'GET' && (url === '/v1/models' || url === '/models')) {
         const models = await bridge.listModels();
         res.writeHead(200, { 'content-type': 'application/json' });

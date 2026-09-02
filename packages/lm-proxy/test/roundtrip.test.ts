@@ -34,7 +34,7 @@ function fakeBridge(): LmModelBridge {
 
 let proxy: Awaited<ReturnType<typeof startLmProxy>>;
 beforeEach(async () => {
-  proxy = await startLmProxy(fakeBridge(), 0);
+  proxy = await startLmProxy(fakeBridge());
 });
 afterEach(async () => {
   await proxy.close();
@@ -54,6 +54,19 @@ describe('LM proxy ⇄ OpenAiCompatibleAdapter', () => {
     const result = await agent.run({ prompt: 'hello world' });
     expect(result.finishReason).toBe('stop');
     expect(result.text).toContain('reply: hello world');
+  });
+
+  it('rejects a request without the bearer token when one is set', async () => {
+    const secured = await startLmProxy(fakeBridge(), { token: 'sekret' });
+    try {
+      expect((await fetch(`${secured.origin}/v1/models`)).status).toBe(401);
+      const ok = await fetch(`${secured.origin}/v1/models`, {
+        headers: { authorization: 'Bearer sekret' },
+      });
+      expect(ok.status).toBe(200);
+    } finally {
+      await secured.close();
+    }
   });
 
   it('round-trips a tool call through the proxy', async () => {
