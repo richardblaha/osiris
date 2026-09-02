@@ -113,6 +113,7 @@ osiris backlog push / pull        # sync osiris/backlog with a git remote (OSIRI
 osiris backlog lint               # static-check every task file
 osiris serve                      # REST API + Kanban console at http://localhost:8080
                                   # or: docker compose -f apps/osiris-server/docker-compose.yml up --build
+osiris doctor                     # health-check: git repo, .osiris/, agents, ChromaDB, MCP, backlog
 osiris repl                       # interactive REPL with crew/backlog/memory in scope
 ```
 
