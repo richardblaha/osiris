@@ -17,8 +17,10 @@ asset pipeline the two app builds pull from.
   `osiris-icon.svg` (sharp / png-to-ico / @fiahfy/icns). `pnpm --filter
   @osiris/branding render:icons`.
 - **`scripts/apply-to-checkout.mjs`** — `copyBrandingIntoCheckout(dir, { kind })`:
-  copies icons + font into a cloned upstream tree and appends the Fira Code
-  `@font-face`. Imported by both apps' `apply-branding.mjs`.
+  copies icons + font into a cloned upstream tree, appends the Fira Code
+  `@font-face`, and renames the workspace config folder `.vscode` → `.osiris`
+  (`rewriteConfigFolder`, tolerant regex over a curated file list). Imported by
+  both apps' `apply-branding.mjs`.
 - **`src/metadata.ts`** — the single source of truth for product identity, colours
   and links, consumed by the apps and mirrored to `assets/metadata.json`.
 

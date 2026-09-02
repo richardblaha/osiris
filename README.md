@@ -77,9 +77,11 @@ pnpm --filter osiris-dexpi test
 pnpm --filter osiris-dexpi package     # produces osiris-dexpi-*.vsix
 ```
 
-Press <kbd>F5</kbd> in VS Code with one of the committed launch profiles in
-[`.vscode/launch.json`](.vscode/launch.json) to run an extension in an Extension
+Press <kbd>F5</kbd> with one of the committed launch profiles in
+[`.osiris/launch.json`](.osiris/launch.json) to run an extension in an Extension
 Development Host against the fixtures in each extension's `test/fixtures/`.
+(Osiris reads the workspace config folder as `.osiris/`; `.vscode` is a symlink so
+stock VS Code / Cursor still work.)
 
 ### Building the desktop app
 

@@ -8,7 +8,7 @@
  * assets/osiris-icon.svg; the Fira Code face is copied in (with an @font-face
  * appended to the workbench stylesheet) so a fresh install needs no system font.
  */
-import { cp, mkdir, copyFile, readFile, appendFile } from 'node:fs/promises';
+import { cp, mkdir, copyFile, readFile, writeFile, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +53,48 @@ async function ensureIcons() {
     await renderIcons();
   }
   return generatedDir;
+}
+
+/**
+ * Rename the per-workspace configuration folder `.vscode` → `.osiris` in the
+ * upstream source, so an Osiris build reads `.osiris/{settings,tasks,launch,
+ * extensions}.json`. Each target is a file where the literal `.vscode` only ever
+ * names that folder; `\.vscode` not followed by `-` or a word char leaves
+ * `.vscode-remote` / `vscode-userdata` untouched. Tolerant — a file that has
+ * moved upstream is logged and skipped.
+ */
+const CONFIG_FOLDER_FILES = [
+  'src/vs/workbench/services/configuration/common/configuration.ts',
+  'src/vs/workbench/contrib/tasks/browser/abstractTaskService.ts',
+  'src/vs/workbench/contrib/tasks/common/taskService.ts',
+  'src/vs/workbench/contrib/debug/browser/debugConfigurationManager.ts',
+  'src/vs/workbench/services/extensionRecommendations/common/workspaceExtensionsConfig.ts',
+];
+
+/** Pure: `.vscode` → `.osiris`, leaving `.vscode-remote` / `vscode-userdata` alone. */
+export function rewriteConfigFolder(source) {
+  return source.replace(/\.vscode(?![\w-])/g, '.osiris');
+}
+
+async function renameWorkspaceConfigFolder(checkoutDir) {
+  let touched = 0;
+  for (const rel of CONFIG_FOLDER_FILES) {
+    const file = path.join(checkoutDir, rel);
+    if (!existsSync(file)) {
+      console.warn(`[branding] config-folder rename: ${rel} not found (upstream moved it?) — skipped`);
+      continue;
+    }
+    const before = await readFile(file, 'utf8');
+    const after = rewriteConfigFolder(before);
+    if (after !== before) {
+      await writeFile(file, after);
+      touched++;
+      console.log(`[branding] config-folder rename: .vscode → .osiris in ${path.basename(rel)}`);
+    }
+  }
+  if (touched === 0) {
+    console.warn('[branding] config-folder rename: nothing changed — verify the workspace config folder manually');
+  }
 }
 
 async function place(from, to, label) {
@@ -107,6 +149,7 @@ export async function copyBrandingIntoCheckout(checkoutDir, { kind }) {
     'font license',
   );
   await registerFontFace(checkoutDir);
+  await renameWorkspaceConfigFolder(checkoutDir);
 
   return { icons };
 }
