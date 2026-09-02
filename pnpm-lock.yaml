@@ -451,6 +451,9 @@ importers:
       '@osiris/dot-osiris':
         specifier: workspace:*
         version: link:../dot-osiris
+      '@osiris/mcp':
+        specifier: workspace:*
+        version: link:../mcp
       '@osiris/memory':
         specifier: workspace:*
         version: link:../memory

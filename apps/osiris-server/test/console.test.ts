@@ -53,7 +53,13 @@ function fakeBacklog(): BacklogApi {
       return task;
     },
     async history() {
-      return [{ hash: 'abc', date: '2026-09-02', subject: 'add: [bug]-0001' }];
+      return [{ hash: 'abcdef0', date: '2026-09-02', subject: 'add: [bug]-0001' }];
+    },
+    async push() {
+      return { ok: true, message: 'pushed' };
+    },
+    async pull() {
+      return { ok: false, diverged: true, message: 'diverged' };
     },
   };
 }
@@ -137,6 +143,24 @@ describe('backlog routes', () => {
   it('400s an invalid move target and a bad body', async () => {
     expect((await post('/api/v1/backlog/tasks/1/move', { toState: 'nope' })).statusCode).toBe(400);
     expect((await post('/api/v1/backlog/tasks', { title: 'no type' })).statusCode).toBe(400);
+  });
+
+  it('serves task history and backlog push/pull', async () => {
+    const history = await get('/api/v1/backlog/tasks/1/history');
+    expect((history.json() as { subject: string }[])[0]!.subject).toContain('[bug]-0001');
+
+    expect(
+      (await post('/api/v1/backlog/push', {}).then((r) => r.json())) as { ok: boolean },
+    ).toMatchObject({
+      ok: true,
+      message: 'pushed',
+    });
+    expect(
+      (await post('/api/v1/backlog/pull', {}).then((r) => r.json())) as { diverged: boolean },
+    ).toMatchObject({
+      ok: false,
+      diverged: true,
+    });
   });
 });
 

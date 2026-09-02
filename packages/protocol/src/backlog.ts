@@ -52,6 +52,20 @@ export const CreateTaskRequest = z.object({
 });
 export type CreateTaskRequest = z.infer<typeof CreateTaskRequest>;
 
+export const TaskHistoryEntry = z.object({
+  hash: z.string(),
+  date: z.string(),
+  subject: z.string(),
+});
+export type TaskHistoryEntry = z.infer<typeof TaskHistoryEntry>;
+
+export const BacklogSyncResult = z.object({
+  ok: z.boolean(),
+  diverged: z.boolean().optional(),
+  message: z.string(),
+});
+export type BacklogSyncResult = z.infer<typeof BacklogSyncResult>;
+
 export const MoveTaskRequest = z.object({
   toState: z.string().min(1),
 });

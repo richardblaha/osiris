@@ -2,7 +2,14 @@
  * A thin typed client for the Osiris console API (backlog / crew / memory).
  * Pure `fetch` + zod, no framework — used by the SPA, the CLI and tests.
  */
-import { BacklogBoard, BacklogTask, CreateTaskRequest, MoveTaskRequest } from './backlog.js';
+import {
+  BacklogBoard,
+  BacklogSyncResult,
+  BacklogTask,
+  CreateTaskRequest,
+  MoveTaskRequest,
+  TaskHistoryEntry,
+} from './backlog.js';
 import { AgentDefinition, CrewEvent, CrewRunRequest, CrewRunResult } from './crew.js';
 import { MemoryReindexResult, MemorySearchRequest, MemorySearchResult } from './memory.js';
 import { routes } from './routes.js';
@@ -97,6 +104,23 @@ export class ConsoleClient {
       body: JSON.stringify(MoveTaskRequest.parse({ toState })),
     });
     return BacklogTask.parse(await res.json());
+  }
+
+  async taskHistory(id: number): Promise<TaskHistoryEntry[]> {
+    const res = await this.send(routes.backlogTaskHistory(id));
+    return TaskHistoryEntry.array().parse(await res.json());
+  }
+
+  async pushBacklog(): Promise<BacklogSyncResult> {
+    return BacklogSyncResult.parse(
+      await (await this.send(routes.backlogPush(), { method: 'POST' })).json(),
+    );
+  }
+
+  async pullBacklog(): Promise<BacklogSyncResult> {
+    return BacklogSyncResult.parse(
+      await (await this.send(routes.backlogPull(), { method: 'POST' })).json(),
+    );
   }
 
   // ---- crew --------------------------------------------------------

@@ -24,6 +24,8 @@ export interface BacklogApi {
   create(input: CreateTaskRequest): Promise<unknown>;
   move(id: number, toState: string): Promise<unknown>;
   history(id: number): Promise<unknown[]>;
+  push?(): Promise<{ ok: boolean; diverged?: boolean; message: string }>;
+  pull?(): Promise<{ ok: boolean; diverged?: boolean; message: string }>;
 }
 
 export interface ConsoleDeps {
@@ -117,6 +119,15 @@ export function registerConsoleRoutes(app: FastifyInstance, deps: ConsoleDeps): 
       return reply.code(400).send({ error: (cause as Error).message });
     }
   });
+
+  for (const dir of ['push', 'pull'] as const) {
+    app.post(`${API_BASE}/backlog/${dir}`, async (_request, reply) => {
+      const backlog = await deps.getBacklog();
+      const fn = backlog[dir];
+      if (!fn) return reply.code(501).send({ ok: false, message: `${dir} not supported here` });
+      return fn.call(backlog);
+    });
+  }
 
   // ---- crew -----------------------------------------------------------
   app.get(`${API_BASE}/crew/agents`, async () => deps.listAgents());

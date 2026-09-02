@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { initWorkspace } from '@osiris/dot-osiris';
 import { WorkspaceServices } from './workspace.js';
+import { runDoctor } from './doctor.js';
 
 export interface CliIo {
   cwd: string;
@@ -24,8 +25,11 @@ Usage:
   osiris backlog push | pull           sync the orphan branch with its git remote
   osiris backlog lint                  static-check every task file
   osiris serve [--port N]              run osiris-server against this workspace
+  osiris doctor                        health-check the workspace's Osiris setup
   osiris repl                          interactive REPL with crew/backlog/memory
 `;
+
+const MARK: Record<string, string> = { ok: '✓', warn: '⚠', fail: '✗' };
 
 interface Flags {
   positionals: string[];
@@ -179,6 +183,14 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           },
         });
         return new Promise<number>((resolve) => child.on('exit', (code) => resolve(code ?? 0)));
+      }
+
+      case 'doctor': {
+        const checks = await runDoctor(io.cwd, env);
+        for (const c of checks) io.out(`${MARK[c.level]} ${c.name.padEnd(18)} ${c.detail}\n`);
+        const fails = checks.filter((c) => c.level === 'fail').length;
+        io.out(`\n${checks.length} checks, ${fails} failing\n`);
+        return fails ? 1 : 0;
       }
 
       case 'repl': {

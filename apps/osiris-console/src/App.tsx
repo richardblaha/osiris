@@ -1,5 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AgentDefinition, BacklogBoard, CrewEvent, CrewRunResult } from '@osiris/protocol';
+import type {
+  AgentDefinition,
+  BacklogBoard,
+  BacklogTask,
+  CrewEvent,
+  CrewRunResult,
+  TaskHistoryEntry,
+} from '@osiris/protocol';
 import { client } from './api.js';
 
 type Tab = 'board' | 'crew' | 'memory';
@@ -34,6 +41,8 @@ function Board(): JSX.Element {
   const [dropCol, setDropCol] = useState<string | null>(null);
   const [type, setType] = useState('feat');
   const [title, setTitle] = useState('');
+  const [open, setOpen] = useState<BacklogTask | null>(null);
+  const [sync, setSync] = useState<string>();
 
   const refresh = useCallback(() => {
     client
@@ -61,6 +70,18 @@ function Board(): JSX.Element {
     refresh();
   };
 
+  const doSync = async (): Promise<void> => {
+    setSync('syncing…');
+    try {
+      const pull = await client.pullBacklog();
+      const push = await client.pushBacklog();
+      setSync(`pull: ${pull.message} · push: ${push.message}`);
+      refresh();
+    } catch (e) {
+      setSync(`error: ${(e as Error).message}`);
+    }
+  };
+
   if (error) return <p className="muted">Backlog unavailable: {error}</p>;
   if (!board) return <p className="muted">Loading…</p>;
 
@@ -82,7 +103,9 @@ function Board(): JSX.Element {
         <button className="primary" onClick={() => void create()}>
           Add
         </button>
+        <button onClick={() => void doSync()}>Sync</button>
         <span className="muted">branch: {board.branch}</span>
+        {sync && <span className="muted">· {sync}</span>}
       </div>
       <div className="board">
         {board.states.map((state) => (
@@ -102,7 +125,13 @@ function Board(): JSX.Element {
             {board.tasks
               .filter((t) => t.state === state)
               .map((t) => (
-                <div key={t.id} className="card" draggable onDragStart={() => setDrag(t.id)}>
+                <div
+                  key={t.id}
+                  className="card"
+                  draggable
+                  onDragStart={() => setDrag(t.id)}
+                  onClick={() => setOpen(t)}
+                >
                   <div className="type">
                     {t.type} · #{t.id}
                   </div>
@@ -112,7 +141,78 @@ function Board(): JSX.Element {
           </div>
         ))}
       </div>
+      {open && (
+        <TaskDrawer
+          task={open}
+          states={board.states}
+          onClose={() => setOpen(null)}
+          onChange={refresh}
+        />
+      )}
     </>
+  );
+}
+
+function TaskDrawer(props: {
+  task: BacklogTask;
+  states: string[];
+  onClose: () => void;
+  onChange: () => void;
+}): JSX.Element {
+  const { task } = props;
+  const [history, setHistory] = useState<TaskHistoryEntry[]>([]);
+
+  useEffect(() => {
+    client
+      .taskHistory(task.id)
+      .then(setHistory)
+      .catch(() => setHistory([]));
+  }, [task.id]);
+
+  return (
+    <div className="drawer-backdrop" onClick={props.onClose}>
+      <aside className="drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="row">
+          <strong>
+            [{task.type}] #{task.id}
+          </strong>
+          <button onClick={props.onClose} style={{ marginLeft: 'auto' }}>
+            ✕
+          </button>
+        </div>
+        <h3>{task.title}</h3>
+        <div className="row">
+          <span className="muted">move to:</span>
+          {props.states
+            .filter((s) => s !== task.state)
+            .map((s) => (
+              <button
+                key={s}
+                onClick={() =>
+                  void client.moveTask(task.id, s).then(() => {
+                    props.onChange();
+                    props.onClose();
+                  })
+                }
+              >
+                {s}
+              </button>
+            ))}
+        </div>
+        {task.labels.length > 0 && <p className="muted">labels: {task.labels.join(', ')}</p>}
+        <pre>{task.body || '(no description)'}</pre>
+        <h2 className="muted">History</h2>
+        {history.length === 0 && <p className="muted">no commits yet</p>}
+        {history.map((h) => (
+          <div key={h.hash} className="hit">
+            <span className="muted">
+              {h.date} · {h.hash.slice(0, 7)}
+            </span>{' '}
+            {h.subject}
+          </div>
+        ))}
+      </aside>
+    </div>
   );
 }
 

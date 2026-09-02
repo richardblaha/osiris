@@ -31,6 +31,7 @@
     "@osiris/backlog": "workspace:*",
     "@osiris/crew": "workspace:*",
     "@osiris/dot-osiris": "workspace:*",
+    "@osiris/mcp": "workspace:*",
     "@osiris/memory": "workspace:*",
     "@osiris/protocol": "workspace:*",
     "@osiris/server": "workspace:*",
