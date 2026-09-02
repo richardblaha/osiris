@@ -230,3 +230,17 @@ turns them into `@osiris/agent-core` tools. `loadCrewSession()` wires it: it
 starts the pool only when an agent opts in (`tools: [..., mcp]` / `mcp:<id>`) or
 `mcp: true`, and returns `close()` to shut the servers down. Ships a
 `FakeMcpTransport` for tests.
+
+## Running the server
+
+`docker compose -f apps/osiris-server/docker-compose.yml up --build` brings up
+osiris-server + ChromaDB (`chromadb/chroma:1.0.15` — the npm client 3.x speaks the
+v2 API). The image is a `pnpm deploy` of `@osiris/server` on a slim node+git base;
+it serves the console SPA from `./public` and `git init`s a bind-mounted
+`/workspace` if needed. `@osiris/memory` `buildMemoryStore()` probes ChromaDB and
+falls back to a local file store when it is unreachable, so the API never 500s on
+a missing/incompatible ChromaDB.
+
+In the editor, `osiris.crew.run` and `osiris.crew.openConsole` (osiris-workspace)
+drive the server over the typed `ConsoleClient`, streaming events to an output
+channel.
