@@ -3,6 +3,7 @@ export * from './handover.js';
 export * from './events.js';
 export * from './routes.js';
 export * from './client.js';
+export * from './console-client.js';
 export * from './backlog.js';
 export * from './crew.js';
 export * from './memory.js';

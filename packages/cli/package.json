@@ -33,6 +33,7 @@
     "@osiris/dot-osiris": "workspace:*",
     "@osiris/memory": "workspace:*",
     "@osiris/protocol": "workspace:*",
+    "@osiris/server": "workspace:*",
     "@osiris/shared-core": "workspace:*"
   },
   "devDependencies": {

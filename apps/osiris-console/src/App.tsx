@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import type { AgentDefinition, BacklogBoard, CrewRunResult } from '@osiris/protocol';
-import { api } from './api.js';
+import type { AgentDefinition, BacklogBoard, CrewEvent, CrewRunResult } from '@osiris/protocol';
+import { client } from './api.js';
 
 type Tab = 'board' | 'crew' | 'memory';
 
@@ -36,7 +36,7 @@ function Board(): JSX.Element {
   const [title, setTitle] = useState('');
 
   const refresh = useCallback(() => {
-    api
+    client
       .board()
       .then(setBoard)
       .catch((e: Error) => setError(e.message));
@@ -47,7 +47,7 @@ function Board(): JSX.Element {
     setDrag(null);
     setDropCol(null);
     try {
-      await api.moveTask(id, toState);
+      await client.moveTask(id, toState);
       refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -56,7 +56,7 @@ function Board(): JSX.Element {
 
   const create = async (): Promise<void> => {
     if (!title.trim()) return;
-    await api.createTask({ type, title: title.trim() });
+    await client.createTask({ type: type as 'feat', title: title.trim() });
     setTitle('');
     refresh();
   };
@@ -120,10 +120,11 @@ function Crew(): JSX.Element {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
   const [task, setTask] = useState('');
   const [result, setResult] = useState<CrewRunResult | null>(null);
+  const [feed, setFeed] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    api
+    client
       .agents()
       .then(setAgents)
       .catch(() => setAgents([]));
@@ -133,16 +134,14 @@ function Crew(): JSX.Element {
     if (!task.trim()) return;
     setRunning(true);
     setResult(null);
+    setFeed([]);
     try {
-      const { runId } = await api.startRun(task.trim());
-      for (let i = 0; i < 120; i++) {
-        await new Promise((r) => setTimeout(r, 1000));
-        const r = await api.run(runId);
-        if (!('status' in r)) {
-          setResult(r);
-          break;
-        }
+      for await (const e of client.run$({ task: task.trim() })) {
+        setFeed((f) => [...f, describe(e)]);
+        if (e.type === 'run.finish') setResult(e.result);
       }
+    } catch (err) {
+      setFeed((f) => [...f, `error: ${(err as Error).message}`]);
     } finally {
       setRunning(false);
     }
@@ -155,12 +154,14 @@ function Crew(): JSX.Element {
           placeholder="Task for the crew…"
           value={task}
           onChange={(e) => setTask(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && void run()}
           style={{ flex: 1, minWidth: 240 }}
         />
         <button className="primary" disabled={running} onClick={() => void run()}>
           {running ? 'Running…' : 'Run crew'}
         </button>
       </div>
+      {feed.length > 0 && <pre>{feed.join('\n')}</pre>}
       {result && (
         <>
           <p className="muted">
@@ -191,6 +192,25 @@ function Crew(): JSX.Element {
   );
 }
 
+function describe(e: CrewEvent): string {
+  switch (e.type) {
+    case 'agent.start':
+      return `▸ ${e.agent} (depth ${e.depth})`;
+    case 'delegate':
+      return `  ${e.from} → ${e.to}: ${e.brief}`;
+    case 'agent.tool':
+      return `    ${e.agent} · tool ${e.tool}`;
+    case 'blackboard':
+      return `  · [${e.entry.kind}] ${e.entry.agent}: ${e.entry.text.slice(0, 100)}`;
+    case 'agent.finish':
+      return `✓ ${e.agent}`;
+    case 'run.finish':
+      return `— ${e.result.finishReason}`;
+    default:
+      return '';
+  }
+}
+
 function Memory(): JSX.Element {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<{ document: string; source: string; score: number }[]>([]);
@@ -198,7 +218,7 @@ function Memory(): JSX.Element {
 
   const search = async (): Promise<void> => {
     if (!query.trim()) return;
-    const res = await api.search(query.trim());
+    const res = await client.search({ query: query.trim(), k: 6 });
     setHits(res.hits);
     setNote(res.hits.length === 0 ? 'No matches.' : undefined);
   };
@@ -216,7 +236,11 @@ function Memory(): JSX.Element {
         <button className="primary" onClick={() => void search()}>
           Search
         </button>
-        <button onClick={() => void api.reindex().then(() => setNote('Reindexed.'))}>
+        <button
+          onClick={() =>
+            void client.reindex().then((r) => setNote(`Reindexed — ${r.chunksUpserted} chunks.`))
+          }
+        >
           Reindex
         </button>
       </div>

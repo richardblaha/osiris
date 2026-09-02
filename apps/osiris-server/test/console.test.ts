@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import type { CrewEvent, CrewRunRequest } from '@osiris/protocol';
+import { ConsoleClient, type CrewEvent, type CrewRunRequest } from '@osiris/protocol';
 import { buildServer } from '../src/app.js';
 import type { BacklogApi, ConsoleDeps } from '../src/routes/console.js';
 
@@ -152,7 +152,47 @@ describe('crew routes', () => {
     expect((result.json() as { text: string }).text).toBe('done');
 
     const events = await get(`/api/v1/crew/runs/${runId}/events`);
-    expect(events.body).toContain('run.finish');
+    expect(events.body.indexOf('agent.start')).toBeGreaterThanOrEqual(0);
+    expect(events.body.indexOf('agent.start')).toBeLessThan(events.body.indexOf('run.finish'));
+  });
+
+  it('streams live events over SSE to a real ConsoleClient', async () => {
+    // A crew whose events trickle out with awaits, so the stream is genuinely live.
+    const live: ConsoleDeps = {
+      ...deps(),
+      runCrew: async (req, onEvent) => {
+        for (const agent of ['architect', 'implementer']) {
+          await new Promise((r) => setTimeout(r, 10));
+          onEvent({ type: 'agent.start', agent, depth: 0, brief: req.task });
+        }
+        const result = {
+          runId: 'r',
+          lead: 'architect',
+          task: req.task,
+          text: 'ok',
+          finishReason: 'stop' as const,
+          delegations: [],
+          blackboard: [],
+        };
+        onEvent({ type: 'run.finish', result });
+        return result;
+      },
+    };
+    const srv = buildServer({
+      token: '',
+      publicBaseUrl: 'http://x',
+      leaseSweepMs: 0,
+      console: live,
+    });
+    const address = await srv.listen({ port: 0, host: '127.0.0.1' });
+    try {
+      const client = new ConsoleClient({ baseUrl: address });
+      const seen: string[] = [];
+      for await (const e of client.run$({ task: 'go' })) seen.push(e.type);
+      expect(seen).toEqual(['agent.start', 'agent.start', 'run.finish']);
+    } finally {
+      await srv.close();
+    }
   });
 
   it('lists agents', async () => {

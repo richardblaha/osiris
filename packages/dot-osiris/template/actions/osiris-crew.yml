@@ -26,4 +26,4 @@ jobs:
           # Provide a model provider for headless runs (no editor LM API in CI).
           OSIRIS_CREW_PROVIDER: ${{ vars.OSIRIS_CREW_PROVIDER || 'echo' }}
           OSIRIS_AI_API_KEY: ${{ secrets.OSIRIS_AI_API_KEY }}
-        run: pnpm osiris crew run "${{ github.event.inputs.task }}"
+        run: pnpm exec osiris crew run "${{ github.event.inputs.task }}"
