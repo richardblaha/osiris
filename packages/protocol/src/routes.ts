@@ -19,6 +19,18 @@ export const routes = {
   fetchPrepare: (id: string) => `${API_BASE}/sessions/${id}/fetch/prepare`,
   fetchCommit: (id: string) => `${API_BASE}/sessions/${id}/fetch/commit`,
   fetchAbort: (id: string) => `${API_BASE}/sessions/${id}/fetch/abort`,
+
+  // Crew + backlog + memory (the Osiris console API).
+  backlog: () => `${API_BASE}/backlog`,
+  backlogTasks: () => `${API_BASE}/backlog/tasks`,
+  backlogTask: (id: number | string) => `${API_BASE}/backlog/tasks/${id}`,
+  backlogTaskMove: (id: number | string) => `${API_BASE}/backlog/tasks/${id}/move`,
+  crewAgents: () => `${API_BASE}/crew/agents`,
+  crewRuns: () => `${API_BASE}/crew/runs`,
+  crewRun: (id: string) => `${API_BASE}/crew/runs/${id}`,
+  crewRunEvents: (id: string) => `${API_BASE}/crew/runs/${id}/events`,
+  memorySearch: () => `${API_BASE}/memory/search`,
+  memoryReindex: () => `${API_BASE}/memory/reindex`,
 } as const;
 
 /** Header names the protocol relies on. */
