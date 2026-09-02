@@ -15,7 +15,7 @@ import {
   type MemoryConfig,
   type MemoryStore,
 } from '@osiris/memory';
-import { loadAgentRegistry, loadCrew } from '@osiris/crew';
+import { loadAgentRegistry, loadCrewSession } from '@osiris/crew';
 import type {
   CrewEvent,
   CrewRunRequest,
@@ -118,17 +118,22 @@ export function createWorkspaceConsoleDeps(
 
     async runCrew(req: CrewRunRequest, onEvent: (e: CrewEvent) => void): Promise<CrewRunResult> {
       const repo = await getBacklog();
-      const crew = await loadCrew({
+      const session = await loadCrewSession({
         paths,
         root: workspaceRoot,
         env,
+        mcp: env.OSIRIS_MCP === '1',
         headlessFallback: env.OSIRIS_CREW_PROVIDER
           ? { kind: env.OSIRIS_CREW_PROVIDER as 'echo', apiKeyEnv: 'OSIRIS_AI_API_KEY' }
           : { kind: 'echo' },
         memory: { search: (q, k, source) => doSearch({ query: q, k, source }) },
         backlog: { board: () => repo.board(), task: (id) => repo.get(id) },
       });
-      return crew.run(req.task, { lead: req.lead, onEvent });
+      try {
+        return await session.crew.run(req.task, { lead: req.lead, onEvent });
+      } finally {
+        await session.close();
+      }
     },
   };
 }

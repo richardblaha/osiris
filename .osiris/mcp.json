@@ -6,7 +6,7 @@
       "transport": "stdio",
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}"],
-      "enabled": true
+      "enabled": false
     }
   }
 }

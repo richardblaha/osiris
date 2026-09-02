@@ -47,6 +47,8 @@ osiris/
 │   ├── agent-core/       # Provider-agnostic single-agent loop + snapshot
 │   ├── dot-osiris/       # The .osiris/ layout resolver + bundled system template
 │   ├── memory/           # Knowledge base: chunking + incremental ChromaDB index
+│   ├── mcp/              # MCP client (stdio + HTTP) + crew tool adapter
+│   ├── lm-proxy/         # OpenAI-compatible shim over the editor Language Model API
 │   ├── crew/             # Multi-agent orchestration (coordinator + delegation)
 │   ├── backlog/          # File-based PM on a Git orphan branch
 │   └── cli/              # The `osiris` command + REPL
@@ -116,8 +118,13 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
   reaches it through the **LM proxy** (`@osiris/lm-proxy` — an OpenAI-compatible
   shim over `vscode.lm`, published as `OSIRIS_LM_PROXY_URL`). CLI/CI runs with no
   editor use a headless fallback (`OSIRIS_CREW_PROVIDER`, `OSIRIS_AI_API_KEY`).
-- **MCP** servers are taken from `.osiris/mcp.json` merged with the editor's
-  discovered set — Osiris manages no credentials of its own.
+- **MCP** servers are taken from `.osiris/mcp.json` (both the `servers` and the
+  VS Code `mcpServers` key; `${workspaceFolder}` / `${env:VAR}` are expanded).
+  An agent opts in with an `mcp` (all servers) or `mcp:<id>` selector in its
+  `tools:` list; `@osiris/mcp` starts them (stdio or Streamable HTTP), exposes
+  each tool as `<id>__<tool>`, and a server that won't start is skipped, not
+  fatal. `osiris crew run --mcp` / `OSIRIS_MCP=1` forces the pool even when no
+  agent asks. Osiris manages no credentials of its own.
 - **All tool execution** runs inside the `.devcontainer` (Node 22 + a ChromaDB
   service; see `.devcontainer/docker-compose.yml`).
 - **The backlog never touches source history** — it lives on the dedicated

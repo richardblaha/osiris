@@ -15,7 +15,7 @@ const USAGE = `osiris — multi-agent workspace CLI
 Usage:
   osiris init [--force]                 scaffold .osiris/ from the system template
   osiris agent list                    list the crew defined in .osiris/agents/
-  osiris crew run <task…> [--lead X]    run the crew on a task
+  osiris crew run <task…> [--lead X] [--mcp]   run the crew on a task (--mcp: start MCP servers)
   osiris memory reindex                (re)index .osiris/memory/ into the vector store
   osiris memory search <query…> [-k N]  search the knowledge base
   osiris backlog list                  show the board (orphan branch osiris/backlog)
@@ -84,7 +84,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       case 'crew': {
         if (sub !== 'run' || flags.positionals.length === 0) return usageError(io);
         const task = flags.positionals.join(' ');
-        const result = await services().runCrew(
+        const crewEnv = flags.values.mcp ? { ...env, OSIRIS_MCP: '1' } : env;
+        const result = await new WorkspaceServices(io.cwd, crewEnv).runCrew(
           task,
           flags.values.lead as string | undefined,
           (e) => {

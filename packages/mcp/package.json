@@ -1,8 +1,8 @@
 {
-  "name": "@osiris/crew",
+  "name": "@osiris/mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "Multi-agent orchestration for Osiris: agent definitions, a coordinator that delegates between specialists, a shared blackboard and bridge tools (memory, backlog).",
+  "description": "A small Model Context Protocol client (stdio + Streamable HTTP), .osiris/mcp.json loading, and an adapter that exposes MCP tools to the Osiris crew.",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -27,9 +27,6 @@
   "dependencies": {
     "@osiris/agent-core": "workspace:*",
     "@osiris/dot-osiris": "workspace:*",
-    "@osiris/mcp": "workspace:*",
-    "@osiris/memory": "workspace:*",
-    "@osiris/protocol": "workspace:*",
     "@osiris/shared-core": "workspace:*"
   },
   "devDependencies": {

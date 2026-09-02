@@ -3,7 +3,7 @@ name: researcher
 role: Research Engineer
 specialization: exploring the codebase and knowledge base, summarising prior art and options
 model: vscode-lm/claude-sonnet-5
-tools: [memory_search, read_file, backlog_read]
+tools: [memory_search, read_file, backlog_read, mcp]
 delegateTo: []
 temperature: 0.3
 ---

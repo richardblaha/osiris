@@ -16,7 +16,7 @@ import {
   type ReindexReport,
   type SearchResult,
 } from '@osiris/memory';
-import { loadAgentRegistry, loadCrew } from '@osiris/crew';
+import { loadAgentRegistry, loadCrewSession } from '@osiris/crew';
 import type { AgentDefinition, CrewEvent, CrewRunResult } from '@osiris/protocol';
 
 /** Everything the CLI needs from one workspace, opened lazily. */
@@ -93,10 +93,11 @@ export class WorkspaceServices {
     onEvent: (e: CrewEvent) => void,
   ): Promise<CrewRunResult> {
     const repo = await this.openBacklog();
-    const crew = await loadCrew({
+    const session = await loadCrewSession({
       paths: this.paths,
       root: this.root,
       env: this.env,
+      mcp: this.env.OSIRIS_MCP === '1',
       headlessFallback: this.env.OSIRIS_CREW_PROVIDER
         ? { kind: this.env.OSIRIS_CREW_PROVIDER as 'echo', apiKeyEnv: 'OSIRIS_AI_API_KEY' }
         : { kind: 'echo' },
@@ -111,6 +112,10 @@ export class WorkspaceServices {
       },
       backlog: { board: () => repo.board(), task: (id) => repo.get(id) },
     });
-    return crew.run(task, { lead, onEvent });
+    try {
+      return await session.crew.run(task, { lead, onEvent });
+    } finally {
+      await session.close();
+    }
   }
 }

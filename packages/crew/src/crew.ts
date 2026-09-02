@@ -22,6 +22,11 @@ export interface CrewOptions {
   resolveProvider: (spec: string) => ProviderAdapter;
   /** Project instructions (README) folded into every system prompt. */
   projectContext?: string;
+  /**
+   * Expand an agent's `tools:` list before toolbox lookup — e.g. turn an `mcp`
+   * or `mcp:<server>` selector into concrete MCP tool names. Identity by default.
+   */
+  expandToolNames?: (agentTools: string[]) => string[];
 }
 
 export interface CrewRunOptions {
@@ -82,7 +87,10 @@ export class Crew {
 
       const canDelegate = def.delegateTo.length > 0 && depth < policy.maxDepth;
       const tools: Tool[] = [];
-      for (const toolName of def.tools) {
+      const toolNames = this.options.expandToolNames
+        ? this.options.expandToolNames(def.tools)
+        : def.tools;
+      for (const toolName of toolNames) {
         const base = this.options.toolbox.get(toolName);
         if (base) tools.push(this.instrument(base, name, emit));
       }

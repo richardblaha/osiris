@@ -202,3 +202,13 @@ extension implements the bridge over `vscode.lm.selectChatModels()` and starts t
 proxy on loopback; `OSIRIS_LM_PROXY_URL` is injected into the Dev Container so a
 crew running there (`provider: vscode-lm`) still draws its models from the editor.
 `@osiris/agent-core`'s `OpenAiCompatibleAdapter` talks to it unchanged.
+
+## `@osiris/mcp` — Model Context Protocol
+
+A small MCP client used by the crew. `McpPool.start(specs)` starts every enabled
+server from `.osiris/mcp.json` (stdio via a child process, or Streamable HTTP),
+aggregates their tools under `<serverId>__<tool>`, and `mcpToolsForCrew(pool)`
+turns them into `@osiris/agent-core` tools. `loadCrewSession()` wires it: it
+starts the pool only when an agent opts in (`tools: [..., mcp]` / `mcp:<id>`) or
+`mcp: true`, and returns `close()` to shut the servers down. Ships a
+`FakeMcpTransport` for tests.
