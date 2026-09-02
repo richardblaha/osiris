@@ -115,7 +115,7 @@ export function buildServer(options: BuildServerOptions): FastifyInstance {
   }
 
   if (options.spaDir) {
-    void registerSpa(app, options.spaDir);
+    registerSpa(app, options.spaDir);
   }
 
   app.post(`${API_BASE}/sessions`, async (request, reply) => {

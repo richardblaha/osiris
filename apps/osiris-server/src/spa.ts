@@ -1,34 +1,56 @@
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
-import fastifyStatic from '@fastify/static';
-import type { FastifyInstance } from 'fastify';
+import { createReadStream, existsSync, statSync } from 'node:fs';
+import { extname, join, normalize, resolve } from 'node:path';
+import type { FastifyInstance, FastifyReply } from 'fastify';
 import { createLogger } from '@osiris/shared-core';
 
 const log = createLogger('server:spa');
 
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ico': 'image/x-icon',
+  '.map': 'application/json',
+};
+
 /**
  * Serve the Osiris console single-page app from its built `dist/` directory.
- * Unknown non-API GETs fall back to `index.html` so client-side routing works.
+ * A hand-rolled static handler (no plugin): map the request path to a file under
+ * `dir`, otherwise fall back to `index.html` so client-side routing works. Not
+ * for `/api/` or `/git/`.
  */
-export async function registerSpa(app: FastifyInstance, dir: string): Promise<void> {
-  const indexHtml = join(dir, 'index.html');
+export function registerSpa(app: FastifyInstance, dir: string): void {
+  const root = resolve(dir);
+  const indexHtml = join(root, 'index.html');
   if (!existsSync(indexHtml)) {
     log.warn('SPA dir %s has no index.html — not serving the console', dir);
     return;
   }
 
-  await app.register(fastifyStatic, { root: dir, prefix: '/', wildcard: false });
+  const send = (reply: FastifyReply, file: string): void => {
+    void reply
+      .type(MIME[extname(file).toLowerCase()] ?? 'application/octet-stream')
+      .send(createReadStream(file));
+  };
 
-  app.setNotFoundHandler((request, reply) => {
-    if (
-      request.method === 'GET' &&
-      !request.url.startsWith('/api/') &&
-      !request.url.startsWith('/git/')
-    ) {
-      return reply.type('text/html').sendFile('index.html');
+  app.get('/*', (request, reply) => {
+    const urlPath = decodeURIComponent(request.url.split('?')[0] ?? '/');
+    if (urlPath.startsWith('/api/') || urlPath.startsWith('/git/') || urlPath === '/healthz') {
+      return reply.callNotFound();
     }
-    return reply.code(404).send({ error: 'not found' });
+    const candidate = normalize(join(root, urlPath === '/' ? 'index.html' : urlPath));
+    if (candidate.startsWith(root) && existsSync(candidate) && statSync(candidate).isFile()) {
+      return send(reply, candidate);
+    }
+    return send(reply, indexHtml);
   });
 
-  log.info('serving the Osiris console from %s', dir);
+  log.info('serving the Osiris console from %s', root);
 }
