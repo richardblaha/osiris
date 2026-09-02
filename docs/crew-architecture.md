@@ -1,7 +1,25 @@
 # Osiris Crew Architecture — Implementation Plan & Technical Reference
 
-Status: **implemented** 2026-09-02 — `@osiris/{dot-osiris,memory,crew,backlog,cli}`,
-console API + SPA, DevContainer. `pnpm build && lint && typecheck && test` green.
+Status: **implemented** 2026-09-02 — `@osiris/{dot-osiris,memory,crew,backlog,mcp,lm-proxy,cli}`,
+console API + SPA (live SSE), DevContainer, VS Code LM proxy, MCP client, backlog
+git push/pull. `pnpm build && lint && typecheck && test` green (43 turbo tasks).
+
+Extras beyond the original checklist:
+
+- **`@osiris/lm-proxy`** — OpenAI-compatible shim over `vscode.lm`; the
+  `osiris-workspace` extension runs it and injects `OSIRIS_LM_PROXY_URL` /
+  `_TOKEN` into the Dev Container, so a container-side crew (`provider: vscode-lm`)
+  still draws its models from the editor. `resolveProvider` chain:
+  in-process bridge → proxy → headless fallback.
+- **`@osiris/mcp`** — MCP client (stdio + Streamable HTTP), `.osiris/mcp.json`
+  discovery (`servers` + VS Code `mcpServers`, `${workspaceFolder}` / `${env}`),
+  `McpPool` (namespaced `<id>__<tool>`), `mcpToolsForCrew`. `loadCrewSession()`
+  starts the pool only when an agent opts in with an `mcp` / `mcp:<id>` selector.
+- **`@osiris/protocol` `ConsoleClient`** — typed client for the console API with
+  `streamRun()` SSE generators; the SPA's Crew view streams live.
+- **Backlog sync** — `BacklogRepo.push()/pull()` (fast-forward or report
+  divergence), `lint()`, `autoPush`; a fixed-date seed commit so every checkout
+  shares an identical backlog root and can always fast-forward.
 
 This document is both the Phase‑1 implementation checklist (with acceptance
 criteria) and the living technical reference for the multi‑agent orchestration,

@@ -109,6 +109,8 @@ osiris memory reindex             # (re)index .osiris/memory/ — incremental, c
 osiris memory search "orphan branch"
 osiris backlog new "Parser crash" --type bug
 osiris backlog move 12 review     # git mv + one commit on the orphan branch osiris/backlog
+osiris backlog push / pull        # sync osiris/backlog with a git remote (OSIRIS_BACKLOG_REMOTE)
+osiris backlog lint               # static-check every task file
 osiris serve                      # REST API + Kanban console at http://localhost:8080
 osiris repl                       # interactive REPL with crew/backlog/memory in scope
 ```
