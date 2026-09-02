@@ -2,7 +2,7 @@ import { execa } from 'execa';
 import type Docker from 'dockerode';
 import { createLogger } from '@osiris/shared-core';
 import { devcontainerHash } from './hash.js';
-import { ensureDevcontainerConfig } from './devcontainer-template.js';
+import { DEFAULT_WEB_IDE_FEATURE, ensureDevcontainerConfig } from './devcontainer-template.js';
 
 /** The slice of `execa` this module needs; overridable in tests. */
 export type CommandRunner = (
@@ -49,10 +49,17 @@ export function parseDevContainerUp(stdout: string): DevContainerUpResult {
 export interface EnsureDevContainerInput {
   /** Host folder to open. */
   hostPath: string;
-  /** Port the in-container VS Code server will listen on. */
+  /** Port the in-container VS Code server will listen on and that is published to host loopback. */
   serverPort: number;
   /** Write the Osiris fallback `devcontainer.json` when the project has none. Default true. */
   writeFallbackConfig?: boolean;
+  /**
+   * Inject the web-ide feature into projects that bring their own `devcontainer.json`
+   * (so they still get an openvscode-server). Default true; set the ref to `''` to skip.
+   */
+  webIdeFeatureRef?: string;
+  /** Extra `KEY=VALUE` pairs to inject into the container (agent API keys, re-read from the keychain). */
+  remoteEnv?: Record<string, string>;
   /** Override the command runner (tests). */
   runner?: CommandRunner;
 }
@@ -74,29 +81,56 @@ export async function ensureDevContainer(
 ): Promise<DevContainerHandle> {
   const hash = devcontainerHash(input.hostPath);
   const run: CommandRunner = input.runner ?? (execa as unknown as CommandRunner);
+  const featureRef = input.webIdeFeatureRef ?? DEFAULT_WEB_IDE_FEATURE;
 
+  let wroteFallback = false;
   if (input.writeFallbackConfig !== false) {
-    const config = await ensureDevcontainerConfig(input.hostPath);
-    if (config.created) log.info('project had no devcontainer.json — wrote the Osiris fallback');
+    const config = await ensureDevcontainerConfig(input.hostPath, {
+      serverPort: input.serverPort,
+      webIdeFeatureRef: featureRef || undefined,
+    });
+    wroteFallback = config.created;
+    if (wroteFallback) log.info('project had no devcontainer.json — wrote the Osiris fallback');
   }
 
   log.info('devcontainer up for %s (hash %s)', input.hostPath, hash);
 
-  const { stdout } = await run(
-    'devcontainer',
-    [
-      'up',
-      '--workspace-folder',
-      input.hostPath,
-      '--id-label',
-      `${HASH_LABEL}=${hash}`,
-      '--id-label',
-      `${PORT_LABEL}=${input.serverPort}`,
-    ],
-    { preferLocal: true },
-  );
+  const args = [
+    'up',
+    '--workspace-folder',
+    input.hostPath,
+    '--id-label',
+    `${HASH_LABEL}=${hash}`,
+    '--id-label',
+    `${PORT_LABEL}=${input.serverPort}`,
+  ];
+  // The fallback template already carries the feature + appPort; a project's own
+  // config gets the web-ide feature injected so it too exposes a server.
+  if (!wroteFallback && featureRef) {
+    args.push(
+      '--additional-features',
+      JSON.stringify({ [featureRef]: { port: input.serverPort } }),
+    );
+  }
+  for (const [key, value] of Object.entries(input.remoteEnv ?? {})) {
+    args.push('--remote-env', `${key}=${value}`);
+  }
+
+  const { stdout } = await run('devcontainer', args, { preferLocal: true });
 
   const result = parseDevContainerUp(stdout);
+
+  // Belt-and-braces: the feature's postStartCommand launches the server, but a
+  // project config without lifecycle-command merging may skip it.
+  try {
+    await run(
+      'devcontainer',
+      ['exec', '--workspace-folder', input.hostPath, 'osiris-web-ide', 'start'],
+      { preferLocal: true },
+    );
+  } catch (err) {
+    log.warn('could not confirm the in-container server is running: %s', String(err));
+  }
   return {
     hash,
     containerId: result.containerId,

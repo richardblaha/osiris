@@ -57,6 +57,7 @@ describe('resolveDevContainerEndpoint', () => {
     const endpoint = await resolveDevContainerEndpoint('abc', exec);
     expect(endpoint).toEqual({ containerId: 'c1', host: '127.0.0.1', port: 8123 });
     expect(exec).toHaveBeenCalledWith('docker', ['unpause', 'c1']);
+    expect(exec).toHaveBeenCalledWith('docker', ['exec', 'c1', 'osiris-web-ide', 'start']);
   });
 
   it('throws when the container is missing', async () => {

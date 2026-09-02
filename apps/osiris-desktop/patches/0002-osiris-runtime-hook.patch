@@ -1,0 +1,37 @@
+Osiris runtime hook — boot the local stack from the Electron main process
+========================================================================
+
+Injects a call to `runtime/osiris-main.mjs` into VSCodium's compiled main entry,
+just after the Electron `app` is ready and before the first window opens.
+
+`scripts/apply-branding.mjs` runs `git apply --3way` for every `patches/*.patch`
+and tolerates a patch that no longer applies (it warns and skips), so an upstream
+bump never hard-fails branding — re-roll this hunk against the new tag.
+
+The anchor below (`app.once('ready', ...)` in `src/vs/code/electron-main/app.ts`)
+matches recent VSCodium tags. If it drifts, re-generate:
+
+    cd apps/osiris-desktop/.build/vscode
+    # add the `import('../../../runtime/osiris-main.mjs')` block after `app` is ready
+    git diff > ../../patches/0002-osiris-runtime-hook.patch
+
+--- a/src/vs/code/electron-main/main.ts
++++ b/src/vs/code/electron-main/main.ts
+@@ -1,6 +1,17 @@
+ /*---------------------------------------------------------------------------------------------
+  *  Copyright (c) Microsoft Corporation. All rights reserved.
+  *  Licensed under the MIT License. See License.txt in the project root for license information.
+  *--------------------------------------------------------------------------------------------*/
+
++// >>> Osiris runtime hook
++import { app as osirisApp } from 'electron';
++import { join as osirisJoin } from 'path';
++osirisApp.whenReady().then(() => {
++	import(osirisJoin(__dirname, '../../../../runtime/osiris-main.mjs'))
++		.then(m => m.activateOsirisRuntime({ app: osirisApp }))
++		.catch(err => console.error('[osiris] runtime hook failed', err));
++});
++// <<< Osiris runtime hook
++
+ import { app, dialog } from 'electron';
+ import { unlinkSync, promises } from 'fs';

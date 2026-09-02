@@ -61,3 +61,8 @@ export async function wake(container: DockerContainer, exec: Exec = defaultExec)
     await exec('docker', ['start', container.id]);
   }
 }
+
+/** Start (or no-op if already running) the openvscode-server inside the container. */
+export async function startWebIde(containerId: string, exec: Exec = defaultExec): Promise<void> {
+  await exec('docker', ['exec', containerId, 'osiris-web-ide', 'start']);
+}

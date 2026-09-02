@@ -1,5 +1,5 @@
 import { createLogger } from '@osiris/shared-core';
-import { type Exec, findByLabel, wake } from './docker-cli.js';
+import { type Exec, findByLabel, startWebIde, wake } from './docker-cli.js';
 
 const log = createLogger('workspace:resolver');
 
@@ -34,6 +34,12 @@ export async function resolveDevContainerEndpoint(
   if (!Number.isInteger(port) || port <= 0) {
     throw new Error(`DevContainer ${container.id} is missing a valid ${PORT_LABEL} label`);
   }
+
+  // `wake` only unpauses/starts the container; the server process may not have
+  // survived a stop, so (re)launch it. Idempotent — the launcher no-ops if up.
+  await startWebIde(container.id, exec).catch((err) =>
+    log.warn('could not (re)start the in-container server: %s', String(err)),
+  );
 
   log.info('resolved %s → 127.0.0.1:%d', hash, port);
   return { containerId: container.id, host: '127.0.0.1', port };

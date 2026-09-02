@@ -6,10 +6,13 @@ import { HandoverClient } from '@osiris/protocol';
 import { OSIRIS_AUTHORITY, buildFolderUri, isOsirisRemote, parseAuthorityHash } from './authority.js';
 import { resolveDevContainerEndpoint } from './resolver.js';
 import { resolveServerConfig } from './server-config.js';
+import { upDevContainer } from './devcontainer-cli.js';
 
 const log = createLogger('workspace');
 
 type Location = 'local' | 'in-transit' | 'server';
+
+const DEFAULT_SECRET_ENV_KEYS = ['OSIRIS_AI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
 
 function setLocationContext(location: Location): void {
   void vscode.commands.executeCommand('setContext', 'osiris.sessionLocation', location);
@@ -43,14 +46,27 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   context.subscriptions.push(status);
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('osiris.openFolder', () => openFolderInDevContainer()),
+    vscode.commands.registerCommand('osiris.openFolder', () => openFolderInDevContainer(context)),
     vscode.commands.registerCommand('osiris.workspace.handoverToServer', () =>
       transferSession('to-server'),
     ),
     vscode.commands.registerCommand('osiris.workspace.fetchToLocal', () =>
       transferSession('to-local'),
     ),
+    vscode.commands.registerCommand('osiris.agent.setApiKey', () => setAgentApiKey(context)),
   );
+
+  // The local (ui) extension host owns Docker-side work — a container window
+  // inherits nothing here and delegates back to this command.
+  if (!vscode.env.remoteName) {
+    context.subscriptions.push(
+      vscode.commands.registerCommand(
+        'osiris.desktop.ensureDevContainer',
+        (payload: { hostPath: string; serverPort?: number }) =>
+          ensureDevContainerLocally(context, payload),
+      ),
+    );
+  }
 
   // Inside a container we default to 'local'; the desktop/server set the real
   // location via the `osiris.sessionLocation` context during a handover.
@@ -59,7 +75,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   updateStatus(status, location);
 
   if (config().get<boolean>('devcontainer.enforce', true) && !isOsirisRemote(vscode.env.remoteName)) {
-    await guardLocalWindow();
+    await guardLocalWindow(context);
   }
 }
 
@@ -79,7 +95,7 @@ function updateStatus(item: vscode.StatusBarItem, location: Location): void {
   item.show();
 }
 
-async function guardLocalWindow(): Promise<void> {
+async function guardLocalWindow(context: vscode.ExtensionContext): Promise<void> {
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) return;
 
@@ -91,13 +107,13 @@ async function guardLocalWindow(): Promise<void> {
   );
 
   if (choice === 'Reopen in DevContainer') {
-    await reopenInDevContainer(folder);
+    await reopenInDevContainer(context, folder);
   } else if (choice === 'Close Folder') {
     await vscode.commands.executeCommand('workbench.action.closeFolder');
   }
 }
 
-async function openFolderInDevContainer(): Promise<void> {
+async function openFolderInDevContainer(context: vscode.ExtensionContext): Promise<void> {
   const picked = await vscode.window.showOpenDialog({
     canSelectFolders: true,
     canSelectFiles: false,
@@ -106,14 +122,17 @@ async function openFolderInDevContainer(): Promise<void> {
   });
   const target = picked?.[0];
   if (target) {
-    await reopenInDevContainer({ uri: target, name: basename(target.fsPath), index: 0 });
+    await reopenInDevContainer(context, { uri: target, name: basename(target.fsPath), index: 0 });
   }
 }
 
-async function reopenInDevContainer(folder: vscode.WorkspaceFolder): Promise<void> {
+async function reopenInDevContainer(
+  context: vscode.ExtensionContext,
+  folder: vscode.WorkspaceFolder,
+): Promise<void> {
   const hostPath = folder.uri.fsPath;
 
-  // Container creation needs Docker — delegated to the desktop orchestrator.
+  // `osiris.desktop.ensureDevContainer` is registered by the local (ui) host.
   const ensured = await tryExecuteCommand<{ hash: string }>('osiris.desktop.ensureDevContainer', {
     hostPath,
     serverPort: config().get<number>('devcontainer.serverPort', 8000),
@@ -123,6 +142,71 @@ async function reopenInDevContainer(folder: vscode.WorkspaceFolder): Promise<voi
   const uri = vscode.Uri.parse(buildFolderUri(hash, folder.name));
   log.info('reopening %s as %s', hostPath, uri.toString());
   await vscode.commands.executeCommand('vscode.openFolder', uri, { forceReuseWindow: true });
+}
+
+/**
+ * The `osiris.desktop.ensureDevContainer` handler: bring the DevContainer up via
+ * the `devcontainer` CLI, injecting the agent's API keys from the keychain.
+ */
+async function ensureDevContainerLocally(
+  context: vscode.ExtensionContext,
+  payload: { hostPath: string; serverPort?: number },
+): Promise<{ hash: string; containerId: string }> {
+  const serverPort = payload.serverPort ?? config().get<number>('devcontainer.serverPort', 8000);
+  const hash = localHash(payload.hostPath);
+  const remoteEnv = await collectAgentSecrets(context);
+
+  const result = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Osiris: preparing DevContainer' },
+    () =>
+      upDevContainer({
+        hostPath: payload.hostPath,
+        hash,
+        serverPort,
+        remoteEnv,
+        webIdeFeatureRef: config().get<string>('devcontainer.webIdeFeature') || undefined,
+      }),
+  );
+  log.info('devcontainer %s ready (%s)', hash, result.containerId.slice(0, 12));
+  return { hash, containerId: result.containerId };
+}
+
+/** API keys the agent needs, taken from SecretStorage first, then the host env. */
+async function collectAgentSecrets(
+  context: vscode.ExtensionContext,
+): Promise<Record<string, string>> {
+  const keys = config().get<string[]>('agent.secretEnvKeys', DEFAULT_SECRET_ENV_KEYS);
+  const out: Record<string, string> = {};
+  for (const key of keys) {
+    const value = (await context.secrets.get(key)) ?? process.env[key];
+    if (value) out[key] = value;
+  }
+  if (Object.keys(out).length) {
+    log.info('injecting %d agent secret(s) into the container', Object.keys(out).length);
+  }
+  return out;
+}
+
+async function setAgentApiKey(context: vscode.ExtensionContext): Promise<void> {
+  const keys = config().get<string[]>('agent.secretEnvKeys', DEFAULT_SECRET_ENV_KEYS);
+  const key = await vscode.window.showQuickPick(keys, {
+    title: 'Which agent API key?',
+    placeHolder: 'Environment variable name',
+  });
+  if (!key) return;
+  const value = await vscode.window.showInputBox({
+    title: `Value for ${key}`,
+    password: true,
+    ignoreFocusOut: true,
+  });
+  if (value === undefined) return;
+  if (value === '') {
+    await context.secrets.delete(key);
+    void vscode.window.showInformationMessage(`Osiris: cleared ${key}.`);
+  } else {
+    await context.secrets.store(key, value);
+    void vscode.window.showInformationMessage(`Osiris: stored ${key} in the OS keychain.`);
+  }
 }
 
 async function transferSession(direction: 'to-server' | 'to-local'): Promise<void> {

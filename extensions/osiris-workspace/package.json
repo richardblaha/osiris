@@ -8,6 +8,9 @@
   "engines": {
     "vscode": "^1.90.0"
   },
+  "extensionKind": [
+    "ui"
+  ],
   "categories": [
     "Other"
   ],
@@ -30,6 +33,11 @@
       {
         "command": "osiris.workspace.fetchToLocal",
         "title": "Osiris: Fetch Session to Local",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris.agent.setApiKey",
+        "title": "Osiris: Set Agent API Key…",
         "category": "Osiris"
       }
     ],
@@ -58,6 +66,17 @@
           "default": 8000,
           "description": "Port the in-container VS Code server listens on."
         },
+        "osiris.devcontainer.webIdeFeature": {
+          "type": "string",
+          "default": "",
+          "description": "Override the OCI ref of the Osiris web-ide DevContainer feature (blank = built-in default)."
+        },
+        "osiris.agent.secretEnvKeys": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["OSIRIS_AI_API_KEY", "ANTHROPIC_API_KEY", "OPENAI_API_KEY"],
+          "description": "Environment variables holding agent API keys. Stored in the OS keychain and injected into the DevContainer."
+        },
         "osiris.server.url": {
           "type": "string",
           "default": "",
@@ -81,6 +100,7 @@
     "clean": "rimraf dist *.vsix"
   },
   "dependencies": {
+    "@osiris/container-sync": "workspace:*",
     "@osiris/protocol": "workspace:*",
     "@osiris/shared-core": "workspace:*"
   },

@@ -5,18 +5,17 @@
  * upstream main entry by a patch in `patches/` (see `runtime/README.md`):
  *
  *   import('<appRoot>/runtime/osiris-main.mjs')
- *     .then((m) => m.activateOsirisRuntime({ app, dialog, ipcMain, openWorkbench }));
+ *     .then((m) => m.activateOsirisRuntime({ app }));
  *
  * It boots the local dependency stack + telemetry (`@osiris/desktop-host`
- * `bootstrapOsirisRuntime`), installs the DevContainer open-folder guard, and
- * registers the `osiris.desktop.*` handlers the `osiris-workspace` extension
- * delegates Docker work to.
+ * `bootstrapOsirisRuntime`) and publishes the shared endpoints into the
+ * environment the extension host inherits.
+ *
+ * DevContainer enforcement and the `devcontainer up` / handover work live in the
+ * `osiris-workspace` extension (ui kind) — it runs in the local extension host,
+ * which unlike this process has the `vscode` API and a real `node_modules`.
  */
-import {
-  bootstrapOsirisRuntime,
-  createDesktopHandoverCommands,
-  installDevContainerGuard,
-} from '@osiris/desktop-host';
+import { bootstrapOsirisRuntime } from '@osiris/desktop-host';
 
 /** Pure: read the desktop runtime configuration from the environment. */
 export function resolveDesktopConfig(env = process.env) {
@@ -33,14 +32,9 @@ export function resolveDesktopConfig(env = process.env) {
 }
 
 /**
- * @param {{
- *   app: import('electron').App,
- *   dialog: import('electron').Dialog,
- *   ipcMain: import('electron').IpcMain,
- *   openWorkbench: (options: { folderUri: string }) => void,
- * }} electron
+ * @param {{ app: import('electron').App }} electron
  */
-export async function activateOsirisRuntime({ app, dialog, ipcMain, openWorkbench }) {
+export async function activateOsirisRuntime({ app }) {
   const config = resolveDesktopConfig();
 
   const runtime = await bootstrapOsirisRuntime({
@@ -49,41 +43,5 @@ export async function activateOsirisRuntime({ app, dialog, ipcMain, openWorkbenc
   });
   app.on('will-quit', () => void runtime.dispose());
 
-  const commands = createDesktopHandoverCommands({
-    server: config.server,
-    serverPort: config.serverPort,
-  });
-
-  installDevContainerGuard({
-    electron: {
-      onOpenFile: (listener) =>
-        app.on('open-file', (event, filePath) => {
-          event.preventDefault();
-          listener(filePath);
-        }),
-      onSecondInstance: (listener) =>
-        app.on('second-instance', (_event, argv) => listener(argv)),
-      handleIpc: (channel, listener) => ipcMain.handle(channel, () => listener()),
-      showConfirm: async ({ message, detail, confirmLabel }) => {
-        const { response } = await dialog.showMessageBox({
-          type: 'info',
-          message,
-          detail,
-          buttons: [confirmLabel, 'Cancel'],
-          defaultId: 0,
-          cancelId: 1,
-        });
-        return response === 0;
-      },
-      pickFolder: async () => {
-        const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-        return result.canceled ? undefined : result.filePaths[0];
-      },
-    },
-    openWorkbench,
-    ensureDevContainer: (hostPath) =>
-      commands['osiris.desktop.ensureDevContainer']({ hostPath, serverPort: config.serverPort }),
-  });
-
-  return { runtime, commands };
+  return { runtime, config };
 }

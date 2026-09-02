@@ -7,7 +7,11 @@ import { join } from 'node:path';
 import { devcontainerHash } from '../src/hash.js';
 import { createDigestingStream, sha256Digest } from '../src/digest.js';
 import { parseDevContainerUp } from '../src/devcontainer.js';
-import { ensureDevcontainerConfig } from '../src/devcontainer-template.js';
+import {
+  DEFAULT_WEB_IDE_FEATURE,
+  ensureDevcontainerConfig,
+  renderOsirisDevcontainer,
+} from '../src/devcontainer-template.js';
 
 describe('devcontainerHash', () => {
   it('is stable and 12 hex chars', () => {
@@ -61,10 +65,25 @@ describe('parseDevContainerUp', () => {
   });
 });
 
+describe('renderOsirisDevcontainer', () => {
+  it('wires the web-ide feature + appPort to the requested port', () => {
+    const json = renderOsirisDevcontainer({ serverPort: 9001 });
+    expect(json).toContain(`"${DEFAULT_WEB_IDE_FEATURE}": { "port": 9001 }`);
+    expect(json).toContain('"appPort": ["127.0.0.1:9001:9001"]');
+    expect(json).toContain('"postStartCommand": "osiris-web-ide start || true"');
+  });
+
+  it('accepts a custom feature ref', () => {
+    expect(renderOsirisDevcontainer({ webIdeFeatureRef: './features/web-ide' })).toContain(
+      '"./features/web-ide": { "port": 8000 }',
+    );
+  });
+});
+
 describe('ensureDevcontainerConfig', () => {
   it('writes the fallback template when the project has none', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'osiris-dc-'));
-    const result = await ensureDevcontainerConfig(dir);
+    const result = await ensureDevcontainerConfig(dir, { serverPort: 8123 });
 
     expect(result.created).toBe(true);
     expect(result.path).toBe(join(dir, '.devcontainer', 'devcontainer.json'));
@@ -72,6 +91,7 @@ describe('ensureDevcontainerConfig', () => {
     expect(written).toContain('"name": "Osiris Workspace"');
     expect(written).toContain('${localEnv:SSH_AUTH_SOCK}');
     expect(written).toContain('host.docker.internal:4318');
+    expect(written).toContain('127.0.0.1:8123:8123');
   });
 
   it('leaves an existing .devcontainer/devcontainer.json untouched', async () => {

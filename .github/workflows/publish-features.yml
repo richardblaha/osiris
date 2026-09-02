@@ -1,0 +1,29 @@
+name: Publish DevContainer Features
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "features/src/**"
+      - ".github/workflows/publish-features.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish to ghcr.io/osiris-ide/osiris
+        uses: devcontainers/action@v1
+        with:
+          publish-features: "true"
+          base-path-to-features: "./features/src"
+          oci-registry: ghcr.io
+          features-namespace: osiris-ide/osiris
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

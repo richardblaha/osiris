@@ -11,6 +11,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./devcontainer-template": {
+      "types": "./dist/devcontainer-template.d.ts",
+      "default": "./dist/devcontainer-template.js"
     }
   },
   "files": [
@@ -25,6 +29,7 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@devcontainers/cli": "^0.80.0",
     "@osiris/protocol": "workspace:*",
     "@osiris/shared-core": "workspace:*",
     "dockerode": "^5.0.1",

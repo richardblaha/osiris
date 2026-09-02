@@ -242,6 +242,9 @@ importers:
 
   extensions/osiris-workspace:
     dependencies:
+      '@osiris/container-sync':
+        specifier: workspace:*
+        version: link:../../packages/container-sync
       '@osiris/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
@@ -341,6 +344,9 @@ importers:
 
   packages/container-sync:
     dependencies:
+      '@devcontainers/cli':
+        specifier: ^0.80.0
+        version: 0.80.3
       '@osiris/protocol':
         specifier: workspace:*
         version: link:../protocol
@@ -702,6 +708,11 @@ packages:
 
   '@bcoe/v8-coverage@0.2.3':
     resolution: {integrity: sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw==}
+
+  '@devcontainers/cli@0.80.3':
+    resolution: {integrity: sha512-PaN2NxSdVdrY77C4aiqXjFyrg8Bj86hMSdRsHnLCwsocPcMUNxOjLz6G7jKUy6K7FIHY38613LNwfBVi1ePpdA==}
+    engines: {node: ^16.13.0 || >=18.0.0}
+    hasBin: true
 
   '@develar/schema-utils@2.6.5':
     resolution: {integrity: sha512-0cp4PsWQ/9avqTVMCtZ+GirikIA36ikvjtHweU4/j8yLtgObI0+JUPhYFScgwlteveGB1rt3Cm8UhN04XayDig==}
@@ -4950,6 +4961,8 @@ snapshots:
   '@balena/dockerignore@1.0.2': {}
 
   '@bcoe/v8-coverage@0.2.3': {}
+
+  '@devcontainers/cli@0.80.3': {}
 
   '@develar/schema-utils@2.6.5':
     dependencies:

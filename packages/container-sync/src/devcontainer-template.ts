@@ -4,12 +4,27 @@ import { createLogger } from '@osiris/shared-core';
 
 const log = createLogger('container-sync:template');
 
+/** Default OCI ref of the Osiris "web IDE" DevContainer feature (openvscode-server). */
+export const DEFAULT_WEB_IDE_FEATURE = 'ghcr.io/osiris-ide/osiris/web-ide:1';
+
+export interface DevcontainerTemplateOptions {
+  /** Port the in-container VS Code server listens on and that is published to host loopback. */
+  serverPort?: number;
+  /** Override the web-ide feature ref (tests / air-gapped registries). */
+  webIdeFeatureRef?: string;
+}
+
 /**
- * The DevContainer Osiris drops into a project that has none, so every workspace
- * opens inside a container with git identity, an SSH agent, a shared pnpm store
- * and the shared telemetry/inference stack reachable on the host gateway.
+ * The DevContainer Osiris drops into a project that has none. It gives every
+ * workspace git identity, an SSH agent, a shared pnpm store, the shared
+ * telemetry/inference stack on the host gateway, and an openvscode-server
+ * (via the web-ide feature) published on host loopback for the remote authority
+ * resolver to connect to.
  */
-export const OSIRIS_DEVCONTAINER_TEMPLATE = `{
+export function renderOsirisDevcontainer(options: DevcontainerTemplateOptions = {}): string {
+  const port = options.serverPort ?? 8000;
+  const feature = options.webIdeFeatureRef ?? DEFAULT_WEB_IDE_FEATURE;
+  return `{
   // Written by Osiris because this project had no .devcontainer/devcontainer.json.
   // Edit freely — Osiris never overwrites an existing config.
   "name": "Osiris Workspace",
@@ -17,8 +32,10 @@ export const OSIRIS_DEVCONTAINER_TEMPLATE = `{
   "features": {
     "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
     "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/node:1": { "version": "22" }
+    "ghcr.io/devcontainers/features/node:1": { "version": "22" },
+    "${feature}": { "port": ${port} }
   },
+  "appPort": ["127.0.0.1:${port}:${port}"],
   "remoteUser": "vscode",
   "updateRemoteUserUID": true,
   "runArgs": [
@@ -32,13 +49,19 @@ export const OSIRIS_DEVCONTAINER_TEMPLATE = `{
   ],
   "containerEnv": {
     "OSIRIS_LOCATION": "container",
+    "OSIRIS_WEB_IDE_PORT": "${port}",
     "SSH_AUTH_SOCK": "/ssh-agent",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://host.docker.internal:4318",
     "OSIRIS_OLLAMA_URL": "http://host.docker.internal:11434"
   },
+  "postStartCommand": "osiris-web-ide start || true",
   "postCreateCommand": "test -d .vscode && test ! -d .osiris && cp -r .vscode .osiris || true"
 }
 `;
+}
+
+/** @deprecated use {@link renderOsirisDevcontainer} — kept for callers that want the default string. */
+export const OSIRIS_DEVCONTAINER_TEMPLATE = renderOsirisDevcontainer();
 
 export interface EnsureConfigResult {
   /** Absolute path of the devcontainer.json (existing or freshly written). */
@@ -51,7 +74,10 @@ export interface EnsureConfigResult {
  * Guarantee `hostPath` has a `.devcontainer/devcontainer.json`. A `.devcontainer.json`
  * at the workspace root also counts. Never overwrites the user's config.
  */
-export async function ensureDevcontainerConfig(hostPath: string): Promise<EnsureConfigResult> {
+export async function ensureDevcontainerConfig(
+  hostPath: string,
+  options: DevcontainerTemplateOptions = {},
+): Promise<EnsureConfigResult> {
   const target = join(hostPath, '.devcontainer', 'devcontainer.json');
   const candidates = [target, join(hostPath, '.devcontainer.json')];
   for (const candidate of candidates) {
@@ -59,7 +85,7 @@ export async function ensureDevcontainerConfig(hostPath: string): Promise<Ensure
   }
 
   await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, OSIRIS_DEVCONTAINER_TEMPLATE, 'utf8');
+  await writeFile(target, renderOsirisDevcontainer(options), 'utf8');
   log.info('wrote fallback devcontainer.json to %s', target);
   return { path: target, created: true };
 }
