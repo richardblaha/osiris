@@ -1,0 +1,115 @@
+:root {
+  color-scheme: light dark;
+}
+
+body {
+  margin: 0;
+  padding: 10px 12px;
+  font: var(--vscode-font-size, 13px) / 1.5 var(--vscode-font-family, sans-serif);
+  color: var(--vscode-foreground);
+  background: var(--vscode-sideBar-background, transparent);
+}
+
+nav {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+nav button {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--vscode-descriptionForeground);
+  cursor: pointer;
+  font: inherit;
+  padding: 3px 6px;
+}
+
+nav button[data-active='true'] {
+  color: var(--vscode-foreground);
+  border-bottom-color: var(--vscode-focusBorder);
+}
+
+button.primary {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border: none;
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+  padding: 3px 10px;
+}
+
+button {
+  background: var(--vscode-button-secondaryBackground, #3a3a3a);
+  color: var(--vscode-button-secondaryForeground, inherit);
+  border: 1px solid var(--vscode-widget-border, transparent);
+  border-radius: 3px;
+  cursor: pointer;
+  font: inherit;
+  padding: 2px 8px;
+}
+
+input,
+textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  border: 1px solid var(--vscode-input-border, var(--vscode-widget-border, #555));
+  border-radius: 3px;
+  font: inherit;
+  padding: 3px 6px;
+}
+
+.col {
+  margin-bottom: 12px;
+}
+
+.col h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--vscode-descriptionForeground);
+  margin: 4px 0 6px;
+}
+
+.card {
+  border: 1px solid var(--vscode-widget-border, #444);
+  border-radius: 4px;
+  padding: 5px 8px;
+  margin-bottom: 5px;
+}
+
+.card .type {
+  font-size: 10px;
+  color: var(--vscode-textLink-foreground);
+  text-transform: uppercase;
+}
+
+.card .actions {
+  margin-top: 4px;
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.muted {
+  color: var(--vscode-descriptionForeground);
+}
+
+pre {
+  white-space: pre-wrap;
+  background: var(--vscode-textCodeBlock-background, #0003);
+  border-radius: 4px;
+  padding: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}

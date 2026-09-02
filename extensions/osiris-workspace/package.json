@@ -66,6 +66,24 @@
         "category": "Osiris"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "osiris",
+          "title": "Osiris",
+          "icon": "media/osiris.svg"
+        }
+      ]
+    },
+    "views": {
+      "osiris": [
+        {
+          "id": "osiris.console",
+          "name": "Console",
+          "type": "webview"
+        }
+      ]
+    },
     "menus": {
       "commandPalette": [
         {
@@ -199,11 +217,11 @@
   "scripts": {
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
-    "lint": "eslint src",
+    "lint": "eslint src webview",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "package": "npm run build && vsce package --no-dependencies --out osiris-workspace.vsix",
-    "clean": "rimraf dist *.vsix"
+    "clean": "rimraf dist media/panel.js media/panel.css *.vsix"
   },
   "dependencies": {
     "@osiris/container-sync": "workspace:*",
@@ -214,10 +232,14 @@
   "devDependencies": {
     "@osiris/tsconfig": "workspace:*",
     "@types/node": "^22.7.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
     "@types/vscode": "^1.90.0",
     "@vscode/vsce": "^3.1.1",
     "esbuild": "^0.24.0",
     "eslint": "^9.12.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "rimraf": "^6.0.1",
     "typescript": "^5.6.3",
     "vitest": "^2.1.3"

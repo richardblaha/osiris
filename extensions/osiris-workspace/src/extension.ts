@@ -18,6 +18,7 @@ import { showStartView } from './start-view.js';
 import { ensureLmProxy, lmProxyRemoteEnv } from './lm-proxy-host.js';
 import { createVscodeLmBridge, hasLanguageModelApi } from './lm-bridge.js';
 import { openConsole, runCrew } from './crew-commands.js';
+import { OsirisConsoleViewProvider } from './console-view.js';
 import { TASK_CLASSES } from '@osiris/protocol';
 import { taskModelEnv, unsetTaskClasses } from './model-config.js';
 
@@ -59,6 +60,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 10);
   context.subscriptions.push(status);
+
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      OsirisConsoleViewProvider.viewId,
+      new OsirisConsoleViewProvider(context),
+    ),
+  );
 
   const startDeps = {
     recent,
