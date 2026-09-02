@@ -76,12 +76,10 @@ export function showStartView(
   deps: StartViewDeps,
   options: ShowStartOptions = {},
 ): void {
-  const panel = vscode.window.createWebviewPanel(
-    'osiris.start',
-    'Osiris',
-    vscode.ViewColumn.One,
-    { enableScripts: true, retainContextWhenHidden: true },
-  );
+  const panel = vscode.window.createWebviewPanel('osiris.start', 'Osiris', vscode.ViewColumn.One, {
+    enableScripts: true,
+    retainContextWhenHidden: true,
+  });
   context.subscriptions.push(panel);
 
   const render = async (): Promise<void> => {
@@ -208,7 +206,10 @@ async function exportModels(): Promise<void> {
     defaultUri: vscode.Uri.file('osiris-models.json'),
   });
   if (!uri) return;
-  await vscode.workspace.fs.writeFile(uri, Buffer.from(`${JSON.stringify(data, null, 2)}\n`, 'utf8'));
+  await vscode.workspace.fs.writeFile(
+    uri,
+    Buffer.from(`${JSON.stringify(data, null, 2)}\n`, 'utf8'),
+  );
   void vscode.window.showInformationMessage('Osiris: model configuration exported (no API keys).');
 }
 
@@ -229,10 +230,9 @@ async function importModels(): Promise<boolean> {
     return false;
   }
 
-  const target = await vscode.window.showQuickPick(
-    ['User settings', 'Project settings'],
-    { title: 'Import model configuration into…' },
-  );
+  const target = await vscode.window.showQuickPick(['User settings', 'Project settings'], {
+    title: 'Import model configuration into…',
+  });
   if (!target) return false;
   const scope =
     target === 'Project settings'

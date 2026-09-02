@@ -34,7 +34,9 @@ function chatSpec(): string {
 }
 
 function usesOllama(): boolean {
-  return chatSpec().startsWith('ollama/') || config().get<string>('provider', 'ollama') === 'ollama';
+  return (
+    chatSpec().startsWith('ollama/') || config().get<string>('provider', 'ollama') === 'ollama'
+  );
 }
 
 /** Set by {@link probeOllama}; the ollama path falls back to echo while false. */

@@ -8,7 +8,7 @@
  * assets/osiris-icon.svg; the Fira Code face is copied in (with an @font-face
  * appended to the workbench stylesheet) so a fresh install needs no system font.
  */
-import { cp, mkdir, copyFile, readFile, writeFile, appendFile } from 'node:fs/promises';
+import { cp, mkdir, copyFile, readFile, writeFile, appendFile, readdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,7 +44,9 @@ async function registerFontFace(checkoutDir) {
     console.log(`[branding] @font-face registered in ${path.relative(checkoutDir, cssPath)}`);
     return true;
   }
-  console.warn('[branding] no workbench style.css found — add the @font-face manually (see branding README)');
+  console.warn(
+    '[branding] no workbench style.css found — add the @font-face manually (see branding README)',
+  );
   return false;
 }
 
@@ -58,42 +60,88 @@ async function ensureIcons() {
 /**
  * Rename the per-workspace configuration folder `.vscode` → `.osiris` in the
  * upstream source, so an Osiris build reads `.osiris/{settings,tasks,launch,
- * extensions}.json`. Each target is a file where the literal `.vscode` only ever
- * names that folder; `\.vscode` not followed by `-` or a word char leaves
- * `.vscode-remote` / `vscode-userdata` untouched. Tolerant — a file that has
- * moved upstream is logged and skipped.
+ * extensions}.json` (and workspace snippets, MCP config, …).
+ *
+ * A sweep, not a curated list: every `.ts` under `src/vs/workbench` is rewritten,
+ * then all of `src/vs` is scanned and the build FAILS if a bare `.vscode`
+ * survives — so an upstream refactor that moves or adds a reference is caught
+ * loudly instead of silently reading the wrong folder. `\.vscode` followed by
+ * `-` or a word char (`.vscode-remote`, `vscode-userdata`, `.vscodeignore`) is
+ * left alone by {@link rewriteConfigFolder}.
  */
-const CONFIG_FOLDER_FILES = [
-  'src/vs/workbench/services/configuration/common/configuration.ts',
-  'src/vs/workbench/contrib/tasks/browser/abstractTaskService.ts',
-  'src/vs/workbench/contrib/tasks/common/taskService.ts',
-  'src/vs/workbench/contrib/debug/browser/debugConfigurationManager.ts',
-  'src/vs/workbench/services/extensionRecommendations/common/workspaceExtensionsConfig.ts',
-];
+const SWEEP_REL = 'src/vs/workbench';
+const SCAN_REL = 'src/vs';
+const SKIP_DIR = /^(test|node_modules)$/;
+const TS_FILE = /\.[cm]?ts$/;
+const SKIP_FILE = /\.test\.[cm]?ts$/;
+const BARE_VSCODE = /\.vscode(?![\w-])/;
 
-/** Pure: `.vscode` → `.osiris`, leaving `.vscode-remote` / `vscode-userdata` alone. */
+/** Pure: `.vscode` → `.osiris`, leaving `.vscode-remote` / `.vscodeignore` alone. */
 export function rewriteConfigFolder(source) {
   return source.replace(/\.vscode(?![\w-])/g, '.osiris');
 }
 
-async function renameWorkspaceConfigFolder(checkoutDir) {
-  let touched = 0;
-  for (const rel of CONFIG_FOLDER_FILES) {
-    const file = path.join(checkoutDir, rel);
-    if (!existsSync(file)) {
-      console.warn(`[branding] config-folder rename: ${rel} not found (upstream moved it?) — skipped`);
-      continue;
-    }
-    const before = await readFile(file, 'utf8');
-    const after = rewriteConfigFolder(before);
-    if (after !== before) {
-      await writeFile(file, after);
-      touched++;
-      console.log(`[branding] config-folder rename: .vscode → .osiris in ${path.basename(rel)}`);
+async function* walkTs(dir, rel) {
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const childRel = rel ? `${rel}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (!SKIP_DIR.test(entry.name)) yield* walkTs(path.join(dir, entry.name), childRel);
+    } else if (TS_FILE.test(entry.name) && !SKIP_FILE.test(entry.name)) {
+      yield { abs: path.join(dir, entry.name), rel: childRel };
     }
   }
-  if (touched === 0) {
-    console.warn('[branding] config-folder rename: nothing changed — verify the workspace config folder manually');
+}
+
+/** Rewrite the sweep tree and scan the wider tree. Pure-ish: returns what it did. */
+export async function sweepConfigFolder(checkoutDir) {
+  const changed = [];
+  for await (const file of walkTs(path.join(checkoutDir, SWEEP_REL), SWEEP_REL)) {
+    const before = await readFile(file.abs, 'utf8');
+    const after = rewriteConfigFolder(before);
+    if (after !== before) {
+      await writeFile(file.abs, after);
+      changed.push(file.rel);
+    }
+  }
+
+  const stray = [];
+  for await (const file of walkTs(path.join(checkoutDir, SCAN_REL), SCAN_REL)) {
+    const text = await readFile(file.abs, 'utf8');
+    text.split('\n').forEach((line, i) => {
+      if (BARE_VSCODE.test(line)) stray.push({ file: file.rel, line: i + 1, text: line.trim() });
+    });
+  }
+  return { changed, stray };
+}
+
+async function renameWorkspaceConfigFolder(checkoutDir) {
+  if (!existsSync(path.join(checkoutDir, SWEEP_REL))) {
+    throw new Error(
+      `[branding] config-folder rename: ${SWEEP_REL} not found — upstream layout moved`,
+    );
+  }
+  const { changed, stray } = await sweepConfigFolder(checkoutDir);
+  if (changed.length === 0) {
+    throw new Error(
+      '[branding] config-folder rename: swept src/vs/workbench but nothing changed — verify manually',
+    );
+  }
+  console.log(`[branding] config-folder rename: .vscode → .osiris in ${changed.length} file(s)`);
+  if (stray.length > 0) {
+    const sample = stray
+      .slice(0, 20)
+      .map((s) => `  ${s.file}:${s.line}  ${s.text}`)
+      .join('\n');
+    throw new Error(
+      `[branding] config-folder rename: ${stray.length} stray ".vscode" reference(s) outside the sweep — ` +
+        `extend SWEEP_REL or handle them:\n${sample}`,
+    );
   }
 }
 
@@ -115,23 +163,59 @@ export async function copyBrandingIntoCheckout(checkoutDir, { kind }) {
 
   // --- Application / installer icons -------------------------------------------------
   if (kind === 'desktop') {
-    await place(path.join(icons, 'linux', 'code.png'), R('resources', 'linux', 'code.png'), 'linux icon');
-    await place(path.join(icons, 'darwin', 'code.icns'), R('resources', 'darwin', 'code.icns'), 'darwin icon');
-    await place(path.join(icons, 'win32', 'code.ico'), R('resources', 'win32', 'code.ico'), 'win32 icon');
-    await place(path.join(icons, 'win32', 'code_70x70.png'), R('resources', 'win32', 'code_70x70.png'), 'win32 tile');
-    await place(path.join(icons, 'win32', 'code_150x150.png'), R('resources', 'win32', 'code_150x150.png'), 'win32 tile');
+    await place(
+      path.join(icons, 'linux', 'code.png'),
+      R('resources', 'linux', 'code.png'),
+      'linux icon',
+    );
+    await place(
+      path.join(icons, 'darwin', 'code.icns'),
+      R('resources', 'darwin', 'code.icns'),
+      'darwin icon',
+    );
+    await place(
+      path.join(icons, 'win32', 'code.ico'),
+      R('resources', 'win32', 'code.ico'),
+      'win32 icon',
+    );
+    await place(
+      path.join(icons, 'win32', 'code_70x70.png'),
+      R('resources', 'win32', 'code_70x70.png'),
+      'win32 tile',
+    );
+    await place(
+      path.join(icons, 'win32', 'code_150x150.png'),
+      R('resources', 'win32', 'code_150x150.png'),
+      'win32 tile',
+    );
 
     // Empty-editor watermark.
     const lpDir = R('src', 'vs', 'workbench', 'browser', 'parts', 'editor', 'media');
     for (const variant of ['dark', 'light', 'hc']) {
-      await place(path.join(assetsDir, `letterpress-${variant}.svg`), path.join(lpDir, `letterpress-${variant}.svg`), 'letterpress');
+      await place(
+        path.join(assetsDir, `letterpress-${variant}.svg`),
+        path.join(lpDir, `letterpress-${variant}.svg`),
+        'letterpress',
+      );
     }
   }
 
   // Server favicon + PWA icons — both distributions ship the REH server.
-  await place(path.join(icons, 'server', 'favicon.ico'), R('resources', 'server', 'favicon.ico'), 'server favicon');
-  await place(path.join(icons, 'server', 'code-192.png'), R('resources', 'server', 'code-192.png'), 'server pwa');
-  await place(path.join(icons, 'server', 'code-512.png'), R('resources', 'server', 'code-512.png'), 'server pwa');
+  await place(
+    path.join(icons, 'server', 'favicon.ico'),
+    R('resources', 'server', 'favicon.ico'),
+    'server favicon',
+  );
+  await place(
+    path.join(icons, 'server', 'code-192.png'),
+    R('resources', 'server', 'code-192.png'),
+    'server pwa',
+  );
+  await place(
+    path.join(icons, 'server', 'code-512.png'),
+    R('resources', 'server', 'code-512.png'),
+    'server pwa',
+  );
 
   // --- Bundled Fira Code -----------------------------------------------------------
   const woff2 = path.join(assetsDir, 'fonts', 'FiraCode-VF.woff2');
@@ -158,7 +242,9 @@ export async function copyBrandingIntoCheckout(checkoutDir, { kind }) {
 export async function copyElectronBuilderIcons(buildDir) {
   const icons = await ensureIcons();
   await mkdir(path.join(buildDir, 'icons'), { recursive: true });
-  await cp(path.join(icons, 'electron', 'icons'), path.join(buildDir, 'icons'), { recursive: true });
+  await cp(path.join(icons, 'electron', 'icons'), path.join(buildDir, 'icons'), {
+    recursive: true,
+  });
   await copyFile(path.join(icons, 'electron', 'icon.ico'), path.join(buildDir, 'icon.ico'));
   await copyFile(path.join(icons, 'electron', 'icon.icns'), path.join(buildDir, 'icon.icns'));
   console.log('[branding] electron-builder icons → build/{icons,icon.ico,icon.icns}');

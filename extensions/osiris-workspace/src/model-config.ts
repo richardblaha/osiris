@@ -3,7 +3,12 @@
  * wizard). Kept free of `vscode` imports so it can be unit-tested; the extension
  * passes a `vscode.WorkspaceConfiguration` (structurally a {@link ModelConfigReader}).
  */
-import { TASK_CLASSES, TASK_CLASS_LABELS, DEFAULT_TASK_MODELS, type TaskClass } from '@osiris/protocol';
+import {
+  TASK_CLASSES,
+  TASK_CLASS_LABELS,
+  DEFAULT_TASK_MODELS,
+  type TaskClass,
+} from '@osiris/protocol';
 
 /** VS Code settings section the wizard reads and writes. */
 export const MODEL_CONFIG_SECTION = 'osiris.models';
@@ -53,7 +58,13 @@ export const PROVIDERS: ProviderInfo[] = [
     chatCapable: true,
   },
   { id: 'vscode-lm', label: 'Editor model (Copilot / editor LM)', models: [] },
-  { id: 'echo', label: 'Echo — offline, deterministic', models: ['echo'], local: true, chatCapable: true },
+  {
+    id: 'echo',
+    label: 'Echo — offline, deterministic',
+    models: ['echo'],
+    local: true,
+    chatCapable: true,
+  },
 ];
 
 export function providerInfo(id: string): ProviderInfo | undefined {
@@ -161,8 +172,10 @@ export function parseImport(json: unknown): ModelExport {
   const models: Partial<Record<TaskClass, string>> = {};
   const raw = (obj.models ?? {}) as Record<string, unknown>;
   for (const [cls, spec] of Object.entries(raw)) {
-    if (!(TASK_CLASSES as readonly string[]).includes(cls)) throw new Error(`unknown task class "${cls}"`);
-    if (typeof spec !== 'string' || !isValidSpec(spec)) throw new Error(`invalid spec for "${cls}"`);
+    if (!(TASK_CLASSES as readonly string[]).includes(cls))
+      throw new Error(`unknown task class "${cls}"`);
+    if (typeof spec !== 'string' || !isValidSpec(spec))
+      throw new Error(`invalid spec for "${cls}"`);
     models[cls as TaskClass] = spec.trim();
   }
   const def = obj.defaultProvider;

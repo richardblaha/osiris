@@ -34,8 +34,7 @@ export interface StartViewState {
   models?: StartViewModels;
 }
 
-const escapeHtml = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+const escapeHtml = (s: string): string => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
 function relativeTime(iso: string, now = Date.now()): string {
   const diff = now - Date.parse(iso);
