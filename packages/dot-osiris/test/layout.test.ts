@@ -14,9 +14,7 @@ describe('OsirisPaths', () => {
   it('resolves config files and arbitrary relatives', () => {
     expect(p.configFile('crew.json')).toBe('/work/proj/.osiris/crew.json');
     expect(p.resolve('agents/architect.md')).toBe('/work/proj/.osiris/agents/architect.md');
-    expect(p.tempFile('backlog-worktree', 'x')).toBe(
-      '/work/proj/.osiris/temp/backlog-worktree/x',
-    );
+    expect(p.tempFile('backlog-worktree', 'x')).toBe('/work/proj/.osiris/temp/backlog-worktree/x');
   });
 
   it('exposes every declared subdir', () => {

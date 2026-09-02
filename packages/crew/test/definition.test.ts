@@ -5,11 +5,23 @@ import { parseAgentDefinition, serializeAgentDefinition } from '../src/definitio
 describe('parseFrontmatter', () => {
   it('reads scalars, quoted strings and inline arrays', () => {
     const { data, body } = parseFrontmatter(
-      ['---', 'name: architect', 'temperature: 0.2', 'tools: [a, b, c]', 'flag: true', '---', '', 'Body.'].join(
-        '\n',
-      ),
+      [
+        '---',
+        'name: architect',
+        'temperature: 0.2',
+        'tools: [a, b, c]',
+        'flag: true',
+        '---',
+        '',
+        'Body.',
+      ].join('\n'),
     );
-    expect(data).toEqual({ name: 'architect', temperature: 0.2, tools: ['a', 'b', 'c'], flag: true });
+    expect(data).toEqual({
+      name: 'architect',
+      temperature: 0.2,
+      tools: ['a', 'b', 'c'],
+      flag: true,
+    });
     expect(body.trim()).toBe('Body.');
   });
 

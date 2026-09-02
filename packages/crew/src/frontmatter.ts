@@ -53,7 +53,8 @@ export function parseFrontmatter(source: string): Frontmatter {
 
 function serializeValue(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map((v) => serializeValue(v)).join(', ')}]`;
-  if (typeof value === 'string') return /[:#[\]]|^\s|\s$/.test(value) ? JSON.stringify(value) : value;
+  if (typeof value === 'string')
+    return /[:#[\]]|^\s|\s$/.test(value) ? JSON.stringify(value) : value;
   return String(value);
 }
 
@@ -63,7 +64,10 @@ export function serializeFrontmatter(
   body: string,
   order: string[] = [],
 ): string {
-  const keys = [...order.filter((k) => k in data), ...Object.keys(data).filter((k) => !order.includes(k))];
+  const keys = [
+    ...order.filter((k) => k in data),
+    ...Object.keys(data).filter((k) => !order.includes(k)),
+  ];
   const lines = keys
     .filter((k) => data[k] !== undefined)
     .map((k) => `${k}: ${serializeValue(data[k])}`);

@@ -1,5 +1,10 @@
 import { readFile } from 'node:fs/promises';
-import { listOsirisDir, osirisPaths, resolveOsirisFile, type OsirisPaths } from '@osiris/dot-osiris';
+import {
+  listOsirisDir,
+  osirisPaths,
+  resolveOsirisFile,
+  type OsirisPaths,
+} from '@osiris/dot-osiris';
 import { BacklogRepo } from '@osiris/backlog';
 import {
   buildEmbedding,
@@ -18,7 +23,10 @@ import type { AgentDefinition, CrewEvent, CrewRunResult } from '@osiris/protocol
 export class WorkspaceServices {
   readonly paths: OsirisPaths;
   private backlog?: Promise<BacklogRepo>;
-  private memory?: Promise<{ config: MemoryConfig; store: Awaited<ReturnType<typeof buildMemoryStore>> }>;
+  private memory?: Promise<{
+    config: MemoryConfig;
+    store: Awaited<ReturnType<typeof buildMemoryStore>>;
+  }>;
 
   constructor(
     readonly root: string,

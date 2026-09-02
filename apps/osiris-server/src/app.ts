@@ -131,7 +131,11 @@ export function buildServer(options: BuildServerOptions): FastifyInstance {
 
   app.post(`${API_BASE}/sessions/:id/handover/prepare`, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const descriptor = store.beginTransfer(id, 'to-server', clientId(request.headers.authorization));
+    const descriptor = store.beginTransfer(
+      id,
+      'to-server',
+      clientId(request.headers.authorization),
+    );
     reply.header(protocolHeaders.leaseNext, descriptor.lease?.etag ?? '');
     return {
       leaseEtag: descriptor.lease?.etag,

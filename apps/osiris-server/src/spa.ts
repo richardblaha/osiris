@@ -20,7 +20,11 @@ export async function registerSpa(app: FastifyInstance, dir: string): Promise<vo
   await app.register(fastifyStatic, { root: dir, prefix: '/', wildcard: false });
 
   app.setNotFoundHandler((request, reply) => {
-    if (request.method === 'GET' && !request.url.startsWith('/api/') && !request.url.startsWith('/git/')) {
+    if (
+      request.method === 'GET' &&
+      !request.url.startsWith('/api/') &&
+      !request.url.startsWith('/git/')
+    ) {
       return reply.type('text/html').sendFile('index.html');
     }
     return reply.code(404).send({ error: 'not found' });

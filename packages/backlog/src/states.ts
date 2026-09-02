@@ -13,7 +13,9 @@ export async function discoverStates(backlogRoot: string): Promise<string[]> {
   let entries: string[] = [];
   try {
     const dirents = await readdir(backlogRoot, { withFileTypes: true });
-    entries = dirents.filter((d) => d.isDirectory() && !NON_STATE_DIRS.has(d.name)).map((d) => d.name);
+    entries = dirents
+      .filter((d) => d.isDirectory() && !NON_STATE_DIRS.has(d.name))
+      .map((d) => d.name);
   } catch {
     return [...DEFAULT_STATES];
   }

@@ -40,7 +40,8 @@ export const api = {
       body: JSON.stringify({ task, lead }),
     }).then((r) => json<{ runId: string }>(r)),
 
-  run: (id: string) => fetch(`${BASE}/crew/runs/${id}`).then((r) => json<CrewRunResult | { status: string }>(r)),
+  run: (id: string) =>
+    fetch(`${BASE}/crew/runs/${id}`).then((r) => json<CrewRunResult | { status: string }>(r)),
 
   search: (query: string, k = 6) =>
     fetch(`${BASE}/memory/search`, {
@@ -49,5 +50,8 @@ export const api = {
       body: JSON.stringify({ query, k }),
     }).then((r) => json<MemorySearchResult>(r)),
 
-  reindex: () => fetch(`${BASE}/memory/reindex`, { method: 'POST' }).then((r) => json<Record<string, number>>(r)),
+  reindex: () =>
+    fetch(`${BASE}/memory/reindex`, { method: 'POST' }).then((r) =>
+      json<Record<string, number>>(r),
+    ),
 };

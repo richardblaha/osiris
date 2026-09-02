@@ -1,0 +1,14 @@
+{
+  "$schema": "https://osiris-ide.dev/schema/crew.json",
+  "lead": "architect",
+  "defaultModel": "vscode-lm/claude-sonnet-5",
+  "coordinator": {
+    "maxDepth": 3,
+    "maxIterationsPerAgent": 12,
+    "maxDelegationsPerRun": 24
+  },
+  "providers": {
+    "vscode-lm": { "kind": "vscode-lm" },
+    "echo": { "kind": "echo" }
+  }
+}

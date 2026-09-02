@@ -24,9 +24,10 @@ describe('chunkMarkdown', () => {
   });
 
   it('further splits an oversized section with overlap', () => {
-    const long = Array.from({ length: 40 }, (_, i) => `Paragraph number ${i} with some filler text.`).join(
-      '\n\n',
-    );
+    const long = Array.from(
+      { length: 40 },
+      (_, i) => `Paragraph number ${i} with some filler text.`,
+    ).join('\n\n');
     const chunks = chunkMarkdown(`# H\n\n${long}`, { chunkSize: 300, chunkOverlap: 60 });
     expect(chunks.length).toBeGreaterThan(1);
     expect(chunks.every((c) => c.headingPath[0] === 'H')).toBe(true);

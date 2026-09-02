@@ -65,14 +65,18 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
     switch (group) {
       case 'init': {
         const result = await initWorkspace(io.cwd, { force: flags.values.force === true });
-        io.out(`init: ${result.written.length} written, ${result.skipped.length} kept${result.gitignoreChanged ? ', .gitignore updated' : ''}\n`);
+        io.out(
+          `init: ${result.written.length} written, ${result.skipped.length} kept${result.gitignoreChanged ? ', .gitignore updated' : ''}\n`,
+        );
         return 0;
       }
 
       case 'agent': {
         if (sub !== 'list') return usageError(io);
         for (const a of await services().listAgents()) {
-          io.out(`${a.name.padEnd(14)} ${a.role}${a.delegateTo.length ? `  → ${a.delegateTo.join(', ')}` : ''}\n`);
+          io.out(
+            `${a.name.padEnd(14)} ${a.role}${a.delegateTo.length ? `  → ${a.delegateTo.join(', ')}` : ''}\n`,
+          );
         }
         return 0;
       }
@@ -80,10 +84,14 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       case 'crew': {
         if (sub !== 'run' || flags.positionals.length === 0) return usageError(io);
         const task = flags.positionals.join(' ');
-        const result = await services().runCrew(task, flags.values.lead as string | undefined, (e) => {
-          if (e.type === 'delegate') io.err(`  ${e.from} → ${e.to}: ${e.brief}\n`);
-          if (e.type === 'agent.start') io.err(`▸ ${e.agent} (depth ${e.depth})\n`);
-        });
+        const result = await services().runCrew(
+          task,
+          flags.values.lead as string | undefined,
+          (e) => {
+            if (e.type === 'delegate') io.err(`  ${e.from} → ${e.to}: ${e.brief}\n`);
+            if (e.type === 'agent.start') io.err(`▸ ${e.agent} (depth ${e.depth})\n`);
+          },
+        );
         io.out(`\n${result.text}\n`);
         io.err(`\n[${result.finishReason}, ${result.delegations.length} delegation(s)]\n`);
         return result.finishReason === 'error' ? 1 : 0;
@@ -99,9 +107,14 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           return 0;
         }
         if (sub === 'search' && flags.positionals.length) {
-          const hits = await svc.searchMemory(flags.positionals.join(' '), Number(flags.values.k ?? 6));
+          const hits = await svc.searchMemory(
+            flags.positionals.join(' '),
+            Number(flags.values.k ?? 6),
+          );
           for (const h of hits) {
-            io.out(`— ${h.metadata.source} (${h.score.toFixed(2)})\n${h.document.slice(0, 300)}\n\n`);
+            io.out(
+              `— ${h.metadata.source} (${h.score.toFixed(2)})\n${h.document.slice(0, 300)}\n\n`,
+            );
           }
           if (hits.length === 0) io.out('no matches\n');
           return 0;
@@ -143,7 +156,11 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
         const bin = require.resolve('@osiris/server/dist/index.js');
         const child = spawn(process.execPath, [bin], {
           stdio: 'inherit',
-          env: { ...env, OSIRIS_WORKSPACE_ROOT: io.cwd, PORT: (flags.values.port as string) ?? env.PORT ?? '8080' },
+          env: {
+            ...env,
+            OSIRIS_WORKSPACE_ROOT: io.cwd,
+            PORT: (flags.values.port as string) ?? env.PORT ?? '8080',
+          },
         });
         return new Promise<number>((resolve) => child.on('exit', (code) => resolve(code ?? 0)));
       }

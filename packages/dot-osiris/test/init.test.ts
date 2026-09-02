@@ -65,12 +65,7 @@ describe('resolveOsirisFile', () => {
     const paths = new OsirisPaths(dir);
     const agents = await listOsirisDir(paths, 'agents', { filter: (p) => p.endsWith('.md') });
     const names = agents.map((a) => a.relPath).sort();
-    expect(names).toEqual([
-      'architect.md',
-      'implementer.md',
-      'researcher.md',
-      'reviewer.md',
-    ]);
+    expect(names).toEqual(['architect.md', 'implementer.md', 'researcher.md', 'reviewer.md']);
     expect(agents.every((a) => a.source === 'template')).toBe(true);
   });
 });

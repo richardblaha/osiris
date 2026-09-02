@@ -27,7 +27,10 @@ export function parseAgentDefinition(
 ): Result<AgentDefinition, ParseAgentError> {
   const { data, body } = parseFrontmatter(source);
   if (Object.keys(data).length === 0) {
-    return err({ path, message: `no YAML frontmatter in agent definition${path ? ` ${path}` : ''}` });
+    return err({
+      path,
+      message: `no YAML frontmatter in agent definition${path ? ` ${path}` : ''}`,
+    });
   }
   const parsed = AgentDefinition.safeParse({ ...data, instructions: body.trim() });
   if (!parsed.success) {
@@ -44,5 +47,9 @@ export function parseAgentDefinition(
 /** Render an `AgentDefinition` back to `.md` form. */
 export function serializeAgentDefinition(def: AgentDefinition): string {
   const { instructions, ...frontmatter } = def;
-  return serializeFrontmatter(frontmatter as Record<string, unknown>, `${instructions}\n`, FIELD_ORDER);
+  return serializeFrontmatter(
+    frontmatter as Record<string, unknown>,
+    `${instructions}\n`,
+    FIELD_ORDER,
+  );
 }

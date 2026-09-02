@@ -119,7 +119,10 @@ export class BacklogRepo {
     const dir = join(this.worktreePath, state);
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, filename), content, 'utf8');
-    await this.commit([`${state}/${filename}`], `add: [${input.type}]-${String(id).padStart(4, '0')} ${input.title}`);
+    await this.commit(
+      [`${state}/${filename}`],
+      `add: [${input.type}]-${String(id).padStart(4, '0')} ${input.title}`,
+    );
     log.info('created #%d in %s', id, state);
     return (await this.get(id))!;
   }

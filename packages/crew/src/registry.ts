@@ -20,7 +20,9 @@ export class AgentRegistry {
   require(name: string): AgentDefinition {
     const agent = this.agents.get(name);
     if (!agent) {
-      throw new Error(`unknown agent "${name}" (have: ${[...this.agents.keys()].join(', ') || 'none'})`);
+      throw new Error(
+        `unknown agent "${name}" (have: ${[...this.agents.keys()].join(', ') || 'none'})`,
+      );
     }
     return agent;
   }

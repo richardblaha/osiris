@@ -46,7 +46,11 @@ export async function resolveOsirisFile(
   }
   const templatePath = join(templateRoot(), relative);
   if (await fileExists(templatePath)) {
-    return { path: templatePath, source: 'template', content: await readFile(templatePath, 'utf8') };
+    return {
+      path: templatePath,
+      source: 'template',
+      content: await readFile(templatePath, 'utf8'),
+    };
   }
   return undefined;
 }

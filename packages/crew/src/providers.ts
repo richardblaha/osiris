@@ -35,7 +35,12 @@ export function parseModelSpec(spec: string): { provider: string; model: string 
   return { provider: spec.slice(0, slash), model: spec.slice(slash + 1) };
 }
 
-function build(kind: ProviderConfig['kind'], model: string, cfg: ProviderConfig, env: NodeJS.ProcessEnv): ProviderAdapter {
+function build(
+  kind: ProviderConfig['kind'],
+  model: string,
+  cfg: ProviderConfig,
+  env: NodeJS.ProcessEnv,
+): ProviderAdapter {
   const apiKey = cfg.apiKeyEnv ? env[cfg.apiKeyEnv] : undefined;
   switch (kind) {
     case 'echo':

@@ -43,7 +43,10 @@ export function memorySearchTool(memory: MemoryBridge): Tool {
       const hits = await memory.search(query, k ?? 6, source);
       if (hits.length === 0) return 'No matching passages.';
       return hits
-        .map((h, i) => `#${i + 1} (${h.source} · ${h.headingPath || 'top'} · ${h.score.toFixed(2)})\n${h.document}`)
+        .map(
+          (h, i) =>
+            `#${i + 1} (${h.source} · ${h.headingPath || 'top'} · ${h.score.toFixed(2)})\n${h.document}`,
+        )
         .join('\n\n---\n\n');
     },
   };
@@ -77,7 +80,8 @@ export function backlogReadTool(backlog: BacklogBridge): Tool {
 export function readFileTool(root: string): Tool {
   return {
     name: 'read_file',
-    description: 'Read a UTF-8 text file from the workspace. Path is relative to the workspace root.',
+    description:
+      'Read a UTF-8 text file from the workspace. Path is relative to the workspace root.',
     inputSchema: {
       type: 'object',
       required: ['path'],

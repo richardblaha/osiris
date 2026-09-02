@@ -62,7 +62,9 @@ function writeFrontmatter(data: Record<string, unknown>, body: string): string {
     if (Array.isArray(v)) return `${k}: [${v.join(', ')}]`;
     return `${k}: ${String(v)}`;
   };
-  const keys = ['id', 'type', 'title', 'assignee', 'labels', 'created'].filter((k) => data[k] !== undefined);
+  const keys = ['id', 'type', 'title', 'assignee', 'labels', 'created'].filter(
+    (k) => data[k] !== undefined,
+  );
   return `---\n${keys.map((k) => line(k, data[k])).join('\n')}\n---\n\n${body.replace(/^\n+/, '')}`;
 }
 

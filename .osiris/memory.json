@@ -1,0 +1,18 @@
+{
+  "$schema": "https://osiris-ide.dev/schema/memory.json",
+  "chroma": {
+    "url": "${OSIRIS_CHROMA_URL:-}",
+    "collection": "osiris-memory"
+  },
+  "index": {
+    "chunkSize": 1200,
+    "chunkOverlap": 200,
+    "hnsw": { "space": "cosine", "M": 16, "efConstruction": 200, "efSearch": 64 }
+  },
+  "embedding": {
+    "provider": "hash",
+    "model": "",
+    "endpoint": "${OSIRIS_EMBED_URL:-}",
+    "dimensions": 512
+  }
+}

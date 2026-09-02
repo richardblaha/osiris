@@ -81,7 +81,9 @@ describe('ensureBacklogWorktree (FakeGitRunner)', () => {
     const fake = new FakeGitRunner();
     const wt = '/nonexistent/backlog-worktree';
     fake.stub('rev-parse --show-toplevel', { stdout: '/repo' });
-    fake.stub('worktree list --porcelain', { stdout: `worktree ${wt}\nHEAD abc\nbranch refs/heads/osiris/backlog\n` });
+    fake.stub('worktree list --porcelain', {
+      stdout: `worktree ${wt}\nHEAD abc\nbranch refs/heads/osiris/backlog\n`,
+    });
 
     const repo = await BacklogRepo.open({ repoRoot: '/repo', git: fake, worktreePath: wt });
     expect(repo.branch).toBe('osiris/backlog');

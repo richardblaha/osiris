@@ -10,7 +10,16 @@ const auth = { authorization: `Bearer ${TOKEN}` };
 /** A tiny in-memory backlog standing in for the orphan-branch repo. */
 function fakeBacklog(): BacklogApi {
   const tasks = [
-    { id: 1, type: 'bug', slug: 's', title: 'Boom', state: 'todo', filename: '[bug]-0001-s.md', labels: [], body: '' },
+    {
+      id: 1,
+      type: 'bug',
+      slug: 's',
+      title: 'Boom',
+      state: 'todo',
+      filename: '[bug]-0001-s.md',
+      labels: [],
+      body: '',
+    },
   ];
   return {
     async board() {
@@ -54,10 +63,19 @@ function deps(): ConsoleDeps {
   return {
     getBacklog: async () => backlog,
     listAgents: async () => [
-      { name: 'architect', role: 'Lead', specialization: '', tools: [], delegateTo: [], instructions: '' },
+      {
+        name: 'architect',
+        role: 'Lead',
+        specialization: '',
+        tools: [],
+        delegateTo: [],
+        instructions: '',
+      },
     ],
     searchMemory: async (req) => ({
-      hits: [{ id: 'm#0', document: `re: ${req.query}`, source: 'a.md', headingPath: 'H', score: 0.5 }],
+      hits: [
+        { id: 'm#0', document: `re: ${req.query}`, source: 'a.md', headingPath: 'H', score: 0.5 },
+      ],
     }),
     reindexMemory: async () => ({
       filesIndexed: 1,
@@ -87,7 +105,12 @@ function deps(): ConsoleDeps {
 
 let app: FastifyInstance;
 beforeEach(() => {
-  app = buildServer({ token: TOKEN, publicBaseUrl: 'http://osiris.test', leaseSweepMs: 0, console: deps() });
+  app = buildServer({
+    token: TOKEN,
+    publicBaseUrl: 'http://osiris.test',
+    leaseSweepMs: 0,
+    console: deps(),
+  });
 });
 afterEach(async () => {
   await app.close();

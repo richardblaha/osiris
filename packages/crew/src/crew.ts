@@ -104,7 +104,9 @@ export class Crew {
         );
       }
 
-      const orchestrator = new AgentOrchestrator(this.options.resolveProvider(def.model ?? this.options.config.defaultModel));
+      const orchestrator = new AgentOrchestrator(
+        this.options.resolveProvider(def.model ?? this.options.config.defaultModel),
+      );
       orchestrator.setTools(tools);
 
       const result = await orchestrator.run({
@@ -159,7 +161,9 @@ export class Crew {
       `You are "${def.name}" — ${def.role}.${def.specialization ? ` Specialization: ${def.specialization}.` : ''}`,
     ];
     if (this.options.projectContext) {
-      parts.push(`## Project instructions (README.md)\n\n${truncate(this.options.projectContext, 6000)}`);
+      parts.push(
+        `## Project instructions (README.md)\n\n${truncate(this.options.projectContext, 6000)}`,
+      );
     }
     const board = blackboard.render();
     if (board) parts.push(board);

@@ -1,0 +1,28 @@
+# Dev Container stack for working on Osiris itself: a Node 22 workspace plus the
+# ChromaDB service the knowledge base indexes into. All tool execution for the
+# crew runs inside this container.
+services:
+  workspace:
+    image: mcr.microsoft.com/devcontainers/typescript-node:22
+    volumes:
+      - ..:/workspace:cached
+      - osiris-pnpm-store:/home/node/.local/share/pnpm/store
+    command: sleep infinity
+    environment:
+      OSIRIS_CHROMA_URL: http://chromadb:8000
+    depends_on:
+      - chromadb
+
+  chromadb:
+    image: chromadb/chroma:0.5.20
+    environment:
+      IS_PERSISTENT: "TRUE"
+      ANONYMIZED_TELEMETRY: "FALSE"
+    volumes:
+      - osiris-chroma:/chroma/chroma
+    ports:
+      - "8000:8000"
+
+volumes:
+  osiris-pnpm-store:
+  osiris-chroma:

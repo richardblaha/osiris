@@ -36,7 +36,10 @@ function Board(): JSX.Element {
   const [title, setTitle] = useState('');
 
   const refresh = useCallback(() => {
-    api.board().then(setBoard).catch((e: Error) => setError(e.message));
+    api
+      .board()
+      .then(setBoard)
+      .catch((e: Error) => setError(e.message));
   }, []);
   useEffect(refresh, [refresh]);
 
@@ -120,7 +123,10 @@ function Crew(): JSX.Element {
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    api.agents().then(setAgents).catch(() => setAgents([]));
+    api
+      .agents()
+      .then(setAgents)
+      .catch(() => setAgents([]));
   }, []);
 
   const run = async (): Promise<void> => {
@@ -210,7 +216,9 @@ function Memory(): JSX.Element {
         <button className="primary" onClick={() => void search()}>
           Search
         </button>
-        <button onClick={() => void api.reindex().then(() => setNote('Reindexed.'))}>Reindex</button>
+        <button onClick={() => void api.reindex().then(() => setNote('Reindexed.'))}>
+          Reindex
+        </button>
       </div>
       {note && <p className="muted">{note}</p>}
       {hits.map((h, i) => (

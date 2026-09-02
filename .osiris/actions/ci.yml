@@ -1,0 +1,23 @@
+# Portable CI workflow — runs on GitHub Actions, Gitea Actions and Forgejo Actions.
+# Copy to `.github/workflows/`, `.gitea/workflows/` or `.forgejo/workflows/`.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test

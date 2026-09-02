@@ -1,5 +1,10 @@
 import { readFile } from 'node:fs/promises';
-import { listOsirisDir, osirisPaths, resolveOsirisFile, type OsirisPaths } from '@osiris/dot-osiris';
+import {
+  listOsirisDir,
+  osirisPaths,
+  resolveOsirisFile,
+  type OsirisPaths,
+} from '@osiris/dot-osiris';
 import { BacklogRepo } from '@osiris/backlog';
 import {
   buildEmbedding,
@@ -11,7 +16,12 @@ import {
   type MemoryStore,
 } from '@osiris/memory';
 import { loadAgentRegistry, loadCrew } from '@osiris/crew';
-import type { CrewEvent, CrewRunRequest, CrewRunResult, MemorySearchRequest } from '@osiris/protocol';
+import type {
+  CrewEvent,
+  CrewRunRequest,
+  CrewRunResult,
+  MemorySearchRequest,
+} from '@osiris/protocol';
 import { createLogger } from '@osiris/shared-core';
 import type { ConsoleDeps } from './routes/console.js';
 
@@ -64,7 +74,9 @@ export function createWorkspaceConsoleDeps(
 
   const doSearch = async (
     req: MemorySearchRequest,
-  ): Promise<{ id: string; document: string; source: string; headingPath: string; score: number }[]> => {
+  ): Promise<
+    { id: string; document: string; source: string; headingPath: string; score: number }[]
+  > => {
     const { config, store } = await getMemory();
     const hits = await searchMemory(req.query, {
       store,

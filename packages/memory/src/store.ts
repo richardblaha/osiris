@@ -37,11 +37,7 @@ export interface MemoryStore {
   ensureCollection(hnsw: HnswConfig): Promise<void>;
   upsert(records: MemoryRecord[]): Promise<void>;
   deleteByIds(ids: string[]): Promise<void>;
-  query(
-    embedding: number[],
-    k: number,
-    where?: Record<string, MetadataValue>,
-  ): Promise<QueryHit[]>;
+  query(embedding: number[], k: number, where?: Record<string, MetadataValue>): Promise<QueryHit[]>;
   count(): Promise<number>;
 }
 

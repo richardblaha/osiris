@@ -1,0 +1,28 @@
+{
+  "name": "Osiris",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "workspace",
+  "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {},
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "remoteEnv": {
+    "OSIRIS_TELEMETRY": "off",
+    "OSIRIS_CHROMA_URL": "http://chromadb:8000",
+    "OSIRIS_WORKSPACE_ROOT": "/workspace"
+  },
+  "forwardPorts": [8080, 5273, 8000],
+  "portsAttributes": {
+    "8080": { "label": "osiris-server" },
+    "5273": { "label": "osiris-console (vite)" },
+    "8000": { "label": "chromadb" }
+  },
+  "onCreateCommand": "corepack enable && pnpm install --frozen-lockfile",
+  "postCreateCommand": "pnpm build",
+  "customizations": {
+    "vscode": {
+      "extensions": ["dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+    }
+  }
+}

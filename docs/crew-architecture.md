@@ -1,6 +1,7 @@
 # Osiris Crew Architecture — Implementation Plan & Technical Reference
 
-Status: **in progress** (started 2026-09-02)
+Status: **implemented** 2026-09-02 — `@osiris/{dot-osiris,memory,crew,backlog,cli}`,
+console API + SPA, DevContainer. `pnpm build && lint && typecheck && test` green.
 
 This document is both the Phase‑1 implementation checklist (with acceptance
 criteria) and the living technical reference for the multi‑agent orchestration,
@@ -11,15 +12,15 @@ Osiris.
 
 ## 0. Architectural guard‑rails (locked)
 
-| # | Constraint | Consequence |
-|---|------------|-------------|
-| 1 | **No `CLAUDE.md`.** `README.md` is the single source of project instructions. | Crew system prompts are assembled from `README.md` + `.osiris/agents/*.md`. |
-| 2 | **VS Code Language Model API / Copilot Chat** provides model selection. No hard‑coded API keys where the editor API can supply one. | `@osiris/crew` model resolution has a `vscode-lm` provider adapter; keychain/env is the fallback only. |
-| 3 | **MCP discovery from the VS Code / Dev Container environment.** | Crew reads `.osiris/mcp.json` + the editor's contributed MCP servers; nothing bespoke. |
-| 4 | **All tool execution runs inside `.devcontainer`.** | ChromaDB, the crew runtime and `osiris-server` all have a container story; host is orchestration only. |
-| 5 | **`.osiris/` is the fallback + init skeleton.** Missing project config falls back to the bundled system template. | `@osiris/dot-osiris` ships `template/` and a layered resolver. |
-| 6 | **Backlog lives on an orphan branch** (`osiris/backlog`), never polluting `main` / `feature/*` history. | `@osiris/backlog` drives a dedicated git worktree; state moves are `git mv` + commit. |
-| 7 | **`.osiris/temp/` is always git‑ignored.** | `ensureGitignore()` is idempotently applied by init and the CLI. |
+| #   | Constraint                                                                                                                          | Consequence                                                                                            |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 1   | **No `CLAUDE.md`.** `README.md` is the single source of project instructions.                                                       | Crew system prompts are assembled from `README.md` + `.osiris/agents/*.md`.                            |
+| 2   | **VS Code Language Model API / Copilot Chat** provides model selection. No hard‑coded API keys where the editor API can supply one. | `@osiris/crew` model resolution has a `vscode-lm` provider adapter; keychain/env is the fallback only. |
+| 3   | **MCP discovery from the VS Code / Dev Container environment.**                                                                     | Crew reads `.osiris/mcp.json` + the editor's contributed MCP servers; nothing bespoke.                 |
+| 4   | **All tool execution runs inside `.devcontainer`.**                                                                                 | ChromaDB, the crew runtime and `osiris-server` all have a container story; host is orchestration only. |
+| 5   | **`.osiris/` is the fallback + init skeleton.** Missing project config falls back to the bundled system template.                   | `@osiris/dot-osiris` ships `template/` and a layered resolver.                                         |
+| 6   | **Backlog lives on an orphan branch** (`osiris/backlog`), never polluting `main` / `feature/*` history.                             | `@osiris/backlog` drives a dedicated git worktree; state moves are `git mv` + commit.                  |
+| 7   | **`.osiris/temp/` is always git‑ignored.**                                                                                          | `ensureGitignore()` is idempotently applied by init and the CLI.                                       |
 
 ---
 
@@ -52,7 +53,7 @@ Existing VS Code workspace files (`launch.json`, `tasks.json`, `settings.json`,
 name: architect
 role: Senior Systems Architect
 specialization: system design, API contracts, trade-off analysis
-model: vscode-lm/claude-opus-5      # provider/model; falls back to crew default
+model: vscode-lm/claude-opus-5 # provider/model; falls back to crew default
 tools: [memory_search, read_file, backlog_read]
 delegateTo: [implementer, reviewer] # who this agent may hand subtasks to
 temperature: 0.2
@@ -69,7 +70,8 @@ frontmatter is rejected with a clear error citing the path.
 
 ## 2. Implementation checklist
 
-### Phase A — `@osiris/dot-osiris` (layout, template, init)  ✅ scaffold
+### Phase A — `@osiris/dot-osiris` (layout, template, init) ✅ scaffold
+
 - [x] `layout.ts` — path constants + `OsirisPaths(root)` resolver
 - [x] `resolve.ts` — layered read: project `.osiris/…` → bundled `template/…`
 - [x] `gitignore.ts` — idempotent `ensureGitignore(root)` adds `.osiris/temp/`
@@ -80,7 +82,8 @@ frontmatter is rejected with a clear error citing the path.
   re-running is a no-op; `resolveOsirisFile('agents/architect.md')` returns the
   project file when present and the template file otherwise.
 
-### Phase B — `@osiris/memory` (ChromaDB knowledge base)  ✅ scaffold
+### Phase B — `@osiris/memory` (ChromaDB knowledge base) ✅ scaffold
+
 - [x] `chunk.ts` — heading-aware Markdown splitter (`chunkMarkdown`, size/overlap)
 - [x] `hash.ts` — stable content + file digests (`sha256`)
 - [x] `cache.ts` — `IndexCache` over `.osiris/temp/memory-index.json` (file → digest → chunk ids)
@@ -94,7 +97,8 @@ frontmatter is rejected with a clear error citing the path.
   chunks; HNSW params (`space: cosine`, `M`, `efConstruction`) are passed on
   collection create.
 
-### Phase C — `@osiris/crew` (multi-agent orchestration)  ✅ scaffold
+### Phase C — `@osiris/crew` (multi-agent orchestration) ✅ scaffold
+
 - [x] `definition.ts` — `parseAgentDefinition` / `serializeAgentDefinition` (frontmatter)
 - [x] `registry.ts` — `AgentRegistry.load(dotOsiris)` from `.osiris/agents/`
 - [x] `blackboard.ts` — shared append-only fact store for a crew run
@@ -108,7 +112,8 @@ frontmatter is rejected with a clear error citing the path.
   runs the implementer with its own system prompt/tools and folds the result
   back; recursion beyond `maxDepth` is refused, not hung.
 
-### Phase D — `@osiris/backlog` (Git orphan-branch PM)  ✅ scaffold
+### Phase D — `@osiris/backlog` (Git orphan-branch PM) ✅ scaffold
+
 - [x] `task.ts` — `parseTaskFilename` / `formatTaskFilename` (`[<type>]-<id>-<slug>.md`), frontmatter body
 - [x] `states.ts` — ordered workflow states, derived from sub-folders
 - [x] `git-runner.ts` — `GitRunner` interface + `ExecaGitRunner` + `FakeGitRunner`
@@ -120,7 +125,8 @@ frontmatter is rejected with a clear error citing the path.
   **no** change to the working tree of `main`; `list()` groups tasks by state
   folder; a malformed filename is skipped with a warning, not a throw.
 
-### Phase E — `apps/osiris-server` REST + SPA  ✅ scaffold
+### Phase E — `apps/osiris-server` REST + SPA ✅ scaffold
+
 - [x] `routes/backlog.ts` — `GET /api/v1/backlog`, `GET/POST /api/v1/backlog/tasks`, `POST …/tasks/:id/move`
 - [x] `routes/crew.ts` — `GET /api/v1/crew/agents`, `POST /api/v1/crew/runs` (+ SSE `…/runs/:id/events`)
 - [x] `routes/memory.ts` — `POST /api/v1/memory/search`, `POST /api/v1/memory/reindex`
@@ -131,7 +137,8 @@ frontmatter is rejected with a clear error citing the path.
   it on the board; `GET /` serves the SPA; every route validates its body via zod
   and 400s on bad input.
 
-### Phase F — `apps/osiris-console` (SPA)  ✅ scaffold
+### Phase F — `apps/osiris-console` (SPA) ✅ scaffold
+
 - [x] Vite + React + TypeScript, no runtime CSS framework (system font, tokens)
 - [x] Kanban board (columns = states, drag → `move`), Agents panel, Memory search
 - [x] `api.ts` thin fetch client against `@osiris/protocol` types
@@ -139,7 +146,8 @@ frontmatter is rejected with a clear error citing the path.
 - **Acceptance:** `pnpm --filter @osiris/console build` emits a static bundle;
   board reflects server state and a card drag issues one `move` call.
 
-### Phase G — `@osiris/cli` (`osiris` binary + REPL)  ✅ scaffold
+### Phase G — `@osiris/cli` (`osiris` binary + REPL) ✅ scaffold
+
 - [x] `osiris init` — `initWorkspace`
 - [x] `osiris memory reindex` / `osiris memory search <q>`
 - [x] `osiris agent list` / `osiris crew run "<task>"`
@@ -149,6 +157,7 @@ frontmatter is rejected with a clear error citing the path.
 - **Acceptance:** `osiris --help` lists all commands; `osiris backlog new "[bug] parser crash"` writes a task and commits it to the orphan branch.
 
 ### Phase H — Dev Container + integration
+
 - [x] repo-root `.devcontainer/devcontainer.json` + `docker-compose.yml` (adds a `chromadb` service)
 - [x] `.osiris/mcp.json` template + `OSIRIS_*` env wiring (`OSIRIS_CHROMA_URL`, …)
 - [x] `.osiris/` in **this** repo scaffolded with real starter agents + `PROCESS.md`

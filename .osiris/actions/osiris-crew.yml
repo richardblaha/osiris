@@ -1,0 +1,29 @@
+# Run the Osiris crew on a backlog task from CI (e.g. on a label or a comment).
+# Portable across GitHub / Gitea / Forgejo Actions.
+name: osiris-crew
+
+on:
+  workflow_dispatch:
+    inputs:
+      task:
+        description: Backlog task id or a free-form instruction
+        required: true
+
+jobs:
+  crew:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the crew reads the osiris/backlog orphan branch
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: corepack enable
+      - run: pnpm install --frozen-lockfile
+      - name: Run crew
+        env:
+          # Provide a model provider for headless runs (no editor LM API in CI).
+          OSIRIS_CREW_PROVIDER: ${{ vars.OSIRIS_CREW_PROVIDER || 'echo' }}
+          OSIRIS_AI_API_KEY: ${{ secrets.OSIRIS_AI_API_KEY }}
+        run: pnpm osiris crew run "${{ github.event.inputs.task }}"

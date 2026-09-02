@@ -36,15 +36,25 @@ Osiris IDE is a **downstream distribution** of [Code - OSS](https://github.com/m
 osiris/
 ├── apps/
 │   ├── osiris-desktop/   # Electron wrapper, OS packaging, branding entrypoint
-│   └── osiris-web/       # Web runtime / standalone server
+│   ├── osiris-web/       # Web runtime / standalone server
+│   ├── osiris-server/    # REST API: git hosting, sessions, crew / backlog / memory
+│   └── osiris-console/   # Lightweight SPA — Kanban board, crew runner, KB search
 ├── packages/
 │   ├── branding/         # Icons, themes, product.json overlay, asset metadata
 │   ├── shell-theme/      # Theme provider + OS / host theme detection
-│   └── shared-core/      # Shared utilities, types, telemetry & event bus
+│   ├── shared-core/      # Shared utilities, types, telemetry & event bus
+│   ├── protocol/         # zod wire contracts (sessions, crew, backlog, memory)
+│   ├── agent-core/       # Provider-agnostic single-agent loop + snapshot
+│   ├── dot-osiris/       # The .osiris/ layout resolver + bundled system template
+│   ├── memory/           # Knowledge base: chunking + incremental ChromaDB index
+│   ├── crew/             # Multi-agent orchestration (coordinator + delegation)
+│   ├── backlog/          # File-based PM on a Git orphan branch
+│   └── cli/              # The `osiris` command + REPL
 ├── extensions/
 │   ├── osiris-ai/        # AI agent orchestration + MCP + agent panel
 │   ├── osiris-dexpi/     # DEXPI (P&ID) parser, visualizer, validator
-│   └── osiris-step/      # ISO 10303-21 STEP parser + 3D preview
+│   ├── osiris-step/      # ISO 10303-21 STEP parser + 3D preview
+│   └── osiris-workspace/ # DevContainer enforcement + session handover
 └── toolchain/
     ├── eslint-config/    # Shared flat ESLint config
     └── tsconfig/         # Shared TypeScript base configs
@@ -68,6 +78,50 @@ pnpm test         # vitest across packages + extension logic
 pnpm lint         # eslint (flat config)
 pnpm typecheck    # tsc -b across the workspace
 ```
+
+## Multi-agent crew, knowledge base & Git backlog
+
+Osiris projects are driven from a `.osiris/` folder (the same folder VS Code reads
+as `.vscode`). Anything missing there falls back to the bundled system template in
+`@osiris/dot-osiris`.
+
+```text
+.osiris/
+├── agents/     # crew members — <name>.md with a YAML frontmatter header
+├── memory/     # knowledge base — every .md is chunked + indexed into ChromaDB
+├── backlog/    # file-based PM — PROCESS.md + one sub-folder per workflow state
+├── actions/    # portable CI templates (GitHub / Gitea / Forgejo Actions)
+├── temp/       # agent scratchpads — always git-ignored
+├── crew.json   # crew roster + coordinator policy
+├── memory.json # ChromaDB connection + indexing policy
+└── mcp.json    # MCP servers, merged with the editor's discovered set
+```
+
+The `osiris` CLI (`@osiris/cli`) ties it together:
+
+```bash
+osiris init                       # scaffold .osiris/ from the system template
+osiris agent list                 # the crew defined in .osiris/agents/
+osiris crew run "add a foo parser" # coordinator drives the lead agent; it delegates
+osiris memory reindex             # (re)index .osiris/memory/ — incremental, content-addressed
+osiris memory search "orphan branch"
+osiris backlog new "Parser crash" --type bug
+osiris backlog move 12 review     # git mv + one commit on the orphan branch osiris/backlog
+osiris serve                      # REST API + Kanban console at http://localhost:8080
+osiris repl                       # interactive REPL with crew/backlog/memory in scope
+```
+
+- **Models** come from the VS Code Language Model API when running in the editor
+  (`model: vscode-lm/claude-opus-5` in an agent file); CLI/CI runs use a headless
+  fallback (`OSIRIS_CREW_PROVIDER`, `OSIRIS_AI_API_KEY`).
+- **MCP** servers are taken from `.osiris/mcp.json` merged with the editor's
+  discovered set — Osiris manages no credentials of its own.
+- **All tool execution** runs inside the `.devcontainer` (Node 22 + a ChromaDB
+  service; see `.devcontainer/docker-compose.yml`).
+- **The backlog never touches source history** — it lives on the dedicated
+  orphan branch `osiris/backlog`, operated through a worktree under `.osiris/temp/`.
+
+See [docs/crew-architecture.md](docs/crew-architecture.md) for the full design.
 
 ### Working on an extension
 

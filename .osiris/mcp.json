@@ -1,0 +1,12 @@
+{
+  "$schema": "https://osiris-ide.dev/schema/mcp.json",
+  "//": "MCP servers merged with the ones the editor / Dev Container discovers. Osiris does not manage credentials here — use the editor's secret storage.",
+  "servers": {
+    "filesystem": {
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "${workspaceFolder}"],
+      "enabled": true
+    }
+  }
+}

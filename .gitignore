@@ -33,3 +33,6 @@ Thumbs.db
 *.log
 .env
 .env.local
+
+# Osiris — agent scratchpads, never committed
+.osiris/temp/

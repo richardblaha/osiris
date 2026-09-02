@@ -38,7 +38,11 @@ async function branchExists(git: GitRunner, repoRoot: string, branch: string): P
   return res.exitCode === 0;
 }
 
-async function worktreeRegistered(git: GitRunner, repoRoot: string, worktreePath: string): Promise<boolean> {
+async function worktreeRegistered(
+  git: GitRunner,
+  repoRoot: string,
+  worktreePath: string,
+): Promise<boolean> {
   const res = await git.run(['worktree', 'list', '--porcelain'], { cwd: repoRoot });
   return res.stdout.split('\n').some((line) => line === `worktree ${worktreePath}`);
 }
@@ -68,7 +72,9 @@ async function seedBacklog(
     }
   }
   await git.run(['add', '-A'], { cwd: worktreePath });
-  await git.run(['commit', '-m', 'chore(backlog): initialise orphan branch'], { cwd: worktreePath });
+  await git.run(['commit', '-m', 'chore(backlog): initialise orphan branch'], {
+    cwd: worktreePath,
+  });
 }
 
 export interface EnsureWorktreeResult {
@@ -121,7 +127,8 @@ export async function ensureBacklogWorktree(
   if (orphan.exitCode !== 0) {
     // Older git without `--orphan`: detach, then orphan-checkout inside the worktree.
     const detach = await git.run(['worktree', 'add', '--detach', worktreePath], { cwd: repoRoot });
-    if (detach.exitCode !== 0) throw new Error(`git worktree add --detach failed: ${detach.stderr}`);
+    if (detach.exitCode !== 0)
+      throw new Error(`git worktree add --detach failed: ${detach.stderr}`);
     await git.run(['checkout', '--orphan', branch], { cwd: worktreePath });
     await git.run(['rm', '-rf', '--quiet', '.'], { cwd: worktreePath });
   }
