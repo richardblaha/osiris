@@ -1,9 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { devcontainerHash } from '../src/hash.js';
 import { createDigestingStream, sha256Digest } from '../src/digest.js';
 import { parseDevContainerUp } from '../src/devcontainer.js';
+import { ensureDevcontainerConfig } from '../src/devcontainer-template.js';
 
 describe('devcontainerHash', () => {
   it('is stable and 12 hex chars', () => {
@@ -54,5 +58,38 @@ describe('parseDevContainerUp', () => {
 
   it('throws when the result lacks a containerId', () => {
     expect(() => parseDevContainerUp(JSON.stringify({ outcome: 'error' }))).toThrow(/containerId/);
+  });
+});
+
+describe('ensureDevcontainerConfig', () => {
+  it('writes the fallback template when the project has none', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'osiris-dc-'));
+    const result = await ensureDevcontainerConfig(dir);
+
+    expect(result.created).toBe(true);
+    expect(result.path).toBe(join(dir, '.devcontainer', 'devcontainer.json'));
+    const written = readFileSync(result.path, 'utf8');
+    expect(written).toContain('"name": "Osiris Workspace"');
+    expect(written).toContain('${localEnv:SSH_AUTH_SOCK}');
+    expect(written).toContain('host.docker.internal:4318');
+  });
+
+  it('leaves an existing .devcontainer/devcontainer.json untouched', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'osiris-dc-'));
+    mkdirSync(join(dir, '.devcontainer'));
+    writeFileSync(join(dir, '.devcontainer', 'devcontainer.json'), '{ "image": "mine" }');
+
+    const result = await ensureDevcontainerConfig(dir);
+    expect(result.created).toBe(false);
+    expect(readFileSync(result.path, 'utf8')).toBe('{ "image": "mine" }');
+  });
+
+  it('recognises a root .devcontainer.json', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'osiris-dc-'));
+    writeFileSync(join(dir, '.devcontainer.json'), '{ "image": "root" }');
+
+    const result = await ensureDevcontainerConfig(dir);
+    expect(result.created).toBe(false);
+    expect(result.path).toBe(join(dir, '.devcontainer.json'));
   });
 });

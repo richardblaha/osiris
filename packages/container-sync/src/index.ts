@@ -4,5 +4,6 @@ export * from './digest.js';
 export * from './resumable.js';
 export * from './registry.js';
 export * from './devcontainer.js';
+export * from './devcontainer-template.js';
 export * from './freeze.js';
 export * from './thaw.js';

@@ -1,5 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  FileSessionStore,
   InMemorySessionStore,
   InvalidTransition,
   LeaseConflict,
@@ -79,5 +83,33 @@ describe('InMemorySessionStore', () => {
     store.subscribe(id, seen);
     store.endTransfer(id, 'server');
     expect(seen).toHaveBeenCalledWith(expect.objectContaining({ type: 'session.resumed' }));
+  });
+});
+
+describe('FileSessionStore', () => {
+  let dir: string;
+  afterEach(() => vi.restoreAllMocks());
+
+  it('reloads sessions and in-flight leases across a restart', () => {
+    dir = mkdtempSync(join(tmpdir(), 'osiris-sessions-'));
+
+    const first = new FileSessionStore(dir);
+    const { sessionId } = first.create({ workspaceId: 'ws1', devcontainerHash: 'abc', origin: 'desktop' });
+    const started = first.beginTransfer(sessionId, 'to-server', 'holder');
+
+    expect(JSON.parse(readFileSync(join(dir, 'sessions.json'), 'utf8'))).toHaveLength(1);
+
+    const reloaded = new FileSessionStore(dir);
+    const after = reloaded.get(sessionId);
+    expect(after.location).toBe('in-transit');
+    expect(after.lease?.etag).toBe(started.lease?.etag);
+
+    // The reloaded store can still finish the transfer.
+    const done = reloaded.withLease(sessionId, started.lease?.etag, (d) => {
+      d.webUrl = 'http://ide/x';
+    });
+    expect(done.lease?.etag).not.toBe(started.lease?.etag);
+    reloaded.endTransfer(sessionId, 'server');
+    expect(new FileSessionStore(dir).get(sessionId).location).toBe('server');
   });
 });

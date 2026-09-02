@@ -1,5 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import type {
   SessionDescriptor,
   SessionEvent,
@@ -37,6 +39,18 @@ interface SessionRecord {
   events: EventEmitter;
 }
 
+/** The durable part of a {@link SessionRecord} — event emitters stay in-process. */
+export interface PersistedSession {
+  descriptor: SessionDescriptor;
+  previousLocation: SessionLocation;
+}
+
+/** Reload/persist the session table across process restarts. */
+export interface SessionPersistence {
+  load(): PersistedSession[];
+  save(sessions: PersistedSession[]): void;
+}
+
 export interface CreateSessionInput {
   workspaceId: string;
   devcontainerHash: string;
@@ -72,6 +86,27 @@ export interface SessionStore {
 export class InMemorySessionStore implements SessionStore {
   private readonly records = new Map<string, SessionRecord>();
 
+  constructor(private readonly persistence?: SessionPersistence) {
+    for (const { descriptor, previousLocation } of persistence?.load() ?? []) {
+      this.records.set(descriptor.sessionId, {
+        descriptor,
+        previousLocation,
+        events: new EventEmitter(),
+      });
+    }
+  }
+
+  /** Write the durable session table out after a mutation. */
+  private flush(): void {
+    if (!this.persistence) return;
+    this.persistence.save(
+      [...this.records.values()].map((r) => ({
+        descriptor: r.descriptor,
+        previousLocation: r.previousLocation,
+      })),
+    );
+  }
+
   create(input: CreateSessionInput): SessionDescriptor {
     const sessionId = randomUUID();
     const descriptor: SessionDescriptor = {
@@ -88,6 +123,7 @@ export class InMemorySessionStore implements SessionStore {
       previousLocation: descriptor.location,
       events: new EventEmitter(),
     });
+    this.flush();
     return structuredClone(descriptor);
   }
 
@@ -123,6 +159,7 @@ export class InMemorySessionStore implements SessionStore {
     descriptor.lease = { etag: newLeaseEtag(), holder, expiresAt: leaseExpiresAt() };
     descriptor.location = 'in-transit';
     descriptor.transfer = { direction, startedAt: new Date().toISOString() };
+    this.flush();
     return structuredClone(descriptor);
   }
 
@@ -147,6 +184,7 @@ export class InMemorySessionStore implements SessionStore {
 
     mutate(descriptor);
     descriptor.lease = { ...descriptor.lease, etag: newLeaseEtag(), expiresAt: leaseExpiresAt() };
+    this.flush();
     return structuredClone(descriptor);
   }
 
@@ -155,13 +193,16 @@ export class InMemorySessionStore implements SessionStore {
     record.descriptor.location = location;
     record.descriptor.lease = null;
     delete record.descriptor.transfer;
+    this.flush();
     const snapshot = structuredClone(record.descriptor);
     this.emit(record, { type: 'session.resumed', sessionId: id, descriptor: snapshot });
     return snapshot;
   }
 
   abortTransfer(id: string): SessionDescriptor {
-    return this.restore(this.record(id));
+    const snapshot = this.restore(this.record(id));
+    this.flush();
+    return snapshot;
   }
 
   sweepExpiredLeases(now: number = Date.now()): string[] {
@@ -174,6 +215,7 @@ export class InMemorySessionStore implements SessionStore {
         expired.push(id);
       }
     }
+    if (expired.length) this.flush();
     return expired;
   }
 
@@ -197,5 +239,33 @@ export class InMemorySessionStore implements SessionStore {
     const record = this.records.get(id);
     if (!record) throw new SessionNotFound(id);
     return record;
+  }
+}
+
+/** JSON-file persistence — one `sessions.json` in `dir`, written atomically. */
+export function fileSessionPersistence(dir: string): SessionPersistence {
+  const file = join(dir, 'sessions.json');
+  return {
+    load() {
+      if (!existsSync(file)) return [];
+      try {
+        return JSON.parse(readFileSync(file, 'utf8')) as PersistedSession[];
+      } catch {
+        return [];
+      }
+    },
+    save(sessions) {
+      mkdirSync(dirname(file), { recursive: true });
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, `${JSON.stringify(sessions, null, 2)}\n`, 'utf8');
+      renameSync(tmp, file);
+    },
+  };
+}
+
+/** Session store that survives a server restart by persisting to `<dir>/sessions.json`. */
+export class FileSessionStore extends InMemorySessionStore {
+  constructor(dir: string) {
+    super(fileSessionPersistence(dir));
   }
 }

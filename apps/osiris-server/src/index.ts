@@ -1,7 +1,10 @@
 #!/usr/bin/env node
+import { join } from 'node:path';
 import { startTelemetry } from '@osiris/telemetry';
 import { createLogger } from '@osiris/shared-core';
 import { buildServer } from './app.js';
+import { FileSessionStore } from './session-store.js';
+import { FileVolumeStore } from './executors.js';
 
 const log = createLogger('server');
 
@@ -16,9 +19,15 @@ async function main(): Promise<void> {
   const host = process.env.HOST ?? '0.0.0.0';
   const publicBaseUrl = process.env.OSIRIS_PUBLIC_URL ?? `http://localhost:${port}`;
   const token = process.env.OSIRIS_SERVER_TOKEN ?? '';
+  const stateDir = process.env.OSIRIS_STATE_DIR;
 
   if (!token) {
     log.warn('OSIRIS_SERVER_TOKEN is unset — the API is running without authentication');
+  }
+  if (stateDir) {
+    log.info('persisting session + volume state under %s', stateDir);
+  } else {
+    log.warn('OSIRIS_STATE_DIR is unset — session state is in-memory and lost on restart');
   }
 
   const app = buildServer({
@@ -26,6 +35,8 @@ async function main(): Promise<void> {
     publicBaseUrl,
     leaseSweepMs: 30_000,
     gitReposDir: process.env.OSIRIS_GIT_REPOS_DIR,
+    store: stateDir ? new FileSessionStore(join(stateDir, 'sessions')) : undefined,
+    volumes: stateDir ? new FileVolumeStore(join(stateDir, 'volumes')) : undefined,
     registry: process.env.OSIRIS_REGISTRY
       ? {
           url: process.env.OSIRIS_REGISTRY,

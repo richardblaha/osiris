@@ -76,7 +76,8 @@ export function buildServer(options: BuildServerOptions): FastifyInstance {
   });
 
   app.addHook('onRequest', async (request, reply) => {
-    // `/healthz` is open; `/git/` carries its own (basic) auth via git clients.
+    // `/healthz` is open; `/git/` enforces its own HTTP Basic auth (git clients
+    // cannot send a bearer token) inside registerGitHosting.
     if (request.url === '/healthz' || request.url.startsWith('/git/') || options.token === '') {
       return;
     }
@@ -100,7 +101,7 @@ export function buildServer(options: BuildServerOptions): FastifyInstance {
   app.get('/healthz', async () => ({ status: 'ok', sessions: store.list().length }));
 
   if (options.gitReposDir) {
-    registerGitHosting(app, { reposDir: options.gitReposDir });
+    registerGitHosting(app, { reposDir: options.gitReposDir, token: options.token });
   }
 
   app.post(`${API_BASE}/sessions`, async (request, reply) => {

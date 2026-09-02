@@ -2,6 +2,7 @@ import { execa } from 'execa';
 import type Docker from 'dockerode';
 import { createLogger } from '@osiris/shared-core';
 import { devcontainerHash } from './hash.js';
+import { ensureDevcontainerConfig } from './devcontainer-template.js';
 
 /** The slice of `execa` this module needs; overridable in tests. */
 export type CommandRunner = (
@@ -50,6 +51,8 @@ export interface EnsureDevContainerInput {
   hostPath: string;
   /** Port the in-container VS Code server will listen on. */
   serverPort: number;
+  /** Write the Osiris fallback `devcontainer.json` when the project has none. Default true. */
+  writeFallbackConfig?: boolean;
   /** Override the command runner (tests). */
   runner?: CommandRunner;
 }
@@ -71,6 +74,12 @@ export async function ensureDevContainer(
 ): Promise<DevContainerHandle> {
   const hash = devcontainerHash(input.hostPath);
   const run: CommandRunner = input.runner ?? (execa as unknown as CommandRunner);
+
+  if (input.writeFallbackConfig !== false) {
+    const config = await ensureDevcontainerConfig(input.hostPath);
+    if (config.created) log.info('project had no devcontainer.json — wrote the Osiris fallback');
+  }
+
   log.info('devcontainer up for %s (hash %s)', input.hostPath, hash);
 
   const { stdout } = await run(

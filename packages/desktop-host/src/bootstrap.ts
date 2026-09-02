@@ -20,6 +20,12 @@ export interface BootstrapOptions {
   dashboard?: DefaultStackOptions['dashboard'];
   otlpEndpoint?: string;
   ollamaUrl?: string;
+  /**
+   * Host the shared stack (OTLP collector, Ollama) is reachable at. Defaults to
+   * `localhost` for the desktop's own extension host; pass `host.docker.internal`
+   * when these endpoints are propagated into a project DevContainer.
+   */
+  hostGateway?: string;
   stackController?: StackController;
   startTelemetryImpl?: typeof startTelemetry;
 }
@@ -48,9 +54,9 @@ export async function bootstrapOsirisRuntime(options: BootstrapOptions = {}): Pr
   const controller = options.stackController ?? new Orchestrator();
   await controller.up(stack);
 
-  const otlp = options.otlpEndpoint ?? 'http://localhost:4318';
-  process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??= otlp;
-  process.env.OSIRIS_OLLAMA_URL ??= options.ollamaUrl ?? 'http://localhost:11434';
+  const gateway = options.hostGateway ?? 'localhost';
+  process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??= options.otlpEndpoint ?? `http://${gateway}:4318`;
+  process.env.OSIRIS_OLLAMA_URL ??= options.ollamaUrl ?? `http://${gateway}:11434`;
   process.env.OSIRIS_LOCATION ??= 'local';
 
   log.info('osiris runtime up — %d services, telemetry %s', stack.services.length, telemetry.enabled ? 'on' : 'off');

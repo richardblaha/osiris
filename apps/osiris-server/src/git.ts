@@ -13,9 +13,23 @@ export interface GitHostingOptions {
   reposDir: string;
   /** `git init --bare` a repo the first time it is pushed. Default true. */
   autoCreate?: boolean;
+  /**
+   * Shared secret required as the HTTP Basic password (any username). Empty
+   * string disables auth — dev/tests only, matching the rest of the API.
+   */
+  token?: string;
 }
 
 const REPO_RE = /^[a-z0-9][a-z0-9._-]*$/i;
+
+/** HTTP Basic check: any username, password must equal `token`. */
+function isAuthorised(authorization: string | undefined, token: string): boolean {
+  if (!token) return true;
+  if (!authorization?.startsWith('Basic ')) return false;
+  const decoded = Buffer.from(authorization.slice('Basic '.length), 'base64').toString('utf8');
+  const password = decoded.slice(decoded.indexOf(':') + 1);
+  return password === token;
+}
 
 /** Normalise `foo` / `foo.git` → `foo.git`, rejecting traversal. */
 export function repoDirName(raw: string): string {
@@ -27,6 +41,7 @@ export function repoDirName(raw: string): string {
 /** Smart-HTTP Git hosting under `/git/<repo>.git/...` backed by the system `git`. */
 export function registerGitHosting(app: FastifyInstance, options: GitHostingOptions): void {
   const autoCreate = options.autoCreate ?? true;
+  const token = options.token ?? '';
 
   // Hand the git RPC body to the handler untouched so it can be piped to `git`.
   app.addContentTypeParser(
@@ -38,6 +53,12 @@ export function registerGitHosting(app: FastifyInstance, options: GitHostingOpti
     method: ['GET', 'POST'],
     url: '/git/:repo/*',
     handler: async (request, reply) => {
+      if (!isAuthorised(request.headers.authorization, token)) {
+        return reply
+          .code(401)
+          .header('WWW-Authenticate', 'Basic realm="Osiris Git", charset="UTF-8"')
+          .send({ error: 'unauthorized' });
+      }
       const params = request.params as { repo: string; '*': string };
       let dirName: string;
       try {

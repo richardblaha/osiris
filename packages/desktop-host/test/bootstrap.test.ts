@@ -43,6 +43,18 @@ describe('bootstrapOsirisRuntime', () => {
     expect(shutdown).toHaveBeenCalled();
   });
 
+  it('hostGateway rewrites the default OTLP + Ollama endpoints', async () => {
+    delete process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
+    delete process.env.OSIRIS_OLLAMA_URL;
+    await bootstrapOsirisRuntime({
+      stackController: fakeController(),
+      startTelemetryImpl: (async () => ({ enabled: false, shutdown: async () => undefined })) as never,
+      hostGateway: 'host.docker.internal',
+    });
+    expect(process.env.OTEL_EXPORTER_OTLP_ENDPOINT).toBe('http://host.docker.internal:4318');
+    expect(process.env.OSIRIS_OLLAMA_URL).toBe('http://host.docker.internal:11434');
+  });
+
   it('dispose still shuts telemetry down if the stack fails to stop', async () => {
     const shutdown = vi.fn(async () => undefined);
     const runtime = await bootstrapOsirisRuntime({

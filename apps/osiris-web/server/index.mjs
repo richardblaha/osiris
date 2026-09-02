@@ -12,11 +12,9 @@
  * `node server/index.mjs --help` works in CI smoke tests.
  */
 import { spawn } from 'node:child_process';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { readUpstreamConfig, findServerEntrypoint } from '../scripts/lib.mjs';
-
-const appRoot = fileURLToPath(new URL('../', import.meta.url));
 
 export function parseArgs(argv) {
   const opts = { port: 3000, host: '0.0.0.0', token: undefined, help: false, rest: [] };
@@ -70,8 +68,12 @@ async function main() {
   const env = {
     ...process.env,
     OSIRIS_TELEMETRY: 'off',
+    // openvscode-server reads VSCODE_SERVER_DATA_DIR; default it under the user's
+    // home as ~/.osiris-server — never inside the (often read-only) app bundle.
     VSCODE_SERVER_DATA_DIR:
-      process.env.VSCODE_SERVER_DATA_DIR ?? path.join(appRoot, '.osiris-server'),
+      process.env.OSIRIS_SERVER_DATA_DIR ??
+      process.env.VSCODE_SERVER_DATA_DIR ??
+      path.join(os.homedir(), '.osiris-server'),
     OSIRIS_PRODUCT_NAME: 'Osiris IDE',
   };
 

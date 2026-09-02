@@ -30,21 +30,44 @@ describe('repoDirName', () => {
   });
 });
 
+const basic = (password: string): string =>
+  `Basic ${Buffer.from(`osiris:${password}`).toString('base64')}`;
+
 describe('git smart-HTTP', () => {
-  it('advertises refs for an existing repo without a bearer token', async () => {
+  it('advertises refs for an existing repo with HTTP Basic auth', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/git/demo.git/info/refs?service=git-upload-pack',
+      headers: { authorization: basic('t') },
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('application/x-git-upload-pack-advertisement');
     expect(res.body).toContain('service=git-upload-pack');
   });
 
-  it('404s an unknown repo on fetch', async () => {
+  it('challenges an unauthenticated request', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/git/demo.git/info/refs?service=git-upload-pack',
+    });
+    expect(res.statusCode).toBe(401);
+    expect(res.headers['www-authenticate']).toContain('Basic');
+  });
+
+  it('rejects a wrong password', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/git/demo.git/info/refs?service=git-upload-pack',
+      headers: { authorization: basic('nope') },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('404s an unknown repo on an authenticated fetch', async () => {
     const res = await app.inject({
       method: 'GET',
       url: '/git/missing.git/info/refs?service=git-upload-pack',
+      headers: { authorization: basic('t') },
     });
     expect(res.statusCode).toBe(404);
   });
