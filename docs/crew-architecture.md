@@ -188,3 +188,11 @@ builds on `@osiris/agent-core`.
   an interface with an in-memory fake and are exercised by one integration test.
 - ESM only, `tsc` emit to `dist/`, `composite` project refs, `vitest run`.
 - No secret is ever persisted; API keys come from `context.secrets` / env at call time.
+
+## `@osiris/lm-proxy` — LM proxy
+
+An OpenAI-compatible HTTP shim over an editor Language Model API. The `osiris-workspace`
+extension implements the bridge over `vscode.lm.selectChatModels()` and starts the
+proxy on loopback; `OSIRIS_LM_PROXY_URL` is injected into the Dev Container so a
+crew running there (`provider: vscode-lm`) still draws its models from the editor.
+`@osiris/agent-core`'s `OpenAiCompatibleAdapter` talks to it unchanged.

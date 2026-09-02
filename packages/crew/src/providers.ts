@@ -73,9 +73,19 @@ export function resolveProvider(spec: string, options: ProviderResolutionOptions
   };
 
   if (declared.kind === 'vscode-lm') {
+    // 1. In-process editor LM API (extension host).
     if (options.vscodeLm) return options.vscodeLm.createAdapter(model);
+    // 2. The LM proxy the editor publishes into the container (OpenAI-compatible
+    //    shim over vscode.lm) — this is how a container-side crew still gets its
+    //    models from the VS Code Language Model API.
+    const proxyUrl = declared.endpoint ?? env.OSIRIS_LM_PROXY_URL;
+    if (proxyUrl) {
+      log.info('"%s" via the VS Code LM proxy at %s', spec, proxyUrl);
+      return new OpenAiCompatibleAdapter({ endpoint: proxyUrl, model });
+    }
+    // 3. Headless fallback (CLI/CI with no editor at all).
     const fallback = options.headlessFallback ?? { kind: 'echo' };
-    log.warn('no VS Code LM bridge — "%s" falls back to %s', spec, fallback.kind);
+    log.warn('no VS Code LM bridge or proxy — "%s" falls back to %s', spec, fallback.kind);
     return build(fallback.kind, fallback.model ?? model, fallback, env);
   }
 

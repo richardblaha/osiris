@@ -8,6 +8,7 @@
     { "path": "packages/memory" },
     { "path": "packages/crew" },
     { "path": "packages/backlog" },
+    { "path": "packages/lm-proxy" },
     { "path": "packages/cli" },
     { "path": "packages/telemetry" },
     { "path": "packages/orchestrator" },

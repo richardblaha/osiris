@@ -111,9 +111,11 @@ osiris serve                      # REST API + Kanban console at http://localhos
 osiris repl                       # interactive REPL with crew/backlog/memory in scope
 ```
 
-- **Models** come from the VS Code Language Model API when running in the editor
-  (`model: vscode-lm/claude-opus-5` in an agent file); CLI/CI runs use a headless
-  fallback (`OSIRIS_CREW_PROVIDER`, `OSIRIS_AI_API_KEY`).
+- **Models** come from the VS Code Language Model API (`model: vscode-lm/…` in an
+  agent file). In the editor the crew calls it directly; a container-side crew
+  reaches it through the **LM proxy** (`@osiris/lm-proxy` — an OpenAI-compatible
+  shim over `vscode.lm`, published as `OSIRIS_LM_PROXY_URL`). CLI/CI runs with no
+  editor use a headless fallback (`OSIRIS_CREW_PROVIDER`, `OSIRIS_AI_API_KEY`).
 - **MCP** servers are taken from `.osiris/mcp.json` merged with the editor's
   discovered set — Osiris manages no credentials of its own.
 - **All tool execution** runs inside the `.devcontainer` (Node 22 + a ChromaDB
