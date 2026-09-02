@@ -113,7 +113,7 @@ export class Crew {
       }
 
       const orchestrator = new AgentOrchestrator(
-        this.options.resolveProvider(def.model ?? this.options.config.defaultModel),
+        this.options.resolveProvider(this.modelFor(def)),
       );
       orchestrator.setTools(tools);
 
@@ -161,6 +161,15 @@ export class Crew {
     emit({ type: 'run.finish', result: runResult });
     log.info('run %s finished: %s (%d delegations)', runId, finishReason, delegations.length);
     return runResult;
+  }
+
+  /**
+   * The model spec for an agent: an explicit `model:` wins, then its `taskClass`
+   * mapped through `crew.json`'s `taskModels`, then the crew `defaultModel`.
+   */
+  private modelFor(def: AgentDefinition): string {
+    const byClass = def.taskClass ? this.options.config.taskModels[def.taskClass] : undefined;
+    return def.model ?? byClass ?? this.options.config.defaultModel;
   }
 
   private systemPrompt(def: AgentDefinition, blackboard: Blackboard, canDelegate: boolean): string {

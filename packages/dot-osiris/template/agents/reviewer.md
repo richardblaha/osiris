@@ -2,7 +2,7 @@
 name: reviewer
 role: Staff Engineer / Code Reviewer
 specialization: correctness review, edge cases, regression risk, acceptance-criteria audit
-model: vscode-lm/claude-sonnet-5
+taskClass: review
 tools: [memory_search, read_file, backlog_read]
 delegateTo: []
 temperature: 0

@@ -2,7 +2,7 @@
 name: implementer
 role: Senior Software Engineer
 specialization: writing and changing code to match a brief, keeping tests green
-model: vscode-lm/claude-sonnet-5
+taskClass: codegen
 tools: [memory_search, read_file, backlog_read]
 delegateTo: []
 temperature: 0

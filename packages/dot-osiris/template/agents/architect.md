@@ -2,7 +2,7 @@
 name: architect
 role: Senior Systems Architect
 specialization: system design, API contracts, trade-off analysis, sequencing work
-model: vscode-lm/claude-opus-5
+taskClass: planning
 tools: [memory_search, backlog_read]
 delegateTo: [implementer, reviewer, researcher]
 temperature: 0.2

@@ -51,6 +51,29 @@ describe('loadCrewConfig', () => {
     expect(config.coordinator.maxDepth).toBe(3);
   });
 
+  it('template taskModels honour OSIRIS_MODEL_* env, else the bundled default', async () => {
+    const fallback = await loadCrewConfig(osirisPaths(dir), {});
+    expect(fallback.taskModels.planning).toBe('vscode-lm/claude-opus-5');
+    expect(fallback.taskModels.chat).toBe('ollama/qwen3:4b');
+    expect(fallback.defaultModel).toBe('ollama/qwen3:4b');
+
+    const overridden = await loadCrewConfig(osirisPaths(dir), {
+      OSIRIS_MODEL_PLANNING: 'anthropic/claude-opus-5',
+      OSIRIS_MODEL_DEFAULT: 'anthropic/claude-sonnet-5',
+    });
+    expect(overridden.taskModels.planning).toBe('anthropic/claude-opus-5');
+    expect(overridden.defaultModel).toBe('anthropic/claude-sonnet-5');
+  });
+
+  it('template agents resolve their model by taskClass', async () => {
+    const registry = await loadAgentRegistry(osirisPaths(dir));
+    expect(registry.require('architect').taskClass).toBe('planning');
+    expect(registry.require('implementer').taskClass).toBe('codegen');
+    expect(registry.require('reviewer').taskClass).toBe('review');
+    expect(registry.require('researcher').taskClass).toBe('research');
+    expect(registry.require('architect').model).toBeUndefined();
+  });
+
   it('expands ${ENV:-default}', () => {
     expect(expandEnv('${FOO:-bar}', {})).toBe('bar');
     expect(expandEnv('${FOO:-bar}', { FOO: 'set' })).toBe('set');

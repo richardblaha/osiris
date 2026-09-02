@@ -28,7 +28,11 @@ const memory: MemoryBridge = {
   },
 };
 
-function crewWith(agents: AgentDefinition[], over: Partial<CrewConfig> = {}): Crew {
+function crewWith(
+  agents: AgentDefinition[],
+  over: Partial<CrewConfig> = {},
+  onResolve?: (spec: string) => void,
+): Crew {
   const config = CrewConfig.parse({
     lead: 'architect',
     defaultModel: 'echo/echo',
@@ -39,7 +43,10 @@ function crewWith(agents: AgentDefinition[], over: Partial<CrewConfig> = {}): Cr
     registry: new AgentRegistry(agents),
     config,
     toolbox: new Map([['memory_search', memorySearchTool(memory)]]),
-    resolveProvider: () => new EchoProviderAdapter(),
+    resolveProvider: (spec) => {
+      onResolve?.(spec);
+      return new EchoProviderAdapter();
+    },
   });
 }
 
@@ -99,6 +106,37 @@ describe('Crew.run', () => {
     // architect(0) → implementer(1) is allowed; implementer has no delegate tool at depth 1.
     expect(result.delegations).toHaveLength(1);
     expect(result.delegations[0]!.to).toBe('implementer');
+  });
+
+  it('resolves an agent model: explicit model > taskModels[taskClass] > defaultModel', async () => {
+    const specs: string[] = [];
+    const crew = crewWith(
+      [
+        agent({ name: 'architect', delegateTo: ['implementer', 'reviewer'] }),
+        agent({ name: 'implementer', taskClass: 'codegen' }),
+        agent({ name: 'reviewer', model: 'echo/pinned' }),
+      ],
+      {
+        taskModels: { planning: 'echo/plan', codegen: 'echo/code' },
+      },
+      (spec) => specs.push(spec),
+    );
+    // architect has no model + no taskClass → defaultModel
+    // (delegation briefs are ignored by the echo provider; we only assert lead resolution here)
+    await crew.run('hello');
+    expect(specs).toContain('echo/echo');
+
+    const solo: string[] = [];
+    await crewWith([agent({ name: 'architect', taskClass: 'planning' })], {
+      taskModels: { planning: 'echo/plan' },
+    }, (s) => solo.push(s)).run('hi');
+    expect(solo).toEqual(['echo/plan']);
+
+    const pinned: string[] = [];
+    await crewWith([agent({ name: 'architect', model: 'echo/pinned', taskClass: 'planning' })], {
+      taskModels: { planning: 'echo/plan' },
+    }, (s) => pinned.push(s)).run('hi');
+    expect(pinned).toEqual(['echo/pinned']);
   });
 
   it('reports an error for an unknown lead', async () => {

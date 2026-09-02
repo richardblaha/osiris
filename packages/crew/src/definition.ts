@@ -7,6 +7,7 @@ const FIELD_ORDER = [
   'role',
   'specialization',
   'model',
+  'taskClass',
   'tools',
   'delegateTo',
   'temperature',

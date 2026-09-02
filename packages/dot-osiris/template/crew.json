@@ -1,7 +1,18 @@
 {
   "$schema": "https://osiris-ide.dev/schema/crew.json",
   "lead": "architect",
-  "defaultModel": "vscode-lm/claude-sonnet-5",
+  "defaultModel": "${OSIRIS_MODEL_DEFAULT:-ollama/qwen3:4b}",
+  "taskModels": {
+    "chat": "${OSIRIS_MODEL_CHAT:-ollama/qwen3:4b}",
+    "codegen": "${OSIRIS_MODEL_CODEGEN:-vscode-lm/claude-sonnet-5}",
+    "review": "${OSIRIS_MODEL_REVIEW:-vscode-lm/claude-sonnet-5}",
+    "tests": "${OSIRIS_MODEL_TESTS:-vscode-lm/claude-sonnet-5}",
+    "docs": "${OSIRIS_MODEL_DOCS:-ollama/qwen3:4b}",
+    "debug": "${OSIRIS_MODEL_DEBUG:-vscode-lm/claude-sonnet-5}",
+    "commit": "${OSIRIS_MODEL_COMMIT:-ollama/qwen3:4b}",
+    "planning": "${OSIRIS_MODEL_PLANNING:-vscode-lm/claude-opus-5}",
+    "research": "${OSIRIS_MODEL_RESEARCH:-vscode-lm/claude-sonnet-5}"
+  },
   "coordinator": {
     "maxDepth": 3,
     "maxIterationsPerAgent": 12,
