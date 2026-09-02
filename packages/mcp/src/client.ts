@@ -49,6 +49,15 @@ export class McpClient {
         waiter.resolve(message);
       }
     });
+    transport.onError?.((error) => this.failAll(error));
+  }
+
+  private failAll(error: Error): void {
+    for (const [, waiter] of this.pending) {
+      clearTimeout(waiter.timer);
+      waiter.reject(error instanceof McpError ? error : new McpError(error.message, this.serverId));
+    }
+    this.pending.clear();
   }
 
   private request(method: string, params?: unknown): Promise<unknown> {
@@ -99,8 +108,7 @@ export class McpClient {
   }
 
   async close(): Promise<void> {
-    for (const { timer } of this.pending.values()) clearTimeout(timer);
-    this.pending.clear();
+    this.failAll(new McpError('client closed', this.serverId));
     await this.transport.close();
   }
 }

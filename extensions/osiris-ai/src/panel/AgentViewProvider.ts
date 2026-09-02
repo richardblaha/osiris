@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { createTelemetry, type TelemetryReporter } from '@osiris/shared-core';
 import { AgentOrchestrator, type ProviderAdapter } from '@osiris/agent-core';
 import { builtinTools } from '../tools/builtins.js';
-import type { McpRegistry } from '../mcp/registry.js';
+import type { McpRegistry } from '@osiris/mcp';
 import type { PanelInbound, PanelOutbound } from '../protocol.js';
 
 export interface AgentViewDeps {

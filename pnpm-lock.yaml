@@ -177,6 +177,9 @@ importers:
       '@osiris/agent-core':
         specifier: workspace:^
         version: link:../../packages/agent-core
+      '@osiris/mcp':
+        specifier: workspace:*
+        version: link:../../packages/mcp
       '@osiris/shared-core':
         specifier: workspace:*
         version: link:../../packages/shared-core

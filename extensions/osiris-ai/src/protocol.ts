@@ -1,5 +1,5 @@
 /** Message protocol between the extension host and the Agent panel webview. */
-import type { RegistryStatus } from './mcp/registry.js';
+import type { McpRegistryStatus } from '@osiris/mcp';
 
 export type PanelInbound =
   | { type: 'ready' }
@@ -8,7 +8,7 @@ export type PanelInbound =
   | { type: 'reloadMcp' };
 
 export type PanelOutbound =
-  | { type: 'state'; busy: boolean; mcp: RegistryStatus[]; tools: string[]; provider: string }
+  | { type: 'state'; busy: boolean; mcp: McpRegistryStatus[]; tools: string[]; provider: string }
   | { type: 'agent/run-started'; runId: string; prompt: string }
   | { type: 'agent/token'; runId: string; text: string }
   | {

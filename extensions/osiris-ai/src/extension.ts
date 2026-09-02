@@ -7,7 +7,7 @@ import {
   OpenAiCompatibleAdapter,
   type ProviderAdapter,
 } from '@osiris/agent-core';
-import { McpRegistry } from './mcp/registry.js';
+import { McpRegistry } from '@osiris/mcp';
 import { AgentViewProvider } from './panel/AgentViewProvider.js';
 
 const log = createLogger('ai');

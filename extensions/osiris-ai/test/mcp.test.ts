@@ -1,9 +1,10 @@
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it, afterEach } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import type { McpServerConfig } from '@osiris/shared-core';
-import { McpStdioClient } from '../src/mcp/client.js';
-import { McpRegistry } from '../src/mcp/registry.js';
+import { McpRegistry } from '@osiris/mcp';
 
+// Low-level MCP client/transport behaviour is covered in @osiris/mcp; this just
+// confirms osiris-ai's wiring onto the shared McpRegistry.
 const serverPath = fileURLToPath(new URL('./fixtures/mock-mcp-server.mjs', import.meta.url));
 
 function config(overrides: Partial<McpServerConfig> = {}): McpServerConfig {
@@ -17,56 +18,13 @@ function config(overrides: Partial<McpServerConfig> = {}): McpServerConfig {
   };
 }
 
-describe('McpStdioClient', () => {
-  const clients: McpStdioClient[] = [];
-  afterEach(async () => {
-    await Promise.all(clients.splice(0).map((c) => c.stop()));
-  });
-
-  it('initializes and lists tools from the mock server', async () => {
-    const client = new McpStdioClient(config());
-    clients.push(client);
-    await client.start();
-    const tools = await client.listTools();
-    expect(tools).toHaveLength(1);
-    expect(tools[0]).toMatchObject({ serverId: 'mock', name: 'echo' });
-  });
-
-  it('calls a tool and returns its text content', async () => {
-    const client = new McpStdioClient(config());
-    clients.push(client);
-    await client.start();
-    const result = await client.callTool('echo', { text: 'ping' });
-    expect(result.content[0]).toEqual({ type: 'text', text: 'echo: ping' });
-  });
-
-  it('rejects with McpError for an unknown tool', async () => {
-    const client = new McpStdioClient(config());
-    clients.push(client);
-    await client.start();
-    await expect(client.callTool('nope', {})).rejects.toThrow(/Unknown tool/);
-  });
-
-  it('times out when the command never responds', async () => {
-    const client = new McpStdioClient(
-      config({
-        command: process.execPath,
-        args: ['-e', 'setInterval(() => {}, 1000)'],
-        timeoutMs: 300,
-      }),
-    );
-    clients.push(client);
-    await expect(client.start()).rejects.toThrow(/timed out/);
-  });
-});
-
-describe('McpRegistry', () => {
+describe('McpRegistry (via @osiris/mcp)', () => {
   it('namespaces tools and exposes them to the orchestrator', async () => {
     const registry = new McpRegistry();
     await registry.load([config()]);
     try {
       const tools = registry.asTools();
-      expect(tools.map((t) => t.name)).toEqual(['mock.echo']);
+      expect(tools.map((t) => t.name)).toEqual(['mock__echo']);
       await expect(tools[0]!.invoke({ text: 'hi' })).resolves.toBe('echo: hi');
       expect(registry.status()).toEqual([
         { id: 'mock', running: true, toolCount: 1, error: undefined },

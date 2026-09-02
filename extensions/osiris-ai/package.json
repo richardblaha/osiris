@@ -158,6 +158,7 @@
   },
   "dependencies": {
     "@osiris/agent-core": "workspace:^",
+    "@osiris/mcp": "workspace:*",
     "@osiris/shared-core": "workspace:*"
   },
   "devDependencies": {

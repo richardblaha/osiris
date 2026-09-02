@@ -26,9 +26,17 @@ function makeTransport(spec: McpServerSpec): McpTransport {
  * `<serverId>__<tool>` namespace, and routes `call()` back to the right client.
  * A server that fails to start is logged and skipped — never fatal.
  */
+export interface McpServerStatus {
+  id: string;
+  running: boolean;
+  toolCount: number;
+  error?: string;
+}
+
 export class McpPool {
   private readonly clients = new Map<string, McpClient>();
   private readonly toolIndex = new Map<string, { serverId: string; toolName: string }>();
+  private readonly errors = new Map<string, string>();
   private toolList: PooledTool[] = [];
 
   static async start(
@@ -50,10 +58,22 @@ export class McpPool {
         }
         log.info('%s: %d tool(s)', spec.id, tools.length);
       } catch (cause) {
+        pool.errors.set(spec.id, (cause as Error).message);
         log.warn('MCP server "%s" unavailable: %s', spec.id, (cause as Error).message);
       }
     }
     return pool;
+  }
+
+  /** Per-server connection state — running clients plus servers that failed to start. */
+  status(): McpServerStatus[] {
+    const ids = new Set([...this.clients.keys(), ...this.errors.keys()]);
+    return [...ids].map((id) => ({
+      id,
+      running: this.clients.has(id),
+      toolCount: this.toolList.filter((t) => t.serverId === id).length,
+      error: this.errors.get(id),
+    }));
   }
 
   tools(): PooledTool[] {
@@ -81,6 +101,7 @@ export class McpPool {
     await Promise.all([...this.clients.values()].map((c) => c.close()));
     this.clients.clear();
     this.toolIndex.clear();
+    this.errors.clear();
     this.toolList = [];
   }
 }

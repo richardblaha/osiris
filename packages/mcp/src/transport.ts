@@ -14,6 +14,8 @@ export interface McpTransport {
   start(): Promise<void>;
   send(message: JsonRpcRequest | JsonRpcNotification): Promise<void>;
   onMessage(handler: (message: JsonRpcMessage) => void): void;
+  /** Fatal transport failure (spawn error, early exit, socket drop). Optional. */
+  onError?(handler: (error: Error) => void): void;
   close(): Promise<void>;
 }
 
@@ -37,7 +39,10 @@ export interface StdioTransportOptions {
 export class StdioTransport implements McpTransport {
   private child?: ChildProcessWithoutNullStreams;
   private buffer = '';
+  private started = false;
   private handler: (message: JsonRpcMessage) => void = () => {};
+  private errorHandler: (error: Error) => void = () => {};
+  private fatalError?: Error;
 
   constructor(private readonly options: StdioTransportOptions) {}
 
@@ -48,6 +53,7 @@ export class StdioTransport implements McpTransport {
       cwd: this.options.cwd,
     });
     this.child = child;
+    this.started = true;
     child.stdout.setEncoding('utf8');
     child.stdout.on('data', (chunk: string) => {
       this.buffer += chunk;
@@ -59,22 +65,40 @@ export class StdioTransport implements McpTransport {
     child.stderr.on('data', (chunk: string) =>
       log.debug('%s stderr: %s', this.options.command, chunk.trim()),
     );
-    child.on('exit', (code) => log.info('%s exited (%s)', this.options.command, code));
+    const fail = (error: Error): void => {
+      this.fatalError ??= error;
+      this.errorHandler(error);
+    };
+    child.on('error', (err: Error) =>
+      fail(new Error(`spawn ${this.options.command}: ${err.message}`)),
+    );
+    child.on('exit', (code, signal) => {
+      log.info('%s exited (%s%s)', this.options.command, code, signal ? ` ${signal}` : '');
+      if (code !== 0 && code !== null)
+        fail(new Error(`${this.options.command} exited with code ${code}`));
+    });
   }
 
   async send(message: JsonRpcRequest | JsonRpcNotification): Promise<void> {
-    if (!this.child) throw new Error('transport not started');
-    this.child.stdin.write(`${JSON.stringify(message)}\n`);
+    if (!this.started) throw new Error('transport not started');
+    if (this.fatalError) throw this.fatalError;
+    this.child!.stdin.write(`${JSON.stringify(message)}\n`);
   }
 
   onMessage(handler: (message: JsonRpcMessage) => void): void {
     this.handler = handler;
   }
 
+  onError(handler: (error: Error) => void): void {
+    this.errorHandler = handler;
+    if (this.fatalError) handler(this.fatalError);
+  }
+
   async close(): Promise<void> {
     this.child?.stdin.end();
     this.child?.kill();
     this.child = undefined;
+    this.started = false;
   }
 }
 

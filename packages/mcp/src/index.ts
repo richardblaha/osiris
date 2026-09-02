@@ -4,6 +4,7 @@ export * from './client.js';
 export * from './config.js';
 export * from './pool.js';
 export * from './crew-tools.js';
+export * from './registry.js';
 export * from './testing.js';
 
 export const MCP_VERSION = '0.1.0';
