@@ -10,7 +10,13 @@ import {
   MoveTaskRequest,
   TaskHistoryEntry,
 } from './backlog.js';
-import { AgentDefinition, CrewEvent, CrewRunRequest, CrewRunResult } from './crew.js';
+import {
+  AgentDefinition,
+  CrewEvent,
+  CrewRunRequest,
+  CrewRunResult,
+  CrewRunSummary,
+} from './crew.js';
 import { MemoryReindexResult, MemorySearchRequest, MemorySearchResult } from './memory.js';
 import { routes } from './routes.js';
 
@@ -127,6 +133,10 @@ export class ConsoleClient {
   async agents(): Promise<AgentDefinition[]> {
     const json = await (await this.send(routes.crewAgents())).json();
     return AgentDefinition.array().parse(json);
+  }
+
+  async listRuns(): Promise<CrewRunSummary[]> {
+    return CrewRunSummary.array().parse(await (await this.send(routes.crewRuns())).json());
   }
 
   async startRun(input: CrewRunRequest): Promise<string> {

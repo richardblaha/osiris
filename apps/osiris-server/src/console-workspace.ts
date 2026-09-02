@@ -99,6 +99,7 @@ export function createWorkspaceConsoleDeps(
 
   return {
     getBacklog,
+    crewRunsDir: paths.tempFile('crew-runs'),
 
     async listAgents() {
       return (await loadAgentRegistry(paths)).list();

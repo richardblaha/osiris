@@ -5,6 +5,7 @@ import type {
   BacklogTask,
   CrewEvent,
   CrewRunResult,
+  CrewRunSummary,
   TaskHistoryEntry,
 } from '@osiris/protocol';
 import { client } from './api.js';
@@ -218,17 +219,26 @@ function TaskDrawer(props: {
 
 function Crew(): JSX.Element {
   const [agents, setAgents] = useState<AgentDefinition[]>([]);
+  const [runs, setRuns] = useState<CrewRunSummary[]>([]);
   const [task, setTask] = useState('');
   const [result, setResult] = useState<CrewRunResult | null>(null);
   const [feed, setFeed] = useState<string[]>([]);
   const [running, setRunning] = useState(false);
+
+  const loadRuns = useCallback(() => {
+    client
+      .listRuns()
+      .then(setRuns)
+      .catch(() => setRuns([]));
+  }, []);
 
   useEffect(() => {
     client
       .agents()
       .then(setAgents)
       .catch(() => setAgents([]));
-  }, []);
+    loadRuns();
+  }, [loadRuns]);
 
   const run = async (): Promise<void> => {
     if (!task.trim()) return;
@@ -244,6 +254,15 @@ function Crew(): JSX.Element {
       setFeed((f) => [...f, `error: ${(err as Error).message}`]);
     } finally {
       setRunning(false);
+      loadRuns();
+    }
+  };
+
+  const openRun = async (id: string): Promise<void> => {
+    const r = await client.run(id);
+    if (!('status' in r)) {
+      setResult(r);
+      setFeed([]);
     }
   };
 
@@ -274,6 +293,25 @@ function Crew(): JSX.Element {
                 {d.from} → {d.to}
               </strong>
               <div className="muted">{d.brief}</div>
+            </div>
+          ))}
+        </>
+      )}
+      {runs.length > 0 && (
+        <>
+          <h2 className="muted">Recent runs</h2>
+          {runs.slice(0, 10).map((r) => (
+            <div
+              key={r.runId}
+              className="hit"
+              onClick={() => void openRun(r.runId)}
+              style={{ cursor: 'pointer' }}
+            >
+              <span className="muted">
+                {r.startedAt.slice(0, 16).replace('T', ' ')} · {r.lead || '?'} ·{' '}
+                {r.finishReason ?? 'running'}
+              </span>
+              <div>{r.task}</div>
             </div>
           ))}
         </>

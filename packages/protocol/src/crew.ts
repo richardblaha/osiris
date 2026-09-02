@@ -148,6 +148,15 @@ export const CrewRunResult = z.object({
 });
 export type CrewRunResult = z.infer<typeof CrewRunResult>;
 
+export const CrewRunSummary = z.object({
+  runId: z.string(),
+  task: z.string(),
+  lead: z.string(),
+  startedAt: z.string(),
+  finishReason: CrewRunResult.shape.finishReason.optional(),
+});
+export type CrewRunSummary = z.infer<typeof CrewRunSummary>;
+
 /** SSE event stream for a live crew run. */
 export const CrewEvent = z.discriminatedUnion('type', [
   z.object({

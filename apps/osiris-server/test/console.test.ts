@@ -1,3 +1,6 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
 import { ConsoleClient, type CrewEvent, type CrewRunRequest } from '@osiris/protocol';
@@ -222,6 +225,56 @@ describe('crew routes', () => {
   it('lists agents', async () => {
     const res = await get('/api/v1/crew/agents');
     expect((res.json() as { name: string }[])[0]!.name).toBe('architect');
+  });
+
+  it('persists finished runs and lists them (survives a new manager)', async () => {
+    const runsDir = await mkdtemp(join(tmpdir(), 'crew-runs-'));
+    try {
+      const withDir = buildServer({
+        token: TOKEN,
+        publicBaseUrl: 'http://x',
+        leaseSweepMs: 0,
+        console: { ...deps(), crewRunsDir: runsDir },
+      });
+      const start = await withDir.inject({
+        method: 'POST',
+        url: '/api/v1/crew/runs',
+        headers: auth,
+        payload: { task: 'persist me' },
+      });
+      const runId = (start.json() as { runId: string }).runId;
+      await new Promise((r) => setTimeout(r, 20));
+      await withDir.close();
+
+      // A fresh server pointed at the same dir sees the run.
+      const reopened = buildServer({
+        token: TOKEN,
+        publicBaseUrl: 'http://x',
+        leaseSweepMs: 0,
+        console: { ...deps(), crewRunsDir: runsDir },
+      });
+      try {
+        const list = await reopened.inject({
+          method: 'GET',
+          url: '/api/v1/crew/runs',
+          headers: auth,
+        });
+        const summaries = list.json() as { runId: string; task: string }[];
+        expect(summaries.map((s) => s.runId)).toContain(runId);
+        expect(summaries.find((s) => s.runId === runId)!.task).toBe('persist me');
+
+        const one = await reopened.inject({
+          method: 'GET',
+          url: `/api/v1/crew/runs/${runId}`,
+          headers: auth,
+        });
+        expect((one.json() as { text: string }).text).toBe('done');
+      } finally {
+        await reopened.close();
+      }
+    } finally {
+      await rm(runsDir, { recursive: true, force: true });
+    }
   });
 });
 
