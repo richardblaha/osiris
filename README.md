@@ -106,6 +106,7 @@ osiris init                       # scaffold .osiris/ from the system template
 osiris agent list                 # the crew defined in .osiris/agents/
 osiris crew run "add a foo parser" # coordinator drives the lead agent; it delegates
 osiris memory reindex             # (re)index .osiris/memory/ — incremental, content-addressed
+osiris memory watch               # reindex automatically on every .osiris/memory/ change
 osiris memory search "orphan branch"
 osiris backlog new "Parser crash" --type bug
 osiris backlog move 12 review     # git mv + one commit on the orphan branch osiris/backlog
