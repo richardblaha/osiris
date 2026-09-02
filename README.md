@@ -112,6 +112,7 @@ osiris backlog move 12 review     # git mv + one commit on the orphan branch osi
 osiris backlog push / pull        # sync osiris/backlog with a git remote (OSIRIS_BACKLOG_REMOTE)
 osiris backlog lint               # static-check every task file
 osiris serve                      # REST API + Kanban console at http://localhost:8080
+                                  # or: docker compose -f apps/osiris-server/docker-compose.yml up --build
 osiris repl                       # interactive REPL with crew/backlog/memory in scope
 ```
 
@@ -131,6 +132,10 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
   service; see `.devcontainer/docker-compose.yml`).
 - **The backlog never touches source history** — it lives on the dedicated
   orphan branch `osiris/backlog`, operated through a worktree under `.osiris/temp/`.
+
+In the editor, **Osiris: Run Crew on a Task…** and **Osiris: Open Console** (from
+`osiris-workspace`) drive the same server over its typed `ConsoleClient`,
+streaming crew events to an output channel.
 
 See [docs/crew-architecture.md](docs/crew-architecture.md) for the full design.
 

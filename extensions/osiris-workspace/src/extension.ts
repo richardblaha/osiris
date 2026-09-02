@@ -17,6 +17,7 @@ import { RecentProjectsStore } from './recent-projects.js';
 import { showStartView } from './start-view.js';
 import { ensureLmProxy, lmProxyRemoteEnv } from './lm-proxy-host.js';
 import { createVscodeLmBridge, hasLanguageModelApi } from './lm-bridge.js';
+import { openConsole, runCrew } from './crew-commands.js';
 import { TASK_CLASSES } from '@osiris/protocol';
 import { taskModelEnv, unsetTaskClasses } from './model-config.js';
 
@@ -90,6 +91,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     ),
     vscode.commands.registerCommand('osiris.agent.setApiKey', () => setAgentApiKey(context)),
     vscode.commands.registerCommand('osiris.lm.status', () => showLmStatus(context)),
+    vscode.commands.registerCommand('osiris.crew.run', () => runCrew()),
+    vscode.commands.registerCommand('osiris.crew.openConsole', () => openConsole()),
   );
 
   // The local (ui) extension host owns Docker-side work — a container window

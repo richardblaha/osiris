@@ -54,6 +54,16 @@
         "command": "osiris.configureModels",
         "title": "Osiris: Configure Models…",
         "category": "Osiris"
+      },
+      {
+        "command": "osiris.crew.run",
+        "title": "Osiris: Run Crew on a Task…",
+        "category": "Osiris"
+      },
+      {
+        "command": "osiris.crew.openConsole",
+        "title": "Osiris: Open Console (Kanban / Crew / Memory)",
+        "category": "Osiris"
       }
     ],
     "menus": {
