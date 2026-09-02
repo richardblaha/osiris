@@ -171,12 +171,18 @@ frontmatter is rejected with a clear error citing the path.
 
 ## 3. Package graph (additions)
 
+```text
+@osiris/protocol ─┬─> @osiris/backlog ──┐        @osiris/lm-proxy ──> osiris-workspace (ext)
+  (+ ConsoleClient)├─> @osiris/memory ───┼─> @osiris/crew ──> @osiris/cli
+                   └─> @osiris/dot-osiris ┘        │            (+ @osiris/server bin)
+                                                  └─> @osiris/server ─> @osiris/console (SPA, build-time)
 ```
-@osiris/protocol ─┬─> @osiris/backlog ─┐
-                  ├─> @osiris/memory ──┼─> @osiris/crew ─> osiris-ai (ext), @osiris/cli
-                  └─> @osiris/dot-osiris ┘        │
-                                                 └─> @osiris/server ─> @osiris/console (SPA, build-time)
-```
+
+`@osiris/lm-proxy` (an OpenAI-compatible shim over `vscode.lm`) is how a
+container-side crew still gets its models from the editor: the `osiris-workspace`
+extension runs it and injects `OSIRIS_LM_PROXY_URL` / `_TOKEN` into the Dev
+Container; `resolveProvider` uses it for the `vscode-lm` provider kind when no
+in-process bridge is present.
 
 `@osiris/dot-osiris`, `@osiris/memory`, `@osiris/backlog` depend only on
 `@osiris/shared-core` (+ `@osiris/protocol` for shared types). `@osiris/crew`
