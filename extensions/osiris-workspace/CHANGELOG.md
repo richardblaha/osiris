@@ -1,6 +1,6 @@
 # Change Log
 
-## Unreleased
+## [0.1.0-alpha.1] - 2026-09-03
 
 - `extensionKind: ["ui"]` — the extension is now the host-side controller.
 - Osiris Start: recent-projects webview + `osiris.startup.restoreLast` /
