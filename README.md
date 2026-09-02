@@ -135,9 +135,10 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
 - **The backlog never touches source history** — it lives on the dedicated
   orphan branch `osiris/backlog`, operated through a worktree under `.osiris/temp/`.
 
-In the editor, **Osiris: Run Crew on a Task…** and **Osiris: Open Console** (from
-`osiris-workspace`) drive the same server over its typed `ConsoleClient`,
-streaming crew events to an output channel.
+In the editor, the **Osiris** sidebar view (`osiris-workspace`) shows the Kanban
+backlog and a crew runner, and the **Osiris: Run Crew on a Task…** /
+**Osiris: Open Console** commands drive the same server — all over
+`@osiris/protocol`'s typed `ConsoleClient`.
 
 See [docs/crew-architecture.md](docs/crew-architecture.md) for the full design.
 
