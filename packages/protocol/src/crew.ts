@@ -150,7 +150,12 @@ export type CrewRunResult = z.infer<typeof CrewRunResult>;
 
 /** SSE event stream for a live crew run. */
 export const CrewEvent = z.discriminatedUnion('type', [
-  z.object({ type: z.literal('agent.start'), agent: z.string(), depth: z.number(), brief: z.string() }),
+  z.object({
+    type: z.literal('agent.start'),
+    agent: z.string(),
+    depth: z.number(),
+    brief: z.string(),
+  }),
   z.object({ type: z.literal('agent.text'), agent: z.string(), text: z.string() }),
   z.object({ type: z.literal('agent.tool'), agent: z.string(), tool: z.string() }),
   z.object({ type: z.literal('delegate'), from: z.string(), to: z.string(), brief: z.string() }),

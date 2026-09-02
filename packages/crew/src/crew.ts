@@ -112,9 +112,7 @@ export class Crew {
         );
       }
 
-      const orchestrator = new AgentOrchestrator(
-        this.options.resolveProvider(this.modelFor(def)),
-      );
+      const orchestrator = new AgentOrchestrator(this.options.resolveProvider(this.modelFor(def)));
       orchestrator.setTools(tools);
 
       const result = await orchestrator.run({

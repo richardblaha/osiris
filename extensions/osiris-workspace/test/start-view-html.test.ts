@@ -14,7 +14,12 @@ const recent: RecentProject[] = [
 
 describe('renderStartHtml', () => {
   it('lists recent projects with escaped paths and a relative time', () => {
-    const html = renderStartHtml({ recent, restoreLast: true, nonce: 'N0NCE', cspSource: 'vscode-webview://x' });
+    const html = renderStartHtml({
+      recent,
+      restoreLast: true,
+      nonce: 'N0NCE',
+      cspSource: 'vscode-webview://x',
+    });
     expect(html).toContain('data-hash="abc123abc123"');
     expect(html).toContain('proj-1');
     expect(html).not.toContain('/home/me/<script>');
@@ -24,7 +29,12 @@ describe('renderStartHtml', () => {
   });
 
   it('locks the CSP to the nonce and cspSource, and shows the empty state', () => {
-    const html = renderStartHtml({ recent: [], restoreLast: false, nonce: 'N0NCE', cspSource: 'vscode-webview://x' });
+    const html = renderStartHtml({
+      recent: [],
+      restoreLast: false,
+      nonce: 'N0NCE',
+      cspSource: 'vscode-webview://x',
+    });
     expect(html).toContain("script-src 'nonce-N0NCE'");
     expect(html).toContain('style-src vscode-webview://x');
     expect(html).toContain('No projects yet');
@@ -44,8 +54,20 @@ describe('renderStartHtml', () => {
       cspSource: 'x',
       models: {
         rows: [
-          { id: 'chat', label: 'Chat', userSpec: '', fallbackSpec: 'ollama/qwen3:4b', suggested: 'ollama/qwen3:4b' },
-          { id: 'planning', label: 'Planning', userSpec: 'anthropic/claude-opus-5', fallbackSpec: 'ollama/qwen3:4b', suggested: 'anthropic/claude-opus-5' },
+          {
+            id: 'chat',
+            label: 'Chat',
+            userSpec: '',
+            fallbackSpec: 'ollama/qwen3:4b',
+            suggested: 'ollama/qwen3:4b',
+          },
+          {
+            id: 'planning',
+            label: 'Planning',
+            userSpec: 'anthropic/claude-opus-5',
+            fallbackSpec: 'ollama/qwen3:4b',
+            suggested: 'anthropic/claude-opus-5',
+          },
         ],
         lmModels: ['copilot/gpt-4o'],
         secretsPresent: ['ANTHROPIC_API_KEY'],

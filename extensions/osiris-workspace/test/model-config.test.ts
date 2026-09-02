@@ -79,7 +79,11 @@ describe('model-config', () => {
 
   it('secretKeysFor maps specs to keychain env vars', () => {
     expect(
-      secretKeysFor(['anthropic/claude-opus-5', 'ollama/qwen3:4b', 'openai-compatible/gpt-x']).sort(),
+      secretKeysFor([
+        'anthropic/claude-opus-5',
+        'ollama/qwen3:4b',
+        'openai-compatible/gpt-x',
+      ]).sort(),
     ).toEqual(['ANTHROPIC_API_KEY', 'OSIRIS_AI_API_KEY']);
   });
 
@@ -98,6 +102,8 @@ describe('model-config', () => {
     expect(parseImport(exported)).toEqual(exported);
     expect(() => parseImport({ version: 2, models: {} })).toThrow(/version/);
     expect(() => parseImport({ version: 1, models: { planning: 'bad' } })).toThrow(/invalid spec/);
-    expect(() => parseImport({ version: 1, models: { nope: 'a/b' } })).toThrow(/unknown task class/);
+    expect(() => parseImport({ version: 1, models: { nope: 'a/b' } })).toThrow(
+      /unknown task class/,
+    );
   });
 });
