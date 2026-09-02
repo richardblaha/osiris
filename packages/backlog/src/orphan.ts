@@ -72,8 +72,13 @@ async function seedBacklog(
     }
   }
   await git.run(['add', '-A'], { cwd: worktreePath });
+  // A fixed date makes the seed commit reproducible, so two checkouts that
+  // `osiris init` the same template share an identical root commit and can
+  // always fast-forward each other's backlog.
+  const FIXED_DATE = '2020-01-01T00:00:00Z';
   await git.run(['commit', '-m', 'chore(backlog): initialise orphan branch'], {
     cwd: worktreePath,
+    env: { GIT_AUTHOR_DATE: FIXED_DATE, GIT_COMMITTER_DATE: FIXED_DATE },
   });
 }
 

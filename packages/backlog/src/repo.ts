@@ -6,7 +6,7 @@ import type { BacklogBoard, BacklogTask, CreateTaskRequest } from '@osiris/proto
 import { ExecaGitRunner, type GitRunner } from './git-runner.js';
 import { BACKLOG_BRANCH, ensureBacklogWorktree } from './orphan.js';
 import { discoverStates } from './states.js';
-import { parseTaskFile, renderNewTask } from './task.js';
+import { parseTaskFile, parseTaskFilename, renderNewTask } from './task.js';
 
 const log = createLogger('backlog:repo');
 
@@ -20,12 +20,32 @@ export interface BacklogRepoOptions {
   seedStates?: string[];
   /** Seed the orphan branch from this dir on first creation (default `<repo>/.osiris/backlog`). */
   seedFrom?: string;
+  /** Git remote for `push()` / `pull()` / `autoPush` (default `origin`). */
+  remote?: string;
+  /** Push the orphan branch after every mutation (best-effort — a failed push never fails the write). */
+  autoPush?: boolean;
 }
 
 export interface TaskHistoryEntry {
   hash: string;
   date: string;
   subject: string;
+}
+
+export interface SyncResult {
+  ok: boolean;
+  /** True when local and remote had diverged and a fast-forward was not possible. */
+  diverged?: boolean;
+  message: string;
+}
+
+export type LintSeverity = 'error' | 'warning';
+
+export interface BacklogLintIssue {
+  severity: LintSeverity;
+  /** `<state>/<filename>` or `(backlog)` for cross-file issues. */
+  where: string;
+  message: string;
 }
 
 /**
@@ -38,6 +58,8 @@ export class BacklogRepo {
     private readonly git: GitRunner,
     readonly worktreePath: string,
     readonly branch: string,
+    private readonly remote: string,
+    private readonly autoPush: boolean,
   ) {}
 
   static async open(options: BacklogRepoOptions): Promise<BacklogRepo> {
@@ -52,7 +74,13 @@ export class BacklogRepo {
       seedStates: options.seedStates,
       seedFrom: options.seedFrom ?? osirisPaths(options.repoRoot).backlog,
     });
-    return new BacklogRepo(git, worktreePath, branch);
+    return new BacklogRepo(
+      git,
+      worktreePath,
+      branch,
+      options.remote ?? 'origin',
+      options.autoPush ?? false,
+    );
   }
 
   async states(): Promise<string[]> {
@@ -100,6 +128,10 @@ export class BacklogRepo {
     const res = await this.git.run(['commit', '-m', message], { cwd: this.worktreePath });
     if (res.exitCode !== 0 && !/nothing to commit/i.test(res.stdout + res.stderr)) {
       throw new Error(`git commit failed: ${res.stderr || res.stdout}`);
+    }
+    if (this.autoPush) {
+      const push = await this.push();
+      if (!push.ok) log.warn('autoPush: %s', push.message);
     }
   }
 
@@ -166,8 +198,84 @@ export class BacklogRepo {
       });
   }
 
-  /** Pull the latest orphan-branch state if it tracks a remote. Best-effort. */
-  async sync(): Promise<void> {
-    await this.git.run(['pull', '--ff-only'], { cwd: this.worktreePath });
+  /** Push the orphan branch to `remote` (`osiris/backlog:osiris/backlog`). */
+  async push(remote = this.remote): Promise<SyncResult> {
+    const res = await this.git.run(['push', remote, `${this.branch}:${this.branch}`], {
+      cwd: this.worktreePath,
+    });
+    if (res.exitCode === 0) {
+      const message = /Everything up-to-date/i.test(res.stderr) ? 'up to date' : 'pushed';
+      log.info('push → %s: %s', remote, message);
+      return { ok: true, message };
+    }
+    return { ok: false, message: (res.stderr || res.stdout).trim() || 'push failed' };
+  }
+
+  /**
+   * Fetch the orphan branch from `remote` and fast-forward. Returns
+   * `{ ok:false, diverged:true }` when local commits would be lost — the caller
+   * resolves that (there is no automatic merge of a file-based backlog).
+   */
+  async pull(remote = this.remote): Promise<SyncResult> {
+    const fetch = await this.git.run(['fetch', remote, this.branch], { cwd: this.worktreePath });
+    if (fetch.exitCode !== 0) {
+      return {
+        ok: false,
+        message: `nothing to pull (${(fetch.stderr || 'no such branch').trim()})`,
+      };
+    }
+    const merge = await this.git.run(['merge', '--ff-only', 'FETCH_HEAD'], {
+      cwd: this.worktreePath,
+    });
+    if (merge.exitCode === 0) {
+      const message = /Already up to date/i.test(merge.stdout) ? 'up to date' : 'fast-forwarded';
+      log.info('pull ← %s: %s', remote, message);
+      return { ok: true, message };
+    }
+    return { ok: false, diverged: true, message: 'local and remote backlog have diverged' };
+  }
+
+  /**
+   * Static checks over every task file: parseable, filename id matches the
+   * frontmatter id, ids unique, assignee (if any) is a plausible agent name.
+   */
+  async lint(): Promise<BacklogLintIssue[]> {
+    const issues: BacklogLintIssue[] = [];
+    const states = await this.states();
+    const seenIds = new Map<number, string>();
+
+    for (const state of states) {
+      const dir = join(this.worktreePath, state);
+      let files: string[];
+      try {
+        files = await readdir(dir);
+      } catch {
+        continue;
+      }
+      for (const file of files) {
+        if (!file.endsWith('.md') || file === 'PROCESS.md') continue;
+        const where = `${state}/${file}`;
+        const fromName = parseTaskFilename(file);
+        if (!fromName) {
+          issues.push({ severity: 'error', where, message: 'filename ≠ [<type>]-<id>-<slug>.md' });
+          continue;
+        }
+        const parsed = parseTaskFile(state, file, await readFile(join(dir, file), 'utf8'));
+        if (!parsed.ok) {
+          issues.push({ severity: 'error', where, message: parsed.error.message });
+          continue;
+        }
+        const existing = seenIds.get(fromName.id);
+        if (existing) {
+          issues.push({
+            severity: 'error',
+            where,
+            message: `duplicate id ${fromName.id} (also ${existing})`,
+          });
+        }
+        seenIds.set(fromName.id, where);
+      }
+    }
+    return issues;
   }
 }

@@ -51,7 +51,11 @@ export function createWorkspaceConsoleDeps(
 
   let backlogPromise: Promise<BacklogRepo> | undefined;
   const getBacklog = (): Promise<BacklogRepo> => {
-    backlogPromise ??= BacklogRepo.open({ repoRoot: workspaceRoot });
+    backlogPromise ??= BacklogRepo.open({
+      repoRoot: workspaceRoot,
+      remote: env.OSIRIS_BACKLOG_REMOTE,
+      autoPush: env.OSIRIS_BACKLOG_AUTOPUSH === '1',
+    });
     return backlogPromise;
   };
 

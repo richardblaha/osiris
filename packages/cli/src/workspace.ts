@@ -36,7 +36,11 @@ export class WorkspaceServices {
   }
 
   openBacklog(): Promise<BacklogRepo> {
-    this.backlog ??= BacklogRepo.open({ repoRoot: this.root });
+    this.backlog ??= BacklogRepo.open({
+      repoRoot: this.root,
+      remote: this.env.OSIRIS_BACKLOG_REMOTE,
+      autoPush: this.env.OSIRIS_BACKLOG_AUTOPUSH === '1',
+    });
     return this.backlog;
   }
 

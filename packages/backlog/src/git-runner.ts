@@ -6,15 +6,21 @@ export interface GitResult {
   exitCode: number;
 }
 
+export interface GitRunOptions {
+  cwd?: string;
+  /** Extra environment for this one invocation (e.g. `GIT_COMMITTER_DATE`). */
+  env?: Record<string, string>;
+}
+
 /** The slice of `git` this package needs. Swap for a fake in tests. */
 export interface GitRunner {
-  run(args: string[], options?: { cwd?: string }): Promise<GitResult>;
+  run(args: string[], options?: GitRunOptions): Promise<GitResult>;
 }
 
 export class ExecaGitRunner implements GitRunner {
   constructor(private readonly defaultCwd?: string) {}
 
-  async run(args: string[], options: { cwd?: string } = {}): Promise<GitResult> {
+  async run(args: string[], options: GitRunOptions = {}): Promise<GitResult> {
     const result = await execa('git', args, {
       cwd: options.cwd ?? this.defaultCwd,
       reject: false,
@@ -23,6 +29,7 @@ export class ExecaGitRunner implements GitRunner {
         GIT_AUTHOR_EMAIL: process.env.GIT_AUTHOR_EMAIL ?? 'osiris@localhost',
         GIT_COMMITTER_NAME: process.env.GIT_COMMITTER_NAME ?? 'Osiris',
         GIT_COMMITTER_EMAIL: process.env.GIT_COMMITTER_EMAIL ?? 'osiris@localhost',
+        ...options.env,
       },
     });
     return {

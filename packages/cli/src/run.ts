@@ -19,8 +19,10 @@ Usage:
   osiris memory reindex                (re)index .osiris/memory/ into the vector store
   osiris memory search <query…> [-k N]  search the knowledge base
   osiris backlog list                  show the board (orphan branch osiris/backlog)
-  osiris backlog new <title…> [--type T] [--state S]
-  osiris backlog move <id> <state>     move a task (one commit on the orphan branch)
+  osiris backlog new <title…> [--type T] [--state S] [--push]
+  osiris backlog move <id> <state> [--push]   move a task (one commit on the orphan branch)
+  osiris backlog push | pull           sync the orphan branch with its git remote
+  osiris backlog lint                  static-check every task file
   osiris serve [--port N]              run osiris-server against this workspace
   osiris repl                          interactive REPL with crew/backlog/memory
 `;
@@ -124,7 +126,8 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
       }
 
       case 'backlog': {
-        const repo = await services().openBacklog();
+        const backlogEnv = flags.values.push ? { ...env, OSIRIS_BACKLOG_AUTOPUSH: '1' } : env;
+        const repo = await new WorkspaceServices(io.cwd, backlogEnv).openBacklog();
         if (sub === 'list') {
           const board = await repo.board();
           io.out(`branch: ${board.branch}\n`);
@@ -148,6 +151,18 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           const moved = await repo.move(Number(flags.positionals[0]), flags.positionals[1]!);
           io.out(`#${moved.id} → ${moved.state}\n`);
           return 0;
+        }
+        if (sub === 'push' || sub === 'pull') {
+          const result = sub === 'push' ? await repo.push() : await repo.pull();
+          io.out(`${sub}: ${result.message}\n`);
+          return result.ok ? 0 : 1;
+        }
+        if (sub === 'lint') {
+          const issues = await repo.lint();
+          for (const i of issues)
+            io.out(`${i.severity === 'error' ? '✗' : '⚠'} ${i.where}: ${i.message}\n`);
+          io.out(`${issues.length} issue(s)\n`);
+          return issues.some((i) => i.severity === 'error') ? 1 : 0;
         }
         return usageError(io);
       }
