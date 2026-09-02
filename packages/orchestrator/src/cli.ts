@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 import { Orchestrator } from './runner.js';
-import { defaultStack, type DefaultStackOptions } from './stack.js';
+import { ensureOllamaModel } from './ollama.js';
+import { defaultStack, stackModel, type DefaultStackOptions } from './stack.js';
 
 const USAGE = `osiris-orchestrator — local dependency stack (Ollama, OTLP collector, dashboard, sync worker)
 
 Usage:
-  osiris-orchestrator up      [--dashboard aspire|jaeger]
+  osiris-orchestrator up      [--dashboard aspire|jaeger] [--model <tag>] [--no-model]
   osiris-orchestrator down
   osiris-orchestrator status
+
+After "up", the chat model is pulled into Ollama if the local library is missing
+it (once per install; cached in the osiris-ollama volume). --no-model skips that.
 `;
 
 type Command = 'up' | 'down' | 'status';
@@ -15,35 +19,54 @@ type Command = 'up' | 'down' | 'status';
 interface ParsedArgs {
   command: Command;
   dashboard: NonNullable<DefaultStackOptions['dashboard']>;
+  model?: string;
+  pullModel: boolean;
 }
 
 function parse(argv: readonly string[]): ParsedArgs {
   const command = argv[0];
   let dashboard: ParsedArgs['dashboard'] = 'aspire';
+  let model: string | undefined;
+  let pullModel = true;
 
   for (let i = 1; i < argv.length; i++) {
     if (argv[i] === '--dashboard') {
       const value = argv[i + 1];
       if (value === 'aspire' || value === 'jaeger') dashboard = value;
       i++;
+    } else if (argv[i] === '--model') {
+      model = argv[i + 1];
+      i++;
+    } else if (argv[i] === '--no-model') {
+      pullModel = false;
     }
   }
 
   if (command === 'up' || command === 'down' || command === 'status') {
-    return { command, dashboard };
+    return { command, dashboard, model, pullModel };
   }
   process.stdout.write(USAGE);
   process.exit(command === undefined ? 0 : 1);
 }
 
 async function main(): Promise<void> {
-  const { command, dashboard } = parse(process.argv.slice(2));
-  const spec = defaultStack({ dashboard });
+  const { command, dashboard, model, pullModel } = parse(process.argv.slice(2));
+  const spec = defaultStack({ dashboard, model });
   const orchestrator = new Orchestrator();
 
   if (command === 'up') {
     await orchestrator.up(spec);
     process.stdout.write(`stack "${spec.project}" is up\n`);
+    if (pullModel) {
+      const tag = stackModel(spec);
+      const { pulled } = await ensureOllamaModel(tag, {
+        onProgress: ({ status, fraction }) => {
+          const pct = fraction !== undefined ? ` ${Math.round(fraction * 100)}%` : '';
+          process.stdout.write(`  ${status}${pct}\n`);
+        },
+      });
+      process.stdout.write(`model ${tag} ${pulled ? 'pulled' : 'already present'}\n`);
+    }
     return;
   }
   if (command === 'down') {

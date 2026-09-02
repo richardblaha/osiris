@@ -3,6 +3,8 @@ import { startTelemetry, type TelemetryHandle } from '@osiris/telemetry';
 import {
   Orchestrator,
   defaultStack,
+  ensureOllamaModel,
+  stackModel,
   type DefaultStackOptions,
   type StackSpec,
 } from '@osiris/orchestrator';
@@ -28,6 +30,12 @@ export interface BootstrapOptions {
   hostGateway?: string;
   stackController?: StackController;
   startTelemetryImpl?: typeof startTelemetry;
+  /** Pull the local chat model into Ollama after the stack is up. Default `true`. */
+  pullLocalModel?: boolean;
+  /** Override the model tag; defaults to the stack's `OSIRIS_LOCAL_MODEL`. */
+  localModel?: string;
+  /** Injectable for tests. */
+  ensureModelImpl?: typeof ensureOllamaModel;
 }
 
 export interface OsirisRuntime {
@@ -55,9 +63,31 @@ export async function bootstrapOsirisRuntime(options: BootstrapOptions = {}): Pr
   await controller.up(stack);
 
   const gateway = options.hostGateway ?? 'localhost';
+  const ollamaUrl = options.ollamaUrl ?? `http://${gateway}:11434`;
   process.env.OTEL_EXPORTER_OTLP_ENDPOINT ??= options.otlpEndpoint ?? `http://${gateway}:4318`;
-  process.env.OSIRIS_OLLAMA_URL ??= options.ollamaUrl ?? `http://${gateway}:11434`;
+  process.env.OSIRIS_OLLAMA_URL ??= ollamaUrl;
   process.env.OSIRIS_LOCATION ??= 'local';
+
+  const model = options.localModel ?? stackModel(stack);
+  if (options.pullLocalModel ?? true) {
+    const ensureModel = options.ensureModelImpl ?? ensureOllamaModel;
+    try {
+      const { pulled } = await ensureModel(model, {
+        baseUrl: ollamaUrl,
+        onProgress: ({ status, fraction }) =>
+          log.info(
+            'model %s: %s%s',
+            model,
+            status,
+            fraction !== undefined ? ` ${Math.round(fraction * 100)}%` : '',
+          ),
+      });
+      process.env.OSIRIS_LOCAL_MODEL ??= model;
+      log.info('local model %s %s', model, pulled ? 'pulled' : 'present');
+    } catch (err) {
+      log.warn('local model %s unavailable: %s', model, String(err));
+    }
+  }
 
   log.info('osiris runtime up — %d services, telemetry %s', stack.services.length, telemetry.enabled ? 'on' : 'off');
 

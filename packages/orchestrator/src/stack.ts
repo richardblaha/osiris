@@ -5,6 +5,8 @@
  * {@link toComposeDocument} (a plain `docker compose` file).
  */
 
+import { DEFAULT_LOCAL_MODEL, DEFAULT_OLLAMA_IMAGE } from './ollama.js';
+
 export interface PortMapping {
   host: number;
   container: number;
@@ -48,6 +50,12 @@ export interface DefaultStackOptions {
   dashboard?: 'aspire' | 'jaeger';
   ollamaImage?: string;
   syncWorkerImage?: string;
+  /**
+   * Chat model to auto-pull into Ollama once the stack is healthy (see
+   * {@link ensureOllamaModel}). Recorded on the `ollama` service as
+   * `OSIRIS_LOCAL_MODEL`; read it back with {@link stackModel}.
+   */
+  model?: string;
 }
 
 const OTLP_ENDPOINT = 'http://otel-collector:4318';
@@ -89,7 +97,8 @@ export function defaultStack(options: DefaultStackOptions = {}): StackSpec {
       dashboard,
       {
         name: 'ollama',
-        image: options.ollamaImage ?? 'ollama/ollama:0.3.12',
+        image: options.ollamaImage ?? DEFAULT_OLLAMA_IMAGE,
+        env: { OSIRIS_LOCAL_MODEL: options.model ?? DEFAULT_LOCAL_MODEL },
         ports: [{ host: 11434, container: 11434 }],
         volumes: [{ source: 'osiris-ollama', target: '/root/.ollama' }],
         health: { url: 'http://localhost:11434/api/tags', retries: 30, intervalMs: 2000 },
@@ -103,4 +112,13 @@ export function defaultStack(options: DefaultStackOptions = {}): StackSpec {
       },
     ],
   };
+}
+
+/**
+ * The chat model recorded on a stack's `ollama` service by {@link defaultStack}.
+ * Falls back to {@link DEFAULT_LOCAL_MODEL} for hand-built specs.
+ */
+export function stackModel(spec: StackSpec): string {
+  const ollama = spec.services.find((svc) => svc.name === 'ollama');
+  return ollama?.env?.OSIRIS_LOCAL_MODEL ?? DEFAULT_LOCAL_MODEL;
 }
