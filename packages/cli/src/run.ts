@@ -18,6 +18,7 @@ Usage:
   osiris agent list                    list the crew defined in .osiris/agents/
   osiris crew run <task…> [--lead X] [--mcp]   run the crew on a task (--mcp: start MCP servers)
   osiris memory reindex                (re)index .osiris/memory/ into the vector store
+  osiris memory watch                  reindex on every .osiris/memory/ change
   osiris memory search <query…> [-k N]  search the knowledge base
   osiris backlog list                  show the board (orphan branch osiris/backlog)
   osiris backlog new <title…> [--type T] [--state S] [--push]
@@ -111,6 +112,12 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           io.out(
             `reindex: ${r.filesIndexed} new/changed, ${r.filesUnchanged} unchanged, ${r.filesRemoved} removed, ${r.chunksUpserted} chunks, ${r.embeddingCalls} embed calls\n`,
           );
+          return 0;
+        }
+        if (sub === 'watch') {
+          const { watchMemory } = await import('./watch.js');
+          io.out(`watching ${svc.paths.memory} — Ctrl+C to stop\n`);
+          await watchMemory(svc, { onReindex: (s) => io.out(`  reindex: ${s}\n`) });
           return 0;
         }
         if (sub === 'search' && flags.positionals.length) {

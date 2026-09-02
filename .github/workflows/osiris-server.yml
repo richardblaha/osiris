@@ -1,0 +1,90 @@
+name: osiris-server
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/osiris-server/**"
+      - "apps/osiris-console/**"
+      - "packages/**"
+      - ".github/workflows/osiris-server.yml"
+  pull_request:
+    paths:
+      - "apps/osiris-server/**"
+      - "apps/osiris-console/**"
+      - "packages/**"
+      - ".github/workflows/osiris-server.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: osiris-server-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  memory-chromadb:
+    name: "@osiris/memory ⇄ ChromaDB"
+    runs-on: ubuntu-latest
+    services:
+      chromadb:
+        image: chromadb/chroma:1.0.15
+        ports: ["8000:8000"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter "@osiris/memory..." build
+      - name: Wait for ChromaDB
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8000/api/v2/heartbeat && break
+            sleep 2
+          done
+      - name: Integration test against ChromaDB
+        env:
+          OSIRIS_TEST_CHROMA_URL: http://localhost:8000
+        run: pnpm --filter @osiris/memory test
+
+  docker-smoke:
+    name: server image + API smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the server image
+        run: docker build -f apps/osiris-server/Dockerfile -t osiris-server:ci .
+
+      - name: Run it
+        run: docker run -d --name osiris-server -p 8080:8080 osiris-server:ci
+
+      - name: Wait for readiness
+        run: |
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:8080/healthz && break
+            sleep 2
+          done
+          curl -sf http://localhost:8080/healthz
+
+      - name: Smoke the console API
+        run: |
+          set -euo pipefail
+          curl -sf http://localhost:8080/ | grep -q '<!doctype html>'
+          curl -sf http://localhost:8080/api/v1/crew/agents | grep -q architect
+          ID=$(curl -sf -XPOST http://localhost:8080/api/v1/backlog/tasks \
+            -H 'content-type: application/json' -d '{"type":"feat","title":"ci smoke"}' \
+            | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])')
+          curl -sf -XPOST "http://localhost:8080/api/v1/backlog/tasks/$ID/move" \
+            -H 'content-type: application/json' -d '{"toState":"in-progress"}' | grep -q in-progress
+          curl -sf -XPOST http://localhost:8080/api/v1/memory/reindex >/dev/null
+          RID=$(curl -sf -XPOST http://localhost:8080/api/v1/crew/runs \
+            -H 'content-type: application/json' -d '{"task":"say hi"}' \
+            | python3 -c 'import sys,json;print(json.load(sys.stdin)["runId"])')
+          sleep 2
+          curl -sf "http://localhost:8080/api/v1/crew/runs/$RID" | grep -q '"finishReason":"stop"'
+
+      - name: Server logs
+        if: always()
+        run: docker logs osiris-server
