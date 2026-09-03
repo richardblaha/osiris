@@ -179,15 +179,18 @@ docker build -t osiris-web apps/osiris-web && docker run -p 3000:3000 osiris-web
 | Target                | Command                                 | CI workflow         | Output                                            |
 | --------------------- | --------------------------------------- | ------------------- | ------------------------------------------------- |
 | Packages / exts       | `pnpm build`                            | `ci.yml`            | `dist/`, `media/`, `*.vsix`                       |
-| Desktop (Lin/Mac/Win) | `pnpm --filter @osiris/desktop package` | `build-desktop.yml` | AppImage / deb / rpm / dmg / nsis                 |
+| Desktop (Lin/Mac/Win) | `pnpm --filter @osiris/desktop package` | `build-desktop.yml` | AppImage / deb / rpm / dmg / nsis (WIP)           |
 | Web + Docker          | `pnpm --filter @osiris/web build`       | `build-web.yml`     | server bundle + container image                   |
 | Release               | tag `v*`                                | `release.yml`       | draft GitHub Release with every artifact attached |
 
-`release.yml` is the only tag-driven entrypoint: it packs the extensions and
-calls the now-reusable `build-desktop.yml` / `build-web.yml` (`workflow_call` +
-`workflow_dispatch`), then attaches every `.vsix`, the desktop installers and the
-`vscode-reh-web-*` bundle to the draft release. Tags with a hyphen
-(`v1.2.0-alpha.1`) are marked pre-release.
+`release.yml` is the only tag-driven entrypoint: it packs the extensions, calls
+the reusable `build-web.yml` (`workflow_call` + `workflow_dispatch`), and
+attaches every `.vsix` plus the `vscode-reh-web-*` bundle to the draft release.
+Tags with a hyphen (`v1.2.0-alpha.1`) are marked pre-release.
+
+> **Desktop is not in the release yet.** `apps/osiris-desktop` is being reworked
+> onto VSCodium's own build pipeline; `build-desktop.yml` runs on
+> `workflow_dispatch` only for now.
 
 ## Contributing
 
