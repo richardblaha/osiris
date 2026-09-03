@@ -13,7 +13,8 @@ import { existsSync } from 'node:fs';
 import { copyFile, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { generatedDir, renderIcons } from '@osiris/branding/render-icons';
-import { findAppLayout, listStaged, mergeDeep, readProductOverlay, stageDir } from './lib.mjs';
+import { bundleBuiltinExtensions } from '@osiris/branding/bundle-extensions';
+import { findAppLayout, listStaged, mergeDeep, readProductOverlay, repoRoot, stageDir } from './lib.mjs';
 import {
   binaryRenames,
   brandProductJson,
@@ -55,6 +56,15 @@ for (const key of stagedKeys) {
       console.log(`[osiris-desktop] ${key}: patched ${rel}`);
     }
   }
+
+  // First-party extensions (osiris-ai, osiris-workspace) + the Osiris theme,
+  // dropped in as built-ins next to upstream's bundled set.
+  await bundleBuiltinExtensions({
+    repoRoot,
+    extensionsDir: path.join(path.dirname(layout.productJson), 'extensions'),
+    build: true,
+    log: (m) => console.log(`[osiris-desktop] ${key}: ${m.replace(/^\[branding\] /, '')}`),
+  });
 
   if (layout.kind === 'darwin') await brandMacBundle(stage, layout);
   console.log(`[osiris-desktop] ${key}: branded`);

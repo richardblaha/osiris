@@ -22,6 +22,18 @@ Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
   `apparmor_restrict_unprivileged_userns=1`) and falls back to `--no-sandbox`
   instead of aborting with `FATAL:setuid_sandbox_host.cc` — override with
   `OSIRIS_SANDBOX=1` / `OSIRIS_SANDBOX=0`.
+- **`osiris-ai`, `osiris-workspace` and a generated `osiris-theme` are now
+  bundled as built-in extensions** (desktop `resources/app/extensions/`, web REH
+  `extensions/`) — always enabled, no manual `.vsix` install. `osiris-theme`
+  carries the `Osiris Dark`/`Osiris Light` themes and editor defaults, so
+  `Osiris Dark` is the out-of-the-box theme. New
+  `@osiris/branding/bundle-extensions` (`bundleBuiltinExtensions`), called from
+  both distributions' branding step; both build workflows now `package` the
+  first-party `.vsix` first.
+- The AppImage `AppRun` and the snap launcher **scrub inherited
+  `VSCODE_*` / `ELECTRON_RUN_AS_NODE` environment** before starting, so launching
+  Osiris from another editor's integrated terminal no longer points it at that
+  editor's install, caches and NLS config.
 
 ### Removed
 

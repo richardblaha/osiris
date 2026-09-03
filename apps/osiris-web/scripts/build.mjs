@@ -6,7 +6,8 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
-import { readUpstreamConfig } from './lib.mjs';
+import { bundleBuiltinExtensions } from '@osiris/branding/bundle-extensions';
+import { readUpstreamConfig, rehBuildDir, repoRoot } from './lib.mjs';
 
 const { checkoutDir } = await readUpstreamConfig();
 if (!existsSync(checkoutDir)) {
@@ -27,6 +28,15 @@ reconcileRemoteTree();
 console.log(`[osiris-web] building ${rehTarget}…`);
 run('npm', ['run', 'gulp', rehTarget]);
 console.log('[osiris-web] build finished — output in .build/vscode-reh-web-<platform>-<arch>/');
+
+// First-party extensions (osiris-ai, osiris-workspace) + the Osiris theme, as
+// built-ins alongside upstream's bundled set in the REH bundle.
+const extensionsDir = path.join(rehBuildDir(checkoutDir), 'extensions');
+if (existsSync(extensionsDir)) {
+  await bundleBuiltinExtensions({ repoRoot, extensionsDir, build: true });
+} else {
+  console.warn(`[osiris-web] no ${path.relative(checkoutDir, extensionsDir)} — skipped built-in bundling`);
+}
 
 /**
  * The gulp `*-min-ci` step runs `npm ls --all --omit=dev --parseable` inside

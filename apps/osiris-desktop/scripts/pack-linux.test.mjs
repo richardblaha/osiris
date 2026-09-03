@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { APP_PREFIX, appRunScript, desktopEntry, snapMeta } from './pack-linux.mjs';
+import {
+  APP_PREFIX,
+  appRunScript,
+  desktopEntry,
+  envScrubPreamble,
+  snapLauncher,
+  snapMeta,
+} from './pack-linux.mjs';
 
 test('desktopEntry is a valid single-Exec entry pointing at the given command', () => {
   const entry = desktopEntry({ exec: 'osiris' });
@@ -37,9 +44,22 @@ test('snapMeta is classic-confinement and versioned from the release string', ()
   assert.match(meta, /^version: '1\.94\.2\.24286'$/m);
   assert.match(meta, /^confinement: classic$/m);
   assert.match(meta, /^grade: stable$/m);
-  assert.match(meta, new RegExp(`command: ${APP_PREFIX}/bin/osiris`));
+  assert.match(meta, /command: bin\/osiris-launch/);
 });
 
 test('snapMeta honours a devel grade', () => {
   assert.match(snapMeta('1.0.0', 'devel'), /^grade: devel$/m);
+});
+
+test('envScrubPreamble unsets inherited editor env', () => {
+  const p = envScrubPreamble();
+  assert.match(p, /VSCODE_\[A-Za-z0-9_\]/); // the prefix sweep
+  assert.match(p, /unset ELECTRON_RUN_AS_NODE ELECTRON_NO_ATTACH_CONSOLE VSCODE_PORTABLE/);
+});
+
+test('appRunScript and snapLauncher both scrub inherited env before exec', () => {
+  for (const script of [appRunScript(), snapLauncher()]) {
+    assert.match(script, /unset ELECTRON_RUN_AS_NODE/);
+  }
+  assert.match(snapLauncher(), new RegExp(`\\$SNAP/${APP_PREFIX}/bin/osiris`));
 });

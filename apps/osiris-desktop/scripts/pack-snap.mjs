@@ -10,10 +10,10 @@
  * classic-confinement snap: install with `snap install --dangerous --classic`.
  */
 import { execFileSync } from 'node:child_process';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { appRoot, readUpstreamConfig, stageDir } from './lib.mjs';
-import { desktopEntry, snapMeta } from './pack-linux.mjs';
+import { desktopEntry, snapLauncher, snapMeta } from './pack-linux.mjs';
 import { buildWrapperRoot } from './pack-tree.mjs';
 
 export async function packSnap(sourceTree, out, { grade = 'stable' } = {}) {
@@ -27,6 +27,11 @@ export async function packSnap(sourceTree, out, { grade = 'stable' } = {}) {
   await writeFile(path.join(prime, 'meta', 'snap.yaml'), snapMeta(release, grade));
   await writeFile(path.join(gui, 'osiris.desktop'), desktopEntry());
   await writeFile(path.join(gui, 'icon.png'), await readFile(icon));
+
+  const launcher = path.join(prime, 'bin', 'osiris-launch');
+  await mkdir(path.dirname(launcher), { recursive: true });
+  await writeFile(launcher, snapLauncher());
+  await chmod(launcher, 0o755);
 
   await mkdir(path.dirname(out), { recursive: true });
   await rm(out, { recursive: true, force: true });

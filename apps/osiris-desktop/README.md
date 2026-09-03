@@ -14,6 +14,12 @@ pnpm --filter @osiris/desktop package             # repack → dist_electron/Osi
 `prepare:shell` with no argument does this host's platform; CI passes an explicit
 key (`node scripts/fetch-prebuilt.mjs darwin-arm64`).
 
+`apply-branding.mjs` also drops the Osiris first-party extensions — `osiris-ai`,
+`osiris-workspace` and a generated `osiris-theme` (the `Osiris Dark`/`Osiris Light`
+themes + editor defaults) — into `resources/app/extensions/` as **built-ins**, via
+`@osiris/branding/bundle-extensions`. It packages each `<name>.vsix` on demand, so
+`pnpm --filter "./extensions/*" package` is only needed explicitly in CI.
+
 `package` emits a portable archive per platform (`.tar.gz` on Linux, `.zip` on
 Windows/macOS) and, for `linux-x64` only, an **AppImage** and a classic
 confinement **snap** wrapping the same branded tree. The two extra Linux packages
@@ -49,5 +55,10 @@ its own with `node scripts/pack-appimage.mjs` / `node scripts/pack-snap.mjs`.
   `AppRun` and drops to `--no-sandbox` automatically (override with
   `OSIRIS_SANDBOX=1`). The **snap** is classic-confinement, so install it with
   `sudo snap install --dangerous --classic Osiris-linux-x64-<release>.snap`.
+- The AppImage `AppRun` and the snap launcher **scrub inherited `VSCODE_*` /
+  `ELECTRON_RUN_AS_NODE`** before starting Electron — otherwise launching Osiris
+  from another editor's integrated terminal makes it read that editor's NLS
+  config and caches. The `.tar.gz` has no wrapper: launch it from a plain shell,
+  not a VS Code terminal.
 - Bumping `config/upstream.json` is a deliberate PR; the `release` value must be
   a real tag at github.com/VSCodium/vscodium/releases.

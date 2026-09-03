@@ -21,6 +21,11 @@ asset pipeline the two app builds pull from.
   `@font-face`, and renames the workspace config folder `.vscode` → `.osiris`
   (`rewriteConfigFolder`, tolerant regex over a curated file list). Imported by
   both apps' `apply-branding.mjs`.
+- **`scripts/bundle-extensions.mjs`** — `bundleBuiltinExtensions({ repoRoot,
+  extensionsDir, build })`: unpacks the first-party `.vsix` set
+  (`FIRST_PARTY_EXTENSIONS` = `osiris-ai`, `osiris-workspace`) into a
+  distribution's `extensions/` dir and writes a generated `osiris-theme` built-in
+  (`buildThemeManifest` + `themes/*.json`). Called by both apps' branding step.
 - **`src/metadata.ts`** — the single source of truth for product identity, colours
   and links, consumed by the apps and mirrored to `assets/metadata.json`.
 

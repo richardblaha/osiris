@@ -16,7 +16,8 @@
     "./product-overlay": "./product.overlay.json",
     "./metadata": "./assets/metadata.json",
     "./render-icons": "./scripts/render-icons.mjs",
-    "./apply-to-checkout": "./scripts/apply-to-checkout.mjs"
+    "./apply-to-checkout": "./scripts/apply-to-checkout.mjs",
+    "./bundle-extensions": "./scripts/bundle-extensions.mjs"
   },
   "files": [
     "dist",

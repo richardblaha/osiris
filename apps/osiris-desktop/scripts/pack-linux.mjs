@@ -51,6 +51,24 @@ export function desktopEntry({ exec = 'osiris' } = {}) {
 }
 
 /**
+ * `sh` that drops the VS Code / Electron environment a *parent* editor leaks into
+ * a child process — most often when the user runs the launcher from another
+ * VS Code's integrated terminal. Left in place, `VSCODE_NLS_CONFIG`,
+ * `VSCODE_CODE_CACHE_PATH`, `VSCODE_IPC_HOOK`, `ELECTRON_RUN_AS_NODE`, … point
+ * the fresh Osiris process at the parent's install and caches.
+ *
+ * Only the top-level GUI launcher scrubs — Osiris sets these vars for its own
+ * child processes afterwards, and the `bin/osiris` CLI keeps `VSCODE_IPC_HOOK_CLI`
+ * so `osiris <file>` still opens in a running window.
+ */
+export function envScrubPreamble() {
+  return `# Drop inherited VS Code / Electron env (e.g. launched from another editor's terminal)
+for _v in $(env | sed -n 's/^\\(VSCODE_[A-Za-z0-9_]*\\)=.*/\\1/p'); do unset "$_v"; done
+unset ELECTRON_RUN_AS_NODE ELECTRON_NO_ATTACH_CONSOLE VSCODE_PORTABLE
+`;
+}
+
+/**
  * The AppImage `AppRun` entrypoint.
  *
  * Electron's SUID sandbox helper can't be `chmod 4755 root` inside a read-only
@@ -68,6 +86,7 @@ HERE="$(dirname "$(readlink -f "$0")")"
 APP="$HERE/${APP_PREFIX}"
 export PATH="$APP/bin:$PATH"
 
+${envScrubPreamble()}
 userns_ok() {
   [ "$(cat /proc/sys/kernel/unprivileged_userns_clone 2>/dev/null || echo 1)" != "0" ] || return 1
   [ "$(cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null || echo 0)" != "1" ] || return 1
@@ -109,8 +128,15 @@ confinement: classic
 grade: ${grade}
 apps:
   osiris:
-    command: ${APP_PREFIX}/bin/osiris
+    command: bin/osiris-launch
     environment:
       DISABLE_WAYLAND: '1'
+`;
+}
+
+/** Snap `command` wrapper: scrub inherited editor env, then exec the CLI shim. */
+export function snapLauncher() {
+  return `#!/bin/sh
+${envScrubPreamble()}exec "$SNAP/${APP_PREFIX}/bin/osiris" "$@"
 `;
 }
