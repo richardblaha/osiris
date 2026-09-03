@@ -12,6 +12,8 @@ import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { appRoot, findAppLayout, listStaged, readUpstreamConfig, stageDir } from './lib.mjs';
 import { artifactName } from './rebrand.mjs';
+import { packAppImage } from './pack-appimage.mjs';
+import { packSnap } from './pack-snap.mjs';
 
 const staged = await listStaged();
 if (staged.length === 0) {
@@ -32,10 +34,25 @@ for (const key of staged) {
     const out = path.join(outDir, `${base}.tar.gz`);
     execFileSync('tar', ['czf', out, '-C', stage, '.'], { stdio: 'inherit' });
     report(out);
+
+    // AppImage + snap are best-effort: skip (don't fail the repack) if the
+    // host lacks mksquashfs / can't fetch appimagetool. CI installs both.
+    if (key === 'linux-x64') {
+      await tryPack('AppImage', () => packAppImage(stage, path.join(outDir, `${base}.AppImage`)));
+      await tryPack('snap', () => packSnap(stage, path.join(outDir, `${base}.snap`)));
+    }
   } else {
     const out = path.join(outDir, `${base}.zip`);
     execFileSync('zip', ['-qry', out, '.'], { cwd: stage, stdio: 'inherit' });
     report(out);
+  }
+}
+
+async function tryPack(label, fn) {
+  try {
+    await fn();
+  } catch (err) {
+    console.warn(`[osiris-desktop] ${label}: skipped — ${err.message}`);
   }
 }
 

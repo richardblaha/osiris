@@ -58,9 +58,13 @@ jobs:
           find artifacts -name 'osiris-web-server.tar.gz' \
             -exec cp -v {} dist/osiris-web-server-linux-x64.tar.gz \;
 
-          # Desktop portable archives (best-effort; may be absent)
+          # Desktop artifacts (best-effort; some may be absent):
+          #   Osiris-<os>-<arch>-<release>.{tar.gz,zip}  — portable archives
+          #   Osiris-linux-x64-<release>.AppImage        — portable Linux app
+          #   Osiris-linux-x64-<release>.snap            — classic-confinement snap
           find artifacts -type f -name 'Osiris-*' \
-            \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp -v {} dist/ \;
+            \( -name '*.tar.gz' -o -name '*.zip' -o -name '*.AppImage' -o -name '*.snap' \) \
+            -exec cp -v {} dist/ \;
 
           echo "---- release assets ----"
           ls -la dist/
@@ -83,3 +87,7 @@ jobs:
             - `osiris-web-server-*.tar.gz` — browser-served web server bundle
             - `Osiris-<os>-<arch>-*.{tar.gz,zip}` — desktop app (rebranded VSCodium
               prebuilt; portable, unsigned). Linux: extract and run `bin/osiris`.
+            - `Osiris-linux-x64-*.AppImage` — portable Linux app (`chmod +x` then
+              run; falls back to `--no-sandbox` when user namespaces are locked down).
+            - `Osiris-linux-x64-*.snap` — classic-confinement snap
+              (`sudo snap install --dangerous --classic Osiris-linux-x64-*.snap`).

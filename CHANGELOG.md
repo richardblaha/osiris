@@ -6,6 +6,23 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Added
+
+- **Desktop** — `linux-x64` now also ships an **AppImage** and a classic
+  confinement **snap**, both wrapping the same branded VSCodium tree as the
+  `.tar.gz`. New `scripts/pack-appimage.mjs` (auto-downloads `appimagetool`) and
+  `scripts/pack-snap.mjs` (`mksquashfs`, no snapcraft/LXD); `scripts/pack-linux.mjs`
+  holds the unit-tested `.desktop` / `AppRun` / `snap.yaml` text. `package.mjs`
+  builds both best-effort (warns + skips if the tooling is missing). `release.yml`
+  attaches `Osiris-linux-x64-*.AppImage` and `Osiris-linux-x64-*.snap`.
+- The AppImage `AppRun` detects a locked-down user-namespace host
+  (`kernel.unprivileged_userns_clone=0` or AppArmor's
+  `apparmor_restrict_unprivileged_userns=1`) and falls back to `--no-sandbox`
+  instead of aborting with `FATAL:setuid_sandbox_host.cc` — override with
+  `OSIRIS_SANDBOX=1` / `OSIRIS_SANDBOX=0`.
+
 ## [0.1.0-alpha.6] - 2026-09-03
 
 First release with a **desktop** artifact, and the first cut end-to-end by the
