@@ -28,6 +28,19 @@ describe('rewriteConfigFolder', () => {
     `;
     expect(rewriteConfigFolder(src)).toBe(src);
   });
+
+  it('leaves the `vscode` identifier alone — only path literals are renamed', () => {
+    const src = `
+      const g = (globalThis as any).vscode;
+      if (model.uri.scheme === Schemas.vscode) return;
+      const engine = manifest.engines.vscode;
+      return auxiliaryWindow?.vscode?.ipcRenderer;
+    `;
+    expect(rewriteConfigFolder(src)).toBe(src);
+    expect(rewriteConfigFolder(`join(folder, '.vscode', 'launch.json')`)).toBe(
+      `join(folder, '.osiris', 'launch.json')`,
+    );
+  });
 });
 
 describe('sweepConfigFolder', () => {
@@ -74,15 +87,33 @@ describe('sweepConfigFolder', () => {
     );
   });
 
-  it('flags a bare .vscode that survives outside the sweep tree', async () => {
+  it('sweeps src/vs/platform too (the diagnostics service reads a launch config)', async () => {
     await write('src/vs/workbench/services/a/a.ts', `const s = '.vscode/tasks.json';`);
-    await write('src/vs/platform/environment/node/argv.ts', `const d = '.vscode';`);
+    await write(
+      'src/vs/platform/diagnostics/node/diagnosticsService.ts',
+      `const launchConfig = join(folder, '.vscode', 'launch.json');`,
+    );
+
+    const { changed, stray } = await sweepConfigFolder(dir);
+
+    expect(changed.sort()).toEqual([
+      'src/vs/platform/diagnostics/node/diagnosticsService.ts',
+      'src/vs/workbench/services/a/a.ts',
+    ]);
+    expect(stray).toEqual([]);
+  });
+
+  it('flags a `.vscode` path literal that survives outside every sweep tree', async () => {
+    await write('src/vs/workbench/services/a/a.ts', `const s = '.vscode/tasks.json';`);
+    await write('src/vs/base/node/nls.ts', `const d = '.vscode';`);
+    // the `vscode` identifier in an un-swept tree is not a stray reference
+    await write('src/vs/base/common/platform.ts', `nodeProcess = $globalThis.vscode.process;`);
 
     const { changed, stray } = await sweepConfigFolder(dir);
 
     expect(changed).toEqual(['src/vs/workbench/services/a/a.ts']);
     expect(stray).toEqual([
-      { file: 'src/vs/platform/environment/node/argv.ts', line: 1, text: `const d = '.vscode';` },
+      { file: 'src/vs/base/node/nls.ts', line: 1, text: `const d = '.vscode';` },
     ]);
   });
 });

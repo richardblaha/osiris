@@ -62,23 +62,29 @@ async function ensureIcons() {
  * upstream source, so an Osiris build reads `.osiris/{settings,tasks,launch,
  * extensions}.json` (and workspace snippets, MCP config, …).
  *
- * A sweep, not a curated list: every `.ts` under `src/vs/workbench` is rewritten,
- * then all of `src/vs` is scanned and the build FAILS if a bare `.vscode`
+ * A sweep, not a curated list: every `.ts` under {@link SWEEP_REL} is rewritten,
+ * then all of `src/vs` is scanned and the build FAILS if a `.vscode` path literal
  * survives — so an upstream refactor that moves or adds a reference is caught
- * loudly instead of silently reading the wrong folder. `\.vscode` followed by
- * `-` or a word char (`.vscode-remote`, `vscode-userdata`, `.vscodeignore`) is
- * left alone by {@link rewriteConfigFolder}.
+ * loudly instead of silently reading the wrong folder.
+ *
+ * Only *path* references count: `.vscode` right after a quote or `/` (`'.vscode'`,
+ * `` `${home}/.vscode` ``). The `vscode` *identifier* — `globalThis.vscode`,
+ * `Schemas.vscode`, `manifest.engines.vscode` — is left alone, as is `.vscode`
+ * followed by `-` or a word char (`.vscode-remote`, `vscode-userdata`,
+ * `.vscodeignore`).
  */
-const SWEEP_REL = 'src/vs/workbench';
+const SWEEP_REL = ['src/vs/workbench', 'src/vs/platform', 'src/vs/code', 'src/vs/server'];
 const SCAN_REL = 'src/vs';
 const SKIP_DIR = /^(test|node_modules)$/;
 const TS_FILE = /\.[cm]?ts$/;
 const SKIP_FILE = /\.test\.[cm]?ts$/;
-const BARE_VSCODE = /\.vscode(?![\w-])/;
+const CONFIG_FOLDER = /(?<=['"`/])\.vscode(?![\w-])/;
+const CONFIG_FOLDER_G = new RegExp(CONFIG_FOLDER.source, 'g');
 
-/** Pure: `.vscode` → `.osiris`, leaving `.vscode-remote` / `.vscodeignore` alone. */
+/** Pure: the `.vscode` config folder → `.osiris`, leaving the `vscode` identifier,
+ * `.vscode-remote` and `.vscodeignore` alone. */
 export function rewriteConfigFolder(source) {
-  return source.replace(/\.vscode(?![\w-])/g, '.osiris');
+  return source.replace(CONFIG_FOLDER_G, '.osiris');
 }
 
 async function* walkTs(dir, rel) {
@@ -101,12 +107,14 @@ async function* walkTs(dir, rel) {
 /** Rewrite the sweep tree and scan the wider tree. Pure-ish: returns what it did. */
 export async function sweepConfigFolder(checkoutDir) {
   const changed = [];
-  for await (const file of walkTs(path.join(checkoutDir, SWEEP_REL), SWEEP_REL)) {
-    const before = await readFile(file.abs, 'utf8');
-    const after = rewriteConfigFolder(before);
-    if (after !== before) {
-      await writeFile(file.abs, after);
-      changed.push(file.rel);
+  for (const root of SWEEP_REL) {
+    for await (const file of walkTs(path.join(checkoutDir, root), root)) {
+      const before = await readFile(file.abs, 'utf8');
+      const after = rewriteConfigFolder(before);
+      if (after !== before) {
+        await writeFile(file.abs, after);
+        changed.push(file.rel);
+      }
     }
   }
 
@@ -114,22 +122,23 @@ export async function sweepConfigFolder(checkoutDir) {
   for await (const file of walkTs(path.join(checkoutDir, SCAN_REL), SCAN_REL)) {
     const text = await readFile(file.abs, 'utf8');
     text.split('\n').forEach((line, i) => {
-      if (BARE_VSCODE.test(line)) stray.push({ file: file.rel, line: i + 1, text: line.trim() });
+      if (CONFIG_FOLDER.test(line)) stray.push({ file: file.rel, line: i + 1, text: line.trim() });
     });
   }
   return { changed, stray };
 }
 
 async function renameWorkspaceConfigFolder(checkoutDir) {
-  if (!existsSync(path.join(checkoutDir, SWEEP_REL))) {
+  const missing = SWEEP_REL.filter((root) => !existsSync(path.join(checkoutDir, root)));
+  if (missing.length === SWEEP_REL.length) {
     throw new Error(
-      `[branding] config-folder rename: ${SWEEP_REL} not found — upstream layout moved`,
+      `[branding] config-folder rename: none of ${SWEEP_REL.join(', ')} found — upstream layout moved`,
     );
   }
   const { changed, stray } = await sweepConfigFolder(checkoutDir);
   if (changed.length === 0) {
     throw new Error(
-      '[branding] config-folder rename: swept src/vs/workbench but nothing changed — verify manually',
+      `[branding] config-folder rename: swept ${SWEEP_REL.join(', ')} but nothing changed — verify manually`,
     );
   }
   console.log(`[branding] config-folder rename: .vscode → .osiris in ${changed.length} file(s)`);
@@ -139,8 +148,8 @@ async function renameWorkspaceConfigFolder(checkoutDir) {
       .map((s) => `  ${s.file}:${s.line}  ${s.text}`)
       .join('\n');
     throw new Error(
-      `[branding] config-folder rename: ${stray.length} stray ".vscode" reference(s) outside the sweep — ` +
-        `extend SWEEP_REL or handle them:\n${sample}`,
+      `[branding] config-folder rename: ${stray.length} ".vscode" path reference(s) outside the sweep — ` +
+        `add the containing tree to SWEEP_REL or handle them:\n${sample}`,
     );
   }
 }

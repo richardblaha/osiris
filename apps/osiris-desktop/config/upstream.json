@@ -1,6 +1,6 @@
 {
   "//": "Pinned VSCodium upstream. Bump deliberately; CI builds against exactly this tag.",
   "repository": "https://github.com/VSCodium/vscodium.git",
-  "tag": "1.94.2.24285",
+  "tag": "1.94.2.24286",
   "checkoutDir": ".build/vscodium"
 }
