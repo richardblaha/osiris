@@ -26,23 +26,25 @@ jobs:
           name: vsix
           path: extensions/*/*.vsix
 
-  # NOTE: the desktop installers are not wired into the release yet — the
-  # apps/osiris-desktop shell build is being reworked onto VSCodium's own
-  # pipeline. Run `Build Desktop` manually (workflow_dispatch) meanwhile.
-
   web:
     uses: ./.github/workflows/build-web.yml
 
+  desktop:
+    uses: ./.github/workflows/build-desktop.yml
+
   release:
     runs-on: ubuntu-latest
-    needs: [extensions, web]
+    needs: [extensions, web, desktop]
+    # Desktop is best-effort: ship whatever platforms rebranded cleanly, but
+    # never block the release on a desktop leg.
+    if: ${{ !cancelled() && needs.extensions.result == 'success' && needs.web.result == 'success' }}
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
-          pattern: "{vsix,osiris-web-server}"
+          pattern: "{vsix,osiris-web-server,osiris-desktop-*}"
 
       - name: Collect release assets
         run: |
@@ -55,6 +57,10 @@ jobs:
           # Web server bundle (already a tarball from build-web.yml)
           find artifacts -name 'osiris-web-server.tar.gz' \
             -exec cp -v {} dist/osiris-web-server-linux-x64.tar.gz \;
+
+          # Desktop portable archives (best-effort; may be absent)
+          find artifacts -type f -name 'Osiris-*' \
+            \( -name '*.tar.gz' -o -name '*.zip' \) -exec cp -v {} dist/ \;
 
           echo "---- release assets ----"
           ls -la dist/
@@ -75,6 +81,5 @@ jobs:
             **Assets**
             - `*.vsix` — first-party extensions (osiris-ai, dexpi, step, workspace)
             - `osiris-web-server-*.tar.gz` — browser-served web server bundle
-
-            Desktop installers are not part of this release yet — the desktop
-            shell build is being reworked onto the VSCodium pipeline.
+            - `Osiris-<os>-<arch>-*.{tar.gz,zip}` — desktop app (rebranded VSCodium
+              prebuilt; portable, unsigned). Linux: extract and run `bin/osiris`.

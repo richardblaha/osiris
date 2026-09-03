@@ -88,15 +88,17 @@ Releases are tag-driven. A maintainer:
 1. Bumps versions and updates the top-level `CHANGELOG.md` and the
    `extensions/*/CHANGELOG.md` files.
 2. Tags `vX.Y.Z` (or `vX.Y.Z-alpha.N` for a pre-release) and pushes.
-3. `release.yml` packs the extensions and calls the reusable `build-web.yml`
-   workflow, then creates a **draft** GitHub Release with every `.vsix` and the
-   web server bundle attached. A tag containing a hyphen is marked as a
-   pre-release. (Desktop installers are not wired in yet — see below.)
+3. `release.yml` packs the extensions and calls the reusable `build-web.yml` and
+   `build-desktop.yml` workflows, then creates a **draft** GitHub Release with
+   every `.vsix`, the web server bundle and the desktop archives attached. A tag
+   containing a hyphen is marked as a pre-release. A failed desktop leg is
+   best-effort and does not block the release.
 4. A maintainer reviews the draft and publishes it.
 
-The desktop app (`apps/osiris-desktop`) is mid-rework onto VSCodium's own build
-pipeline and is **not** part of tagged releases yet; `build-desktop.yml` runs on
-`workflow_dispatch` only.
+The desktop app is a **rebrand of the pinned VSCodium prebuilt** (see
+`apps/osiris-desktop/README.md`) — no from-source build. Bumping
+`apps/osiris-desktop/config/upstream.json` to a new VSCodium release is a
+deliberate PR.
 
 ## Reporting bugs / requesting features
 

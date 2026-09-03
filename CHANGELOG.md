@@ -6,6 +6,26 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
 
+## [Unreleased]
+
+### Added
+
+- **Desktop** (`apps/osiris-desktop`) — rebuilt as a **rebrand of the VSCodium
+  prebuilt** instead of a from-source build (VSCodium's own 1.94.2 recipe pins a
+  retired `ubuntu-20.04` runner). `fetch-prebuilt.mjs` downloads + `sha256`-verifies
+  the pinned release archive per platform; `apply-branding.mjs` overlays the Osiris
+  `product.json` (keeping upstream `builtInExtensions` / `checksums`), swaps icons,
+  renames `codium` → `osiris` and patches the launcher scripts; `package.mjs`
+  repacks to `Osiris-<os>-<arch>-<release>.{tar.gz,zip}`. Portable, unsigned.
+- `build-desktop.yml` rebuilt: one `ubuntu-latest` job, matrix over
+  `linux-x64 / darwin-x64 / darwin-arm64 / win32-x64`. `release.yml` attaches the
+  archives best-effort (a failed desktop leg never blocks the release).
+
+### Removed
+
+- `apps/osiris-desktop`: the from-source scaffold (`clone-upstream.mjs`,
+  `build.mjs`, `electron-builder.yml`, placeholder `patches/`).
+
 ## [0.1.0-alpha.5] - 2026-09-03
 
 First green end-to-end release: **web + server + extensions**. Desktop installers

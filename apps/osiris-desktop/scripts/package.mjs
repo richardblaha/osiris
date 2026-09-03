@@ -1,28 +1,45 @@
 #!/usr/bin/env node
 /**
- * Wrap the built app with electron-builder to produce OS installers.
- * Expects `scripts/build.mjs` (or the CI job) to have produced the app under
- * `.build/vscodium/VSCode-<platform>` per the upstream layout.
+ * Repack the branded prebuilt(s) into `dist_electron/`:
+ *   - linux-x64  → Osiris-linux-x64-<release>.tar.gz
+ *   - win32-x64  → Osiris-win32-x64-<release>.zip
+ *   - darwin-*   → Osiris-darwin-<arch>-<release>.zip   (Osiris.app inside)
+ *
+ * No installers / code-signing yet — these are portable archives for the alpha.
  */
 import { execFileSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { mkdir, rm } from 'node:fs/promises';
 import path from 'node:path';
-import { appRoot, assertPrepared } from './lib.mjs';
+import { appRoot, findAppLayout, listStaged, readUpstreamConfig, stageDir } from './lib.mjs';
+import { artifactName } from './rebrand.mjs';
 
-assertPrepared();
-
-const configPath = path.join(appRoot, 'electron-builder.yml');
-if (!existsSync(configPath)) {
-  throw new Error('electron-builder.yml missing');
+const staged = await listStaged();
+if (staged.length === 0) {
+  throw new Error('Nothing staged. Run: pnpm --filter @osiris/desktop run prepare:shell');
 }
 
-const targetFlag =
-  process.platform === 'darwin' ? '--mac' : process.platform === 'win32' ? '--win' : '--linux';
+const { release } = await readUpstreamConfig();
+const outDir = path.join(appRoot, 'dist_electron');
+await rm(outDir, { recursive: true, force: true });
+await mkdir(outDir, { recursive: true });
 
-console.log(`[osiris-desktop] electron-builder ${targetFlag}`);
-execFileSync(
-  'npx',
-  ['--yes', 'electron-builder', targetFlag, '--config', configPath, '--publish', 'never'],
-  { cwd: appRoot, stdio: 'inherit' },
-);
-console.log('[osiris-desktop] installers written to dist_electron/');
+for (const key of staged) {
+  const stage = stageDir(key);
+  await findAppLayout(stage); // sanity-check it was branded / has a product.json
+  const base = artifactName(key, release);
+
+  if (key.startsWith('linux')) {
+    const out = path.join(outDir, `${base}.tar.gz`);
+    execFileSync('tar', ['czf', out, '-C', stage, '.'], { stdio: 'inherit' });
+    report(out);
+  } else {
+    const out = path.join(outDir, `${base}.zip`);
+    execFileSync('zip', ['-qry', out, '.'], { cwd: stage, stdio: 'inherit' });
+    report(out);
+  }
+}
+
+function report(file) {
+  const bytes = Number(execFileSync('stat', ['-c', '%s', file]).toString().trim());
+  console.log(`[osiris-desktop] ${path.relative(appRoot, file)}  (${(bytes / 1e6).toFixed(1)} MB)`);
+}

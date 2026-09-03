@@ -8,44 +8,34 @@ permissions:
   contents: read
 
 jobs:
-  desktop:
-    name: ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  rebrand:
+    name: ${{ matrix.platform }}
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        platform: [linux-x64, darwin-x64, darwin-arm64, win32-x64]
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
 
-      - name: Linux build deps
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libx11-dev libxkbfile-dev libsecret-1-dev rpm
-
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @osiris/branding build
+      - run: pnpm --filter @osiris/branding render:icons
 
-      - name: Render icon set from branding SVG (sharp / png-to-ico / icns)
-        run: pnpm --filter @osiris/branding render:icons
-
-      - name: Prepare shell (clone VSCodium + brand)
-        run: pnpm --filter @osiris/desktop run prepare:shell
-
-      - name: Build + package
+      - name: Fetch + rebrand VSCodium prebuilt
+        working-directory: apps/osiris-desktop
         run: |
-          pnpm --filter @osiris/desktop build:shell
-          pnpm --filter @osiris/desktop package
+          node scripts/fetch-prebuilt.mjs ${{ matrix.platform }}
+          node scripts/apply-branding.mjs
+          node scripts/package.mjs
 
       - uses: actions/upload-artifact@v4
         with:
-          name: osiris-desktop-${{ matrix.os }}
-          path: apps/osiris-desktop/dist_electron/**/*
-          if-no-files-found: warn
+          name: osiris-desktop-${{ matrix.platform }}
+          path: apps/osiris-desktop/dist_electron/Osiris-*
+          if-no-files-found: error

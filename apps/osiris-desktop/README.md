@@ -1,33 +1,36 @@
 # @osiris/desktop
 
-Electron desktop packaging for Osiris IDE. This app **does not vendor VS Code** —
-it clones a pinned VSCodium tag at build time and applies Osiris branding + patches.
+The Osiris IDE desktop app. It **does not build VS Code from source** — it
+downloads a pinned [VSCodium](https://github.com/VSCodium/vscodium) prebuilt and
+rebrands it (product identity, icons, `codium` → `osiris`).
 
 ## Pipeline
 
 ```bash
-pnpm --filter @osiris/desktop run prepare:shell   # 1. clone VSCodium @ config/upstream.json
-                                                  #    2. merge product.json overlay + copy assets
-                                                  #    3. git apply patches/*.patch
-pnpm --filter @osiris/desktop build               # drive the upstream build (long, toolchain-heavy)
-pnpm --filter @osiris/desktop package             # electron-builder → dist_electron/
+pnpm --filter @osiris/desktop run prepare:shell   # fetch VSCodium prebuilt(s) + rebrand in place
+pnpm --filter @osiris/desktop package             # repack → dist_electron/Osiris-<platform>-<release>.{tar.gz,zip}
 ```
 
-| File / dir                   | Role                                                                        |
-| ---------------------------- | --------------------------------------------------------------------------- |
-| `config/upstream.json`       | pinned VSCodium repo + tag                                                  |
-| `scripts/clone-upstream.mjs` | idempotent shallow clone into `.build/vscodium`                             |
-| `scripts/apply-branding.mjs` | product.json deep-merge, asset copy, `git apply` patches                    |
-| `scripts/lib.mjs`            | `mergeDeep`, overlay loader (tested via `node --test`)                      |
-| `patches/*.patch`            | tracked downstream changes; non-applying patches are skipped with a warning |
-| `electron-builder.yml`       | Linux (AppImage/deb/rpm), macOS (dmg/zip), Windows (nsis)                   |
-| `build/`                     | entitlements + icons (icons generated in CI)                                |
+`prepare:shell` with no argument does this host's platform; CI passes an explicit
+key (`node scripts/fetch-prebuilt.mjs darwin-arm64`).
+
+| File / dir                   | Role                                                                     |
+| ---------------------------- | ------------------------------------------------------------------------ |
+| `config/upstream.json`       | pinned VSCodium repo + `release` tag + per-platform asset names          |
+| `scripts/fetch-prebuilt.mjs` | download + `sha256`-verify + unpack into `.build/<platform>/`            |
+| `scripts/rebrand.mjs`        | pure transforms (product.json curation, launcher patching) — unit-tested |
+| `scripts/apply-branding.mjs` | apply the rebrand to every staged platform                               |
+| `scripts/package.mjs`        | repack the branded tree into `dist_electron/`                            |
+| `scripts/dev.mjs`            | launch this host's branded build straight from `.build/`                 |
+| `runtime/`                   | Electron main-process hook (not wired into the rebrand yet)              |
 
 ## Notes
 
-- `.build/` is git-ignored and disposable — re-run `prepare:shell` any time.
-- The heavy upstream build is validated in CI (`build-desktop.yml`) across
-  ubuntu/macos/windows, not by local unit tests.
-- Bumping `config/upstream.json` is a deliberate PR; re-roll any `patches/*` that
-  stop applying against the new tag.
-- Telemetry is forced off via the branding overlay (`enableTelemetry: false`).
+- `.build/` and `dist_electron/` are git-ignored and disposable.
+- The overlay in `@osiris/branding/product-overlay` is applied on top of the
+  shipped `product.json`, **keeping** upstream's `builtInExtensions`, integrity
+  `checksums`, `commit`/`version` and the working Open VSX gallery template.
+- Archives are **portable and unsigned** — an alpha convenience, not installers.
+  macOS users will need to clear the quarantine flag (`xattr -cr Osiris.app`).
+- Bumping `config/upstream.json` is a deliberate PR; the `release` value must be
+  a real tag at github.com/VSCodium/vscodium/releases.

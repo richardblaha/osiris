@@ -22,7 +22,7 @@
     },
     "package": {
       "dependsOn": ["build"],
-      "outputs": ["*.vsix", "release/**"]
+      "outputs": ["*.vsix", "release/**", "dist_electron/**"]
     },
     "clean": {
       "cache": false
