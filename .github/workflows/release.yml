@@ -42,6 +42,7 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          pattern: "{vsix,osiris-web-server}"
 
       - name: Collect release assets
         run: |
