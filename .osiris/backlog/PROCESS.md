@@ -27,15 +27,15 @@ Filename convention: `[<type>]-<id>-<slug>.md`
 - `<id>` — zero-padded integer, unique and monotonic.
 - `<slug>` — kebab-case summary.
 
-Example: `[bug]-0101-dexpi-parser-crash-on-empty-tag.md`
+Example: `[bug]-0101-agent-panel-hangs-on-empty-response.md`
 
 ```markdown
 ---
 id: 101
 type: bug
-title: DEXPI parser crashes on an empty <Tag> element
+title: Agent panel hangs when the model returns an empty response
 assignee: implementer
-labels: [dexpi, parser]
+labels: [osiris-ai, agent-panel]
 created: 2026-09-02
 ---
 

@@ -2,7 +2,7 @@
   "name": "osiris-ide",
   "version": "0.1.0",
   "private": true,
-  "description": "Osiris IDE — a custom VS Code distribution (desktop + web) with first-party AI, DEXPI and STEP tooling.",
+  "description": "Osiris IDE — a custom VS Code distribution (desktop + web) with first-party AI tooling.",
   "license": "MIT",
   "homepage": "https://github.com/osiris-ide/osiris",
   "repository": {

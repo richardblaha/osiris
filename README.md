@@ -21,8 +21,7 @@ Osiris IDE is a **downstream distribution** of [Code - OSS](https://github.com/m
 - **Osiris branding** — product name, icons, theme defaults (`Osiris Dark` / `Osiris Light`).
 - **First-party extensions** shipped in the box:
   - `osiris-ai` — AI agent orchestration with **MCP (Model Context Protocol)** support and a custom agent panel.
-  - `osiris-dexpi` — **DEXPI** (XML / P&ID) parser, SVG visualizer and schema validator.
-  - `osiris-step` — **ISO 10303-21** (`.step` / `.stp`) parser with a 3D WebGL preview.
+  - `osiris-workspace` — DevContainer enforcement and session handover.
 - Two delivery targets:
   - `apps/osiris-desktop` — Electron packages for Linux, macOS and Windows.
   - `apps/osiris-web` — a browser-served runtime following the OpenVSCode Server pattern.
@@ -54,8 +53,6 @@ osiris/
 │   └── cli/              # The `osiris` command + REPL
 ├── extensions/
 │   ├── osiris-ai/        # AI agent orchestration + MCP + agent panel
-│   ├── osiris-dexpi/     # DEXPI (P&ID) parser, visualizer, validator
-│   ├── osiris-step/      # ISO 10303-21 STEP parser + 3D preview
 │   └── osiris-workspace/ # DevContainer enforcement + session handover
 └── toolchain/
     ├── eslint-config/    # Shared flat ESLint config
@@ -145,14 +142,14 @@ See [docs/crew-architecture.md](docs/crew-architecture.md) for the full design.
 ### Working on an extension
 
 ```bash
-pnpm --filter osiris-dexpi build
-pnpm --filter osiris-dexpi test
-pnpm --filter osiris-dexpi package     # produces osiris-dexpi-*.vsix
+pnpm --filter osiris-ai build
+pnpm --filter osiris-ai test
+pnpm --filter osiris-ai package     # produces osiris-ai-*.vsix
 ```
 
 Press <kbd>F5</kbd> with one of the committed launch profiles in
 [`.osiris/launch.json`](.osiris/launch.json) to run an extension in an Extension
-Development Host against the fixtures in each extension's `test/fixtures/`.
+Development Host.
 (Osiris reads the workspace config folder as `.osiris/`; `.vscode` is a symlink so
 stock VS Code / Cursor still work.)
 

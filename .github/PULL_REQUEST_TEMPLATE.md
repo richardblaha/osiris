@@ -1,7 +1,7 @@
 <!--
 Title must be a Conventional Commit, e.g.:
-  feat(osiris-step): tessellate ADVANCED_FACE poly loops
-Scopes: shared-core, branding, shell-theme, osiris-ai, osiris-dexpi, osiris-step,
+  feat(osiris-ai): stream tool-call deltas to the chat view
+Scopes: shared-core, branding, shell-theme, osiris-ai, osiris-workspace,
         desktop, web, toolchain, ci, repo
 -->
 

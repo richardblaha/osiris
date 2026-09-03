@@ -1,5 +1,0 @@
-{
-  "extends": "@osiris/tsconfig/extension.json",
-  "include": ["src/**/*", "webview/**/*", "test/**/*"],
-  "exclude": ["dist", "node_modules"]
-}

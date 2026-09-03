@@ -20,8 +20,6 @@
     { "path": "packages/branding" },
     { "path": "packages/shell-theme" },
     { "path": "extensions/osiris-ai" },
-    { "path": "extensions/osiris-dexpi" },
-    { "path": "extensions/osiris-step" },
     { "path": "extensions/osiris-workspace" }
   ]
 }

@@ -83,7 +83,7 @@ jobs:
             See `CHANGELOG.md` for the full change list.
 
             **Assets**
-            - `*.vsix` — first-party extensions (osiris-ai, dexpi, step, workspace)
+            - `*.vsix` — first-party extensions (osiris-ai, osiris-workspace)
             - `osiris-web-server-*.tar.gz` — browser-served web server bundle
             - `Osiris-<os>-<arch>-*.{tar.gz,zip}` — desktop app (rebranded VSCodium
               prebuilt; portable, unsigned). Linux: extract and run `bin/osiris`.

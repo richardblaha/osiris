@@ -24,17 +24,15 @@ describe('EventBus', () => {
   it('once fires a single time', () => {
     const bus = new EventBus<OsirisEvents>();
     const fn = vi.fn();
-    bus.once('osiris:dexpi:parsed', fn);
-    bus.emit('osiris:dexpi:parsed', { uri: 'a', equipmentCount: 1, segmentCount: 2 });
-    bus.emit('osiris:dexpi:parsed', { uri: 'a', equipmentCount: 1, segmentCount: 2 });
+    bus.once('osiris:agent:run-started', fn);
+    bus.emit('osiris:agent:run-started', { runId: 'r', prompt: 'p' });
+    bus.emit('osiris:agent:run-started', { runId: 'r', prompt: 'p' });
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it('next() resolves on the next emission', async () => {
     const bus = new EventBus<OsirisEvents>();
-    queueMicrotask(() =>
-      bus.emit('osiris:step:parsed', { uri: 'm', entityCount: 3, schema: ['AP242'] }),
-    );
-    await expect(bus.next('osiris:step:parsed')).resolves.toMatchObject({ entityCount: 3 });
+    queueMicrotask(() => bus.emit('osiris:agent:token', { runId: 'r', text: 'hi' }));
+    await expect(bus.next('osiris:agent:token')).resolves.toMatchObject({ text: 'hi' });
   });
 });

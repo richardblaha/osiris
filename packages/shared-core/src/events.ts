@@ -69,8 +69,4 @@ export interface OsirisEvents extends EventMap {
   'osiris:agent:token': { runId: string; text: string };
   'osiris:agent:tool-call': { runId: string; tool: string; input: unknown };
   'osiris:agent:run-finished': { runId: string; ok: boolean; error?: string };
-  'osiris:dexpi:parsed': { uri: string; equipmentCount: number; segmentCount: number };
-  'osiris:dexpi:validated': { uri: string; errors: number; warnings: number };
-  'osiris:step:parsed': { uri: string; entityCount: number; schema: string[] };
-  'osiris:step:preview-ready': { uri: string; vertices: number; lineSegments: number };
 }

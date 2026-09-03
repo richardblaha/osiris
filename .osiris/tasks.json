@@ -9,20 +9,6 @@
       "group": "build"
     },
     {
-      "label": "build: osiris-dexpi",
-      "type": "shell",
-      "command": "pnpm --filter osiris-dexpi build",
-      "problemMatcher": "$esbuild",
-      "group": "build"
-    },
-    {
-      "label": "build: osiris-step",
-      "type": "shell",
-      "command": "pnpm --filter osiris-step build",
-      "problemMatcher": "$esbuild",
-      "group": "build"
-    },
-    {
       "label": "build: osiris-workspace",
       "type": "shell",
       "command": "pnpm --filter osiris-workspace build",

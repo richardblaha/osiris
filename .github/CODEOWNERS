@@ -7,8 +7,6 @@
 /packages/shared-core/      @osiris-ide/maintainers
 
 /extensions/osiris-ai/      @osiris-ide/ai
-/extensions/osiris-dexpi/   @osiris-ide/plant-tools
-/extensions/osiris-step/    @osiris-ide/plant-tools
 
 /apps/osiris-desktop/       @osiris-ide/packaging
 /apps/osiris-web/           @osiris-ide/packaging

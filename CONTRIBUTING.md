@@ -8,7 +8,7 @@ the development workflow, and the conventions the project enforces in CI.
 Osiris is maintained under a lightweight **maintainer + reviewers** model:
 
 - **Maintainers** own the roadmap, cut releases, and have merge rights on every path.
-- **Area reviewers** own a subdirectory (`extensions/osiris-step`, `apps/osiris-web`, …)
+- **Area reviewers** own a subdirectory (`extensions/osiris-ai`, `apps/osiris-web`, …)
   listed in [`CODEOWNERS`](.github/CODEOWNERS) and must approve changes there.
 - Decisions are made by lazy consensus on issues and PRs. Anything contentious is
   escalated to a maintainer, whose decision is final for that change.
@@ -56,15 +56,15 @@ pnpm --filter osiris-<ext> package   # build a .vsix (extensions only)
 ```
 
 `<name>` is the `name` field in that workspace's `package.json`
-(`@osiris/shared-core`, `osiris-dexpi`, `@osiris/desktop`, …).
+(`@osiris/shared-core`, `osiris-ai`, `@osiris/desktop`, …).
 
 ## Branch & PR flow
 
-1. Fork (external) or branch (maintainers): `git switch -c feat/step-brep-loops`.
+1. Fork (external) or branch (maintainers): `git switch -c feat/agent-panel-streaming`.
 2. Make the change; run `pnpm lint && pnpm typecheck && pnpm test` locally.
 3. Commit with **Conventional Commits** and a **DCO sign-off**:
    ```
-   git commit -s -m "feat(osiris-step): parse ADVANCED_FACE poly loops"
+   git commit -s -m "feat(osiris-ai): stream tool-call deltas to the chat view"
    ```
    `-s` adds `Signed-off-by:` — required. We do not require a CLA; the DCO
    (https://developercertificate.org/) is enough.
@@ -75,8 +75,8 @@ pnpm --filter osiris-<ext> package   # build a .vsix (extensions only)
 
 ### Conventional Commit scopes
 
-`shared-core`, `branding`, `shell-theme`, `osiris-ai`, `osiris-dexpi`,
-`osiris-step`, `desktop`, `web`, `toolchain`, `ci`, `repo`.
+`shared-core`, `branding`, `shell-theme`, `osiris-ai`, `osiris-workspace`,
+`desktop`, `web`, `toolchain`, `ci`, `repo`.
 
 Types: `feat`, `fix`, `perf`, `refactor`, `docs`, `test`, `build`, `ci`, `chore`.
 A `!` after the scope or a `BREAKING CHANGE:` footer marks a breaking change.

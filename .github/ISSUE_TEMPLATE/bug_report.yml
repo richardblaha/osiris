@@ -13,8 +13,7 @@ body:
       label: Area
       options:
         - "extensions/osiris-ai"
-        - "extensions/osiris-dexpi"
-        - "extensions/osiris-step"
+        - "extensions/osiris-workspace"
         - "apps/osiris-desktop"
         - "apps/osiris-web"
         - "packages/branding or shell-theme"
@@ -56,5 +55,5 @@ body:
     id: logs
     attributes:
       label: Logs / screenshots
-      description: Output from "Osiris AI" / "DEXPI" / "STEP" output channels, or the dev tools console.
+      description: Output from the "Osiris AI" output channel, or the dev tools console.
       render: shell

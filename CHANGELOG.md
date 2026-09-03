@@ -23,6 +23,14 @@ Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
   instead of aborting with `FATAL:setuid_sandbox_host.cc` — override with
   `OSIRIS_SANDBOX=1` / `OSIRIS_SANDBOX=0`.
 
+### Removed
+
+- **Extensions** `osiris-dexpi` (DEXPI / P&ID) and `osiris-step` (ISO 10303-21)
+  have been dropped from the monorepo — each will live in its own repository.
+  Their `Dexpi*` / `Step*` domain types and `osiris:dexpi:*` / `osiris:step:*`
+  event channels are gone from `@osiris/shared-core`. The in-box extension set is
+  now `osiris-ai` and `osiris-workspace`.
+
 ## [0.1.0-alpha.6] - 2026-09-03
 
 First release with a **desktop** artifact, and the first cut end-to-end by the

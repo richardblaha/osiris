@@ -8,8 +8,7 @@ body:
       label: Area
       options:
         - "extensions/osiris-ai"
-        - "extensions/osiris-dexpi"
-        - "extensions/osiris-step"
+        - "extensions/osiris-workspace"
         - "apps/osiris-desktop"
         - "apps/osiris-web"
         - "packages / toolchain"

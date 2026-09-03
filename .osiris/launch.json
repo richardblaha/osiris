@@ -10,28 +10,6 @@
       "preLaunchTask": "build: osiris-ai"
     },
     {
-      "name": "Run osiris-dexpi",
-      "type": "extensionHost",
-      "request": "launch",
-      "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}/extensions/osiris-dexpi",
-        "${workspaceFolder}/extensions/osiris-dexpi/test/fixtures/simple-valid.dexpi"
-      ],
-      "outFiles": ["${workspaceFolder}/extensions/osiris-dexpi/dist/**/*.js"],
-      "preLaunchTask": "build: osiris-dexpi"
-    },
-    {
-      "name": "Run osiris-step",
-      "type": "extensionHost",
-      "request": "launch",
-      "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}/extensions/osiris-step",
-        "${workspaceFolder}/extensions/osiris-step/test/fixtures/cube-wireframe.step"
-      ],
-      "outFiles": ["${workspaceFolder}/extensions/osiris-step/dist/**/*.js"],
-      "preLaunchTask": "build: osiris-step"
-    },
-    {
       "name": "Run osiris-workspace",
       "type": "extensionHost",
       "request": "launch",
