@@ -29,13 +29,40 @@ jobs:
       - run: pnpm --filter @osiris/web run prepare:shell
       - run: pnpm --filter @osiris/web build:shell
 
+      - name: Inspect build output
+        run: |
+          echo "== apps/osiris-web/.build =="
+          ls -la apps/osiris-web/.build || true
+          echo "== vscode-reh-web* / out-vscode-reh-web* trees =="
+          find apps/osiris-web/.build -maxdepth 2 \
+            \( -name 'vscode-reh-web*' -o -name 'out-vscode-reh-web*' \) -print
+          echo "== sizes =="
+          du -sh apps/osiris-web/.build/* 2>/dev/null || true
+
+      - name: Stage the server bundle
+        run: |
+          set -euo pipefail
+          bundle=$(find apps/osiris-web/.build -maxdepth 4 -type d \
+            -name 'vscode-reh-web-*' ! -name 'out-*' -print -quit || true)
+          if [ -z "$bundle" ]; then
+            echo "::error::no vscode-reh-web-* bundle produced by build:shell"
+            find apps/osiris-web/.build -maxdepth 4 -type d | sort
+            exit 1
+          fi
+          echo "REH bundle: $bundle ($(du -sh "$bundle" | cut -f1))"
+          test -e "$bundle/out/server-main.js" || {
+            echo "::error::bundle looks incomplete — no out/server-main.js"; ls -la "$bundle"; exit 1;
+          }
+          tar -C "$(dirname "$bundle")" -czf apps/osiris-web/osiris-web-server.tar.gz "$(basename "$bundle")"
+          ls -la apps/osiris-web/osiris-web-server.tar.gz
+
       - name: Smoke test the CLI wrapper
         run: node apps/osiris-web/server/index.mjs --help
 
       - uses: actions/upload-artifact@v4
         with:
           name: osiris-web-server
-          path: apps/osiris-web/.build/vscode-reh-web-*
+          path: apps/osiris-web/osiris-web-server.tar.gz
           if-no-files-found: error
 
   docker:

@@ -51,12 +51,9 @@ jobs:
           # First-party extensions
           find artifacts -name '*.vsix' -exec cp -v {} dist/ \;
 
-          # Web server bundle — tar each vscode-reh-web-* dir
-          for d in artifacts/osiris-web-server/*/; do
-            [ -d "$d" ] || continue
-            base=$(basename "$d")
-            tar -czf "dist/${base}.tar.gz" -C "$(dirname "$d")" "$base"
-          done
+          # Web server bundle (already a tarball from build-web.yml)
+          find artifacts -name 'osiris-web-server.tar.gz' \
+            -exec cp -v {} dist/osiris-web-server-linux-x64.tar.gz \;
 
           echo "---- release assets ----"
           ls -la dist/
@@ -76,7 +73,7 @@ jobs:
 
             **Assets**
             - `*.vsix` — first-party extensions (osiris-ai, dexpi, step, workspace)
-            - `vscode-reh-web-*.tar.gz` — browser-served web server bundle
+            - `osiris-web-server-*.tar.gz` — browser-served web server bundle
 
             Desktop installers are not part of this release yet — the desktop
             shell build is being reworked onto the VSCodium pipeline.
