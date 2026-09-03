@@ -6,35 +6,36 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
 
-## [0.1.0-alpha.3] - 2026-09-03
+## [0.1.0-alpha.5] - 2026-09-03
 
 First green end-to-end release: **web + server + extensions**. Desktop installers
 are not included yet — the `apps/osiris-desktop` shell build is being reworked
 onto VSCodium's own pipeline (it never assembled a real checkout).
 
+The web runtime (`osiris-web-server-linux-x64.tar.gz`) is the branded
+openvscode-server REH build with a bundled Node; unpack and run `bin/osiris-server`.
+
 ### Fixed
 
 - **branding config-folder sweep** matched the `vscode` _identifier_
   (`globalThis.vscode`, `Schemas.vscode`, `manifest.engines.vscode`) — 20 false
-  positives that hard-failed `prepare:shell` for the web and desktop builds. The
-  detector now only matches a `.vscode` _path literal_; the sweep covers
-  `src/vs/{workbench,platform,code,server}`.
+  positives that hard-failed `prepare:shell`. The detector now only matches a
+  `.vscode` _path literal_; the sweep covers `src/vs/{workbench,platform,code,server}`.
+- **bundled Fira Code** is embedded into the workbench stylesheet as a `data:`
+  URI — the web build runs that CSS through esbuild, which has no `.woff2` loader
+  and errored on the external font `url()`.
 - **desktop** pinned a non-existent VSCodium tag (`1.94.2.24285` → `.24286`).
 
 ### CI / Release
 
 - `release.yml` is the single tag-driven entrypoint: packs the extensions, calls
-  `build-web.yml` as a reusable workflow, and attaches every `.vsix` plus the
-  `vscode-reh-web-*` bundle to the draft GitHub Release — publishing is one click.
-- `build-desktop.yml` / `build-web.yml` lose their standalone `v*` tag trigger
-  (kept `workflow_dispatch`; `build-web.yml` gains `workflow_call`).
-
-## [0.1.0-alpha.2] - 2026-09-03
-
-### CI / Release
-
-- First attempt at a unified `release.yml` (superseded by alpha.3 — the shell
-  builds had never run green).
+  `build-web.yml` as a reusable workflow, stages the `vscode-reh-web-*` bundle as
+  `osiris-web-server.tar.gz`, and attaches it + every `.vsix` to a draft GitHub
+  Release. Tags with a hyphen are marked pre-release.
+- `build-desktop.yml` is not wired into the release (desktop deferred);
+  `build-web.yml` gains `workflow_call`. Both keep `workflow_dispatch`.
+- alpha.2–alpha.4 were internal iterations getting the shell builds green for the
+  first time; alpha.5 is the first published release.
 
 ## [0.1.0-alpha.1] - 2026-09-03
 
@@ -86,6 +87,5 @@ bundle and the packed extensions from a single `v*` tag.
 - `release.yml` cuts a GitHub Release from a `v*` tag; `build-desktop.yml` and
   `build-web.yml` attach the installers and the web bundle for the same tag.
 
-[0.1.0-alpha.3]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.3
-[0.1.0-alpha.2]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.2
+[0.1.0-alpha.5]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.1]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.1
