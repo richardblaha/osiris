@@ -6,7 +6,10 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.1.0-alpha.6] - 2026-09-03
+
+First release with a **desktop** artifact, and the first cut end-to-end by the
+unified `release.yml` (web + server + extensions + desktop).
 
 ### Added
 
@@ -107,5 +110,6 @@ bundle and the packed extensions from a single `v*` tag.
 - `release.yml` cuts a GitHub Release from a `v*` tag; `build-desktop.yml` and
   `build-web.yml` attach the installers and the web bundle for the same tag.
 
+[0.1.0-alpha.6]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.1]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.1
