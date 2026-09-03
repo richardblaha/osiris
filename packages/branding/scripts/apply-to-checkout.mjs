@@ -17,21 +17,31 @@ import { renderIcons, generatedDir } from './render-icons.mjs';
 const assetsDir = fileURLToPath(new URL('../assets/', import.meta.url));
 
 const FONT_FACE_MARKER = '/* >>> Osiris bundled Fira Code */';
-const FONT_FACE_RULE = `${FONT_FACE_MARKER}
+
+/**
+ * Register the bundled face in the workbench stylesheet. The woff2 is embedded as
+ * a `data:` URI rather than a `url('./FiraCode-VF.woff2')` reference: the upstream
+ * `vscode-reh-web` build runs the workbench CSS through esbuild, which has no
+ * `.woff2` loader and errors on an external font `url()`. Appending (rather than a
+ * context patch) survives upstream drift; the marker keeps it idempotent.
+ */
+async function registerFontFace(checkoutDir) {
+  const woff2 = path.join(assetsDir, 'fonts', 'FiraCode-VF.woff2');
+  if (!existsSync(woff2)) {
+    console.warn('[branding] FiraCode-VF.woff2 missing — skipping @font-face');
+    return false;
+  }
+  const dataUri = `data:font/woff2;base64,${(await readFile(woff2)).toString('base64')}`;
+  const rule = `${FONT_FACE_MARKER}
 @font-face {
   font-family: 'Fira Code';
-  src: url('./FiraCode-VF.woff2') format('woff2-variations');
+  src: url('${dataUri}') format('woff2-variations');
   font-weight: 300 700;
   font-display: block;
 }
 /* <<< Osiris bundled Fira Code */
 `;
 
-/**
- * Register the bundled face in the workbench stylesheet. Appending (rather than a
- * context patch) survives upstream drift; the marker keeps it idempotent.
- */
-async function registerFontFace(checkoutDir) {
   const candidates = [
     path.join(checkoutDir, 'src', 'vs', 'workbench', 'browser', 'media', 'style.css'),
     path.join(checkoutDir, 'src', 'vs', 'workbench', 'browser', 'style.css'),
@@ -40,7 +50,7 @@ async function registerFontFace(checkoutDir) {
     if (!existsSync(cssPath)) continue;
     const existing = await readFile(cssPath, 'utf8');
     if (existing.includes(FONT_FACE_MARKER)) return true;
-    await appendFile(cssPath, `\n${FONT_FACE_RULE}`);
+    await appendFile(cssPath, `\n${rule}`);
     console.log(`[branding] @font-face registered in ${path.relative(checkoutDir, cssPath)}`);
     return true;
   }
@@ -226,16 +236,9 @@ export async function copyBrandingIntoCheckout(checkoutDir, { kind }) {
     'server pwa',
   );
 
-  // --- Bundled Fira Code -----------------------------------------------------------
-  const woff2 = path.join(assetsDir, 'fonts', 'FiraCode-VF.woff2');
-  for (const mediaDir of [
-    R('src', 'vs', 'workbench', 'browser', 'media'),
-    R('src', 'vs', 'code', 'browser', 'workbench'),
-  ]) {
-    if (existsSync(mediaDir)) {
-      await place(woff2, path.join(mediaDir, 'FiraCode-VF.woff2'), 'font');
-    }
-  }
+  // --- Bundled Fira Code ----------------------------------------------------------
+  // The face itself is embedded straight into the workbench stylesheet by
+  // registerFontFace() (data: URI). Only the licence needs to land on disk.
   await place(
     path.join(assetsDir, 'fonts', 'OFL.txt'),
     R('ThirdPartyNotices-FiraCode.txt'),
