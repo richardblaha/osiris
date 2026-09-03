@@ -40,7 +40,7 @@ jobs:
           node scripts/apply-branding.mjs
           node scripts/package.mjs
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: osiris-desktop-${{ matrix.platform }}
           # Osiris-<platform>-<release>.{tar.gz,zip} everywhere; linux-x64 also

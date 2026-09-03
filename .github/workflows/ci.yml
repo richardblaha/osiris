@@ -45,7 +45,7 @@ jobs:
       - name: Package extensions (.vsix)
         run: pnpm --filter "./extensions/*" package
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: osiris-extensions-vsix
           path: extensions/*/*.vsix
