@@ -26,13 +26,13 @@
         "category": "Osiris"
       },
       {
-        "command": "osiris.workspace.handoverToServer",
-        "title": "Osiris: Handover Session to Server",
+        "command": "osiris.workspace.suspendSession",
+        "title": "Osiris: Suspend Session",
         "category": "Osiris"
       },
       {
-        "command": "osiris.workspace.fetchToLocal",
-        "title": "Osiris: Fetch Session to Local",
+        "command": "osiris.workspace.resumeSession",
+        "title": "Osiris: Resume Session",
         "category": "Osiris"
       },
       {
@@ -87,12 +87,12 @@
     "menus": {
       "commandPalette": [
         {
-          "command": "osiris.workspace.fetchToLocal",
-          "when": "osiris.sessionLocation == server"
+          "command": "osiris.workspace.resumeSession",
+          "when": "osiris.sessionPhase == Suspended"
         },
         {
-          "command": "osiris.workspace.handoverToServer",
-          "when": "osiris.sessionLocation == local"
+          "command": "osiris.workspace.suspendSession",
+          "when": "osiris.sessionPhase != Suspended"
         }
       ]
     },

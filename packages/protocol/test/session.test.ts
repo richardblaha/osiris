@@ -1,78 +1,60 @@
 import { describe, expect, it } from 'vitest';
-import {
-  CreateSessionRequest,
-  HandoverCommitRequest,
-  SessionDescriptor,
-  SessionEvent,
-} from '../src/index.js';
-
-const digest = `sha256:${'a'.repeat(64)}`;
+import { CreateSessionRequest, SessionDescriptor, SessionEvent } from '../src/index.js';
 
 describe('SessionDescriptor', () => {
-  it('accepts a well-formed local descriptor', () => {
+  it('accepts a well-formed descriptor', () => {
     const parsed = SessionDescriptor.parse({
       sessionId: 's1',
-      schemaVersion: 1,
-      location: 'local',
-      origin: 'desktop',
-      workspaceId: 'ws1',
-      devcontainerHash: 'abc123',
-      lease: null,
+      schemaVersion: 2,
+      projectName: 'demo',
+      phase: 'Running',
+      idleTimeoutSeconds: 300,
+      lastActivityAt: '2026-01-01T00:00:00Z',
+      createdAt: '2026-01-01T00:00:00Z',
     });
-    expect(parsed.location).toBe('local');
-    expect(parsed.lease).toBeNull();
+    expect(parsed.phase).toBe('Running');
   });
 
-  it('rejects an unknown location', () => {
+  it('rejects an unknown phase', () => {
     expect(() =>
       SessionDescriptor.parse({
         sessionId: 's1',
-        schemaVersion: 1,
-        location: 'moon',
-        origin: 'desktop',
-        workspaceId: 'ws1',
-        devcontainerHash: 'abc123',
-        lease: null,
+        schemaVersion: 2,
+        projectName: 'demo',
+        phase: 'Sleeping',
+        idleTimeoutSeconds: 300,
+        lastActivityAt: '2026-01-01T00:00:00Z',
+        createdAt: '2026-01-01T00:00:00Z',
       }),
     ).toThrow();
   });
 });
 
 describe('CreateSessionRequest', () => {
-  it('defaults origin to desktop', () => {
-    const parsed = CreateSessionRequest.parse({ workspaceId: 'ws1', devcontainerHash: 'abc' });
-    expect(parsed.origin).toBe('desktop');
-  });
-});
-
-describe('HandoverCommitRequest', () => {
-  it('requires sha256-prefixed digests', () => {
-    expect(() =>
-      HandoverCommitRequest.parse({
-        imageRef: 'r/x:1',
-        imageDigest: 'not-a-digest',
-        volumeDigest: digest,
-        agentStateDigest: digest,
-        sha256: 'deadbeef',
-      }),
-    ).toThrow();
+  it('requires only a project name', () => {
+    const parsed = CreateSessionRequest.parse({ projectName: 'demo' });
+    expect(parsed.projectName).toBe('demo');
+    expect(parsed.idleTimeoutSeconds).toBeUndefined();
   });
 
-  it('accepts valid digests', () => {
-    const parsed = HandoverCommitRequest.parse({
-      imageRef: 'registry.osiris.internal/workspaces/ws1:s1',
-      imageDigest: digest,
-      volumeDigest: digest,
-      agentStateDigest: digest,
-      sha256: 'deadbeef',
-    });
-    expect(parsed.imageDigest).toBe(digest);
+  it('accepts an idle timeout override', () => {
+    const parsed = CreateSessionRequest.parse({ projectName: 'demo', idleTimeoutSeconds: 60 });
+    expect(parsed.idleTimeoutSeconds).toBe(60);
   });
 });
 
 describe('SessionEvent', () => {
   it('discriminates on type', () => {
-    const parsed = SessionEvent.parse({ type: 'lease.expired', sessionId: 's1' });
-    expect(parsed.type).toBe('lease.expired');
+    const parsed = SessionEvent.parse({
+      type: 'session.phase-changed',
+      sessionId: 's1',
+      phase: 'Suspended',
+    });
+    expect(parsed.type).toBe('session.phase-changed');
+  });
+
+  it('accepts session.terminated', () => {
+    const parsed = SessionEvent.parse({ type: 'session.terminated', sessionId: 's1' });
+    expect(parsed.type).toBe('session.terminated');
   });
 });

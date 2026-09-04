@@ -3,6 +3,8 @@ import { createRequire } from 'node:module';
 import { initWorkspace } from '@osiris/dot-osiris';
 import { WorkspaceServices } from './workspace.js';
 import { runDoctor } from './doctor.js';
+import { createSessionClient } from './session-client.js';
+import { sessionResume, sessionRm, sessionSuspend } from './session-commands.js';
 
 export interface CliIo {
   cwd: string;
@@ -26,6 +28,9 @@ Usage:
   osiris backlog push | pull           sync the orphan branch with its git remote
   osiris backlog lint                  static-check every task file
   osiris serve [--port N]              run osiris-server against this workspace
+  osiris session resume <id>           resume a suspended session (bumps activity + Running)
+  osiris session suspend <id>          explicitly suspend a session (optional, for symmetry/testability)
+  osiris session rm <id>               delete a session's container + workspace volume
   osiris doctor                        health-check the workspace's Osiris setup
   osiris repl                          interactive REPL with crew/backlog/memory
 `;
@@ -190,6 +195,15 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
           },
         });
         return new Promise<number>((resolve) => child.on('exit', (code) => resolve(code ?? 0)));
+      }
+
+      case 'session': {
+        const id = flags.positionals[0];
+        if (!id || !['resume', 'suspend', 'rm'].includes(sub ?? '')) return usageError(io);
+        const client = createSessionClient(env);
+        if (sub === 'resume') return sessionResume(client, id, io);
+        if (sub === 'suspend') return sessionSuspend(client, id, io);
+        return sessionRm(client, id, io);
       }
 
       case 'doctor': {

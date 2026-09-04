@@ -1,0 +1,64 @@
+name: osiris-kind-operator
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "operator/**"
+      - ".github/workflows/osiris-operator.yml"
+  pull_request:
+    paths:
+      - "operator/**"
+      - ".github/workflows/osiris-operator.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: operator/go.sum
+      - name: envtest reconcile suite
+        working-directory: operator
+        run: make test
+
+  kind-integration:
+    runs-on: ubuntu-latest
+    needs: unit
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: operator/go.sum
+      - uses: helm/kind-action@v1
+        with:
+          cluster_name: osiris-kind
+          config: operator/hack/kind-config.yaml
+      - name: build and load operator image
+        working-directory: operator
+        run: |
+          docker build -t osiris-kind-operator:ci .
+          kind load docker-image osiris-kind-operator:ci --name osiris-kind
+      - name: deploy operator
+        working-directory: operator
+        run: |
+          make manifests generate
+          kubectl apply -k config/crd
+          kubectl apply -k config/rbac
+          make deploy IMG=osiris-kind-operator:ci
+          kubectl -n osiris-system rollout status deployment/osiris-controller-manager --timeout=120s
+      - name: exercise a suspend/resume round trip
+        working-directory: operator
+        run: |
+          kubectl apply -f config/samples/osiris_v1alpha1_osirisproject.yaml
+          kubectl apply -f config/samples/osiris_v1alpha1_osirissession.yaml
+          kubectl wait --for=jsonpath='{.status.phase}'=Resuming osirissession/sample --timeout=60s
+      - name: dump operator logs on failure
+        if: failure()
+        run: kubectl -n osiris-system logs deployment/osiris-controller-manager --all-containers

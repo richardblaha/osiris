@@ -2,17 +2,45 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CoordinationV1Api, CustomObjectsApi, KubeConfig } from '@kubernetes/client-node';
 import { startTelemetry } from '@osiris/telemetry';
 import { createLogger } from '@osiris/shared-core';
 import { buildServer } from './app.js';
-import { FileSessionStore } from './session-store.js';
-import { FileVolumeStore } from './executors.js';
+import { InMemorySessionStore } from './session-store.js';
+import { StubSessionExecutor, type SessionExecutor } from './executors.js';
+import { KubernetesSessionExecutor } from './kubernetes-executor.js';
+import { startSessionWatch } from './k8s-session-watch.js';
 import { createWorkspaceConsoleDeps, resolveWorkspaceRoot } from './console-workspace.js';
 
 const log = createLogger('server');
 
 function firstExisting(paths: string[]): string | undefined {
   return paths.find((p) => existsSync(p));
+}
+
+/** Build the Kubernetes-backed executor + start its informer, or fall back to the stub. */
+function setupSessionExecutor(
+  store: InMemorySessionStore,
+): { executor: SessionExecutor; stop?: () => Promise<void> } {
+  const namespace = process.env.OSIRIS_K8S_NAMESPACE;
+  if (!namespace) {
+    log.warn('OSIRIS_K8S_NAMESPACE is unset — sessions run against an in-memory stub, not osiris-kind');
+    return { executor: new StubSessionExecutor() };
+  }
+
+  const kubeConfig = new KubeConfig();
+  if (process.env.KUBERNETES_SERVICE_HOST) {
+    kubeConfig.loadFromCluster();
+  } else {
+    kubeConfig.loadFromDefault();
+  }
+  const customObjectsApi = kubeConfig.makeApiClient(CustomObjectsApi);
+  const coordinationApi = kubeConfig.makeApiClient(CoordinationV1Api);
+
+  const executor = new KubernetesSessionExecutor({ namespace, customObjectsApi, coordinationApi });
+  const watch = startSessionWatch(kubeConfig, customObjectsApi, namespace, store);
+  log.info('sessions backed by osiris-kind-operator (namespace %s)', namespace);
+  return { executor, stop: watch.stop };
 }
 
 async function main(): Promise<void> {
@@ -26,15 +54,9 @@ async function main(): Promise<void> {
   const host = process.env.HOST ?? '0.0.0.0';
   const publicBaseUrl = process.env.OSIRIS_PUBLIC_URL ?? `http://localhost:${port}`;
   const token = process.env.OSIRIS_SERVER_TOKEN ?? '';
-  const stateDir = process.env.OSIRIS_STATE_DIR;
 
   if (!token) {
     log.warn('OSIRIS_SERVER_TOKEN is unset — the API is running without authentication');
-  }
-  if (stateDir) {
-    log.info('persisting session + volume state under %s', stateDir);
-  } else {
-    log.warn('OSIRIS_STATE_DIR is unset — session state is in-memory and lost on restart');
   }
 
   const workspaceRoot = resolveWorkspaceRoot();
@@ -45,10 +67,14 @@ async function main(): Promise<void> {
     log.info('console API enabled for workspace %s', workspaceRoot);
   }
 
+  const store = new InMemorySessionStore();
+  const { executor, stop: stopSessionWatch } = setupSessionExecutor(store);
+
   const app = buildServer({
     token,
     publicBaseUrl,
-    leaseSweepMs: 30_000,
+    store,
+    executor,
     gitReposDir: process.env.OSIRIS_GIT_REPOS_DIR,
     console: consoleEnabled ? createWorkspaceConsoleDeps(workspaceRoot) : undefined,
     spaDir:
@@ -57,15 +83,6 @@ async function main(): Promise<void> {
         fileURLToPath(new URL('../public/', import.meta.url)),
         fileURLToPath(new URL('../../osiris-console/dist/', import.meta.url)),
       ]),
-    store: stateDir ? new FileSessionStore(join(stateDir, 'sessions')) : undefined,
-    volumes: stateDir ? new FileVolumeStore(join(stateDir, 'volumes')) : undefined,
-    registry: process.env.OSIRIS_REGISTRY
-      ? {
-          url: process.env.OSIRIS_REGISTRY,
-          repository: 'workspaces',
-          token: process.env.OSIRIS_REGISTRY_TOKEN ?? '',
-        }
-      : undefined,
   });
 
   await app.listen({ port, host });
@@ -75,6 +92,7 @@ async function main(): Promise<void> {
     process.once(signal, () => {
       void app
         .close()
+        .then(() => stopSessionWatch?.())
         .then(() => telemetry.shutdown())
         .finally(() => process.exit(0));
     });

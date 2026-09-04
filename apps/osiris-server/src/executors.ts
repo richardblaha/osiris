@@ -1,140 +1,81 @@
-import { createHash } from 'node:crypto';
-import { constants, createReadStream } from 'node:fs';
-import { mkdir, open, stat, unlink } from 'node:fs/promises';
-import { join } from 'node:path';
-import { Readable } from 'node:stream';
-import type { HandoverCommitRequest } from '@osiris/protocol';
+import { randomUUID } from 'node:crypto';
+import { SESSION_SCHEMA_VERSION, type CreateSessionRequest, type SessionDescriptor } from '@osiris/protocol';
+
+export class SessionNotFoundInExecutor extends Error {
+  constructor(id: string) {
+    super(`session not found: ${id}`);
+    this.name = 'SessionNotFoundInExecutor';
+  }
+}
+
+const DEFAULT_IDLE_TIMEOUT_SECONDS = 300;
 
 /**
- * The infrastructure side of a handover — pull the image, restore the volume,
- * boot the container and attach a Web IDE. {@link StubHandoverExecutor} lets the
- * protocol and lease logic run without Docker; {@link DockerHandoverExecutor}
- * (see `docker-executor.ts`) wires `@osiris/container-sync`'s `thaw()`.
+ * The infrastructure side of session lifecycle: create/suspend/resume/delete
+ * a session and report user activity against it. {@link StubSessionExecutor}
+ * lets the API and routing logic run without a cluster;
+ * {@link KubernetesSessionExecutor} (see `kubernetes-executor.ts`) is the
+ * real implementation, backed by the `osiris-kind-operator`'s
+ * `OsirisSession` custom resource.
  */
-export interface HandoverExecutor {
-  provision(input: { sessionId: string; commit: HandoverCommitRequest }): Promise<{ webUrl: string }>;
-  freezeForFetch(input: { sessionId: string }): Promise<{
-    imageRef: string;
-    imageDigest: string;
-    volumeDownloadUrl: string;
-  }>;
-  teardown(input: { sessionId: string }): Promise<void>;
+export interface SessionExecutor {
+  createSession(input: CreateSessionRequest): Promise<SessionDescriptor>;
+  getSession(sessionId: string): Promise<SessionDescriptor>;
+  suspendSession(sessionId: string): Promise<SessionDescriptor>;
+  resumeSession(sessionId: string): Promise<SessionDescriptor>;
+  deleteSession(sessionId: string): Promise<void>;
+  reportActivity(sessionId: string): Promise<void>;
 }
 
-/** Assembles a volume tar from (possibly out-of-order) `Content-Range` chunks. */
-export interface VolumeStore {
-  write(sessionId: string, offset: number, chunk: Buffer): Promise<void>;
-  finalize(sessionId: string): Promise<{ sha256: string; bytes: number }>;
-  digest(sessionId: string): string | undefined;
-  read(sessionId: string): Promise<AsyncIterable<Uint8Array>>;
-  discard(sessionId: string): Promise<void>;
-}
+/** In-memory stand-in for local dev and tests — no cluster required. */
+export class StubSessionExecutor implements SessionExecutor {
+  private readonly sessions = new Map<string, SessionDescriptor>();
 
-const ZERO_DIGEST = `sha256:${'0'.repeat(64)}`;
-
-export class StubHandoverExecutor implements HandoverExecutor {
-  constructor(private readonly publicBaseUrl: string) {}
-
-  async provision(input: { sessionId: string }): Promise<{ webUrl: string }> {
-    return { webUrl: `${this.publicBaseUrl}/ide/${input.sessionId}` };
-  }
-
-  async freezeForFetch(input: { sessionId: string }): Promise<{
-    imageRef: string;
-    imageDigest: string;
-    volumeDownloadUrl: string;
-  }> {
-    return {
-      imageRef: `registry.osiris.internal/workspaces/${input.sessionId}:server`,
-      imageDigest: ZERO_DIGEST,
-      volumeDownloadUrl: `${this.publicBaseUrl}/api/v1/sessions/${input.sessionId}/volume`,
+  async createSession(input: CreateSessionRequest): Promise<SessionDescriptor> {
+    const now = new Date().toISOString();
+    const descriptor: SessionDescriptor = {
+      sessionId: randomUUID(),
+      schemaVersion: SESSION_SCHEMA_VERSION,
+      projectName: input.projectName,
+      phase: 'Running',
+      idleTimeoutSeconds: input.idleTimeoutSeconds ?? DEFAULT_IDLE_TIMEOUT_SECONDS,
+      lastActivityAt: now,
+      createdAt: now,
     };
+    this.sessions.set(descriptor.sessionId, descriptor);
+    return structuredClone(descriptor);
   }
 
-  async teardown(): Promise<void> {
-    // no-op for the stub
-  }
-}
-
-export class InMemoryVolumeStore implements VolumeStore {
-  private readonly uploads = new Map<
-    string,
-    { parts: Map<number, Buffer>; digest?: string; bytes?: number; assembled?: Buffer }
-  >();
-
-  async write(sessionId: string, offset: number, chunk: Buffer): Promise<void> {
-    const upload = this.uploads.get(sessionId) ?? { parts: new Map() };
-    upload.parts.set(offset, Buffer.from(chunk));
-    this.uploads.set(sessionId, upload);
+  async getSession(sessionId: string): Promise<SessionDescriptor> {
+    return structuredClone(this.record(sessionId));
   }
 
-  async finalize(sessionId: string): Promise<{ sha256: string; bytes: number }> {
-    const upload = this.uploads.get(sessionId);
-    if (!upload) throw new Error(`no volume upload for session ${sessionId}`);
-    const ordered = [...upload.parts.entries()].sort(([a], [b]) => a - b).map(([, buf]) => buf);
-    const assembled = Buffer.concat(ordered);
-    const sha256 = `sha256:${createHash('sha256').update(assembled).digest('hex')}`;
-    upload.assembled = assembled;
-    upload.digest = sha256;
-    upload.bytes = assembled.length;
-    return { sha256, bytes: assembled.length };
+  async suspendSession(sessionId: string): Promise<SessionDescriptor> {
+    const descriptor = this.record(sessionId);
+    descriptor.phase = 'Suspended';
+    return structuredClone(descriptor);
   }
 
-  digest(sessionId: string): string | undefined {
-    return this.uploads.get(sessionId)?.digest;
+  async resumeSession(sessionId: string): Promise<SessionDescriptor> {
+    const descriptor = this.record(sessionId);
+    descriptor.phase = 'Running';
+    descriptor.lastActivityAt = new Date().toISOString();
+    return structuredClone(descriptor);
   }
 
-  async read(sessionId: string): Promise<AsyncIterable<Uint8Array>> {
-    const upload = this.uploads.get(sessionId);
-    if (!upload?.assembled) throw new Error(`no assembled volume for session ${sessionId}`);
-    return Readable.from(upload.assembled);
+  async deleteSession(sessionId: string): Promise<void> {
+    if (!this.sessions.delete(sessionId)) throw new SessionNotFoundInExecutor(sessionId);
   }
 
-  async discard(sessionId: string): Promise<void> {
-    this.uploads.delete(sessionId);
-  }
-}
-
-/** Disk-backed volume store — chunks are written to `<dir>/<sessionId>.tar` at their offset. */
-export class FileVolumeStore implements VolumeStore {
-  private readonly digests = new Map<string, string>();
-
-  constructor(private readonly dir: string) {}
-
-  private path(sessionId: string): string {
-    return join(this.dir, `${sessionId.replace(/[^\w.-]/g, '_')}.tar`);
+  async reportActivity(sessionId: string): Promise<void> {
+    const descriptor = this.record(sessionId);
+    descriptor.lastActivityAt = new Date().toISOString();
+    if (descriptor.phase === 'Suspended') descriptor.phase = 'Running';
   }
 
-  async write(sessionId: string, offset: number, chunk: Buffer): Promise<void> {
-    await mkdir(this.dir, { recursive: true });
-    // O_CREAT without O_APPEND so positioned writes land at `offset`.
-    const handle = await open(this.path(sessionId), constants.O_RDWR | constants.O_CREAT);
-    try {
-      await handle.write(chunk, 0, chunk.length, offset);
-    } finally {
-      await handle.close();
-    }
-  }
-
-  async finalize(sessionId: string): Promise<{ sha256: string; bytes: number }> {
-    const path = this.path(sessionId);
-    const hash = createHash('sha256');
-    for await (const chunk of createReadStream(path)) hash.update(chunk as Buffer);
-    const sha256 = `sha256:${hash.digest('hex')}`;
-    this.digests.set(sessionId, sha256);
-    return { sha256, bytes: (await stat(path)).size };
-  }
-
-  digest(sessionId: string): string | undefined {
-    return this.digests.get(sessionId);
-  }
-
-  async read(sessionId: string): Promise<AsyncIterable<Uint8Array>> {
-    return createReadStream(this.path(sessionId));
-  }
-
-  async discard(sessionId: string): Promise<void> {
-    this.digests.delete(sessionId);
-    await unlink(this.path(sessionId)).catch(() => undefined);
+  private record(sessionId: string): SessionDescriptor {
+    const descriptor = this.sessions.get(sessionId);
+    if (!descriptor) throw new SessionNotFoundInExecutor(sessionId);
+    return descriptor;
   }
 }

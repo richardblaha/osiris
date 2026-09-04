@@ -1,5 +1,4 @@
 export * from './session.js';
-export * from './handover.js';
 export * from './events.js';
 export * from './routes.js';
 export * from './client.js';

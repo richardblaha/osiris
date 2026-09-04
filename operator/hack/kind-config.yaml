@@ -1,0 +1,18 @@
+# Local dev/CI cluster for the osiris-kind-operator. Deliberately minimal: a
+# single control-plane node with a host port mapping for the web-ide port
+# range, so a resumed session's devcontainer is reachable from the developer's
+# browser without standing up a separate LoadBalancer/ingress. Standing this
+# cluster up automatically on `osiris` CLI startup (spec section 3.1) is a
+# separate, out-of-scope concern — this file only serves manual/CI bootstrap.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: osiris-kind
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 8000
+        hostPort: 8000
+      - containerPort: 8001
+        hostPort: 8001
+      - containerPort: 8002
+        hostPort: 8002

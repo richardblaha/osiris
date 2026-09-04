@@ -1,0 +1,5 @@
+## Append samples of your project ##
+resources:
+- osiris_v1alpha1_osirisproject.yaml
+- osiris_v1alpha1_osirissession.yaml
+# +kubebuilder:scaffold:manifestskustomizesamples

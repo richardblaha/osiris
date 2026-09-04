@@ -2,7 +2,7 @@
   "name": "@osiris/container-sync",
   "version": "0.1.0",
   "private": true,
-  "description": "Container mobility for Osiris: DevContainer lifecycle, freeze/thaw of a running session, image commit/push and workspace-volume transfer.",
+  "description": "Container mobility for Osiris: DevContainer lifecycle (build, template, identity hashing).",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -32,7 +32,6 @@
     "@devcontainers/cli": "^0.80.0",
     "@osiris/protocol": "workspace:*",
     "@osiris/shared-core": "workspace:*",
-    "dockerode": "^5.0.1",
     "execa": "^9.5.0"
   },
   "devDependencies": {

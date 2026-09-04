@@ -2,7 +2,7 @@
   "name": "@osiris/server",
   "version": "0.1.0",
   "private": true,
-  "description": "Osiris Server — central Git hosting, workspaces and the session-handover migration protocol (Fastify).",
+  "description": "Osiris Server — central Git hosting, workspaces and the session API backed by osiris-kind-operator (Fastify).",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -23,21 +23,19 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@kubernetes/client-node": "^2.0.0",
     "@osiris/backlog": "workspace:*",
-    "@osiris/container-sync": "workspace:*",
     "@osiris/crew": "workspace:*",
     "@osiris/dot-osiris": "workspace:*",
     "@osiris/memory": "workspace:*",
     "@osiris/protocol": "workspace:*",
     "@osiris/shared-core": "workspace:*",
     "@osiris/telemetry": "workspace:*",
-    "dockerode": "^5.0.1",
     "fastify": "^5.12.1",
     "git-http-backend": "^1.1.2"
   },
   "devDependencies": {
     "@osiris/tsconfig": "workspace:*",
-    "@types/dockerode": "^4.0.1",
     "@types/node": "^22.7.5",
     "eslint": "^9.12.0",
     "rimraf": "^6.0.1",

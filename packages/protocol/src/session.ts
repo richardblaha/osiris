@@ -1,70 +1,48 @@
 /**
- * Session identity and lifecycle. A session lives in exactly one `location` at a
- * time; every mutating request carries the current lease etag (`If-Match`) so the
- * Desktop and the Server can never run the same container concurrently.
+ * Session identity and lifecycle. A session runs inside a `kind` cluster as an
+ * `OsirisSession` custom resource, reconciled by `osiris-kind-operator`: the
+ * client (osiris-server) only ever expresses `desiredPhase` (Running/Suspended)
+ * and reads back the controller-observed `phase` — there is no client-managed
+ * transfer lease any more (see `osiris-spec.md` §3.3/3.4).
  */
 import { z } from 'zod';
 
-export const SESSION_SCHEMA_VERSION = 1 as const;
+export const SESSION_SCHEMA_VERSION = 2 as const;
 
-/** `sha256:<64 hex>` — content address of an image / volume tar / agent snapshot. */
+/** `sha256:<64 hex>` — content address, still used outside the session model (agent-core, container-sync). */
 export const ContentDigest = z
   .string()
   .regex(/^sha256:[0-9a-f]{64}$/, 'expected "sha256:" followed by 64 hex chars');
 export type ContentDigest = z.infer<typeof ContentDigest>;
 
-export const SessionLocation = z.enum(['local', 'in-transit', 'server']);
-export type SessionLocation = z.infer<typeof SessionLocation>;
-
-export const SessionOrigin = z.enum(['desktop', 'server']);
-export type SessionOrigin = z.infer<typeof SessionOrigin>;
-
-export const TransferDirection = z.enum(['to-server', 'to-local']);
-export type TransferDirection = z.infer<typeof TransferDirection>;
-
-export const Lease = z.object({
-  /** Opaque token; changes on every state transition. */
-  etag: z.string().min(1),
-  /** Who currently holds the transfer lock. */
-  holder: z.string().min(1),
-  /** ISO-8601. After this instant the server auto-aborts an incomplete transfer. */
-  expiresAt: z.string().min(1),
-});
-export type Lease = z.infer<typeof Lease>;
-
-export const SessionDigests = z
-  .object({
-    image: ContentDigest,
-    volume: ContentDigest,
-    agentState: ContentDigest,
-  })
-  .partial();
-export type SessionDigests = z.infer<typeof SessionDigests>;
+/** Mirrors the operator's `OsirisSession.status.phase`. */
+export const SessionPhase = z.enum([
+  'Pending',
+  'Running',
+  'Suspending',
+  'Suspended',
+  'Resuming',
+  'Terminating',
+]);
+export type SessionPhase = z.infer<typeof SessionPhase>;
 
 export const SessionDescriptor = z.object({
   sessionId: z.string().min(1),
   schemaVersion: z.literal(SESSION_SCHEMA_VERSION),
-  location: SessionLocation,
-  origin: SessionOrigin,
-  workspaceId: z.string().min(1),
-  devcontainerHash: z.string().min(1),
-  /** Null unless a transfer is in flight. */
-  lease: Lease.nullable(),
-  /** Present while `location === 'server'`. */
+  /** Name of the OsirisProject this session belongs to. */
+  projectName: z.string().min(1),
+  phase: SessionPhase,
+  idleTimeoutSeconds: z.number().int().positive(),
+  /** ISO-8601, mirrors the activity Lease's renewTime. */
+  lastActivityAt: z.string().min(1),
+  createdAt: z.string().min(1),
+  /** Present once the session's devcontainer is reachable. */
   webUrl: z.string().optional(),
-  transfer: z
-    .object({
-      direction: TransferDirection,
-      startedAt: z.string().min(1),
-    })
-    .optional(),
-  digests: SessionDigests.optional(),
 });
 export type SessionDescriptor = z.infer<typeof SessionDescriptor>;
 
 export const CreateSessionRequest = z.object({
-  workspaceId: z.string().min(1),
-  devcontainerHash: z.string().min(1),
-  origin: SessionOrigin.default('desktop'),
+  projectName: z.string().min(1),
+  idleTimeoutSeconds: z.number().int().positive().optional(),
 });
 export type CreateSessionRequest = z.infer<typeof CreateSessionRequest>;

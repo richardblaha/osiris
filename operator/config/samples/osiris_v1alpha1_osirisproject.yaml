@@ -1,0 +1,14 @@
+apiVersion: osiris.osiris.dev/v1alpha1
+kind: OsirisProject
+metadata:
+  labels:
+    app.kubernetes.io/name: operator
+    app.kubernetes.io/managed-by: kustomize
+  name: sample
+spec:
+  path: /home/dev/projects/sample
+  devContainer:
+    image: ghcr.io/osiris-ide/osiris/web-ide:1
+    port: 8000
+  idleTimeoutSeconds: 300
+  defaultWorkspaceSize: 2Gi

@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import * as vscode from 'vscode';
 import { createLogger } from '@osiris/shared-core';
-import { HandoverClient } from '@osiris/protocol';
+import { SessionClient, type SessionPhase } from '@osiris/protocol';
 import {
   OSIRIS_AUTHORITY,
   buildFolderUri,
@@ -24,12 +24,13 @@ import { taskModelEnv, unsetTaskClasses } from './model-config.js';
 
 const log = createLogger('workspace');
 
-type Location = 'local' | 'in-transit' | 'server';
-
 const DEFAULT_SECRET_ENV_KEYS = ['OSIRIS_AI_API_KEY', 'ANTHROPIC_API_KEY', 'OPENAI_API_KEY'];
 
-function setLocationContext(location: Location): void {
-  void vscode.commands.executeCommand('setContext', 'osiris.sessionLocation', location);
+/** workspaceState key: the osiris-server sessionId backing the open workspace, if any. */
+const SESSION_ID_KEY = 'osiris.sessionId';
+
+function setSessionPhaseContext(phase: SessionPhase | 'none'): void {
+  void vscode.commands.executeCommand('setContext', 'osiris.sessionPhase', phase);
 }
 
 function config() {
@@ -91,11 +92,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     vscode.commands.registerCommand('osiris.configureModels', () =>
       showStartView(context, startDeps, { focus: 'models' }),
     ),
-    vscode.commands.registerCommand('osiris.workspace.handoverToServer', () =>
-      transferSession('to-server'),
+    vscode.commands.registerCommand('osiris.workspace.suspendSession', () =>
+      setSessionPhase(context, status, 'suspend'),
     ),
-    vscode.commands.registerCommand('osiris.workspace.fetchToLocal', () =>
-      transferSession('to-local'),
+    vscode.commands.registerCommand('osiris.workspace.resumeSession', () =>
+      setSessionPhase(context, status, 'resume'),
     ),
     vscode.commands.registerCommand('osiris.agent.setApiKey', () => setAgentApiKey(context)),
     vscode.commands.registerCommand('osiris.lm.status', () => showLmStatus(context)),
@@ -115,11 +116,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
   }
 
-  // Inside a container we default to 'local'; the desktop/server set the real
-  // location via the `osiris.sessionLocation` context during a handover.
-  const location: Location = 'local';
-  setLocationContext(location);
-  updateStatus(status, location);
+  const cachedPhase = context.workspaceState.get<SessionPhase>(`${SESSION_ID_KEY}.phase`);
+  setSessionPhaseContext(cachedPhase ?? 'none');
+  updateStatus(status, cachedPhase);
 
   const remote = isOsirisRemote(vscode.env.remoteName);
   const hasFolder = (vscode.workspace.workspaceFolders?.length ?? 0) > 0;
@@ -174,16 +173,26 @@ export function deactivate(): void {
   log.info('deactivating osiris-workspace');
 }
 
-function updateStatus(item: vscode.StatusBarItem, location: Location): void {
-  const label: Record<Location, string> = {
-    local: '$(vm) Osiris: Local',
-    'in-transit': '$(sync~spin) Osiris: In transit',
-    server: '$(cloud) Osiris: Server',
+function updateStatus(item: vscode.StatusBarItem, phase: SessionPhase | undefined): void {
+  const label: Record<SessionPhase, string> = {
+    Pending: '$(sync~spin) Osiris: Pending',
+    Running: '$(vm-running) Osiris: Running',
+    Suspending: '$(sync~spin) Osiris: Suspending',
+    Suspended: '$(debug-pause) Osiris: Suspended',
+    Resuming: '$(sync~spin) Osiris: Resuming',
+    Terminating: '$(sync~spin) Osiris: Terminating',
   };
-  item.text = label[location];
+  if (!phase) {
+    item.text = '$(circle-outline) Osiris: No session';
+    item.command = 'osiris.workspace.resumeSession';
+    item.tooltip = 'No Osiris session for this workspace yet — click to create and start one';
+    item.show();
+    return;
+  }
+  item.text = label[phase];
   item.command =
-    location === 'server' ? 'osiris.workspace.fetchToLocal' : 'osiris.workspace.handoverToServer';
-  item.tooltip = 'Osiris session location — click to move it';
+    phase === 'Suspended' ? 'osiris.workspace.resumeSession' : 'osiris.workspace.suspendSession';
+  item.tooltip = 'Osiris session state — click to suspend/resume';
   item.show();
 }
 
@@ -380,13 +389,23 @@ async function setAgentApiKey(context: vscode.ExtensionContext): Promise<void> {
   }
 }
 
-async function transferSession(direction: 'to-server' | 'to-local'): Promise<void> {
+/**
+ * Suspend/resume the osiris-server session backing this workspace, creating
+ * one on first use (lazily — `osiris session create`/`project register` are
+ * a separate, not-yet-built CLI/UX concern; this mirrors the same "create on
+ * first interaction" shortcut the old handover flow used).
+ */
+async function setSessionPhase(
+  context: vscode.ExtensionContext,
+  status: vscode.StatusBarItem,
+  action: 'suspend' | 'resume',
+): Promise<void> {
   const server = resolveServerConfig({
     url: config().get('server.url'),
     tokenEnv: config().get('server.tokenEnv'),
   });
   if (!server) {
-    void vscode.window.showErrorMessage('Set "osiris.server.url" to move sessions between hosts.');
+    void vscode.window.showErrorMessage('Set "osiris.server.url" to manage this workspace\'s session.');
     return;
   }
   if (!server.token) {
@@ -399,53 +418,29 @@ async function transferSession(direction: 'to-server' | 'to-local'): Promise<voi
   const folder = vscode.workspace.workspaceFolders?.[0];
   if (!folder) return;
 
-  const client = new HandoverClient({ baseUrl: server.baseUrl, token: server.token });
-  const hash = localHash(folder.uri.fsPath);
+  const client = new SessionClient({ baseUrl: server.baseUrl, token: server.token });
 
   await vscode.window.withProgress(
-    {
-      location: vscode.ProgressLocation.Notification,
-      title: `Osiris: ${direction}`,
-      cancellable: false,
-    },
-    async (progress) => {
+    { location: vscode.ProgressLocation.Notification, title: `Osiris: ${action}`, cancellable: false },
+    async () => {
       try {
-        setLocationContext('in-transit');
-        progress.report({ message: 'preparing…' });
-
-        const session = await client.createSession({
-          workspaceId: folder.name,
-          devcontainerHash: hash,
-          origin: direction === 'to-server' ? 'desktop' : 'server',
-        });
-
-        if (direction === 'to-server') {
-          const prep = await client.prepareHandover(session.sessionId);
-          progress.report({ message: 'freezing and uploading…' });
-          const done = await tryExecuteCommand<{ webUrl: string }>(
-            'osiris.desktop.performHandover',
-            {
-              sessionId: session.sessionId,
-              prepare: prep,
-            },
-          );
-          if (done?.webUrl) {
-            const open = await vscode.window.showInformationMessage(
-              'Session is now running on the Osiris Server.',
-              'Open Web IDE',
-            );
-            if (open) await vscode.env.openExternal(vscode.Uri.parse(done.webUrl));
-          }
-          setLocationContext('server');
-        } else {
-          await client.prepareFetch(session.sessionId);
-          progress.report({ message: 'restoring locally…' });
-          await tryExecuteCommand('osiris.desktop.performFetch', { sessionId: session.sessionId });
-          setLocationContext('local');
+        let sessionId = context.workspaceState.get<string>(SESSION_ID_KEY);
+        if (!sessionId) {
+          const created = await client.createSession({ projectName: folder.name });
+          sessionId = created.sessionId;
+          await context.workspaceState.update(SESSION_ID_KEY, sessionId);
         }
+
+        const descriptor =
+          action === 'suspend'
+            ? await client.suspendSession(sessionId)
+            : await client.resumeSession(sessionId);
+
+        await context.workspaceState.update(`${SESSION_ID_KEY}.phase`, descriptor.phase);
+        setSessionPhaseContext(descriptor.phase);
+        updateStatus(status, descriptor.phase);
       } catch (err) {
-        setLocationContext(direction === 'to-server' ? 'local' : 'server');
-        void vscode.window.showErrorMessage(`Osiris handover failed: ${(err as Error).message}`);
+        void vscode.window.showErrorMessage(`Osiris ${action} failed: ${(err as Error).message}`);
       }
     },
   );
