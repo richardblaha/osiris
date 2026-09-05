@@ -35,7 +35,7 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm --filter "...@richardblaha/${{ matrix.package }}" build
+      - run: pnpm exec turbo run build --filter="@richardblaha/${{ matrix.package }}..."
 
       - name: Publish @richardblaha/${{ matrix.package }}
         working-directory: packages/${{ matrix.package }}
