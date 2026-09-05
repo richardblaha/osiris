@@ -1,6 +1,6 @@
 {
   "name": "@richardblaha/telemetry",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "OTLP-first OpenTelemetry bootstrap for Osiris Node processes (server, orchestrator, sync worker, agent). Traces + metrics + logs over OTLP/HTTP.",
   "license": "MIT",

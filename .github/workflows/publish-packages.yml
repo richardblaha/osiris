@@ -39,6 +39,8 @@ jobs:
 
       - name: Publish @richardblaha/${{ matrix.package }}
         working-directory: packages/${{ matrix.package }}
-        run: npm publish
+        # pnpm publish (not npm publish) rewrites workspace:* deps (e.g.
+        # agent-core -> shared-core) to a real resolved version.
+        run: pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

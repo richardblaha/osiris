@@ -1,6 +1,6 @@
 {
   "name": "@richardblaha/protocol",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": false,
   "description": "The Desktop \u21c4 Server wire contract for Osiris: session descriptors, the handover/fetch protocol and SSE events, as zod schemas + inferred types.",
   "license": "MIT",
