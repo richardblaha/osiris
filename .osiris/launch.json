@@ -1,21 +1,4 @@
 {
   "version": "0.2.0",
-  "configurations": [
-    {
-      "name": "Run osiris-ai",
-      "type": "extensionHost",
-      "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}/extensions/osiris-ai"],
-      "outFiles": ["${workspaceFolder}/extensions/osiris-ai/dist/**/*.js"],
-      "preLaunchTask": "build: osiris-ai"
-    },
-    {
-      "name": "Run osiris-workspace",
-      "type": "extensionHost",
-      "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}/extensions/osiris-workspace"],
-      "outFiles": ["${workspaceFolder}/extensions/osiris-workspace/dist/**/*.js"],
-      "preLaunchTask": "build: osiris-workspace"
-    }
-  ]
+  "configurations": []
 }
