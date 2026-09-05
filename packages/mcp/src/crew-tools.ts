@@ -1,4 +1,4 @@
-import type { Tool } from '@osiris/agent-core';
+import type { Tool } from '@richardblaha/agent-core';
 import { flattenMcpResult } from './client.js';
 import type { McpPool } from './pool.js';
 

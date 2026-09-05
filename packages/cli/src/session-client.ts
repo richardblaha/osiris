@@ -1,4 +1,4 @@
-import { SessionClient } from '@osiris/protocol';
+import { SessionClient } from '@richardblaha/protocol';
 
 /** Build a `SessionClient` against the osiris-server pointed at by env vars. */
 export function createSessionClient(env: NodeJS.ProcessEnv): SessionClient {

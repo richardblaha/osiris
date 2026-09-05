@@ -1,4 +1,4 @@
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import type { ChatMessage, ProviderAdapter, Tool, ToolCall } from './types.js';
 
 const log = createLogger('agent-core');

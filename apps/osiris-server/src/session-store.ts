@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import type { SessionDescriptor, SessionEvent } from '@osiris/protocol';
+import type { SessionDescriptor, SessionEvent } from '@richardblaha/protocol';
 
 export class SessionNotFound extends Error {
   constructor(id: string) {

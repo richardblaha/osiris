@@ -25,9 +25,9 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@osiris/dot-osiris": "workspace:*",
-    "@osiris/protocol": "workspace:*",
-    "@osiris/shared-core": "workspace:*",
+    "@richardblaha/dot-osiris": "workspace:*",
+    "@richardblaha/protocol": "workspace:*",
+    "@richardblaha/shared-core": "workspace:*",
     "execa": "^9.5.1"
   },
   "devDependencies": {

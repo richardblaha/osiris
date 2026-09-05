@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { AgentOrchestrator, type ProviderAdapter, type Tool } from '@osiris/agent-core';
-import { createLogger } from '@osiris/shared-core';
+import { AgentOrchestrator, type ProviderAdapter, type Tool } from '@richardblaha/agent-core';
+import { createLogger } from '@richardblaha/shared-core';
 import type {
   AgentDefinition,
   CrewConfig,
   CrewDelegation,
   CrewEvent,
   CrewRunResult,
-} from '@osiris/protocol';
+} from '@richardblaha/protocol';
 import { Blackboard } from './blackboard.js';
 import type { AgentRegistry } from './registry.js';
 

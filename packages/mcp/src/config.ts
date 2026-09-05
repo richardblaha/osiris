@@ -1,5 +1,5 @@
-import { createLogger } from '@osiris/shared-core';
-import { type OsirisPaths, resolveOsirisFile } from '@osiris/dot-osiris';
+import { createLogger } from '@richardblaha/shared-core';
+import { type OsirisPaths, resolveOsirisFile } from '@richardblaha/dot-osiris';
 
 const log = createLogger('mcp:config');
 

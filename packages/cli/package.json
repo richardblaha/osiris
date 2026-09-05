@@ -30,12 +30,12 @@
   "dependencies": {
     "@osiris/backlog": "workspace:*",
     "@osiris/crew": "workspace:*",
-    "@osiris/dot-osiris": "workspace:*",
-    "@osiris/mcp": "workspace:*",
+    "@richardblaha/dot-osiris": "workspace:*",
+    "@richardblaha/mcp": "workspace:*",
     "@osiris/memory": "workspace:*",
-    "@osiris/protocol": "workspace:*",
+    "@richardblaha/protocol": "workspace:*",
     "@osiris/server": "workspace:*",
-    "@osiris/shared-core": "workspace:*"
+    "@richardblaha/shared-core": "workspace:*"
   },
   "devDependencies": {
     "@osiris/tsconfig": "workspace:*",

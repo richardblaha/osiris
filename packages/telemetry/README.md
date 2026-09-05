@@ -1,4 +1,4 @@
-# @osiris/telemetry
+# @richardblaha/telemetry
 
 OTLP-first OpenTelemetry bootstrap for every Osiris Node process — the server,
 the orchestrator, the container-sync worker and the agent. One call wires
@@ -9,10 +9,10 @@ the orchestrator, the container-sync worker and the agent. One call wires
 | `startTelemetry(opts)`| Start the `NodeSDK` (auto-instrumentations + OTLP exporters). Idempotent. Returns a `{ enabled, shutdown() }` handle and installs `SIGTERM`/`SIGINT` flush hooks. |
 | `isTelemetryDisabled` | The `OSIRIS_TELEMETRY=off` check (repo-wide convention).                       |
 | `resolveEndpoint`     | Explicit option → `OTEL_EXPORTER_OTLP_ENDPOINT` → `http://localhost:4318`.     |
-| `@osiris/telemetry/register` | Side-effecting entry for `node --import`, configured from env only.     |
+| `@richardblaha/telemetry/register` | Side-effecting entry for `node --import`, configured from env only.     |
 
 ```ts
-import { startTelemetry } from '@osiris/telemetry';
+import { startTelemetry } from '@richardblaha/telemetry';
 
 const telemetry = await startTelemetry({
   serviceName: 'osiris-server',
@@ -25,8 +25,8 @@ const telemetry = await startTelemetry({
 
 ```bash
 # instrument a process without touching its code
-OTEL_SERVICE_NAME=osiris-web node --import @osiris/telemetry/register ./server/index.mjs
+OTEL_SERVICE_NAME=osiris-web node --import @richardblaha/telemetry/register ./server/index.mjs
 ```
 
 `OSIRIS_TELEMETRY=off` forces the no-op path, matching
-`@osiris/shared-core`'s telemetry default. Pure ESM, built with `tsc` to `dist/`.
+`@richardblaha/shared-core`'s telemetry default. Pure ESM, built with `tsc` to `dist/`.

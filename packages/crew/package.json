@@ -25,12 +25,12 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@osiris/agent-core": "workspace:*",
-    "@osiris/dot-osiris": "workspace:*",
-    "@osiris/mcp": "workspace:*",
+    "@richardblaha/agent-core": "workspace:*",
+    "@richardblaha/dot-osiris": "workspace:*",
+    "@richardblaha/mcp": "workspace:*",
     "@osiris/memory": "workspace:*",
-    "@osiris/protocol": "workspace:*",
-    "@osiris/shared-core": "workspace:*"
+    "@richardblaha/protocol": "workspace:*",
+    "@richardblaha/shared-core": "workspace:*"
   },
   "devDependencies": {
     "@osiris/tsconfig": "workspace:*",

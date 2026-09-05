@@ -11,11 +11,11 @@ Extras beyond the original checklist:
   `_TOKEN` into the Dev Container, so a container-side crew (`provider: vscode-lm`)
   still draws its models from the editor. `resolveProvider` chain:
   in-process bridge → proxy → headless fallback.
-- **`@osiris/mcp`** — MCP client (stdio + Streamable HTTP), `.osiris/mcp.json`
+- **`@richardblaha/mcp`** — MCP client (stdio + Streamable HTTP), `.osiris/mcp.json`
   discovery (`servers` + VS Code `mcpServers`, `${workspaceFolder}` / `${env}`),
   `McpPool` (namespaced `<id>__<tool>`), `mcpToolsForCrew`. `loadCrewSession()`
   starts the pool only when an agent opts in with an `mcp` / `mcp:<id>` selector.
-- **`@osiris/protocol` `ConsoleClient`** — typed client for the console API with
+- **`@richardblaha/protocol` `ConsoleClient`** — typed client for the console API with
   `streamRun()` SSE generators; the SPA's Crew view streams live.
 - **Backlog sync** — `BacklogRepo.push()/pull()` (fast-forward or report
   divergence), `lint()`, `autoPush`; a fixed-date seed commit so every checkout
@@ -36,7 +36,7 @@ Osiris.
 | 2   | **VS Code Language Model API / Copilot Chat** provides model selection. No hard‑coded API keys where the editor API can supply one. | `@osiris/crew` model resolution has a `vscode-lm` provider adapter; keychain/env is the fallback only. |
 | 3   | **MCP discovery from the VS Code / Dev Container environment.**                                                                     | Crew reads `.osiris/mcp.json` + the editor's contributed MCP servers; nothing bespoke.                 |
 | 4   | **All tool execution runs inside `.devcontainer`.**                                                                                 | ChromaDB, the crew runtime and `osiris-server` all have a container story; host is orchestration only. |
-| 5   | **`.osiris/` is the fallback + init skeleton.** Missing project config falls back to the bundled system template.                   | `@osiris/dot-osiris` ships `template/` and a layered resolver.                                         |
+| 5   | **`.osiris/` is the fallback + init skeleton.** Missing project config falls back to the bundled system template.                   | `@richardblaha/dot-osiris` ships `template/` and a layered resolver.                                         |
 | 6   | **Backlog lives on an orphan branch** (`osiris/backlog`), never polluting `main` / `feature/*` history.                             | `@osiris/backlog` drives a dedicated git worktree; state moves are `git mv` + commit.                  |
 | 7   | **`.osiris/temp/` is always git‑ignored.**                                                                                          | `ensureGitignore()` is idempotently applied by init and the CLI.                                       |
 
@@ -88,7 +88,7 @@ frontmatter is rejected with a clear error citing the path.
 
 ## 2. Implementation checklist
 
-### Phase A — `@osiris/dot-osiris` (layout, template, init) ✅ scaffold
+### Phase A — `@richardblaha/dot-osiris` (layout, template, init) ✅ scaffold
 
 - [x] `layout.ts` — path constants + `OsirisPaths(root)` resolver
 - [x] `resolve.ts` — layered read: project `.osiris/…` → bundled `template/…`
@@ -149,7 +149,7 @@ frontmatter is rejected with a clear error citing the path.
 - [x] `routes/crew.ts` — `GET /api/v1/crew/agents`, `POST /api/v1/crew/runs` (+ SSE `…/runs/:id/events`)
 - [x] `routes/memory.ts` — `POST /api/v1/memory/search`, `POST /api/v1/memory/reindex`
 - [x] static SPA mount (`@fastify/static`) from `@osiris/console` `dist/`
-- [x] `@osiris/protocol` — zod schemas for all of the above (`crew.ts`, `backlog.ts`, `memory.ts`)
+- [x] `@richardblaha/protocol` — zod schemas for all of the above (`crew.ts`, `backlog.ts`, `memory.ts`)
 - [x] tests: backlog CRUD+move over a `FakeGitRunner`, crew run lifecycle, memory search shape
 - **Acceptance:** `curl` against a temp repo can create a task, move it, and see
   it on the board; `GET /` serves the SPA; every route validates its body via zod
@@ -159,7 +159,7 @@ frontmatter is rejected with a clear error citing the path.
 
 - [x] Vite + React + TypeScript, no runtime CSS framework (system font, tokens)
 - [x] Kanban board (columns = states, drag → `move`), Agents panel, Memory search
-- [x] `api.ts` thin fetch client against `@osiris/protocol` types
+- [x] `api.ts` thin fetch client against `@richardblaha/protocol` types
 - [x] build to `dist/`, wired into server `files` + Docker
 - **Acceptance:** `pnpm --filter @osiris/console build` emits a static bundle;
   board reflects server state and a card drag issues one `move` call.
@@ -190,9 +190,9 @@ frontmatter is rejected with a clear error citing the path.
 ## 3. Package graph (additions)
 
 ```text
-@osiris/protocol ─┬─> @osiris/backlog ──┐        @osiris/lm-proxy ──> osiris-workspace (ext)
+@richardblaha/protocol ─┬─> @osiris/backlog ──┐        @osiris/lm-proxy ──> osiris-workspace (ext)
   (+ ConsoleClient)├─> @osiris/memory ───┼─> @osiris/crew ──> @osiris/cli
-                   └─> @osiris/dot-osiris ┘        │            (+ @osiris/server bin)
+                   └─> @richardblaha/dot-osiris ┘        │            (+ @osiris/server bin)
                                                   └─> @osiris/server ─> @osiris/console (SPA, build-time)
 ```
 
@@ -202,9 +202,9 @@ extension runs it and injects `OSIRIS_LM_PROXY_URL` / `_TOKEN` into the Dev
 Container; `resolveProvider` uses it for the `vscode-lm` provider kind when no
 in-process bridge is present.
 
-`@osiris/dot-osiris`, `@osiris/memory`, `@osiris/backlog` depend only on
-`@osiris/shared-core` (+ `@osiris/protocol` for shared types). `@osiris/crew`
-builds on `@osiris/agent-core`.
+`@richardblaha/dot-osiris`, `@osiris/memory`, `@osiris/backlog` depend only on
+`@richardblaha/shared-core` (+ `@richardblaha/protocol` for shared types). `@osiris/crew`
+builds on `@richardblaha/agent-core`.
 
 ## 4. Conventions carried over
 
@@ -219,14 +219,14 @@ An OpenAI-compatible HTTP shim over an editor Language Model API. The `osiris-wo
 extension implements the bridge over `vscode.lm.selectChatModels()` and starts the
 proxy on loopback; `OSIRIS_LM_PROXY_URL` is injected into the Dev Container so a
 crew running there (`provider: vscode-lm`) still draws its models from the editor.
-`@osiris/agent-core`'s `OpenAiCompatibleAdapter` talks to it unchanged.
+`@richardblaha/agent-core`'s `OpenAiCompatibleAdapter` talks to it unchanged.
 
-## `@osiris/mcp` — Model Context Protocol
+## `@richardblaha/mcp` — Model Context Protocol
 
 A small MCP client used by the crew. `McpPool.start(specs)` starts every enabled
 server from `.osiris/mcp.json` (stdio via a child process, or Streamable HTTP),
 aggregates their tools under `<serverId>__<tool>`, and `mcpToolsForCrew(pool)`
-turns them into `@osiris/agent-core` tools. `loadCrewSession()` wires it: it
+turns them into `@richardblaha/agent-core` tools. `loadCrewSession()` wires it: it
 starts the pool only when an agent opts in (`tools: [..., mcp]` / `mcp:<id>`) or
 `mcp: true`, and returns `close()` to shut the servers down. Ships a
 `FakeMcpTransport` for tests.

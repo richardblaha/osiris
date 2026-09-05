@@ -1,12 +1,12 @@
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import {
   AnthropicAdapter,
   EchoProviderAdapter,
   OllamaAdapter,
   OpenAiCompatibleAdapter,
   type ProviderAdapter,
-} from '@osiris/agent-core';
-import type { CrewConfig, ProviderConfig } from '@osiris/protocol';
+} from '@richardblaha/agent-core';
+import type { CrewConfig, ProviderConfig } from '@richardblaha/protocol';
 
 const log = createLogger('crew:providers');
 

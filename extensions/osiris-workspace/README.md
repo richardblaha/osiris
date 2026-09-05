@@ -12,7 +12,7 @@ even when the window itself is a container remote.
 | **Remote authority resolver** | Resolves `vscode-remote://osiris-devcontainer+<hash>/…` by finding the container via its `com.osiris.devcontainer.hash` label, waking it, (re)starting its server, and reading the port label. If the container is gone, rebuilds it from the recent-projects entry. |
 | **Local-window guard** | When `osiris.devcontainer.enforce` is on and a folder is open outside an Osiris remote, offers **Reopen in DevContainer** / **Close Folder**. |
 | **`Set Agent API Key…`** | Stores a key in the OS keychain (`context.secrets`); `collectAgentSecrets` reads `osiris.agent.secretEnvKeys` from there + the host env at container-create time. |
-| **`Handover to Server` / `Fetch to Local`** | Drives the `@osiris/protocol` `HandoverClient`; Docker-heavy freeze/thaw is delegated to `osiris.desktop.performHandover` / `…performFetch`. |
+| **`Handover to Server` / `Fetch to Local`** | Drives the `@richardblaha/protocol` `HandoverClient`; Docker-heavy freeze/thaw is delegated to `osiris.desktop.performHandover` / `…performFetch`. |
 | **Status bar** | Session location (`local` / `in transit` / `server`). |
 
 ### Modules

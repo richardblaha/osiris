@@ -2,8 +2,8 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { initWorkspace, osirisPaths } from '@osiris/dot-osiris';
-import { FakeMcpTransport, McpPool } from '@osiris/mcp';
+import { initWorkspace, osirisPaths } from '@richardblaha/dot-osiris';
+import { FakeMcpTransport, McpPool } from '@richardblaha/mcp';
 import { loadCrewSession } from '../src/assemble.js';
 
 let dir: string;

@@ -1,8 +1,8 @@
 import * as vscode from 'vscode';
-import { createTelemetry, type TelemetryReporter } from '@osiris/shared-core';
-import { AgentOrchestrator, type ProviderAdapter } from '@osiris/agent-core';
+import { createTelemetry, type TelemetryReporter } from '@richardblaha/shared-core';
+import { AgentOrchestrator, type ProviderAdapter } from '@richardblaha/agent-core';
 import { builtinTools } from '../tools/builtins.js';
-import type { McpRegistry } from '@osiris/mcp';
+import type { McpRegistry } from '@richardblaha/mcp';
 import type { PanelInbound, PanelOutbound } from '../protocol.js';
 
 export interface AgentViewDeps {

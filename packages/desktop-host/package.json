@@ -25,10 +25,10 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@osiris/agent-core": "workspace:*",
+    "@richardblaha/agent-core": "workspace:*",
     "@osiris/orchestrator": "workspace:*",
-    "@osiris/shared-core": "workspace:*",
-    "@osiris/telemetry": "workspace:*"
+    "@richardblaha/shared-core": "workspace:*",
+    "@richardblaha/telemetry": "workspace:*"
   },
   "devDependencies": {
     "@osiris/tsconfig": "workspace:*",

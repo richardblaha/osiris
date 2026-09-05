@@ -1,4 +1,4 @@
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { DEFAULT_HNSW, type HnswConfig, type MemoryStore } from './store.js';
 import { ChromaMemoryStore, FileMemoryStore, InMemoryMemoryStore } from './store.js';
 import { createEmbedding, type EmbeddingConfig, type EmbeddingFn } from './embed.js';

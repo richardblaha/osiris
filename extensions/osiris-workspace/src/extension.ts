@@ -2,8 +2,8 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import * as vscode from 'vscode';
-import { createLogger } from '@osiris/shared-core';
-import { SessionClient, type SessionPhase } from '@osiris/protocol';
+import { createLogger } from '@richardblaha/shared-core';
+import { SessionClient, type SessionPhase } from '@richardblaha/protocol';
 import {
   OSIRIS_AUTHORITY,
   buildFolderUri,
@@ -19,7 +19,7 @@ import { ensureLmProxy, lmProxyRemoteEnv } from './lm-proxy-host.js';
 import { createVscodeLmBridge, hasLanguageModelApi } from './lm-bridge.js';
 import { openConsole, runCrew } from './crew-commands.js';
 import { OsirisConsoleViewProvider } from './console-view.js';
-import { TASK_CLASSES } from '@osiris/protocol';
+import { TASK_CLASSES } from '@richardblaha/protocol';
 import { taskModelEnv, unsetTaskClasses } from './model-config.js';
 
 const log = createLogger('workspace');

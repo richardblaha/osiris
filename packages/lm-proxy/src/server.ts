@@ -1,5 +1,5 @@
 import { createServer, type Server } from 'node:http';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import type { LmModelBridge } from './bridge.js';
 import { createLmProxyHandler, type LmProxyOptions } from './handler.js';
 

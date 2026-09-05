@@ -1,4 +1,4 @@
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { chunkMarkdown } from './chunk.js';
 import { contentDigest, fileDigest } from './hash.js';
 import { IndexCache } from './cache.js';

@@ -1,7 +1,7 @@
 import type { CustomObjectsApi, KubeConfig, KubernetesObject } from '@kubernetes/client-node';
 import { makeInformer } from '@kubernetes/client-node';
-import { SESSION_SCHEMA_VERSION, type SessionDescriptor, type SessionPhase } from '@osiris/protocol';
-import { createLogger } from '@osiris/shared-core';
+import { SESSION_SCHEMA_VERSION, type SessionDescriptor, type SessionPhase } from '@richardblaha/protocol';
+import { createLogger } from '@richardblaha/shared-core';
 import type { SessionStore } from './session-store.js';
 
 const log = createLogger('server:k8s-session-watch');

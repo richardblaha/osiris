@@ -1,0 +1,44 @@
+name: Publish Packages
+
+on:
+  push:
+    tags: ["packages-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package:
+          - shared-core
+          - protocol
+          - agent-core
+          - mcp
+          - dot-osiris
+          - telemetry
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@richardblaha"
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm --filter "...@richardblaha/${{ matrix.package }}" build
+
+      - name: Publish @richardblaha/${{ matrix.package }}
+        working-directory: packages/${{ matrix.package }}
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

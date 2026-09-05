@@ -1,4 +1,4 @@
-import type { SessionEvent } from '@osiris/protocol';
+import type { SessionEvent } from '@richardblaha/protocol';
 
 /** Serialize a protocol event as a Server-Sent Event frame. */
 export function formatSseEvent(event: SessionEvent): string {

@@ -1,6 +1,6 @@
-import { createLogger } from '@osiris/shared-core';
-import { type OsirisPaths, listOsirisDir, resolveOsirisFile } from '@osiris/dot-osiris';
-import type { AgentDefinition } from '@osiris/protocol';
+import { createLogger } from '@richardblaha/shared-core';
+import { type OsirisPaths, listOsirisDir, resolveOsirisFile } from '@richardblaha/dot-osiris';
+import type { AgentDefinition } from '@richardblaha/protocol';
 import { parseAgentDefinition } from './definition.js';
 
 const log = createLogger('crew:registry');

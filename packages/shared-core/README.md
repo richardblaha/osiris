@@ -1,4 +1,4 @@
-# @osiris/shared-core
+# @richardblaha/shared-core
 
 Shared, runtime-light building blocks used by the Osiris extensions and apps.
 
@@ -11,7 +11,7 @@ Shared, runtime-light building blocks used by the Osiris extensions and apps.
 | `types.ts`     | Domain types for `osiris-ai` (agent descriptors, run options)                                               |
 
 ```ts
-import { createLogger, EventBus, type OsirisEvents } from '@osiris/shared-core';
+import { createLogger, EventBus, type OsirisEvents } from '@richardblaha/shared-core';
 
 const log = createLogger('agent');
 const bus = new EventBus<OsirisEvents>();

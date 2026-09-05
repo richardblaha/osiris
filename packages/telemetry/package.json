@@ -1,9 +1,18 @@
 {
-  "name": "@osiris/telemetry",
+  "name": "@richardblaha/telemetry",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "OTLP-first OpenTelemetry bootstrap for Osiris Node processes (server, orchestrator, sync worker, agent). Traces + metrics + logs over OTLP/HTTP.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardblaha/osiris.git",
+    "directory": "packages/telemetry"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

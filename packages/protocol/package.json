@@ -1,9 +1,18 @@
 {
-  "name": "@osiris/protocol",
+  "name": "@richardblaha/protocol",
   "version": "0.1.0",
-  "private": true,
-  "description": "The Desktop ⇄ Server wire contract for Osiris: session descriptors, the handover/fetch protocol and SSE events, as zod schemas + inferred types.",
+  "private": false,
+  "description": "The Desktop \u21c4 Server wire contract for Osiris: session descriptors, the handover/fetch protocol and SSE events, as zod schemas + inferred types.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardblaha/osiris.git",
+    "directory": "packages/protocol"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

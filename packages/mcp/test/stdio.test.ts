@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { McpServerConfig } from '@osiris/shared-core';
+import type { McpServerConfig } from '@richardblaha/shared-core';
 import { McpClient } from '../src/client.js';
 import { McpRegistry } from '../src/registry.js';
 import { StdioTransport } from '../src/transport.js';

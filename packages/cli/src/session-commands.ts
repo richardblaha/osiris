@@ -1,4 +1,4 @@
-import type { SessionClient } from '@osiris/protocol';
+import type { SessionClient } from '@richardblaha/protocol';
 import type { CliIo } from './run.js';
 
 /**

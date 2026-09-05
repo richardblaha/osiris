@@ -25,10 +25,10 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@osiris/shared-core": "workspace:*"
+    "@richardblaha/shared-core": "workspace:*"
   },
   "devDependencies": {
-    "@osiris/agent-core": "workspace:*",
+    "@richardblaha/agent-core": "workspace:*",
     "@osiris/tsconfig": "workspace:*",
     "@types/node": "^22.7.5",
     "eslint": "^9.12.0",

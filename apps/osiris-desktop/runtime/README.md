@@ -22,7 +22,7 @@ matches (warns + skips). Re-roll the hunk after an upstream bump.
 ## What it does
 
 `activateOsirisRuntime({ app })` calls `bootstrapOsirisRuntime()` from
-`@osiris/desktop-host`: starts `@osiris/telemetry` and the local stack
+`@osiris/desktop-host`: starts `@richardblaha/telemetry` and the local stack
 (`@osiris/orchestrator`: Ollama, OTLP collector, dashboard, sync worker), then
 publishes `OTEL_EXPORTER_OTLP_ENDPOINT` / `OSIRIS_OLLAMA_URL` / `OSIRIS_LOCATION`
 into the environment the extension host inherits. It disposes the stack on

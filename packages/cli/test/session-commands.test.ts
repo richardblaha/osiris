@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import type { SessionClient } from '@osiris/protocol';
+import type { SessionClient } from '@richardblaha/protocol';
 import { sessionResume, sessionRm, sessionSuspend } from '../src/session-commands.js';
 import type { CliIo } from '../src/run.js';
 

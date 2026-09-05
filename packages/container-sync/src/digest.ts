@@ -1,7 +1,7 @@
 import { createHash, type Hash } from 'node:crypto';
 import { PassThrough } from 'node:stream';
 
-/** `sha256:<hex>` of a buffer or string — the `ContentDigest` shape from `@osiris/protocol`. */
+/** `sha256:<hex>` of a buffer or string — the `ContentDigest` shape from `@richardblaha/protocol`. */
 export function sha256Digest(data: Buffer | string): string {
   return `sha256:${createHash('sha256').update(data).digest('hex')}`;
 }

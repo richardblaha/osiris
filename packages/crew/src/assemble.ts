@@ -1,16 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { OsirisPaths } from '@osiris/dot-osiris';
-import type { ProviderConfig } from '@osiris/protocol';
-import type { Tool } from '@osiris/agent-core';
-import { createLogger } from '@osiris/shared-core';
+import type { OsirisPaths } from '@richardblaha/dot-osiris';
+import type { ProviderConfig } from '@richardblaha/protocol';
+import type { Tool } from '@richardblaha/agent-core';
+import { createLogger } from '@richardblaha/shared-core';
 import {
   McpPool,
   loadMcpConfig,
   mcpToolNamesFor,
   mcpToolsForCrew,
   type McpServerSpec,
-} from '@osiris/mcp';
+} from '@richardblaha/mcp';
 import { loadCrewConfig } from './crew-config.js';
 import { loadAgentRegistry, type AgentRegistry } from './registry.js';
 import { Crew } from './crew.js';
@@ -33,7 +33,7 @@ export interface LoadCrewOptions {
   noProjectContext?: boolean;
   /** Extra tools to merge into the toolbox (e.g. from `mcpToolsForCrew(pool)`). */
   extraTools?: Tool[];
-  /** Expand agent `tools:` selectors like `mcp` / `mcp:<server>` (see `@osiris/mcp`). */
+  /** Expand agent `tools:` selectors like `mcp` / `mcp:<server>` (see `@richardblaha/mcp`). */
   expandToolNames?: (agentTools: string[]) => string[];
 }
 

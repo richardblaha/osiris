@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import type { LmChatRequest, LmMessage, LmModelBridge, LmToolSpec } from './bridge.js';
 
 const log = createLogger('lm-proxy');
@@ -54,7 +54,7 @@ const CHUNK = (delta: unknown, finish: string | null = null): unknown => ({
 
 /**
  * An OpenAI-compatible request handler backed by an editor LM bridge. Mount it on
- * a plain `node:http` server; `@osiris/agent-core`'s `OpenAiCompatibleAdapter`
+ * a plain `node:http` server; `@richardblaha/agent-core`'s `OpenAiCompatibleAdapter`
  * (pointed at `<origin>/v1`) talks to it unchanged.
  *
  * Routes: `GET /v1/models`, `POST /v1/chat/completions` (stream + non-stream).

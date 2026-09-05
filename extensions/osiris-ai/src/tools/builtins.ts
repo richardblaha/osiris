@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { Tool } from '@osiris/agent-core';
+import type { Tool } from '@richardblaha/agent-core';
 
 /** A small set of always-available workspace tools for the agent. */
 export function builtinTools(): Tool[] {

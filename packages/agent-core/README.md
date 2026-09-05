@@ -1,4 +1,4 @@
-# @osiris/agent-core
+# @richardblaha/agent-core
 
 The provider-agnostic agent loop plus the portable snapshot that lets a running
 session be **frozen and resumed** on another machine.
@@ -11,7 +11,7 @@ session be **frozen and resumed** on another machine.
 | `session.ts`      | `AgentSession` — owns the snapshot, records turns, tracks tasks, `persist()` for handover |
 
 ```ts
-import { AgentOrchestrator, AnthropicAdapter, AgentSession, JsonSnapshotStore } from '@osiris/agent-core';
+import { AgentOrchestrator, AnthropicAdapter, AgentSession, JsonSnapshotStore } from '@richardblaha/agent-core';
 
 const store = new JsonSnapshotStore('/workspace/.osiris/agent-state.json');
 const session =

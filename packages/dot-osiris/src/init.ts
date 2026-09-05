@@ -1,7 +1,7 @@
 import { cp, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
 import type { Dirent } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { OSIRIS_SUBDIRS, OsirisPaths } from './layout.js';
 import { templateRoot } from './resolve.js';
 import { ensureGitignore } from './gitignore.js';

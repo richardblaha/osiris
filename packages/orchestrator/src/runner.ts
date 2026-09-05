@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import Docker from 'dockerode';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { topoSort } from './topo.js';
 import type { HealthCheck, ServiceSpec, StackSpec } from './stack.js';
 

@@ -1,9 +1,18 @@
 {
-  "name": "@osiris/dot-osiris",
+  "name": "@richardblaha/dot-osiris",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "The .osiris/ workspace layout for Osiris: path resolver, the bundled system template (fallback + init skeleton) and .gitignore management.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardblaha/osiris.git",
+    "directory": "packages/dot-osiris"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -26,7 +35,7 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@osiris/shared-core": "workspace:*"
+    "@richardblaha/shared-core": "workspace:*"
   },
   "devDependencies": {
     "@osiris/tsconfig": "workspace:*",

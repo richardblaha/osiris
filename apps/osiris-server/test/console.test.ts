@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { ConsoleClient, type CrewEvent, type CrewRunRequest } from '@osiris/protocol';
+import { ConsoleClient, type CrewEvent, type CrewRunRequest } from '@richardblaha/protocol';
 import { buildServer } from '../src/app.js';
 import type { BacklogApi, ConsoleDeps } from '../src/routes/console.js';
 

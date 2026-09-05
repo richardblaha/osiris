@@ -1,9 +1,18 @@
 {
-  "name": "@osiris/shared-core",
+  "name": "@richardblaha/shared-core",
   "version": "0.1.0",
-  "private": true,
+  "private": false,
   "description": "Shared utilities, domain types, telemetry and a typed event bus for Osiris extensions and apps.",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardblaha/osiris.git",
+    "directory": "packages/shared-core"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  },
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

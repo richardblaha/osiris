@@ -1,13 +1,13 @@
 {
-  "name": "osiris-ide",
+  "name": "osiris-ai",
   "version": "0.1.0",
   "private": true,
-  "description": "Osiris IDE — a custom VS Code distribution (desktop + web) with first-party AI tooling.",
+  "description": "Osiris AI agent — CLI, kind-operator, API and shared libraries.",
   "license": "MIT",
-  "homepage": "https://github.com/osiris-ide/osiris",
+  "homepage": "https://github.com/richardblaha/osiris",
   "repository": {
     "type": "git",
-    "url": "https://github.com/osiris-ide/osiris.git"
+    "url": "https://github.com/richardblaha/osiris.git"
   },
   "packageManager": "pnpm@9.12.0",
   "engines": {

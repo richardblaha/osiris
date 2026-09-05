@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { CustomObjectsApi, CoordinationV1Api } from '@kubernetes/client-node';
-import { SESSION_SCHEMA_VERSION, type CreateSessionRequest, type SessionDescriptor, type SessionPhase } from '@osiris/protocol';
+import { SESSION_SCHEMA_VERSION, type CreateSessionRequest, type SessionDescriptor, type SessionPhase } from '@richardblaha/protocol';
 import type { SessionExecutor } from './executors.js';
 
 /** `osiris-kind-operator`'s CRD group/version/plural — see `operator/api/v1alpha1`. */

@@ -1,5 +1,5 @@
-import { type Result, err, ok } from '@osiris/shared-core';
-import { BacklogTask, TaskFrontmatter } from '@osiris/protocol';
+import { type Result, err, ok } from '@richardblaha/shared-core';
+import { BacklogTask, TaskFrontmatter } from '@richardblaha/protocol';
 
 /** `[<type>]-<id>-<slug>.md` — id zero-padded to at least 4 digits. */
 const FILENAME = /^\[([a-z][a-z0-9]*)\]-(\d{1,})-([a-z0-9][a-z0-9-]*)\.md$/;

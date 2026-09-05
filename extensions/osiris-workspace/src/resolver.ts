@@ -1,4 +1,4 @@
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { type Exec, findByLabel, startWebIde, wake } from './docker-cli.js';
 
 const log = createLogger('workspace:resolver');

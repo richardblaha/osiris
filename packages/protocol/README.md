@@ -1,4 +1,4 @@
-# @osiris/protocol
+# @richardblaha/protocol
 
 The single source of truth for the **Desktop ⇄ Server** wire contract. Every
 schema is a [zod](https://zod.dev) object; the matching TypeScript type is
@@ -12,7 +12,7 @@ schema is a [zod](https://zod.dev) object; the matching TypeScript type is
 | `routes.ts`  | `routes.*` URL builders, `API_BASE`, protocol `headers`                                                             |
 
 ```ts
-import { SessionDescriptor, routes, headers } from '@osiris/protocol';
+import { SessionDescriptor, routes, headers } from '@richardblaha/protocol';
 
 const res = await fetch(base + routes.handoverPrepare(id), {
   method: 'POST',

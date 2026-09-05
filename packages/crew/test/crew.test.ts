@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { EchoProviderAdapter } from '@osiris/agent-core';
-import { CrewConfig, type AgentDefinition } from '@osiris/protocol';
+import { EchoProviderAdapter } from '@richardblaha/agent-core';
+import { CrewConfig, type AgentDefinition } from '@richardblaha/protocol';
 import { Crew } from '../src/crew.js';
 import { AgentRegistry } from '../src/registry.js';
 import { memorySearchTool, type MemoryBridge } from '../src/tools.js';

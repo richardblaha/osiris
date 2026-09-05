@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 
 const log = createLogger('workspace:console-view');
 

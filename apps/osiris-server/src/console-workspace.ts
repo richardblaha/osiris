@@ -4,7 +4,7 @@ import {
   osirisPaths,
   resolveOsirisFile,
   type OsirisPaths,
-} from '@osiris/dot-osiris';
+} from '@richardblaha/dot-osiris';
 import { BacklogRepo } from '@osiris/backlog';
 import {
   buildEmbedding,
@@ -21,8 +21,8 @@ import type {
   CrewRunRequest,
   CrewRunResult,
   MemorySearchRequest,
-} from '@osiris/protocol';
-import { createLogger } from '@osiris/shared-core';
+} from '@richardblaha/protocol';
+import { createLogger } from '@richardblaha/shared-core';
 import type { ConsoleDeps } from './routes/console.js';
 
 const log = createLogger('server:workspace');

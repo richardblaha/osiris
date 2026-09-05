@@ -1,4 +1,4 @@
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { isResponse, type JsonRpcResponse } from './jsonrpc.js';
 import type { McpTransport } from './transport.js';
 

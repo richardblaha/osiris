@@ -8,7 +8,7 @@ import {
   TASK_CLASS_LABELS,
   DEFAULT_TASK_MODELS,
   type TaskClass,
-} from '@osiris/protocol';
+} from '@richardblaha/protocol';
 
 /** VS Code settings section the wizard reads and writes. */
 export const MODEL_CONFIG_SECTION = 'osiris.models';

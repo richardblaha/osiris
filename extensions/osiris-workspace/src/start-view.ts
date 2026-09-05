@@ -2,7 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import * as vscode from 'vscode';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { renderStartHtml, type StartViewModels } from './start-view-html.js';
 import type { RecentProjectsStore } from './recent-projects.js';
 import { createVscodeLmBridge, hasLanguageModelApi } from './lm-bridge.js';

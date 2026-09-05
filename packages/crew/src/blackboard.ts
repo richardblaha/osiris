@@ -1,4 +1,4 @@
-import type { BlackboardEntry } from '@osiris/protocol';
+import type { BlackboardEntry } from '@richardblaha/protocol';
 
 /**
  * The crew's shared working memory for one run: an append-only log of decisions,

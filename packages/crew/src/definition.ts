@@ -1,5 +1,5 @@
-import { type Result, err, ok } from '@osiris/shared-core';
-import { AgentDefinition } from '@osiris/protocol';
+import { type Result, err, ok } from '@richardblaha/shared-core';
+import { AgentDefinition } from '@richardblaha/protocol';
 import { parseFrontmatter, serializeFrontmatter } from './frontmatter.js';
 
 const FIELD_ORDER = [

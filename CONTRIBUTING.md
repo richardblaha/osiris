@@ -56,7 +56,7 @@ pnpm --filter osiris-<ext> package   # build a .vsix (extensions only)
 ```
 
 `<name>` is the `name` field in that workspace's `package.json`
-(`@osiris/shared-core`, `osiris-ai`, `@osiris/desktop`, …).
+(`@richardblaha/shared-core`, `osiris-ai`, `@osiris/desktop`, …).
 
 ## Branch & PR flow
 

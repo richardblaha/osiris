@@ -1,5 +1,5 @@
 import { watch } from 'node:fs';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import type { WorkspaceServices } from './workspace.js';
 
 const log = createLogger('cli:watch');

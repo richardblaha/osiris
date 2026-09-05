@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { initWorkspace } from '@osiris/dot-osiris';
+import { initWorkspace } from '@richardblaha/dot-osiris';
 import { WorkspaceServices } from './workspace.js';
 import { runDoctor } from './doctor.js';
 import { createSessionClient } from './session-client.js';

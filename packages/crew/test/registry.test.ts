@@ -2,7 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { initWorkspace, osirisPaths } from '@osiris/dot-osiris';
+import { initWorkspace, osirisPaths } from '@richardblaha/dot-osiris';
 import { loadAgentRegistry } from '../src/registry.js';
 import { loadCrewConfig, expandEnv } from '../src/crew-config.js';
 

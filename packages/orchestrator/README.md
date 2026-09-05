@@ -51,7 +51,7 @@ osiris-orchestrator down
 ```
 
 Telemetry from the orchestrator itself flows through `@opentelemetry/api`; start
-`@osiris/telemetry` in the host process to export it.
+`@richardblaha/telemetry` in the host process to export it.
 
 Pure ESM, built with `tsc` to `dist/`. Tests cover the pure logic (`topo`,
 `stack`, `compose`); `runner` needs a live Docker socket and is exercised in the

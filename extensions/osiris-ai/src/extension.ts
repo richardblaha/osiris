@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
-import { createLogger, type McpServerConfig } from '@osiris/shared-core';
+import { createLogger, type McpServerConfig } from '@richardblaha/shared-core';
 import {
   AnthropicAdapter,
   EchoProviderAdapter,
   OllamaAdapter,
   OpenAiCompatibleAdapter,
   type ProviderAdapter,
-} from '@osiris/agent-core';
-import { McpRegistry } from '@osiris/mcp';
+} from '@richardblaha/agent-core';
+import { McpRegistry } from '@richardblaha/mcp';
 import { AgentViewProvider } from './panel/AgentViewProvider.js';
 
 const log = createLogger('ai');

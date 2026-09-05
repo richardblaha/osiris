@@ -1,7 +1,7 @@
 /** The Osiris console panel — a small React app hosted in a WebviewView. */
 import { StrictMode, useCallback, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { ConsoleClient, type BacklogBoard, type CrewEvent } from '@osiris/protocol';
+import { ConsoleClient, type BacklogBoard, type CrewEvent } from '@richardblaha/protocol';
 import './panel.css';
 
 declare global {

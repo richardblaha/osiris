@@ -1,9 +1,9 @@
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import type { McpServerConfig } from '@osiris/shared-core';
-import { McpRegistry } from '@osiris/mcp';
+import type { McpServerConfig } from '@richardblaha/shared-core';
+import { McpRegistry } from '@richardblaha/mcp';
 
-// Low-level MCP client/transport behaviour is covered in @osiris/mcp; this just
+// Low-level MCP client/transport behaviour is covered in @richardblaha/mcp; this just
 // confirms osiris-ai's wiring onto the shared McpRegistry.
 const serverPath = fileURLToPath(new URL('./fixtures/mock-mcp-server.mjs', import.meta.url));
 
@@ -18,7 +18,7 @@ function config(overrides: Partial<McpServerConfig> = {}): McpServerConfig {
   };
 }
 
-describe('McpRegistry (via @osiris/mcp)', () => {
+describe('McpRegistry (via @richardblaha/mcp)', () => {
   it('namespaces tools and exposes them to the orchestrator', async () => {
     const registry = new McpRegistry();
     await registry.load([config()]);

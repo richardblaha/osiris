@@ -9,7 +9,7 @@ import {
   DEFAULT_WEB_IDE_FEATURE,
   ensureDevcontainerConfig,
 } from '@osiris/container-sync/devcontainer-template';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { HASH_LABEL, PORT_LABEL } from './resolver.js';
 
 const execFileAsync = promisify(execFile);

@@ -4,7 +4,7 @@ import {
   osirisPaths,
   resolveOsirisFile,
   type OsirisPaths,
-} from '@osiris/dot-osiris';
+} from '@richardblaha/dot-osiris';
 import { BacklogRepo } from '@osiris/backlog';
 import {
   buildEmbedding,
@@ -17,7 +17,7 @@ import {
   type SearchResult,
 } from '@osiris/memory';
 import { loadAgentRegistry, loadCrewSession } from '@osiris/crew';
-import type { AgentDefinition, CrewEvent, CrewRunResult } from '@osiris/protocol';
+import type { AgentDefinition, CrewEvent, CrewRunResult } from '@richardblaha/protocol';
 
 /** Everything the CLI needs from one workspace, opened lazily. */
 export class WorkspaceServices {

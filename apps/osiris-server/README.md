@@ -1,7 +1,7 @@
 # @osiris/server
 
 The Osiris Server — Fastify. Implements the **session-handover migration
-protocol** from [`@osiris/protocol`](../../packages/protocol), **smart-HTTP Git
+protocol** from [`@richardblaha/protocol`](../../packages/protocol), **smart-HTTP Git
 hosting**, and **resumable volume transfer**. Workspace provisioning and the
 hosted Web IDE launcher (`WebIdeLauncher`) are still seams.
 

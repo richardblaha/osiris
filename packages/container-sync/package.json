@@ -30,8 +30,8 @@
   },
   "dependencies": {
     "@devcontainers/cli": "^0.80.0",
-    "@osiris/protocol": "workspace:*",
-    "@osiris/shared-core": "workspace:*",
+    "@richardblaha/protocol": "workspace:*",
+    "@richardblaha/shared-core": "workspace:*",
     "execa": "^9.5.0"
   },
   "devDependencies": {

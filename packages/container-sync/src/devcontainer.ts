@@ -1,6 +1,6 @@
 import { execa } from 'execa';
 import type Docker from 'dockerode';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { devcontainerHash } from './hash.js';
 import { DEFAULT_WEB_IDE_FEATURE, ensureDevcontainerConfig } from './devcontainer-template.js';
 

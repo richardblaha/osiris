@@ -1,5 +1,5 @@
 import { basename } from 'node:path';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { classifyOpenTarget, planReopen } from './folder-routing.js';
 
 const log = createLogger('desktop-host:guard');

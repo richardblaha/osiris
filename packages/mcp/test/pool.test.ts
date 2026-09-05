@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentOrchestrator, EchoProviderAdapter } from '@osiris/agent-core';
+import { AgentOrchestrator, EchoProviderAdapter } from '@richardblaha/agent-core';
 import { McpClient, flattenMcpResult } from '../src/client.js';
 import { McpPool } from '../src/pool.js';
 import { parseMcpConfig } from '../src/config.js';

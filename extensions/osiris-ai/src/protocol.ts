@@ -1,5 +1,5 @@
 /** Message protocol between the extension host and the Agent panel webview. */
-import type { McpRegistryStatus } from '@osiris/mcp';
+import type { McpRegistryStatus } from '@richardblaha/mcp';
 
 export type PanelInbound =
   | { type: 'ready' }

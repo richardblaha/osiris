@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { TASK_CLASSES } from '@osiris/protocol';
+import { TASK_CLASSES } from '@richardblaha/protocol';
 import {
   buildExport,
   parseImport,

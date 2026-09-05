@@ -1,9 +1,9 @@
 import { stat } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { osirisPaths, resolveOsirisFile, listOsirisDir } from '@osiris/dot-osiris';
+import { osirisPaths, resolveOsirisFile, listOsirisDir } from '@richardblaha/dot-osiris';
 import { loadAgentRegistry, loadCrewConfig, parseModelSpec } from '@osiris/crew';
-import { parseMcpConfig } from '@osiris/mcp';
+import { parseMcpConfig } from '@richardblaha/mcp';
 import { parseMemoryConfig } from '@osiris/memory';
 import { BacklogRepo } from '@osiris/backlog';
 

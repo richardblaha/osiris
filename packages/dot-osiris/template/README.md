@@ -19,4 +19,4 @@ Config files at the root of `.osiris/`:
 - `mcp.json` — MCP servers, merged with the ones the editor discovers.
 
 Anything missing here falls back to the bundled system template in
-`@osiris/dot-osiris`. Run `osiris init` to materialise the full skeleton.
+`@richardblaha/dot-osiris`. Run `osiris init` to materialise the full skeleton.

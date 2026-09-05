@@ -2,7 +2,7 @@
 
 Container mobility for the **session handover** protocol: DevContainer
 lifecycle, freeze/thaw of a running session, image commit/push and workspace-
-volume transfer. Wire types come from [`@osiris/protocol`](../protocol).
+volume transfer. Wire types come from [`@richardblaha/protocol`](../protocol).
 
 | Module           | Exports                                                                             |
 | ---------------- | --------------------------------------------------------------------------------- |
@@ -23,7 +23,7 @@ try {
     containerId,
     workspaceMountPath: '/workspaces',
     imageRef: sessionImageRef({ registry, workspaceId, sessionId }),
-    snapshot: () => session.persist(),          // @osiris/agent-core
+    snapshot: () => session.persist(),          // @richardblaha/agent-core
   });
   // stream frozen.volumeTar to the server's resumable upload, hashing as you go
 } catch (err) {

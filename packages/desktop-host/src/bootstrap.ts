@@ -1,5 +1,5 @@
-import { createLogger } from '@osiris/shared-core';
-import { startTelemetry, type TelemetryHandle } from '@osiris/telemetry';
+import { createLogger } from '@richardblaha/shared-core';
+import { startTelemetry, type TelemetryHandle } from '@richardblaha/telemetry';
 import {
   Orchestrator,
   defaultStack,

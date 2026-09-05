@@ -1,5 +1,5 @@
-import type { McpServerConfig } from '@osiris/shared-core';
-import type { Tool } from '@osiris/agent-core';
+import type { McpServerConfig } from '@richardblaha/shared-core';
+import type { Tool } from '@richardblaha/agent-core';
 import type { McpServerSpec } from './config.js';
 import { McpPool, type McpServerStatus } from './pool.js';
 import { mcpToolsForCrew } from './crew-tools.js';
@@ -7,7 +7,7 @@ import type { McpTransport } from './transport.js';
 
 export type McpRegistryStatus = McpServerStatus;
 
-/** Normalise the shared-core `McpServerConfig` shape to an `@osiris/mcp` spec. */
+/** Normalise the shared-core `McpServerConfig` shape to an `@richardblaha/mcp` spec. */
 export function toServerSpec(config: McpServerConfig): McpServerSpec {
   return {
     id: config.id,

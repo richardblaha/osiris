@@ -40,7 +40,7 @@ Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
 - **Extensions** `osiris-dexpi` (DEXPI / P&ID) and `osiris-step` (ISO 10303-21)
   have been dropped from the monorepo — each will live in its own repository.
   Their `Dexpi*` / `Step*` domain types and `osiris:dexpi:*` / `osiris:step:*`
-  event channels are gone from `@osiris/shared-core`. The in-box extension set is
+  event channels are gone from `@richardblaha/shared-core`. The in-box extension set is
   now `osiris-ai` and `osiris-workspace`.
 
 ## [0.1.0-alpha.6] - 2026-09-03
@@ -127,7 +127,7 @@ bundle and the packed extensions from a single `v*` tag.
 
 - `@osiris/crew` — multi-agent orchestrator with task-class model routing and an
   MCP tool bridge.
-- `@osiris/mcp` — Model Context Protocol client shared by the crew and `osiris-ai`.
+- `@richardblaha/mcp` — Model Context Protocol client shared by the crew and `osiris-ai`.
 - `@osiris/memory` — ChromaDB-backed knowledge base with `osiris memory watch`.
 - `@osiris/backlog` — Git orphan-branch backlog with push/pull and `osiris backlog lint`.
 - `@osiris/lm-proxy` — editor LM API bridged to the crew.

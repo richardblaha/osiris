@@ -41,7 +41,7 @@ importers:
 
   apps/osiris-console:
     dependencies:
-      '@osiris/protocol':
+      '@richardblaha/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
       react:
@@ -109,19 +109,19 @@ importers:
       '@osiris/crew':
         specifier: workspace:*
         version: link:../../packages/crew
-      '@osiris/dot-osiris':
-        specifier: workspace:*
-        version: link:../../packages/dot-osiris
       '@osiris/memory':
         specifier: workspace:*
         version: link:../../packages/memory
-      '@osiris/protocol':
+      '@richardblaha/dot-osiris':
+        specifier: workspace:*
+        version: link:../../packages/dot-osiris
+      '@richardblaha/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../../packages/shared-core
-      '@osiris/telemetry':
+      '@richardblaha/telemetry':
         specifier: workspace:*
         version: link:../../packages/telemetry
       fastify:
@@ -165,13 +165,13 @@ importers:
 
   extensions/osiris-ai:
     dependencies:
-      '@osiris/agent-core':
+      '@richardblaha/agent-core':
         specifier: workspace:^
         version: link:../../packages/agent-core
-      '@osiris/mcp':
+      '@richardblaha/mcp':
         specifier: workspace:*
         version: link:../../packages/mcp
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../../packages/shared-core
     devDependencies:
@@ -223,10 +223,10 @@ importers:
       '@osiris/lm-proxy':
         specifier: workspace:*
         version: link:../../packages/lm-proxy
-      '@osiris/protocol':
+      '@richardblaha/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../../packages/shared-core
     devDependencies:
@@ -275,7 +275,7 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.123.0
         version: 0.123.0(zod@4.5.4)
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
     devDependencies:
@@ -300,13 +300,13 @@ importers:
 
   packages/backlog:
     dependencies:
-      '@osiris/dot-osiris':
+      '@richardblaha/dot-osiris':
         specifier: workspace:*
         version: link:../dot-osiris
-      '@osiris/protocol':
+      '@richardblaha/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
       execa:
@@ -374,22 +374,22 @@ importers:
       '@osiris/crew':
         specifier: workspace:*
         version: link:../crew
-      '@osiris/dot-osiris':
-        specifier: workspace:*
-        version: link:../dot-osiris
-      '@osiris/mcp':
-        specifier: workspace:*
-        version: link:../mcp
       '@osiris/memory':
         specifier: workspace:*
         version: link:../memory
-      '@osiris/protocol':
-        specifier: workspace:*
-        version: link:../protocol
       '@osiris/server':
         specifier: workspace:*
         version: link:../../apps/osiris-server
-      '@osiris/shared-core':
+      '@richardblaha/dot-osiris':
+        specifier: workspace:*
+        version: link:../dot-osiris
+      '@richardblaha/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@richardblaha/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
     devDependencies:
@@ -417,10 +417,10 @@ importers:
       '@devcontainers/cli':
         specifier: ^0.80.0
         version: 0.80.3
-      '@osiris/protocol':
+      '@richardblaha/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
       execa:
@@ -451,22 +451,22 @@ importers:
 
   packages/crew:
     dependencies:
-      '@osiris/agent-core':
-        specifier: workspace:*
-        version: link:../agent-core
-      '@osiris/dot-osiris':
-        specifier: workspace:*
-        version: link:../dot-osiris
-      '@osiris/mcp':
-        specifier: workspace:*
-        version: link:../mcp
       '@osiris/memory':
         specifier: workspace:*
         version: link:../memory
-      '@osiris/protocol':
+      '@richardblaha/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@richardblaha/dot-osiris':
+        specifier: workspace:*
+        version: link:../dot-osiris
+      '@richardblaha/mcp':
+        specifier: workspace:*
+        version: link:../mcp
+      '@richardblaha/protocol':
         specifier: workspace:*
         version: link:../protocol
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
     devDependencies:
@@ -491,16 +491,16 @@ importers:
 
   packages/desktop-host:
     dependencies:
-      '@osiris/agent-core':
-        specifier: workspace:*
-        version: link:../agent-core
       '@osiris/orchestrator':
         specifier: workspace:*
         version: link:../orchestrator
-      '@osiris/shared-core':
+      '@richardblaha/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
-      '@osiris/telemetry':
+      '@richardblaha/telemetry':
         specifier: workspace:*
         version: link:../telemetry
     devDependencies:
@@ -525,7 +525,7 @@ importers:
 
   packages/dot-osiris:
     dependencies:
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
     devDependencies:
@@ -550,16 +550,16 @@ importers:
 
   packages/lm-proxy:
     dependencies:
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
     devDependencies:
-      '@osiris/agent-core':
-        specifier: workspace:*
-        version: link:../agent-core
       '@osiris/tsconfig':
         specifier: workspace:*
         version: link:../../toolchain/tsconfig
+      '@richardblaha/agent-core':
+        specifier: workspace:*
+        version: link:../agent-core
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -578,13 +578,13 @@ importers:
 
   packages/mcp:
     dependencies:
-      '@osiris/agent-core':
+      '@richardblaha/agent-core':
         specifier: workspace:*
         version: link:../agent-core
-      '@osiris/dot-osiris':
+      '@richardblaha/dot-osiris':
         specifier: workspace:*
         version: link:../dot-osiris
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
     devDependencies:
@@ -609,7 +609,7 @@ importers:
 
   packages/memory:
     dependencies:
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
       chromadb:
@@ -637,7 +637,7 @@ importers:
 
   packages/orchestrator:
     dependencies:
-      '@osiris/shared-core':
+      '@richardblaha/shared-core':
         specifier: workspace:*
         version: link:../shared-core
       dockerode:

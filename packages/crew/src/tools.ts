@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { isAbsolute, join, normalize, relative } from 'node:path';
-import type { Tool } from '@osiris/agent-core';
-import type { BacklogBoard, BacklogTask } from '@osiris/protocol';
+import type { Tool } from '@richardblaha/agent-core';
+import type { BacklogBoard, BacklogTask } from '@richardblaha/protocol';
 
 export interface MemoryBridge {
   search(

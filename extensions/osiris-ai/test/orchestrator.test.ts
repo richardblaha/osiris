@@ -4,7 +4,7 @@ import {
   EchoProviderAdapter,
   type ProviderAdapter,
   type Tool,
-} from '@osiris/agent-core';
+} from '@richardblaha/agent-core';
 
 const clockTool: Tool = {
   name: 'clock.now',

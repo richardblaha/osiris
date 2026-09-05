@@ -1,8 +1,8 @@
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createLogger } from '@osiris/shared-core';
-import { osirisPaths } from '@osiris/dot-osiris';
-import type { BacklogBoard, BacklogTask, CreateTaskRequest } from '@osiris/protocol';
+import { createLogger } from '@richardblaha/shared-core';
+import { osirisPaths } from '@richardblaha/dot-osiris';
+import type { BacklogBoard, BacklogTask, CreateTaskRequest } from '@richardblaha/protocol';
 import { ExecaGitRunner, type GitRunner } from './git-runner.js';
 import { BACKLOG_BRANCH, ensureBacklogWorktree } from './orphan.js';
 import { discoverStates } from './states.js';

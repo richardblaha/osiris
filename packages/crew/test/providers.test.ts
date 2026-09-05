@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CrewConfig } from '@osiris/protocol';
+import { CrewConfig } from '@richardblaha/protocol';
 import { parseModelSpec, resolveProvider } from '../src/providers.js';
 
 const config = CrewConfig.parse({

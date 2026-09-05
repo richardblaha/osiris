@@ -6,7 +6,7 @@
 
 **A custom, open-source developer platform built from VS Code (Code - OSS / VSCodium core) — for desktop and the browser.**
 
-[![CI](https://github.com/osiris-ide/osiris/actions/workflows/ci.yml/badge.svg)](https://github.com/osiris-ide/osiris/actions/workflows/ci.yml)
+[![CI](https://github.com/richardblaha/osiris/actions/workflows/ci.yml/badge.svg)](https://github.com/richardblaha/osiris/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
 
 </div>
@@ -82,7 +82,7 @@ pnpm typecheck    # tsc -b across the workspace
 
 Osiris projects are driven from a `.osiris/` folder (the same folder VS Code reads
 as `.vscode`). Anything missing there falls back to the bundled system template in
-`@osiris/dot-osiris`.
+`@richardblaha/dot-osiris`.
 
 ```text
 .osiris/
@@ -123,7 +123,7 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
 - **MCP** servers are taken from `.osiris/mcp.json` (both the `servers` and the
   VS Code `mcpServers` key; `${workspaceFolder}` / `${env:VAR}` are expanded).
   An agent opts in with an `mcp` (all servers) or `mcp:<id>` selector in its
-  `tools:` list; `@osiris/mcp` starts them (stdio or Streamable HTTP), exposes
+  `tools:` list; `@richardblaha/mcp` starts them (stdio or Streamable HTTP), exposes
   each tool as `<id>__<tool>`, and a server that won't start is skipped, not
   fatal. `osiris crew run --mcp` / `OSIRIS_MCP=1` forces the pool even when no
   agent asks. Osiris manages no credentials of its own.
@@ -135,7 +135,7 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
 In the editor, the **Osiris** sidebar view (`osiris-workspace`) shows the Kanban
 backlog and a crew runner, and the **Osiris: Run Crew on a Task…** /
 **Osiris: Open Console** commands drive the same server — all over
-`@osiris/protocol`'s typed `ConsoleClient`.
+`@richardblaha/protocol`'s typed `ConsoleClient`.
 
 See [docs/crew-architecture.md](docs/crew-architecture.md) for the full design.
 

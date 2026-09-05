@@ -1,6 +1,6 @@
-import { createLogger } from '@osiris/shared-core';
-import { type OsirisPaths, resolveOsirisFile } from '@osiris/dot-osiris';
-import { CrewConfig } from '@osiris/protocol';
+import { createLogger } from '@richardblaha/shared-core';
+import { type OsirisPaths, resolveOsirisFile } from '@richardblaha/dot-osiris';
+import { CrewConfig } from '@richardblaha/protocol';
 
 const log = createLogger('crew:config');
 

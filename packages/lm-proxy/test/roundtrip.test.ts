@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AgentOrchestrator, OpenAiCompatibleAdapter, type Tool } from '@osiris/agent-core';
+import { AgentOrchestrator, OpenAiCompatibleAdapter, type Tool } from '@richardblaha/agent-core';
 import {
   startLmProxy,
   type LmChatRequest,

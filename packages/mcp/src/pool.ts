@@ -1,4 +1,4 @@
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import { McpClient, type McpCallResult, type McpToolInfo } from './client.js';
 import type { McpServerSpec } from './config.js';
 import { HttpTransport, StdioTransport, type McpTransport } from './transport.js';

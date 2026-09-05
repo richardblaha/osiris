@@ -1,6 +1,6 @@
 import { cp, mkdir, rm, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { createLogger } from '@osiris/shared-core';
+import { createLogger } from '@richardblaha/shared-core';
 import type { GitRunner } from './git-runner.js';
 import { DEFAULT_STATES } from './states.js';
 

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
-import { ConsoleClient, type CrewEvent } from '@osiris/protocol';
-import { createLogger } from '@osiris/shared-core';
+import { ConsoleClient, type CrewEvent } from '@richardblaha/protocol';
+import { createLogger } from '@richardblaha/shared-core';
 
 const log = createLogger('workspace:crew');
 
