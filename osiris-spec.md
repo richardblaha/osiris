@@ -172,7 +172,7 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
 | MCP | lokální detekce + registry install | `packages/mcp` existuje, scope neověřen | Mimo rozsah 2026-09-04 úkolu |
 | TUI | Bubble Tea | Neexistuje | `osiris` je Node/TS CLI bez TUI |
 | `osiris-api` | 1:1 parita s CLI | `apps/osiris-server` (Fastify) — session lifecycle (create/get/suspend/resume/delete/activity) 1:1 s novými CLI příkazy `osiris session resume/suspend/rm`; ostatní CLI příkazy (crew/backlog/memory/init/doctor) běží lokálně v CLI, ne přes API | Parita je zatím jen pro session-lifecycle podmnožinu |
-| `osiris-ide` a extensions | samostatné repo | Monorepo (`extensions/osiris-workspace`, `apps/osiris-desktop`, `apps/osiris-web`), ne samostatný `osiris-ide` repo | Vědomá odchylka, monorepo místo dvou repozitářů |
+| `osiris-ide` a extensions | samostatné repo | Odděleno 2026-09-05 do `github.com/richardblaha/osiris-ide` (`git filter-repo`, historie zachována) | Shodné se spec. `shared-core`/`protocol`/`agent-core`/`mcp`/`dot-osiris`/`telemetry` zůstávají v `osiris-ai` (sdílené oběma repy) a publikují se do GitHub Packages pod scope `@richardblaha` (ne `@osiris` — GitHub Packages vyžaduje shodu scope s vlastníkem repa); `osiris-ide` je konzumuje jako běžné semver závislosti, ne `workspace:*`. `toolchain/tsconfig`+`toolchain/eslint-config` jsou zduplikované (dev tooling, ne runtime knihovna). Zbývá: publikovat první verzi balíčků (`packages-v*` tag) a nastavit `PACKAGES_READ_TOKEN` secret v `osiris-ide` (cross-repo GitHub Packages read vyžaduje PAT, ne automatický `GITHUB_TOKEN`) |
 
 **Poznámka k historii (2026-09-02 → 2026-09-04):** mezi 2026-09-02 a
 2026-09-04 platila v repu odlišná, čistě TS/Docker-based architektura session
