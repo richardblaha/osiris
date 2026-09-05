@@ -41,12 +41,3 @@ jobs:
 
       - name: Test
         run: pnpm test
-
-      - name: Package extensions (.vsix)
-        run: pnpm --filter "./extensions/*" package
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: osiris-extensions-vsix
-          path: extensions/*/*.vsix
-          if-no-files-found: error

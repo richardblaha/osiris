@@ -8,18 +8,10 @@
     { "path": "packages/memory" },
     { "path": "packages/crew" },
     { "path": "packages/backlog" },
-    { "path": "packages/lm-proxy" },
     { "path": "packages/mcp" },
     { "path": "packages/cli" },
     { "path": "packages/telemetry" },
-    { "path": "packages/orchestrator" },
     { "path": "packages/agent-core" },
-    { "path": "packages/container-sync" },
-    { "path": "packages/desktop-host" },
-    { "path": "apps/osiris-server" },
-    { "path": "packages/branding" },
-    { "path": "packages/shell-theme" },
-    { "path": "extensions/osiris-ai" },
-    { "path": "extensions/osiris-workspace" }
+    { "path": "apps/osiris-server" }
   ]
 }

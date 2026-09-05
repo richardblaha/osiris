@@ -1,8 +1,0 @@
-**/node_modules
-**/.build
-**/dist
-**/dist_electron
-**/.turbo
-**/coverage
-**/*.vsix
-.git

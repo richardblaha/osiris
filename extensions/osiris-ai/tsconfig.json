@@ -1,9 +1,0 @@
-{
-  "extends": "@osiris/tsconfig/extension.json",
-  "compilerOptions": {
-    "jsx": "react-jsx",
-    "types": ["node", "vscode"]
-  },
-  "include": ["src/**/*", "webview/**/*", "test/**/*"],
-  "exclude": ["dist", "node_modules"]
-}

@@ -1,10 +1,8 @@
 <div align="center">
 
-<img src="packages/branding/assets/osiris.svg" width="120" alt="Osiris IDE" />
+# Osiris AI
 
-# Osiris IDE
-
-**A custom, open-source developer platform built from VS Code (Code - OSS / VSCodium core) — for desktop and the browser.**
+**A CLI-driven AI agent platform — CLI, Kubernetes operator, API and a multi-agent crew engine.**
 
 [![CI](https://github.com/richardblaha/osiris/actions/workflows/ci.yml/badge.svg)](https://github.com/richardblaha/osiris/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-informational.svg)](LICENSE)
@@ -15,45 +13,43 @@
 
 ## What is this?
 
-Osiris IDE is a **downstream distribution** of [Code - OSS](https://github.com/microsoft/vscode)
-(assembled through the [VSCodium](https://github.com/VSCodium/vscodium) pipeline) with:
+Osiris is an AI agent distributed as a CLI tool (`osiris`) that runs locally but
+delegates the real work — dev environments, sessions, layered memory — to a local
+Kubernetes cluster (`kind`), managed by `osiris-kind-operator`. It ships with:
 
-- **Osiris branding** — product name, icons, theme defaults (`Osiris Dark` / `Osiris Light`).
-- **First-party extensions** shipped in the box:
-  - `osiris-ai` — AI agent orchestration with **MCP (Model Context Protocol)** support and a custom agent panel.
-  - `osiris-workspace` — DevContainer enforcement and session handover.
-- Two delivery targets:
-  - `apps/osiris-desktop` — Electron packages for Linux, macOS and Windows.
-  - `apps/osiris-web` — a browser-served runtime following the OpenVSCode Server pattern.
+- The **`osiris` CLI** — multi-agent crew orchestration, a file-based Git backlog,
+  a ChromaDB-backed knowledge base, and MCP server support.
+- **`osiris-kind-operator`** — a Go/kubebuilder operator that reconciles
+  `OsirisProject`/`OsirisSession` CRDs (scale-to-0 + PVC suspend/resume).
+- **`osiris-server`** — a REST API (git hosting, sessions, crew/backlog/memory)
+  behind the lightweight `osiris-console` SPA (Kanban board, crew runs, KB search).
 
-> The upstream VS Code source is **never vendored** into this repo. The desktop/web
-> builds clone a pinned upstream tag at build time and apply Osiris overlays + patches.
+This is the agent/platform half of Osiris. The IDE half — a custom VS Code
+distribution (desktop + web) and its `osiris-ai`/`osiris-workspace` extensions —
+lives in [`osiris-ide`](https://github.com/richardblaha/osiris-ide). Six packages
+(`shared-core`, `protocol`, `agent-core`, `mcp`, `dot-osiris`, `telemetry`) are used
+by both repos; they live here and are published to GitHub Packages under the
+`@richardblaha` scope for `osiris-ide` to consume (see `.github/workflows/publish-packages.yml`).
 
 ## Repository layout
 
 ```text
 osiris/
 ├── apps/
-│   ├── osiris-desktop/   # Electron wrapper, OS packaging, branding entrypoint
-│   ├── osiris-web/       # Web runtime / standalone server
 │   ├── osiris-server/    # REST API: git hosting, sessions, crew / backlog / memory
 │   └── osiris-console/   # Lightweight SPA — Kanban board, crew runner, KB search
 ├── packages/
-│   ├── branding/         # Icons, themes, product.json overlay, asset metadata
-│   ├── shell-theme/      # Theme provider + OS / host theme detection
 │   ├── shared-core/      # Shared utilities, types, telemetry & event bus
 │   ├── protocol/         # zod wire contracts (sessions, crew, backlog, memory)
 │   ├── agent-core/       # Provider-agnostic single-agent loop + snapshot
 │   ├── dot-osiris/       # The .osiris/ layout resolver + bundled system template
 │   ├── memory/           # Knowledge base: chunking + incremental ChromaDB index
 │   ├── mcp/              # MCP client (stdio + HTTP) + crew tool adapter
-│   ├── lm-proxy/         # OpenAI-compatible shim over the editor Language Model API
 │   ├── crew/             # Multi-agent orchestration (coordinator + delegation)
 │   ├── backlog/          # File-based PM on a Git orphan branch
+│   ├── telemetry/        # OpenTelemetry setup shared by server + desktop-host (in osiris-ide)
 │   └── cli/              # The `osiris` command + REPL
-├── extensions/
-│   ├── osiris-ai/        # AI agent orchestration + MCP + agent panel
-│   └── osiris-workspace/ # DevContainer enforcement + session handover
+├── operator/              # osiris-kind-operator (Go/kubebuilder): CRDs + controllers
 └── toolchain/
     ├── eslint-config/    # Shared flat ESLint config
     └── tsconfig/         # Shared TypeScript base configs
@@ -63,8 +59,7 @@ osiris/
 
 - **Node.js 22 LTS** (`nvm use` reads `.nvmrc`)
 - **pnpm 9** (`corepack enable`)
-- For desktop builds: the platform toolchain VS Code itself requires
-  (`git`, Python 3, a C/C++ compiler, and on Linux the `libx11`/`libsecret` dev packages).
+- **Go 1.26** + `kind`/`kubectl`/`helm` for `operator/` work
 
 ## Quickstart
 
@@ -72,8 +67,8 @@ osiris/
 corepack enable
 pnpm install
 
-pnpm build        # build every package + extension (Turborepo)
-pnpm test         # vitest across packages + extension logic
+pnpm build        # build every package (Turborepo)
+pnpm test         # vitest across packages
 pnpm lint         # eslint (flat config)
 pnpm typecheck    # tsc -b across the workspace
 ```
@@ -81,8 +76,8 @@ pnpm typecheck    # tsc -b across the workspace
 ## Multi-agent crew, knowledge base & Git backlog
 
 Osiris projects are driven from a `.osiris/` folder (the same folder VS Code reads
-as `.vscode`). Anything missing there falls back to the bundled system template in
-`@richardblaha/dot-osiris`.
+as `.vscode`, in the `osiris-ide` editor). Anything missing there falls back to the
+bundled system template in `@richardblaha/dot-osiris`.
 
 ```text
 .osiris/
@@ -116,10 +111,10 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
 ```
 
 - **Models** come from the VS Code Language Model API (`model: vscode-lm/…` in an
-  agent file). In the editor the crew calls it directly; a container-side crew
-  reaches it through the **LM proxy** (`@osiris/lm-proxy` — an OpenAI-compatible
-  shim over `vscode.lm`, published as `OSIRIS_LM_PROXY_URL`). CLI/CI runs with no
-  editor use a headless fallback (`OSIRIS_CREW_PROVIDER`, `OSIRIS_AI_API_KEY`).
+  agent file) when driven from the `osiris-ide` editor, which reaches this platform
+  through the **LM proxy** (`@richardblaha/lm-proxy`, in `osiris-ide` — an
+  OpenAI-compatible shim over `vscode.lm`, published as `OSIRIS_LM_PROXY_URL`).
+  Headless CLI/CI runs use `OSIRIS_CREW_PROVIDER` / `OSIRIS_AI_API_KEY` instead.
 - **MCP** servers are taken from `.osiris/mcp.json` (both the `servers` and the
   VS Code `mcpServers` key; `${workspaceFolder}` / `${env:VAR}` are expanded).
   An agent opts in with an `mcp` (all servers) or `mcp:<id>` selector in its
@@ -132,63 +127,27 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
 - **The backlog never touches source history** — it lives on the dedicated
   orphan branch `osiris/backlog`, operated through a worktree under `.osiris/temp/`.
 
-In the editor, the **Osiris** sidebar view (`osiris-workspace`) shows the Kanban
-backlog and a crew runner, and the **Osiris: Run Crew on a Task…** /
-**Osiris: Open Console** commands drive the same server — all over
+In the `osiris-ide` editor, the **Osiris** sidebar view (`osiris-workspace`) shows
+the Kanban backlog and a crew runner, and the **Osiris: Run Crew on a Task…** /
+**Osiris: Open Console** commands drive this same server — all over
 `@richardblaha/protocol`'s typed `ConsoleClient`.
 
 See [docs/crew-architecture.md](docs/crew-architecture.md) for the full design.
 
-### Working on an extension
+## `osiris-kind-operator`
 
-```bash
-pnpm --filter osiris-ai build
-pnpm --filter osiris-ai test
-pnpm --filter osiris-ai package     # produces osiris-ai-*.vsix
-```
+`operator/` is a Go/kubebuilder v4 project reconciling `OsirisProject` and
+`OsirisSession` CRDs. Suspend/resume works by scaling a Deployment 0/1 based on a
+`coordination.k8s.io/v1` `Lease` (activity) and `spec.desiredPhase`; the PVC is
+created once and never deleted on suspend. See `operator/OSIRIS-SPEC.md` and
+`.github/workflows/osiris-operator.yml` (envtest + `kind`-backed integration).
 
-Press <kbd>F5</kbd> with one of the committed launch profiles in
-[`.osiris/launch.json`](.osiris/launch.json) to run an extension in an Extension
-Development Host.
-(Osiris reads the workspace config folder as `.osiris/`; `.vscode` is a symlink so
-stock VS Code / Cursor still work.)
+## Publishing the shared packages
 
-### Building the desktop app
-
-```bash
-pnpm --filter @osiris/desktop prepare    # clone pinned VSCodium tag + apply branding/patches
-pnpm --filter @osiris/desktop build
-pnpm --filter @osiris/desktop package    # electron-builder → apps/osiris-desktop/dist_electron
-```
-
-### Building / running the web runtime
-
-```bash
-pnpm --filter @osiris/web prepare
-pnpm --filter @osiris/web build
-node apps/osiris-web/server/index.mjs --port 3000
-# or:
-docker build -t osiris-web apps/osiris-web && docker run -p 3000:3000 osiris-web
-```
-
-## Build matrix
-
-| Target                | Command                                 | CI workflow         | Output                                            |
-| --------------------- | --------------------------------------- | ------------------- | ------------------------------------------------- |
-| Packages / exts       | `pnpm build`                            | `ci.yml`            | `dist/`, `media/`, `*.vsix`                       |
-| Desktop (Lin/Mac/Win) | `pnpm --filter @osiris/desktop package` | `build-desktop.yml` | `Osiris-<os>-<arch>` portable archive             |
-| Web + Docker          | `pnpm --filter @osiris/web build`       | `build-web.yml`     | server bundle + container image                   |
-| Release               | tag `v*`                                | `release.yml`       | draft GitHub Release with every artifact attached |
-
-`release.yml` is the only tag-driven entrypoint: it packs the extensions, calls
-the reusable `build-web.yml` / `build-desktop.yml` (`workflow_call` +
-`workflow_dispatch`), and attaches every `.vsix`, the `vscode-reh-web-*` bundle
-and the desktop archives to the draft release. Tags with a hyphen
-(`v1.2.0-alpha.1`) are marked pre-release; a failed desktop leg never blocks it.
-
-> **Desktop** is a rebrand of the pinned VSCodium prebuilt (identity, icons,
-> `codium` → `osiris`) — portable, unsigned archives, not installers. See
-> [`apps/osiris-desktop/README.md`](apps/osiris-desktop/README.md).
+`shared-core`, `protocol`, `agent-core`, `mcp`, `dot-osiris` and `telemetry` are
+published to GitHub Packages so `osiris-ide` can depend on them. Bump the version(s)
+that changed, then push a tag matching `packages-v*` (or run the
+`Publish Packages` workflow manually) — see `.github/workflows/publish-packages.yml`.
 
 ## Contributing
 
@@ -197,6 +156,4 @@ Security reports: [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE). Osiris IDE is not affiliated with or endorsed by Microsoft.
-"Visual Studio Code" and the VS Code logo are trademarks of Microsoft; Osiris
-ships none of Microsoft's trademarked assets.
+[MIT](LICENSE).

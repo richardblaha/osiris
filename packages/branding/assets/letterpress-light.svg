@@ -1,7 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <!-- Empty-editor watermark for light themes — single-tone Osiris pyramid. -->
-  <g fill="#121212" opacity="0.22">
-    <polygon points="100,30 20,130 100,170"/>
-    <polygon points="100,30 180,130 100,170" opacity="0.72"/>
-  </g>
-</svg>
