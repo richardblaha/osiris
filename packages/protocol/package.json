@@ -1,6 +1,6 @@
 {
   "name": "@richardblaha/protocol",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "The Desktop \u21c4 Server wire contract for Osiris: session descriptors, the handover/fetch protocol and SSE events, as zod schemas + inferred types.",
   "license": "MIT",
@@ -11,7 +11,7 @@
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "access": "public"
   },
   "type": "module",
   "main": "./dist/index.js",

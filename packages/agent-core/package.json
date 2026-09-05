@@ -1,6 +1,6 @@
 {
   "name": "@richardblaha/agent-core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": false,
   "description": "Provider-agnostic agent loop (Anthropic, OpenAI-compatible, Ollama) plus a portable conversation/task snapshot for session handover.",
   "license": "MIT",
@@ -11,7 +11,7 @@
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com",
-    "access": "restricted"
+    "access": "public"
   },
   "type": "module",
   "sideEffects": false,
