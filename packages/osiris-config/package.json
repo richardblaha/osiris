@@ -1,0 +1,48 @@
+{
+  "name": "@richardblaha/osiris-config",
+  "version": "0.2.0",
+  "private": false,
+  "description": "The .osiris/ workspace layout for Osiris: path resolver, the bundled system template (fallback + init skeleton) and .gitignore management.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardblaha/osiris-ai.git",
+    "directory": "packages/osiris-config"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "template"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@richardblaha/osiris-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@richardblaha/osiris-tsconfig": "workspace:*",
+    "@types/node": "^22.7.5",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

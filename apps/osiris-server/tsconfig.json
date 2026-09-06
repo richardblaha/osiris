@@ -1,5 +1,5 @@
 {
-  "extends": "@osiris/tsconfig/node.json",
+  "extends": "@richardblaha/osiris-tsconfig/node.json",
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",

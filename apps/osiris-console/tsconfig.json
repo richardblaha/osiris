@@ -1,5 +1,5 @@
 {
-  "extends": "@osiris/tsconfig/react.json",
+  "extends": "@richardblaha/osiris-tsconfig/react.json",
   "compilerOptions": {
     "types": ["vite/client"],
     "noEmit": true,

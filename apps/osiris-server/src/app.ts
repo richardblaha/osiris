@@ -1,7 +1,7 @@
 import { ApiException } from '@kubernetes/client-node';
 import Fastify, { type FastifyError, type FastifyInstance } from 'fastify';
-import { API_BASE, CreateSessionRequest, type SessionEvent } from '@richardblaha/protocol';
-import { createLogger } from '@richardblaha/shared-core';
+import { API_BASE, CreateSessionRequest, type SessionEvent } from '@richardblaha/osiris-protocol';
+import { createLogger } from '@richardblaha/osiris-core';
 import { InMemorySessionStore, SessionNotFound, type SessionStore } from './session-store.js';
 import { SessionNotFoundInExecutor, StubSessionExecutor, type SessionExecutor } from './executors.js';
 import { formatSseEvent } from './sse.js';

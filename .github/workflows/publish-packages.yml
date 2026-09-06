@@ -15,12 +15,12 @@ jobs:
     strategy:
       matrix:
         package:
-          - shared-core
-          - protocol
-          - agent-core
-          - mcp
-          - dot-osiris
-          - telemetry
+          - osiris-core
+          - osiris-protocol
+          - osiris-agent-core
+          - osiris-mcp
+          - osiris-config
+          - osiris-telemetry
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +40,7 @@ jobs:
       - name: Publish @richardblaha/${{ matrix.package }}
         working-directory: packages/${{ matrix.package }}
         # pnpm publish (not npm publish) rewrites workspace:* deps (e.g.
-        # agent-core -> shared-core) to a real resolved version.
+        # osiris-agent-core -> osiris-core) to a real resolved version.
         run: pnpm publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import backend from 'git-http-backend';
 import type { FastifyInstance } from 'fastify';
-import { createLogger } from '@richardblaha/shared-core';
+import { createLogger } from '@richardblaha/osiris-core';
 
 const log = createLogger('server:git');
 

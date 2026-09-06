@@ -163,7 +163,7 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
 
 | Oblast | Cílový stav (viz sekce výše) | Skutečný stav | Poznámka |
 |---|---|---|---|
-| CLI framework | — | Node/TS (`@osiris/cli`, `packages/cli`), ne Go | TUI (§3.7, Bubble Tea) není postaveno; `osiris` je zatím čistě příkazové (`run.ts` dispatch), bez `osiris` bez-argumentů TUI |
+| CLI framework | — | Node/TS (`@richardblaha/osiris-cli`, `packages/cli`), ne Go | TUI (§3.7, Bubble Tea) není postaveno; `osiris` je zatím čistě příkazové (`run.ts` dispatch), bez `osiris` bez-argumentů TUI |
 | Bootstrap clusteru | auto při potřebě + volitelně při startu OS | Ruční/skriptované (`operator/hack/bootstrap.sh`) | Žádná automatická detekce/bootstrap z CLI (§3.1) — CLI dnes cluster vůbec nezná, jen mluví s `osiris-server`, který mluví s clusterem |
 | CRD | `OsirisProject`, `OsirisSession`, `OsirisMemoryStore` | `OsirisProject` + `OsirisSession` implementovány (`operator/api/v1alpha1`), Go/kubebuilder v4, controller-runtime | `OsirisMemoryStore` záměrně nepostaveno (mimo rozsah 2026-09-04 úkolu). Skutečná API group je `osiris.osiris.dev` (kubebuilder spojuje `--group`+`--domain`), ne `osiris.dev` jak by naznačovala prozaická zkratka výše |
 | Suspend/resume mechanismus | scale-to-0 + PVC (návrh) | Implementováno přesně takto | `OsirisSessionReconciler` škáluje Deployment 0/1 podle `coordination.k8s.io/v1 Lease` (aktivita) a `spec.desiredPhase`; PVC se vytváří jednou a nikdy nemaže při suspend. Idle-timeout auto-suspend nikdy nepřepisuje `spec.desiredPhase` (zůstává `Running`) — resume z idle stavu stačí bumpnout Lease, bez CR patch. `osiris session rm` = finalizer drénující Deployment→PVC. Ověřeno `envtest` suitou (5 scénářů) + `kind`-backed CI jobem (`.github/workflows/osiris-operator.yml`) |

@@ -35,7 +35,7 @@ pnpm build && pnpm test  # sanity check
 
 | You want to…                                | Work in                |
 | ------------------------------------------- | ---------------------- |
-| Change shared types / telemetry / events    | `packages/shared-core` |
+| Change shared types / telemetry / events    | `packages/osiris-core` |
 | Change product name, icons, theme defaults  | `packages/branding`    |
 | Change theme detection / provider logic     | `packages/shell-theme` |
 | Change an in-box extension                  | `extensions/osiris-*`  |
@@ -56,7 +56,7 @@ pnpm --filter osiris-<ext> package   # build a .vsix (extensions only)
 ```
 
 `<name>` is the `name` field in that workspace's `package.json`
-(`@richardblaha/shared-core`, `osiris-ai`, `@osiris/desktop`, …).
+(`@richardblaha/osiris-core`, `osiris-ai`, `@osiris/desktop`, …).
 
 ## Branch & PR flow
 

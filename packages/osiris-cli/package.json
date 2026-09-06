@@ -1,0 +1,48 @@
+{
+  "name": "@richardblaha/osiris-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The `osiris` command line: workspace init, knowledge-base indexing, the agent crew and the Git-backed backlog.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "bin": {
+    "osiris": "./dist/cli.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@richardblaha/osiris-backlog": "workspace:*",
+    "@richardblaha/osiris-crew": "workspace:*",
+    "@richardblaha/osiris-config": "workspace:*",
+    "@richardblaha/osiris-mcp": "workspace:*",
+    "@richardblaha/osiris-memory": "workspace:*",
+    "@richardblaha/osiris-protocol": "workspace:*",
+    "@richardblaha/osiris-server": "workspace:*",
+    "@richardblaha/osiris-core": "workspace:*"
+  },
+  "devDependencies": {
+    "@richardblaha/osiris-tsconfig": "workspace:*",
+    "@types/node": "^22.7.5",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

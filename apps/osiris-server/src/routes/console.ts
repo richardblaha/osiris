@@ -13,8 +13,8 @@ import {
   type CrewRunResult,
   type MemoryReindexResult,
   type MemorySearchResult,
-} from '@richardblaha/protocol';
-import { createLogger } from '@richardblaha/shared-core';
+} from '@richardblaha/osiris-protocol';
+import { createLogger } from '@richardblaha/osiris-core';
 import { formatSseEvent } from '../sse.js';
 
 const log = createLogger('server:console');

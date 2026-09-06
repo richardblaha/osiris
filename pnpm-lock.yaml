@@ -8,12 +8,12 @@ importers:
 
   .:
     devDependencies:
-      '@osiris/eslint-config':
+      '@richardblaha/osiris-eslint-config':
         specifier: workspace:*
-        version: link:toolchain/eslint-config
-      '@osiris/tsconfig':
+        version: link:toolchain/osiris-eslint-config
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:toolchain/tsconfig
+        version: link:toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -41,9 +41,9 @@ importers:
 
   apps/osiris-console:
     dependencies:
-      '@richardblaha/protocol':
+      '@richardblaha/osiris-protocol':
         specifier: workspace:*
-        version: link:../../packages/protocol
+        version: link:../../packages/osiris-protocol
       react:
         specifier: ^18.3.1
         version: 18.3.1
@@ -51,12 +51,12 @@ importers:
         specifier: ^18.3.1
         version: 18.3.1(react@18.3.1)
     devDependencies:
-      '@osiris/eslint-config':
+      '@richardblaha/osiris-eslint-config':
         specifier: workspace:*
-        version: link:../../toolchain/eslint-config
-      '@osiris/tsconfig':
+        version: link:../../toolchain/osiris-eslint-config
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/react':
         specifier: ^18.3.11
         version: 18.3.31
@@ -87,27 +87,27 @@ importers:
       '@kubernetes/client-node':
         specifier: ^2.0.0
         version: 2.0.0
-      '@osiris/backlog':
+      '@richardblaha/osiris-backlog':
         specifier: workspace:*
-        version: link:../../packages/backlog
-      '@osiris/crew':
+        version: link:../../packages/osiris-backlog
+      '@richardblaha/osiris-config':
         specifier: workspace:*
-        version: link:../../packages/crew
-      '@osiris/memory':
+        version: link:../../packages/osiris-config
+      '@richardblaha/osiris-core':
         specifier: workspace:*
-        version: link:../../packages/memory
-      '@richardblaha/dot-osiris':
+        version: link:../../packages/osiris-core
+      '@richardblaha/osiris-crew':
         specifier: workspace:*
-        version: link:../../packages/dot-osiris
-      '@richardblaha/protocol':
+        version: link:../../packages/osiris-crew
+      '@richardblaha/osiris-memory':
         specifier: workspace:*
-        version: link:../../packages/protocol
-      '@richardblaha/shared-core':
+        version: link:../../packages/osiris-memory
+      '@richardblaha/osiris-protocol':
         specifier: workspace:*
-        version: link:../../packages/shared-core
-      '@richardblaha/telemetry':
+        version: link:../../packages/osiris-protocol
+      '@richardblaha/osiris-telemetry':
         specifier: workspace:*
-        version: link:../../packages/telemetry
+        version: link:../../packages/osiris-telemetry
       fastify:
         specifier: ^5.12.1
         version: 5.12.1
@@ -115,9 +115,9 @@ importers:
         specifier: ^1.1.2
         version: 1.1.2
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -134,18 +134,18 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/agent-core:
+  packages/osiris-agent-core:
     dependencies:
       '@anthropic-ai/sdk':
         specifier: ^0.123.0
         version: 0.123.0(zod@4.5.4)
-      '@richardblaha/shared-core':
+      '@richardblaha/osiris-core':
         specifier: workspace:*
-        version: link:../shared-core
+        version: link:../osiris-core
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -162,24 +162,24 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/backlog:
+  packages/osiris-backlog:
     dependencies:
-      '@richardblaha/dot-osiris':
+      '@richardblaha/osiris-config':
         specifier: workspace:*
-        version: link:../dot-osiris
-      '@richardblaha/protocol':
+        version: link:../osiris-config
+      '@richardblaha/osiris-core':
         specifier: workspace:*
-        version: link:../protocol
-      '@richardblaha/shared-core':
+        version: link:../osiris-core
+      '@richardblaha/osiris-protocol':
         specifier: workspace:*
-        version: link:../shared-core
+        version: link:../osiris-protocol
       execa:
         specifier: ^9.5.1
         version: 9.6.1
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -196,36 +196,36 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/cli:
+  packages/osiris-cli:
     dependencies:
-      '@osiris/backlog':
+      '@richardblaha/osiris-backlog':
         specifier: workspace:*
-        version: link:../backlog
-      '@osiris/crew':
+        version: link:../osiris-backlog
+      '@richardblaha/osiris-config':
         specifier: workspace:*
-        version: link:../crew
-      '@osiris/memory':
+        version: link:../osiris-config
+      '@richardblaha/osiris-core':
         specifier: workspace:*
-        version: link:../memory
-      '@osiris/server':
+        version: link:../osiris-core
+      '@richardblaha/osiris-crew':
+        specifier: workspace:*
+        version: link:../osiris-crew
+      '@richardblaha/osiris-mcp':
+        specifier: workspace:*
+        version: link:../osiris-mcp
+      '@richardblaha/osiris-memory':
+        specifier: workspace:*
+        version: link:../osiris-memory
+      '@richardblaha/osiris-protocol':
+        specifier: workspace:*
+        version: link:../osiris-protocol
+      '@richardblaha/osiris-server':
         specifier: workspace:*
         version: link:../../apps/osiris-server
-      '@richardblaha/dot-osiris':
-        specifier: workspace:*
-        version: link:../dot-osiris
-      '@richardblaha/mcp':
-        specifier: workspace:*
-        version: link:../mcp
-      '@richardblaha/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-      '@richardblaha/shared-core':
-        specifier: workspace:*
-        version: link:../shared-core
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -242,30 +242,15 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/crew:
+  packages/osiris-config:
     dependencies:
-      '@osiris/memory':
+      '@richardblaha/osiris-core':
         specifier: workspace:*
-        version: link:../memory
-      '@richardblaha/agent-core':
-        specifier: workspace:*
-        version: link:../agent-core
-      '@richardblaha/dot-osiris':
-        specifier: workspace:*
-        version: link:../dot-osiris
-      '@richardblaha/mcp':
-        specifier: workspace:*
-        version: link:../mcp
-      '@richardblaha/protocol':
-        specifier: workspace:*
-        version: link:../protocol
-      '@richardblaha/shared-core':
-        specifier: workspace:*
-        version: link:../shared-core
+        version: link:../osiris-core
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -282,15 +267,11 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/dot-osiris:
-    dependencies:
-      '@richardblaha/shared-core':
-        specifier: workspace:*
-        version: link:../shared-core
+  packages/osiris-core:
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -307,21 +288,30 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/mcp:
+  packages/osiris-crew:
     dependencies:
-      '@richardblaha/agent-core':
+      '@richardblaha/osiris-agent-core':
         specifier: workspace:*
-        version: link:../agent-core
-      '@richardblaha/dot-osiris':
+        version: link:../osiris-agent-core
+      '@richardblaha/osiris-config':
         specifier: workspace:*
-        version: link:../dot-osiris
-      '@richardblaha/shared-core':
+        version: link:../osiris-config
+      '@richardblaha/osiris-core':
         specifier: workspace:*
-        version: link:../shared-core
+        version: link:../osiris-core
+      '@richardblaha/osiris-mcp':
+        specifier: workspace:*
+        version: link:../osiris-mcp
+      '@richardblaha/osiris-memory':
+        specifier: workspace:*
+        version: link:../osiris-memory
+      '@richardblaha/osiris-protocol':
+        specifier: workspace:*
+        version: link:../osiris-protocol
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -338,18 +328,49 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/memory:
+  packages/osiris-mcp:
     dependencies:
-      '@richardblaha/shared-core':
+      '@richardblaha/osiris-agent-core':
         specifier: workspace:*
-        version: link:../shared-core
+        version: link:../osiris-agent-core
+      '@richardblaha/osiris-config':
+        specifier: workspace:*
+        version: link:../osiris-config
+      '@richardblaha/osiris-core':
+        specifier: workspace:*
+        version: link:../osiris-core
+    devDependencies:
+      '@richardblaha/osiris-tsconfig':
+        specifier: workspace:*
+        version: link:../../toolchain/osiris-tsconfig
+      '@types/node':
+        specifier: ^22.7.5
+        version: 22.20.1
+      eslint:
+        specifier: ^9.12.0
+        version: 9.39.5
+      rimraf:
+        specifier: ^6.0.1
+        version: 6.1.3
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.3
+        version: 2.1.9(@types/node@22.20.1)
+
+  packages/osiris-memory:
+    dependencies:
+      '@richardblaha/osiris-core':
+        specifier: workspace:*
+        version: link:../osiris-core
       chromadb:
         specifier: ^3.5.0
         version: 3.5.0
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -366,15 +387,15 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/protocol:
+  packages/osiris-protocol:
     dependencies:
       zod:
         specifier: ^4.5.4
         version: 4.5.4
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -391,28 +412,7 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  packages/shared-core:
-    devDependencies:
-      '@osiris/tsconfig':
-        specifier: workspace:*
-        version: link:../../toolchain/tsconfig
-      '@types/node':
-        specifier: ^22.7.5
-        version: 22.20.1
-      eslint:
-        specifier: ^9.12.0
-        version: 9.39.5
-      rimraf:
-        specifier: ^6.0.1
-        version: 6.1.3
-      typescript:
-        specifier: ^5.6.3
-        version: 5.9.3
-      vitest:
-        specifier: ^2.1.3
-        version: 2.1.9(@types/node@22.20.1)
-
-  packages/telemetry:
+  packages/osiris-telemetry:
     dependencies:
       '@opentelemetry/api':
         specifier: ^1.9.1
@@ -445,9 +445,9 @@ importers:
         specifier: ^1.43.0
         version: 1.43.0
     devDependencies:
-      '@osiris/tsconfig':
+      '@richardblaha/osiris-tsconfig':
         specifier: workspace:*
-        version: link:../../toolchain/tsconfig
+        version: link:../../toolchain/osiris-tsconfig
       '@types/node':
         specifier: ^22.7.5
         version: 22.20.1
@@ -464,7 +464,7 @@ importers:
         specifier: ^2.1.3
         version: 2.1.9(@types/node@22.20.1)
 
-  toolchain/eslint-config:
+  toolchain/osiris-eslint-config:
     dependencies:
       '@eslint/js':
         specifier: ^9.12.0
@@ -482,7 +482,7 @@ importers:
         specifier: ^8.8.1
         version: 8.69.0(eslint@9.39.5)(typescript@5.9.3)
 
-  toolchain/tsconfig: {}
+  toolchain/osiris-tsconfig: {}
 
 packages:
 

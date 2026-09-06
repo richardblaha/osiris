@@ -2,16 +2,16 @@
   "//": "Solution-style root config. `pnpm typecheck` runs per-package; this ties refs together for editors and `tsc -b`.",
   "files": [],
   "references": [
-    { "path": "packages/shared-core" },
-    { "path": "packages/protocol" },
-    { "path": "packages/dot-osiris" },
-    { "path": "packages/memory" },
-    { "path": "packages/crew" },
-    { "path": "packages/backlog" },
-    { "path": "packages/mcp" },
-    { "path": "packages/cli" },
-    { "path": "packages/telemetry" },
-    { "path": "packages/agent-core" },
+    { "path": "packages/osiris-core" },
+    { "path": "packages/osiris-protocol" },
+    { "path": "packages/osiris-config" },
+    { "path": "packages/osiris-memory" },
+    { "path": "packages/osiris-crew" },
+    { "path": "packages/osiris-backlog" },
+    { "path": "packages/osiris-mcp" },
+    { "path": "packages/osiris-cli" },
+    { "path": "packages/osiris-telemetry" },
+    { "path": "packages/osiris-agent-core" },
     { "path": "apps/osiris-server" }
   ]
 }
