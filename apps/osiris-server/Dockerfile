@@ -10,11 +10,11 @@ WORKDIR /repo
 
 COPY . .
 RUN pnpm install --frozen-lockfile
-# `@osiris/server...` builds the server and every workspace package it depends on.
-RUN pnpm --filter @osiris/server... build
-RUN pnpm --filter @osiris/console build
+# `@richardblaha/osiris-server...` builds the server and every workspace package it depends on.
+RUN pnpm --filter @richardblaha/osiris-server... build
+RUN pnpm --filter @richardblaha/osiris-console build
 # Self-contained deployment of just the server (workspace deps inlined).
-RUN pnpm --filter @osiris/server --prod deploy /app
+RUN pnpm --filter @richardblaha/osiris-server --prod deploy /app
 
 # ---- runtime ------------------------------------------------------------
 FROM node:22-bookworm-slim
