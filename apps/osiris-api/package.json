@@ -1,8 +1,8 @@
 {
-  "name": "@richardblaha/osiris-server",
+  "name": "@richardblaha/osiris-api",
   "version": "0.1.0",
   "private": true,
-  "description": "Osiris Server — central Git hosting, workspaces and the session API backed by osiris-kind-operator (Fastify).",
+  "description": "Osiris API — Git hosting, the crew/backlog/memory console API and the session API backed by osiris-kind-operator (Fastify).",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",

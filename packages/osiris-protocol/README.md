@@ -21,7 +21,7 @@ const res = await fetch(base + routes.handoverPrepare(id), {
 const descriptor = SessionDescriptor.parse(await (await fetch(base + routes.session(id))).json());
 ```
 
-Consumed by `apps/osiris-server` and `extensions/osiris-workspace`; it is the
+Consumed by `apps/osiris-api` and `extensions/osiris-workspace`; it is the
 root of the Turborepo build graph, so a contract change rebuilds both sides.
 
 Pure ESM, built with `tsc` to `dist/`.

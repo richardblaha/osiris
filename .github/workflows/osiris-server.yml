@@ -4,13 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "apps/osiris-server/**"
+      - "apps/osiris-api/**"
       - "apps/osiris-console/**"
       - "packages/**"
       - ".github/workflows/osiris-server.yml"
   pull_request:
     paths:
-      - "apps/osiris-server/**"
+      - "apps/osiris-api/**"
       - "apps/osiris-console/**"
       - "packages/**"
       - ".github/workflows/osiris-server.yml"
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Build the server image
-        run: docker build -f apps/osiris-server/Dockerfile -t osiris-server:ci .
+        run: docker build -f apps/osiris-api/Dockerfile -t osiris-server:ci .
 
       - name: Run it
         run: docker run -d --name osiris-server -p 8080:8080 osiris-server:ci

@@ -27,7 +27,7 @@ Usage:
   osiris backlog move <id> <state> [--push]   move a task (one commit on the orphan branch)
   osiris backlog push | pull           sync the orphan branch with its git remote
   osiris backlog lint                  static-check every task file
-  osiris serve [--port N]              run osiris-server against this workspace
+  osiris serve [--port N]              run osiris-api against this workspace
   osiris session resume <id>           resume a suspended session (bumps activity + Running)
   osiris session suspend <id>          explicitly suspend a session (optional, for symmetry/testability)
   osiris session rm <id>               delete a session's container + workspace volume
@@ -185,7 +185,7 @@ export async function runCli(argv: string[], io: CliIo): Promise<number> {
 
       case 'serve': {
         const require = createRequire(import.meta.url);
-        const bin = require.resolve('@richardblaha/osiris-server/dist/index.js');
+        const bin = require.resolve('@richardblaha/osiris-api/dist/index.js');
         const child = spawn(process.execPath, [bin], {
           stdio: 'inherit',
           env: {

@@ -1,5 +1,5 @@
-# Osiris Server — central Git hosting + the crew / backlog / memory console API.
-# Build from the repo root:  docker build -f apps/osiris-server/Dockerfile -t osiris-server .
+# Osiris API — central Git hosting + the crew / backlog / memory console API.
+# Build from the repo root:  docker build -f apps/osiris-api/Dockerfile -t osiris-api .
 
 # ---- build ----------------------------------------------------------------
 FROM node:22-bookworm-slim AS build
@@ -10,11 +10,11 @@ WORKDIR /repo
 
 COPY . .
 RUN pnpm install --frozen-lockfile
-# `@richardblaha/osiris-server...` builds the server and every workspace package it depends on.
-RUN pnpm --filter @richardblaha/osiris-server... build
+# `@richardblaha/osiris-api...` builds the API and every workspace package it depends on.
+RUN pnpm --filter @richardblaha/osiris-api... build
 RUN pnpm --filter @richardblaha/osiris-console build
-# Self-contained deployment of just the server (workspace deps inlined).
-RUN pnpm --filter @richardblaha/osiris-server --prod deploy /app
+# Self-contained deployment of just the API server (workspace deps inlined).
+RUN pnpm --filter @richardblaha/osiris-api --prod deploy /app
 
 # ---- runtime ------------------------------------------------------------
 FROM node:22-bookworm-slim
@@ -26,7 +26,7 @@ WORKDIR /app
 COPY --from=build /app ./
 # The SPA the server serves at `/` (index.ts looks for ../public first).
 COPY --from=build /repo/apps/osiris-console/dist ./public
-COPY apps/osiris-server/docker-entrypoint.sh /usr/local/bin/osiris-entrypoint
+COPY apps/osiris-api/docker-entrypoint.sh /usr/local/bin/osiris-entrypoint
 RUN chmod +x /usr/local/bin/osiris-entrypoint
 
 ENV NODE_ENV=production \
