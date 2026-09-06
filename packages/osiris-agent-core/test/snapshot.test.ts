@@ -61,7 +61,10 @@ describe('AgentSession', () => {
     const session = AgentSession.create(store, { sessionId: 's1', origin: 'desktop', provider });
 
     session.addTask({ id: 't1', title: 'ship it', status: 'pending' });
-    session.recordTurn([{ role: 'user', content: 'hi' }, { role: 'assistant', content: 'hello' }]);
+    session.recordTurn([
+      { role: 'user', content: 'hi' },
+      { role: 'assistant', content: 'hello' },
+    ]);
     session.setTaskStatus('t1', 'running');
     await session.persist();
 

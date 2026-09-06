@@ -14,10 +14,7 @@ import { defaultResource, resourceFromAttributes } from '@opentelemetry/resource
 import { BatchLogRecordProcessor } from '@opentelemetry/sdk-logs';
 import { PeriodicExportingMetricReader } from '@opentelemetry/sdk-metrics';
 import { NodeSDK } from '@opentelemetry/sdk-node';
-import {
-  ATTR_SERVICE_NAME,
-  ATTR_SERVICE_VERSION,
-} from '@opentelemetry/semantic-conventions';
+import { ATTR_SERVICE_NAME, ATTR_SERVICE_VERSION } from '@opentelemetry/semantic-conventions';
 import { isTelemetryDisabled, resolveEndpoint } from './env.js';
 
 export interface TelemetryOptions {

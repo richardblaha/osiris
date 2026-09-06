@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { AgentOrchestrator, type ProviderAdapter, type Tool } from '@richardblaha/osiris-agent-core';
+import {
+  AgentOrchestrator,
+  type ProviderAdapter,
+  type Tool,
+} from '@richardblaha/osiris-agent-core';
 import { createLogger } from '@richardblaha/osiris-core';
 import type {
   AgentDefinition,

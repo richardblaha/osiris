@@ -17,7 +17,11 @@ export async function sessionResume(client: SessionClient, id: string, io: CliIo
  * suspend automatically) but useful to force it deterministically, e.g. in
  * tests, without waiting out the real timeout.
  */
-export async function sessionSuspend(client: SessionClient, id: string, io: CliIo): Promise<number> {
+export async function sessionSuspend(
+  client: SessionClient,
+  id: string,
+  io: CliIo,
+): Promise<number> {
   const descriptor = await client.suspendSession(id);
   io.out(`session ${descriptor.sessionId}: ${descriptor.phase}\n`);
   return 0;

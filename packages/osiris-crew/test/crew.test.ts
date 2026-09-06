@@ -127,15 +127,23 @@ describe('Crew.run', () => {
     expect(specs).toContain('echo/echo');
 
     const solo: string[] = [];
-    await crewWith([agent({ name: 'architect', taskClass: 'planning' })], {
-      taskModels: { planning: 'echo/plan' },
-    }, (s) => solo.push(s)).run('hi');
+    await crewWith(
+      [agent({ name: 'architect', taskClass: 'planning' })],
+      {
+        taskModels: { planning: 'echo/plan' },
+      },
+      (s) => solo.push(s),
+    ).run('hi');
     expect(solo).toEqual(['echo/plan']);
 
     const pinned: string[] = [];
-    await crewWith([agent({ name: 'architect', model: 'echo/pinned', taskClass: 'planning' })], {
-      taskModels: { planning: 'echo/plan' },
-    }, (s) => pinned.push(s)).run('hi');
+    await crewWith(
+      [agent({ name: 'architect', model: 'echo/pinned', taskClass: 'planning' })],
+      {
+        taskModels: { planning: 'echo/plan' },
+      },
+      (s) => pinned.push(s),
+    ).run('hi');
     expect(pinned).toEqual(['echo/pinned']);
   });
 

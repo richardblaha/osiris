@@ -31,11 +31,18 @@ describe('Anthropic message mapping', () => {
 
   it('turns tool calls and results into Anthropic blocks', () => {
     const messages: ChatMessage[] = [
-      { role: 'assistant', content: '', toolCalls: [{ id: 'c1', name: 'ls', input: { path: '.' } }] },
+      {
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'c1', name: 'ls', input: { path: '.' } }],
+      },
       { role: 'tool', toolCallId: 'c1', content: 'a.ts\nb.ts' },
     ];
     const mapped = toAnthropicMessages(messages);
-    expect(mapped[0]).toMatchObject({ role: 'assistant', content: [{ type: 'tool_use', id: 'c1' }] });
+    expect(mapped[0]).toMatchObject({
+      role: 'assistant',
+      content: [{ type: 'tool_use', id: 'c1' }],
+    });
     expect(mapped[1]).toMatchObject({
       role: 'user',
       content: [{ type: 'tool_result', tool_use_id: 'c1' }],
@@ -67,9 +74,12 @@ describe('OllamaAdapter', () => {
     const events = await collect(
       new OllamaAdapter({ model: 'llama3', fetchImpl }).generate({ messages: [], tools: [] }),
     );
-    expect(events.filter((e) => e.type === 'text').map((e) => (e as { text: string }).text).join('')).toBe(
-      'hello',
-    );
+    expect(
+      events
+        .filter((e) => e.type === 'text')
+        .map((e) => (e as { text: string }).text)
+        .join(''),
+    ).toBe('hello');
     expect(events.at(-1)).toEqual({ type: 'done', finishReason: 'stop' });
   });
 
@@ -98,7 +108,9 @@ describe('OllamaAdapter', () => {
 
   it('surfaces an error chunk from the stream as a done/error event', async () => {
     const fetchImpl = (async () =>
-      ndjsonResponse([JSON.stringify({ error: 'model runner has stopped' })])) as unknown as typeof fetch;
+      ndjsonResponse([
+        JSON.stringify({ error: 'model runner has stopped' }),
+      ])) as unknown as typeof fetch;
 
     const events = await collect(
       new OllamaAdapter({ model: 'llama3', fetchImpl }).generate({ messages: [], tools: [] }),

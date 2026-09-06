@@ -38,15 +38,18 @@ export class OpenAiCompatibleAdapter implements ProviderAdapter {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(`${this.options.endpoint.replace(/\/$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(this.options.apiKey ? { authorization: `Bearer ${this.options.apiKey}` } : {}),
+      response = await this.fetchImpl(
+        `${this.options.endpoint.replace(/\/$/, '')}/chat/completions`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            ...(this.options.apiKey ? { authorization: `Bearer ${this.options.apiKey}` } : {}),
+          },
+          body: JSON.stringify(body),
+          signal: request.signal,
         },
-        body: JSON.stringify(body),
-        signal: request.signal,
-      });
+      );
     } catch (cause) {
       yield { type: 'done', finishReason: 'error', error: (cause as Error).message };
       return;

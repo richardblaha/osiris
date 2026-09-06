@@ -42,9 +42,7 @@ describe('AgentOrchestrator with the echo provider', () => {
       },
     };
     const agent = new AgentOrchestrator(loopingProvider);
-    agent.setTools([
-      { name: 'noop', description: '', inputSchema: {}, invoke: async () => 'ok' },
-    ]);
+    agent.setTools([{ name: 'noop', description: '', inputSchema: {}, invoke: async () => 'ok' }]);
     const result = await agent.run({ prompt: 'go', maxIterations: 3 });
     expect(result.finishReason).toBe('max-iterations');
     expect(result.iterations).toBe(3);

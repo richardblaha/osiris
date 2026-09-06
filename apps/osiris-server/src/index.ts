@@ -19,12 +19,15 @@ function firstExisting(paths: string[]): string | undefined {
 }
 
 /** Build the Kubernetes-backed executor + start its informer, or fall back to the stub. */
-function setupSessionExecutor(
-  store: InMemorySessionStore,
-): { executor: SessionExecutor; stop?: () => Promise<void> } {
+function setupSessionExecutor(store: InMemorySessionStore): {
+  executor: SessionExecutor;
+  stop?: () => Promise<void>;
+} {
   const namespace = process.env.OSIRIS_K8S_NAMESPACE;
   if (!namespace) {
-    log.warn('OSIRIS_K8S_NAMESPACE is unset — sessions run against an in-memory stub, not osiris-kind');
+    log.warn(
+      'OSIRIS_K8S_NAMESPACE is unset — sessions run against an in-memory stub, not osiris-kind',
+    );
     return { executor: new StubSessionExecutor() };
   }
 

@@ -4,12 +4,12 @@ The single source of truth for the **Desktop ⇄ Server** wire contract. Every
 schema is a [zod](https://zod.dev) object; the matching TypeScript type is
 `z.infer`-ed and exported under the same name.
 
-| Module       | Exports                                                                                                              |
-| ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| `session.ts` | `SessionDescriptor`, `SessionLocation` (`local` \| `in-transit` \| `server`), `Lease`, `ContentDigest`, `CreateSessionRequest` |
-| `handover.ts`| `HandoverPrepareResponse`, `HandoverCommitRequest`/`Response`, `FetchPrepareResponse`, `TransferProgress`, `TransferPhase` |
-| `events.ts`  | `SessionEvent` — the SSE discriminated union (`session.frozen`, `transfer.progress`, `session.resumed`, `lease.expired`) |
-| `routes.ts`  | `routes.*` URL builders, `API_BASE`, protocol `headers`                                                             |
+| Module        | Exports                                                                                                                        |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `session.ts`  | `SessionDescriptor`, `SessionLocation` (`local` \| `in-transit` \| `server`), `Lease`, `ContentDigest`, `CreateSessionRequest` |
+| `handover.ts` | `HandoverPrepareResponse`, `HandoverCommitRequest`/`Response`, `FetchPrepareResponse`, `TransferProgress`, `TransferPhase`     |
+| `events.ts`   | `SessionEvent` — the SSE discriminated union (`session.frozen`, `transfer.progress`, `session.resumed`, `lease.expired`)       |
+| `routes.ts`   | `routes.*` URL builders, `API_BASE`, protocol `headers`                                                                        |
 
 ```ts
 import { SessionDescriptor, routes, headers } from '@richardblaha/osiris-protocol';

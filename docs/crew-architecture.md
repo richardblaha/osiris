@@ -30,15 +30,15 @@ Osiris.
 
 ## 0. Architectural guard‑rails (locked)
 
-| #   | Constraint                                                                                                                          | Consequence                                                                                            |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 1   | **No `CLAUDE.md`.** `README.md` is the single source of project instructions.                                                       | Crew system prompts are assembled from `README.md` + `.osiris/agents/*.md`.                            |
+| #   | Constraint                                                                                                                          | Consequence                                                                                                         |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| 1   | **No `CLAUDE.md`.** `README.md` is the single source of project instructions.                                                       | Crew system prompts are assembled from `README.md` + `.osiris/agents/*.md`.                                         |
 | 2   | **VS Code Language Model API / Copilot Chat** provides model selection. No hard‑coded API keys where the editor API can supply one. | `@richardblaha/osiris-crew` model resolution has a `vscode-lm` provider adapter; keychain/env is the fallback only. |
-| 3   | **MCP discovery from the VS Code / Dev Container environment.**                                                                     | Crew reads `.osiris/mcp.json` + the editor's contributed MCP servers; nothing bespoke.                 |
-| 4   | **All tool execution runs inside `.devcontainer`.**                                                                                 | ChromaDB, the crew runtime and `osiris-server` all have a container story; host is orchestration only. |
-| 5   | **`.osiris/` is the fallback + init skeleton.** Missing project config falls back to the bundled system template.                   | `@richardblaha/osiris-config` ships `template/` and a layered resolver.                                         |
+| 3   | **MCP discovery from the VS Code / Dev Container environment.**                                                                     | Crew reads `.osiris/mcp.json` + the editor's contributed MCP servers; nothing bespoke.                              |
+| 4   | **All tool execution runs inside `.devcontainer`.**                                                                                 | ChromaDB, the crew runtime and `osiris-server` all have a container story; host is orchestration only.              |
+| 5   | **`.osiris/` is the fallback + init skeleton.** Missing project config falls back to the bundled system template.                   | `@richardblaha/osiris-config` ships `template/` and a layered resolver.                                             |
 | 6   | **Backlog lives on an orphan branch** (`osiris/backlog`), never polluting `main` / `feature/*` history.                             | `@richardblaha/osiris-backlog` drives a dedicated git worktree; state moves are `git mv` + commit.                  |
-| 7   | **`.osiris/temp/` is always git‑ignored.**                                                                                          | `ensureGitignore()` is idempotently applied by init and the CLI.                                       |
+| 7   | **`.osiris/temp/` is always git‑ignored.**                                                                                          | `ensureGitignore()` is idempotently applied by init and the CLI.                                                    |
 
 ---
 

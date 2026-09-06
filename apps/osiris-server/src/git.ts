@@ -109,6 +109,8 @@ function runGit(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const ps = spawn('git', args, { stdio: 'ignore' });
     ps.on('error', reject);
-    ps.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`git ${args[0]} exited ${code}`))));
+    ps.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(`git ${args[0]} exited ${code}`)),
+    );
   });
 }

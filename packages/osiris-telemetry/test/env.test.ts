@@ -23,9 +23,9 @@ describe('normalizeOtlpEndpoint', () => {
 
 describe('resolveEndpoint', () => {
   it('prefers the explicit value, then the env var, then the default', () => {
-    expect(resolveEndpoint('http://explicit:4318', { OTEL_EXPORTER_OTLP_ENDPOINT: 'http://env:4318' })).toBe(
-      'http://explicit:4318',
-    );
+    expect(
+      resolveEndpoint('http://explicit:4318', { OTEL_EXPORTER_OTLP_ENDPOINT: 'http://env:4318' }),
+    ).toBe('http://explicit:4318');
     expect(resolveEndpoint(undefined, { OTEL_EXPORTER_OTLP_ENDPOINT: 'http://env:4318' })).toBe(
       'http://env:4318',
     );

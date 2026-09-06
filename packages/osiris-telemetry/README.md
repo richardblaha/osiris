@@ -4,12 +4,12 @@ OTLP-first OpenTelemetry bootstrap for every Osiris Node process — the server,
 the orchestrator, the container-sync worker and the agent. One call wires
 **traces, metrics and logs** to a single OTLP/HTTP endpoint.
 
-| Export                | Purpose                                                                        |
-| --------------------- | ---------------------------------------------------------------------------- |
-| `startTelemetry(opts)`| Start the `NodeSDK` (auto-instrumentations + OTLP exporters). Idempotent. Returns a `{ enabled, shutdown() }` handle and installs `SIGTERM`/`SIGINT` flush hooks. |
-| `isTelemetryDisabled` | The `OSIRIS_TELEMETRY=off` check (repo-wide convention).                       |
-| `resolveEndpoint`     | Explicit option → `OTEL_EXPORTER_OTLP_ENDPOINT` → `http://localhost:4318`.     |
-| `@richardblaha/osiris-telemetry/register` | Side-effecting entry for `node --import`, configured from env only.     |
+| Export                                    | Purpose                                                                                                                                                           |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `startTelemetry(opts)`                    | Start the `NodeSDK` (auto-instrumentations + OTLP exporters). Idempotent. Returns a `{ enabled, shutdown() }` handle and installs `SIGTERM`/`SIGINT` flush hooks. |
+| `isTelemetryDisabled`                     | The `OSIRIS_TELEMETRY=off` check (repo-wide convention).                                                                                                          |
+| `resolveEndpoint`                         | Explicit option → `OTEL_EXPORTER_OTLP_ENDPOINT` → `http://localhost:4318`.                                                                                        |
+| `@richardblaha/osiris-telemetry/register` | Side-effecting entry for `node --import`, configured from env only.                                                                                               |
 
 ```ts
 import { startTelemetry } from '@richardblaha/osiris-telemetry';
