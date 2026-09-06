@@ -4,65 +4,65 @@ kind: ClusterRole
 metadata:
   name: manager-role
 rules:
-  - apiGroups:
-      - ""
-    resources:
-      - persistentvolumeclaims
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - apps
-    resources:
-      - deployments
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - coordination.k8s.io
-    resources:
-      - leases
-    verbs:
-      - create
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - osiris.osiris.dev
-    resources:
-      - osirisprojects
-      - osirissessions
-    verbs:
-      - create
-      - delete
-      - get
-      - list
-      - patch
-      - update
-      - watch
-  - apiGroups:
-      - osiris.osiris.dev
-    resources:
-      - osirisprojects/finalizers
-      - osirissessions/finalizers
-    verbs:
-      - update
-  - apiGroups:
-      - osiris.osiris.dev
-    resources:
-      - osirisprojects/status
-      - osirissessions/status
-    verbs:
-      - get
-      - patch
-      - update
+- apiGroups:
+  - ""
+  resources:
+  - persistentvolumeclaims
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - watch
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - create
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - osiris.osiris.dev
+  resources:
+  - osirisprojects
+  - osirissessions
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - osiris.osiris.dev
+  resources:
+  - osirisprojects/finalizers
+  - osirissessions/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - osiris.osiris.dev
+  resources:
+  - osirisprojects/status
+  - osirissessions/status
+  verbs:
+  - get
+  - patch
+  - update

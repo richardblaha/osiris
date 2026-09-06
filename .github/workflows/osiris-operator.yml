@@ -49,8 +49,9 @@ jobs:
         working-directory: operator
         run: |
           make manifests generate
-          kubectl apply -k config/crd
-          kubectl apply -k config/rbac
+          # `make deploy` builds config/default (namespace + CRDs + RBAC + manager)
+          # in one pass — applying config/rbac on its own leaves the ServiceAccount
+          # in the non-existent `system` namespace.
           make deploy IMG=osiris-kind-operator:ci
           kubectl -n osiris-system rollout status deployment/osiris-controller-manager --timeout=120s
       - name: exercise a suspend/resume round trip

@@ -10,3 +10,6 @@ coverage
 pnpm-lock.yaml
 *.vsix
 **/test/fixtures/**
+
+# Go subproject — kubebuilder-generated manifests, its own gofmt/golangci tooling
+operator
