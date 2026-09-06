@@ -21,7 +21,7 @@ Kubernetes cluster (`kind`), managed by `osiris-kind-operator`. It ships with:
   a ChromaDB-backed knowledge base, and MCP server support.
 - **`osiris-kind-operator`** — a Go/kubebuilder operator that reconciles
   `OsirisProject`/`OsirisSession` CRDs (scale-to-0 + PVC suspend/resume).
-- **`osiris-server`** — a REST API (git hosting, sessions, crew/backlog/memory)
+- **`osiris-api`** — a REST API (git hosting, sessions, crew/backlog/memory)
   behind the lightweight `osiris-console` SPA (Kanban board, crew runs, KB search).
 
 This is the agent/platform half of Osiris. The IDE half — a custom VS Code
@@ -37,7 +37,7 @@ Packages under the `@richardblaha` scope for `osiris-ide` to consume (see
 ```text
 osiris-ai/
 ├── apps/
-│   ├── osiris-server/        # REST API: git hosting, sessions, crew / backlog / memory
+│   ├── osiris-api/           # REST API: git hosting, sessions, crew / backlog / memory
 │   └── osiris-console/       # Lightweight SPA — Kanban board, crew runner, KB search
 ├── packages/
 │   ├── osiris-core/          # Shared utilities, types, telemetry & event bus
@@ -106,7 +106,7 @@ osiris backlog move 12 review     # git mv + one commit on the orphan branch osi
 osiris backlog push / pull        # sync osiris/backlog with a git remote (OSIRIS_BACKLOG_REMOTE)
 osiris backlog lint               # static-check every task file
 osiris serve                      # REST API + Kanban console at http://localhost:8080
-                                  # or: docker compose -f apps/osiris-server/docker-compose.yml up --build
+                                  # or: docker compose -f apps/osiris-api/docker-compose.yml up --build
 osiris doctor                     # health-check: git repo, .osiris/, agents, ChromaDB, MCP, backlog
 osiris repl                       # interactive REPL with crew/backlog/memory in scope
 ```

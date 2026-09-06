@@ -35,7 +35,7 @@ Osiris.
 | 1   | **No `CLAUDE.md`.** `README.md` is the single source of project instructions.                                                       | Crew system prompts are assembled from `README.md` + `.osiris/agents/*.md`.                                         |
 | 2   | **VS Code Language Model API / Copilot Chat** provides model selection. No hard‑coded API keys where the editor API can supply one. | `@richardblaha/osiris-crew` model resolution has a `vscode-lm` provider adapter; keychain/env is the fallback only. |
 | 3   | **MCP discovery from the VS Code / Dev Container environment.**                                                                     | Crew reads `.osiris/mcp.json` + the editor's contributed MCP servers; nothing bespoke.                              |
-| 4   | **All tool execution runs inside `.devcontainer`.**                                                                                 | ChromaDB, the crew runtime and `osiris-server` all have a container story; host is orchestration only.              |
+| 4   | **All tool execution runs inside `.devcontainer`.**                                                                                 | ChromaDB, the crew runtime and `osiris-api` all have a container story; host is orchestration only.                 |
 | 5   | **`.osiris/` is the fallback + init skeleton.** Missing project config falls back to the bundled system template.                   | `@richardblaha/osiris-config` ships `template/` and a layered resolver.                                             |
 | 6   | **Backlog lives on an orphan branch** (`osiris/backlog`), never polluting `main` / `feature/*` history.                             | `@richardblaha/osiris-backlog` drives a dedicated git worktree; state moves are `git mv` + commit.                  |
 | 7   | **`.osiris/temp/` is always git‑ignored.**                                                                                          | `ensureGitignore()` is idempotently applied by init and the CLI.                                                    |
@@ -143,7 +143,7 @@ frontmatter is rejected with a clear error citing the path.
   **no** change to the working tree of `main`; `list()` groups tasks by state
   folder; a malformed filename is skipped with a warning, not a throw.
 
-### Phase E — `apps/osiris-server` REST + SPA ✅ scaffold
+### Phase E — `apps/osiris-api` REST + SPA ✅ scaffold
 
 - [x] `routes/backlog.ts` — `GET /api/v1/backlog`, `GET/POST /api/v1/backlog/tasks`, `POST …/tasks/:id/move`
 - [x] `routes/crew.ts` — `GET /api/v1/crew/agents`, `POST /api/v1/crew/runs` (+ SSE `…/runs/:id/events`)
@@ -170,7 +170,7 @@ frontmatter is rejected with a clear error citing the path.
 - [x] `osiris memory reindex` / `osiris memory search <q>`
 - [x] `osiris agent list` / `osiris crew run "<task>"`
 - [x] `osiris backlog list|new|move`
-- [x] `osiris serve` — boots `osiris-server` against the cwd
+- [x] `osiris serve` — boots `osiris-api` against the cwd
 - [x] `osiris repl` — node:repl with `crew`, `memory`, `backlog` in scope
 - **Acceptance:** `osiris --help` lists all commands; `osiris backlog new "[bug] parser crash"` writes a task and commits it to the orphan branch.
 
@@ -192,8 +192,8 @@ frontmatter is rejected with a clear error citing the path.
 ```text
 @richardblaha/osiris-protocol ─┬─> @richardblaha/osiris-backlog ──┐        @osiris/lm-proxy ──> osiris-workspace (ext)
   (+ ConsoleClient)├─> @richardblaha/osiris-memory ───┼─> @richardblaha/osiris-crew ──> @richardblaha/osiris-cli
-                   └─> @richardblaha/osiris-config ┘        │            (+ @richardblaha/osiris-server bin)
-                                                  └─> @richardblaha/osiris-server ─> @richardblaha/osiris-console (SPA, build-time)
+                   └─> @richardblaha/osiris-config ┘        │            (+ @richardblaha/osiris-api bin)
+                                                  └─> @richardblaha/osiris-api ─> @richardblaha/osiris-console (SPA, build-time)
 ```
 
 `@osiris/lm-proxy` (an OpenAI-compatible shim over `vscode.lm`) is how a
@@ -233,9 +233,9 @@ starts the pool only when an agent opts in (`tools: [..., mcp]` / `mcp:<id>`) or
 
 ## Running the server
 
-`docker compose -f apps/osiris-server/docker-compose.yml up --build` brings up
-osiris-server + ChromaDB (`chromadb/chroma:1.0.15` — the npm client 3.x speaks the
-v2 API). The image is a `pnpm deploy` of `@richardblaha/osiris-server` on a slim node+git base;
+`docker compose -f apps/osiris-api/docker-compose.yml up --build` brings up
+osiris-api + ChromaDB (`chromadb/chroma:1.0.15` — the npm client 3.x speaks the
+v2 API). The image is a `pnpm deploy` of `@richardblaha/osiris-api` on a slim node+git base;
 it serves the console SPA from `./public` and `git init`s a bind-mounted
 `/workspace` if needed. `@richardblaha/osiris-memory` `buildMemoryStore()` probes ChromaDB and
 falls back to a local file store when it is unreachable, so the API never 500s on

@@ -1,10 +1,10 @@
 # Osiris Server + ChromaDB. From the repo root:
-#   docker compose -f apps/osiris-server/docker-compose.yml up --build
+#   docker compose -f apps/osiris-api/docker-compose.yml up --build
 services:
   osiris-server:
     build:
       context: ../..
-      dockerfile: apps/osiris-server/Dockerfile
+      dockerfile: apps/osiris-api/Dockerfile
     ports:
       - "8080:8080"
     environment:

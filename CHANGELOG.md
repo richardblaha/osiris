@@ -1,10 +1,17 @@
 # Changelog
 
-All notable changes to Osiris IDE are documented here.
+All notable changes to Osiris (the agent/platform repo) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project follows [Semantic Versioning](https://semver.org/).
 
-Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
+## [Unreleased]
+
+### Changed
+
+- **`@richardblaha/osiris-server` → `@richardblaha/osiris-api`** (`apps/osiris-server/`
+  → `apps/osiris-api/`), matching the name the spec always used for the REST +
+  console API. Package name, workspace directory and every import updated; the
+  CLI's `osiris serve` still boots it.
 
 ## [0.1.0] - 2026-09-06
 
@@ -127,12 +134,12 @@ bundle and the packed extensions from a single `v*` tag.
 - CLI wrapper entrypoint (`server/index.mjs`) and a container image
   (`apps/osiris-web/Dockerfile`); built and smoke-tested by `build-web.yml`.
 
-### Server (`apps/osiris-server` + `apps/osiris-console`)
+### Server (`apps/osiris-api` + `apps/osiris-console`)
 
 - Crew/backlog/memory HTTP API (`/api/v1/*`) with a `/healthz` probe.
 - Persisted crew runs and a "Recent runs" list in the console SPA.
 - Console task detail / history and backlog sync.
-- Container image (`apps/osiris-server/Dockerfile`) + compose stack with ChromaDB;
+- Container image (`apps/osiris-api/Dockerfile`) + compose stack with ChromaDB;
   image build and API smoke covered by `osiris-server.yml`.
 
 ### Platform packages
@@ -159,6 +166,7 @@ bundle and the packed extensions from a single `v*` tag.
 - `release.yml` cuts a GitHub Release from a `v*` tag; `build-desktop.yml` and
   `build-web.yml` attach the installers and the web bundle for the same tag.
 
+[unreleased]: https://github.com/richardblaha/osiris-ai/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/richardblaha/osiris-ai/releases/tag/v0.1.0
 [0.1.0-alpha.6]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.5

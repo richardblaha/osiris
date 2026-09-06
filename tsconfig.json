@@ -12,6 +12,6 @@
     { "path": "packages/osiris-cli" },
     { "path": "packages/osiris-telemetry" },
     { "path": "packages/osiris-agent-core" },
-    { "path": "apps/osiris-server" }
+    { "path": "apps/osiris-api" }
   ]
 }

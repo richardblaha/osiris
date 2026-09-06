@@ -1,7 +1,7 @@
 /**
  * Session identity and lifecycle. A session runs inside a `kind` cluster as an
  * `OsirisSession` custom resource, reconciled by `osiris-kind-operator`: the
- * client (osiris-server) only ever expresses `desiredPhase` (Running/Suspended)
+ * client (osiris-api) only ever expresses `desiredPhase` (Running/Suspended)
  * and reads back the controller-observed `phase` — there is no client-managed
  * transfer lease any more (see `osiris-spec.md` §3.3/3.4).
  */

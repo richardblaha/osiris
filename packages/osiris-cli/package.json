@@ -34,7 +34,7 @@
     "@richardblaha/osiris-mcp": "workspace:*",
     "@richardblaha/osiris-memory": "workspace:*",
     "@richardblaha/osiris-protocol": "workspace:*",
-    "@richardblaha/osiris-server": "workspace:*",
+    "@richardblaha/osiris-api": "workspace:*",
     "@richardblaha/osiris-core": "workspace:*"
   },
   "devDependencies": {
