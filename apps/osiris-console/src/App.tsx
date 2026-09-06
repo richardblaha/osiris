@@ -7,7 +7,7 @@ import type {
   CrewRunResult,
   CrewRunSummary,
   TaskHistoryEntry,
-} from '@richardblaha/protocol';
+} from '@richardblaha/osiris-protocol';
 import { client } from './api.js';
 
 type Tab = 'board' | 'crew' | 'memory';

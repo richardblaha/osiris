@@ -13,21 +13,21 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: osirisproject-editor-role
 rules:
-- apiGroups:
-  - osiris.osiris.dev
-  resources:
-  - osirisprojects
-  verbs:
-  - create
-  - delete
-  - get
-  - list
-  - patch
-  - update
-  - watch
-- apiGroups:
-  - osiris.osiris.dev
-  resources:
-  - osirisprojects/status
-  verbs:
-  - get
+  - apiGroups:
+      - osiris.osiris.dev
+    resources:
+      - osirisprojects
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - osiris.osiris.dev
+    resources:
+      - osirisprojects/status
+    verbs:
+      - get

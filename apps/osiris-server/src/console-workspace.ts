@@ -4,8 +4,8 @@ import {
   osirisPaths,
   resolveOsirisFile,
   type OsirisPaths,
-} from '@richardblaha/dot-osiris';
-import { BacklogRepo } from '@osiris/backlog';
+} from '@richardblaha/osiris-config';
+import { BacklogRepo } from '@richardblaha/osiris-backlog';
 import {
   buildEmbedding,
   buildMemoryStore,
@@ -14,15 +14,15 @@ import {
   searchMemory,
   type MemoryConfig,
   type MemoryStore,
-} from '@osiris/memory';
-import { loadAgentRegistry, loadCrewSession } from '@osiris/crew';
+} from '@richardblaha/osiris-memory';
+import { loadAgentRegistry, loadCrewSession } from '@richardblaha/osiris-crew';
 import type {
   CrewEvent,
   CrewRunRequest,
   CrewRunResult,
   MemorySearchRequest,
-} from '@richardblaha/protocol';
-import { createLogger } from '@richardblaha/shared-core';
+} from '@richardblaha/osiris-protocol';
+import { createLogger } from '@richardblaha/osiris-core';
 import type { ConsoleDeps } from './routes/console.js';
 
 const log = createLogger('server:workspace');

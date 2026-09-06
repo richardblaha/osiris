@@ -10,19 +10,19 @@
     {
       "label": "osiris: serve console",
       "type": "shell",
-      "command": "pnpm --filter @osiris/console build && node packages/cli/dist/cli.js serve",
+      "command": "pnpm --filter @richardblaha/osiris-console build && node packages/osiris-cli/dist/cli.js serve",
       "problemMatcher": []
     },
     {
       "label": "osiris: reindex memory",
       "type": "shell",
-      "command": "node packages/cli/dist/cli.js memory reindex",
+      "command": "node packages/osiris-cli/dist/cli.js memory reindex",
       "problemMatcher": []
     },
     {
       "label": "console: dev (vite)",
       "type": "shell",
-      "command": "pnpm --filter @osiris/console dev",
+      "command": "pnpm --filter @richardblaha/osiris-console dev",
       "problemMatcher": []
     }
   ]

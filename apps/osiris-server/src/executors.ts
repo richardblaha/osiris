@@ -1,5 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { SESSION_SCHEMA_VERSION, type CreateSessionRequest, type SessionDescriptor } from '@richardblaha/protocol';
+import {
+  SESSION_SCHEMA_VERSION,
+  type CreateSessionRequest,
+  type SessionDescriptor,
+} from '@richardblaha/osiris-protocol';
 
 export class SessionNotFoundInExecutor extends Error {
   constructor(id: string) {

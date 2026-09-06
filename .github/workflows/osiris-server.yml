@@ -22,7 +22,7 @@ concurrency:
 
 jobs:
   memory-chromadb:
-    name: "@osiris/memory ⇄ ChromaDB"
+    name: "@richardblaha/osiris-memory ⇄ ChromaDB"
     runs-on: ubuntu-latest
     services:
       chromadb:
@@ -36,7 +36,7 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter "@osiris/memory..." build
+      - run: pnpm --filter "@richardblaha/osiris-memory..." build
       - name: Wait for ChromaDB
         run: |
           for i in $(seq 1 30); do
@@ -46,7 +46,7 @@ jobs:
       - name: Integration test against ChromaDB
         env:
           OSIRIS_TEST_CHROMA_URL: http://localhost:8000
-        run: pnpm --filter @osiris/memory test
+        run: pnpm --filter @richardblaha/osiris-memory test
 
   docker-smoke:
     name: server image + API smoke

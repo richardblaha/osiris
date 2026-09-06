@@ -3,8 +3,8 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CoordinationV1Api, CustomObjectsApi, KubeConfig } from '@kubernetes/client-node';
-import { startTelemetry } from '@richardblaha/telemetry';
-import { createLogger } from '@richardblaha/shared-core';
+import { startTelemetry } from '@richardblaha/osiris-telemetry';
+import { createLogger } from '@richardblaha/osiris-core';
 import { buildServer } from './app.js';
 import { InMemorySessionStore } from './session-store.js';
 import { StubSessionExecutor, type SessionExecutor } from './executors.js';
@@ -19,12 +19,15 @@ function firstExisting(paths: string[]): string | undefined {
 }
 
 /** Build the Kubernetes-backed executor + start its informer, or fall back to the stub. */
-function setupSessionExecutor(
-  store: InMemorySessionStore,
-): { executor: SessionExecutor; stop?: () => Promise<void> } {
+function setupSessionExecutor(store: InMemorySessionStore): {
+  executor: SessionExecutor;
+  stop?: () => Promise<void>;
+} {
   const namespace = process.env.OSIRIS_K8S_NAMESPACE;
   if (!namespace) {
-    log.warn('OSIRIS_K8S_NAMESPACE is unset — sessions run against an in-memory stub, not osiris-kind');
+    log.warn(
+      'OSIRIS_K8S_NAMESPACE is unset — sessions run against an in-memory stub, not osiris-kind',
+    );
     return { executor: new StubSessionExecutor() };
   }
 

@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import backend from 'git-http-backend';
 import type { FastifyInstance } from 'fastify';
-import { createLogger } from '@richardblaha/shared-core';
+import { createLogger } from '@richardblaha/osiris-core';
 
 const log = createLogger('server:git');
 
@@ -109,6 +109,8 @@ function runGit(args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
     const ps = spawn('git', args, { stdio: 'ignore' });
     ps.on('error', reject);
-    ps.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`git ${args[0]} exited ${code}`))));
+    ps.on('exit', (code) =>
+      code === 0 ? resolve() : reject(new Error(`git ${args[0]} exited ${code}`)),
+    );
   });
 }

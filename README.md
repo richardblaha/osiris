@@ -27,32 +27,33 @@ Kubernetes cluster (`kind`), managed by `osiris-kind-operator`. It ships with:
 This is the agent/platform half of Osiris. The IDE half — a custom VS Code
 distribution (desktop + web) and its `osiris-ai`/`osiris-workspace` extensions —
 lives in [`osiris-ide`](https://github.com/richardblaha/osiris-ide). Six packages
-(`shared-core`, `protocol`, `agent-core`, `mcp`, `dot-osiris`, `telemetry`) are used
-by both repos; they live here and are published to GitHub Packages under the
-`@richardblaha` scope for `osiris-ide` to consume (see `.github/workflows/publish-packages.yml`).
+(`osiris-core`, `osiris-protocol`, `osiris-agent-core`, `osiris-mcp`, `osiris-config`,
+`osiris-telemetry`) are used by both repos; they live here and are published to GitHub
+Packages under the `@richardblaha` scope for `osiris-ide` to consume (see
+`.github/workflows/publish-packages.yml`).
 
 ## Repository layout
 
 ```text
-osiris/
+osiris-ai/
 ├── apps/
-│   ├── osiris-server/    # REST API: git hosting, sessions, crew / backlog / memory
-│   └── osiris-console/   # Lightweight SPA — Kanban board, crew runner, KB search
+│   ├── osiris-server/        # REST API: git hosting, sessions, crew / backlog / memory
+│   └── osiris-console/       # Lightweight SPA — Kanban board, crew runner, KB search
 ├── packages/
-│   ├── shared-core/      # Shared utilities, types, telemetry & event bus
-│   ├── protocol/         # zod wire contracts (sessions, crew, backlog, memory)
-│   ├── agent-core/       # Provider-agnostic single-agent loop + snapshot
-│   ├── dot-osiris/       # The .osiris/ layout resolver + bundled system template
-│   ├── memory/           # Knowledge base: chunking + incremental ChromaDB index
-│   ├── mcp/              # MCP client (stdio + HTTP) + crew tool adapter
-│   ├── crew/             # Multi-agent orchestration (coordinator + delegation)
-│   ├── backlog/          # File-based PM on a Git orphan branch
-│   ├── telemetry/        # OpenTelemetry setup shared by server + desktop-host (in osiris-ide)
-│   └── cli/              # The `osiris` command + REPL
-├── operator/              # osiris-kind-operator (Go/kubebuilder): CRDs + controllers
+│   ├── osiris-core/          # Shared utilities, types, telemetry & event bus
+│   ├── osiris-protocol/      # zod wire contracts (sessions, crew, backlog, memory)
+│   ├── osiris-agent-core/    # Provider-agnostic single-agent loop + snapshot
+│   ├── osiris-config/        # The .osiris/ layout resolver + bundled system template
+│   ├── osiris-memory/        # Knowledge base: chunking + incremental ChromaDB index
+│   ├── osiris-mcp/           # MCP client (stdio + HTTP) + crew tool adapter
+│   ├── osiris-crew/          # Multi-agent orchestration (coordinator + delegation)
+│   ├── osiris-backlog/       # File-based PM on a Git orphan branch
+│   ├── osiris-telemetry/     # OpenTelemetry setup shared by server + desktop-host (in osiris-ide)
+│   └── osiris-cli/           # The `osiris` command + REPL
+├── operator/                 # osiris-kind-operator (Go/kubebuilder): CRDs + controllers
 └── toolchain/
-    ├── eslint-config/    # Shared flat ESLint config
-    └── tsconfig/         # Shared TypeScript base configs
+    ├── osiris-eslint-config/ # Shared flat ESLint config
+    └── osiris-tsconfig/      # Shared TypeScript base configs
 ```
 
 ## Prerequisites
@@ -77,7 +78,7 @@ pnpm typecheck    # tsc -b across the workspace
 
 Osiris projects are driven from a `.osiris/` folder (the same folder VS Code reads
 as `.vscode`, in the `osiris-ide` editor). Anything missing there falls back to the
-bundled system template in `@richardblaha/dot-osiris`.
+bundled system template in `@richardblaha/osiris-config`.
 
 ```text
 .osiris/
@@ -91,7 +92,7 @@ bundled system template in `@richardblaha/dot-osiris`.
 └── mcp.json    # MCP servers, merged with the editor's discovered set
 ```
 
-The `osiris` CLI (`@osiris/cli`) ties it together:
+The `osiris` CLI (`@richardblaha/osiris-cli`) ties it together:
 
 ```bash
 osiris init                       # scaffold .osiris/ from the system template
@@ -118,7 +119,7 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
 - **MCP** servers are taken from `.osiris/mcp.json` (both the `servers` and the
   VS Code `mcpServers` key; `${workspaceFolder}` / `${env:VAR}` are expanded).
   An agent opts in with an `mcp` (all servers) or `mcp:<id>` selector in its
-  `tools:` list; `@richardblaha/mcp` starts them (stdio or Streamable HTTP), exposes
+  `tools:` list; `@richardblaha/osiris-mcp` starts them (stdio or Streamable HTTP), exposes
   each tool as `<id>__<tool>`, and a server that won't start is skipped, not
   fatal. `osiris crew run --mcp` / `OSIRIS_MCP=1` forces the pool even when no
   agent asks. Osiris manages no credentials of its own.
@@ -130,7 +131,7 @@ osiris repl                       # interactive REPL with crew/backlog/memory in
 In the `osiris-ide` editor, the **Osiris** sidebar view (`osiris-workspace`) shows
 the Kanban backlog and a crew runner, and the **Osiris: Run Crew on a Task…** /
 **Osiris: Open Console** commands drive this same server — all over
-`@richardblaha/protocol`'s typed `ConsoleClient`.
+`@richardblaha/osiris-protocol`'s typed `ConsoleClient`.
 
 See [docs/crew-architecture.md](docs/crew-architecture.md) for the full design.
 
@@ -144,8 +145,9 @@ created once and never deleted on suspend. See `operator/OSIRIS-SPEC.md` and
 
 ## Publishing the shared packages
 
-`shared-core`, `protocol`, `agent-core`, `mcp`, `dot-osiris` and `telemetry` are
-published to GitHub Packages so `osiris-ide` can depend on them. Bump the version(s)
+`osiris-core`, `osiris-protocol`, `osiris-agent-core`, `osiris-mcp`, `osiris-config`
+and `osiris-telemetry` are published to GitHub Packages (`@richardblaha/…`) so
+`osiris-ide` can depend on them. Bump the version(s)
 that changed, then push a tag matching `packages-v*` (or run the
 `Publish Packages` workflow manually) — see `.github/workflows/publish-packages.yml`.
 

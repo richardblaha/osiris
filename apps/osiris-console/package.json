@@ -1,5 +1,5 @@
 {
-  "name": "@osiris/console",
+  "name": "@richardblaha/osiris-console",
   "version": "0.1.0",
   "private": true,
   "description": "Osiris console — a lightweight SPA for the Kanban backlog, the agent crew and knowledge-base search.",
@@ -15,13 +15,13 @@
     "clean": "rimraf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@richardblaha/protocol": "workspace:*",
+    "@richardblaha/osiris-protocol": "workspace:*",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
-    "@osiris/eslint-config": "workspace:*",
-    "@osiris/tsconfig": "workspace:*",
+    "@richardblaha/osiris-eslint-config": "workspace:*",
+    "@richardblaha/osiris-tsconfig": "workspace:*",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",

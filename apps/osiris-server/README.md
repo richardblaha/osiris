@@ -1,19 +1,19 @@
-# @osiris/server
+# @richardblaha/osiris-server
 
 The Osiris Server — Fastify. Implements the **session-handover migration
-protocol** from [`@richardblaha/protocol`](../../packages/protocol), **smart-HTTP Git
+protocol** from [`@richardblaha/osiris-protocol`](../../packages/osiris-protocol), **smart-HTTP Git
 hosting**, and **resumable volume transfer**. Workspace provisioning and the
 hosted Web IDE launcher (`WebIdeLauncher`) are still seams.
 
-| Module               | Role                                                                            |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `app.ts`             | `buildServer(options)` — every `/api/v1` route, bearer auth, error mapping    |
-| `session-store.ts`   | `InMemorySessionStore` — the lease/etag state machine (`local ⇄ in-transit ⇄ server`), expiry sweep, event emitter |
-| `executors.ts`       | `HandoverExecutor` + `VolumeStore` (`InMemoryVolumeStore` / `FileVolumeStore` — assemble `Content-Range` chunks, digest, serve back); `StubHandoverExecutor` |
-| `docker-executor.ts` | `DockerHandoverExecutor` — real `provision` / `freezeForFetch` / `teardown` via `@osiris/container-sync` `thaw()`/`freeze()` + a `WebIdeLauncher` |
-| `git.ts`             | `registerGitHosting()` — `/git/<repo>.git/...` proxied to the system `git` (`git-http-backend`), auto-`init --bare` on first push |
-| `lease.ts` · `sse.ts`| lease etag/TTL helpers · SSE frame formatting                                  |
-| `index.ts`           | process entry: telemetry + `listen`                                            |
+| Module                | Role                                                                                                                                                         |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `app.ts`              | `buildServer(options)` — every `/api/v1` route, bearer auth, error mapping                                                                                   |
+| `session-store.ts`    | `InMemorySessionStore` — the lease/etag state machine (`local ⇄ in-transit ⇄ server`), expiry sweep, event emitter                                           |
+| `executors.ts`        | `HandoverExecutor` + `VolumeStore` (`InMemoryVolumeStore` / `FileVolumeStore` — assemble `Content-Range` chunks, digest, serve back); `StubHandoverExecutor` |
+| `docker-executor.ts`  | `DockerHandoverExecutor` — real `provision` / `freezeForFetch` / `teardown` via `@osiris/container-sync` `thaw()`/`freeze()` + a `WebIdeLauncher`            |
+| `git.ts`              | `registerGitHosting()` — `/git/<repo>.git/...` proxied to the system `git` (`git-http-backend`), auto-`init --bare` on first push                            |
+| `lease.ts` · `sse.ts` | lease etag/TTL helpers · SSE frame formatting                                                                                                                |
+| `index.ts`            | process entry: telemetry + `listen`                                                                                                                          |
 
 ```bash
 OSIRIS_SERVER_TOKEN=… OSIRIS_PUBLIC_URL=https://osiris.example.com \

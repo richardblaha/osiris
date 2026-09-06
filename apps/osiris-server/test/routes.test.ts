@@ -43,16 +43,29 @@ describe('session lifecycle', () => {
   });
 
   it('validates the request body (400)', async () => {
-    const bad = await app.inject({ method: 'POST', url: '/api/v1/sessions', headers: auth, payload: {} });
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/api/v1/sessions',
+      headers: auth,
+      payload: {},
+    });
     expect(bad.statusCode).toBe(400);
   });
 
   it('gets a session and 404s for an unknown id', async () => {
     const { sessionId } = await createSession();
-    const ok = await app.inject({ method: 'GET', url: `/api/v1/sessions/${sessionId}`, headers: auth });
+    const ok = await app.inject({
+      method: 'GET',
+      url: `/api/v1/sessions/${sessionId}`,
+      headers: auth,
+    });
     expect(ok.statusCode).toBe(200);
 
-    const missing = await app.inject({ method: 'GET', url: '/api/v1/sessions/nope', headers: auth });
+    const missing = await app.inject({
+      method: 'GET',
+      url: '/api/v1/sessions/nope',
+      headers: auth,
+    });
     expect(missing.statusCode).toBe(404);
   });
 
@@ -88,10 +101,18 @@ describe('session lifecycle', () => {
 
   it('deletes a session (204), after which it 404s', async () => {
     const { sessionId } = await createSession();
-    const del = await app.inject({ method: 'DELETE', url: `/api/v1/sessions/${sessionId}`, headers: auth });
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/sessions/${sessionId}`,
+      headers: auth,
+    });
     expect(del.statusCode).toBe(204);
 
-    const after = await app.inject({ method: 'GET', url: `/api/v1/sessions/${sessionId}`, headers: auth });
+    const after = await app.inject({
+      method: 'GET',
+      url: `/api/v1/sessions/${sessionId}`,
+      headers: auth,
+    });
     expect(after.statusCode).toBe(404);
   });
 });

@@ -1,7 +1,11 @@
 import type { CustomObjectsApi, KubeConfig, KubernetesObject } from '@kubernetes/client-node';
 import { makeInformer } from '@kubernetes/client-node';
-import { SESSION_SCHEMA_VERSION, type SessionDescriptor, type SessionPhase } from '@richardblaha/protocol';
-import { createLogger } from '@richardblaha/shared-core';
+import {
+  SESSION_SCHEMA_VERSION,
+  type SessionDescriptor,
+  type SessionPhase,
+} from '@richardblaha/osiris-protocol';
+import { createLogger } from '@richardblaha/osiris-core';
 import type { SessionStore } from './session-store.js';
 
 const log = createLogger('server:k8s-session-watch');
@@ -13,7 +17,12 @@ const DEFAULT_IDLE_TIMEOUT_SECONDS = 300;
 
 interface OsirisSessionObject extends KubernetesObject {
   spec: { projectRef: string; idleTimeoutOverrideSeconds?: number };
-  status?: { phase?: SessionPhase; lastActivityAt?: string; effectiveIdleTimeoutSeconds?: number; webUrl?: string };
+  status?: {
+    phase?: SessionPhase;
+    lastActivityAt?: string;
+    effectiveIdleTimeoutSeconds?: number;
+    webUrl?: string;
+  };
 }
 
 function toDescriptor(obj: OsirisSessionObject): SessionDescriptor {
@@ -87,7 +96,10 @@ export function startSessionWatch(
   });
 
   void informer.start().catch((err: unknown) => {
-    log.error('failed to start session informer: %s', err instanceof Error ? err.message : String(err));
+    log.error(
+      'failed to start session informer: %s',
+      err instanceof Error ? err.message : String(err),
+    );
   });
 
   return { stop: () => informer.stop() };

@@ -13,15 +13,15 @@ metadata:
     app.kubernetes.io/managed-by: kustomize
   name: osirisproject-admin-role
 rules:
-- apiGroups:
-  - osiris.osiris.dev
-  resources:
-  - osirisprojects
-  verbs:
-  - '*'
-- apiGroups:
-  - osiris.osiris.dev
-  resources:
-  - osirisprojects/status
-  verbs:
-  - get
+  - apiGroups:
+      - osiris.osiris.dev
+    resources:
+      - osirisprojects
+    verbs:
+      - "*"
+  - apiGroups:
+      - osiris.osiris.dev
+    resources:
+      - osirisprojects/status
+    verbs:
+      - get

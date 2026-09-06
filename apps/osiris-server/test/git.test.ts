@@ -15,7 +15,12 @@ let reposDir: string;
 beforeEach(async () => {
   reposDir = await mkdtemp(join(tmpdir(), 'osiris-git-'));
   await run('git', ['init', '--bare', join(reposDir, 'demo.git')]);
-  app = buildServer({ token: 't', publicBaseUrl: 'http://osiris.test', leaseSweepMs: 0, gitReposDir: reposDir });
+  app = buildServer({
+    token: 't',
+    publicBaseUrl: 'http://osiris.test',
+    leaseSweepMs: 0,
+    gitReposDir: reposDir,
+  });
 });
 afterEach(async () => {
   await app.close();

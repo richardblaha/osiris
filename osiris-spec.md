@@ -28,9 +28,9 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
 
 ## 2. Repozitáře
 
-| Repo | Obsah |
-|---|---|
-| `osiris-ai` | CLI `osiris`, `osiris-kind-operator`, `osiris-api`, sdílené knihovny |
+| Repo         | Obsah                                                                                                                             |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `osiris-ai`  | CLI `osiris`, `osiris-kind-operator`, `osiris-api`, sdílené knihovny                                                              |
 | `osiris-ide` | Osiris IDE (desktop + web), spouští se `osiris-ide`, obsahuje extensions `osiris-workspace`, `osiris-ui-chat`, `osiris-ui-config` |
 
 > Otevřená otázka k rozhodnutí: `osiris-api` a `osiris-kind-operator` — dát do
@@ -42,6 +42,7 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
 ## 3. `osiris` CLI
 
 ### 3.1 Chování při spuštění
+
 - `osiris` bez parametrů → spustí TUI.
 - `osiris <příkaz>` → klasické CLI chování (podobně jako `docker`/`kubectl`).
 - Při jakékoli akci vyžadující cluster: CLI ověří, že Docker běží, že existuje
@@ -52,6 +53,7 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
   service / launchd / registrace do OS autostart — platformově specifické).
 
 ### 3.2 Konfigurace
+
 - Globální: `~/.osiris/`
 - Per-projekt override: `<project>/.osiris/` (merge nad globální, projekt vyhrává)
 - Struktura:
@@ -69,6 +71,7 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
   přidat i přepsat jednotlivé LLM/MCP záznamy podle názvu souboru/ID).
 
 ### 3.3 Projekty a session
+
 - Každý projekt má unikátní jméno (validace při `osiris project init` /
   registraci — kontrola kolize v rámci clusteru).
 - Pro každý projekt běží dedikovaný `.dev` kontejner (pod) v `osiris-kind`.
@@ -84,6 +87,7 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
   začít s jednodušší variantou scale-to-0 + persistentní volume).
 
 ### 3.4 `osiris-kind-operator`
+
 - Kubernetes operátor (Go, kubebuilder/operator-sdk doporučeno) nasazovaný do
   `osiris-kind` při bootstrapu.
 - Řídí vše přes CRD, návrh CRD (názvy k doladění):
@@ -97,6 +101,7 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
   posledního timestampu aktivity (aktivitu reportuje CLI/API při interakci).
 
 ### 3.5 Paměť (ChromaDB)
+
 - ChromaDB běží jako služba uvnitř `osiris-kind`.
 - Tři úrovně kolekcí: global, project, session.
 - Skládání kontextu paměti pro daný běh: global → + project → + session
@@ -106,18 +111,21 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
   (project/global paměť přežívá).
 
 ### 3.6 MCP podpora
+
 - Lokální MCP servery nainstalované na stroji — CLI je umí detekovat/spravovat.
 - Vzdálené MCP servery — CLI umí prohledávat MCP registry/knihovnu, stahovat
   a instalovat, zapsat konfiguraci do `.osiris/mcp/*.yml`.
 - MCP konfigurace je scope-aware (global/project) stejně jako LLM konfigurace.
 
 ### 3.7 TUI
+
 - Spouští se automaticky při `osiris` bez argumentů.
 - Musí pokrývat minimálně: přehled projektů, přehled a přepínání session,
   stav clusteru/kontejnerů, chat s agentem.
 - Doporučená technologie (Go): Bubble Tea / Lip Gloss (pokud CLI bude v Go).
 
 ## 4. `osiris-api`
+
 - Běží uvnitř clusteru.
 - Poskytuje management API — vše, co jde přes CLI, musí jít i přes API
   (1:1 parita příkazů CLI ↔ endpointy API; doporučeno CLI interně volat
@@ -126,21 +134,26 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
   generovaný při bootstrapu clusteru).
 
 ## 5. Osiris IDE (`osiris-ide`)
+
 - Desktop i web varianta, sdílené jádro + extension systém.
 - Spouští se příkazem `osiris-ide`.
 - Vlastní repozitář `osiris-ide`.
 
 ### 5.1 `osiris-workspace`
+
 - Vytváření nových projektů, otevírání existujících, zakládání struktury.
 
 ### 5.2 `osiris-ui-chat`
+
 - Chat UI, přepínání mezi session.
 
 ### 5.3 `osiris-ui-config`
+
 - Instalace/správa MCP serverů přes UI.
 - Konfigurační UI pro všechny aspekty Osiris (LLM, MCP, timeouty, cluster).
 
 ## 6. Technologické otázky k rozhodnutí před startem
+
 1. Jazyk CLI + operátor: doporučeno Go (přirozené pro k8s operátory,
    kubebuilder, dobré TUI knihovny).
 2. `osiris-api`: Go (sdílení typů s operátorem) vs. jiný stack pro IDE
@@ -151,6 +164,7 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
    "system of record" pro CRD stavy mimo etcd? pravděpodobně ne, etcd stačí).
 
 ## 7. Bezpečnostní a provozní požadavky
+
 - Validace unikátnosti jména projektu při vytváření.
 - Graceful handling: Docker neběží, `kind` není nainstalován, cluster
   existuje ale je nekonzistentní (self-heal / `osiris doctor` příkaz).
@@ -161,18 +175,18 @@ YAML konfiguraci, a s IDE nadstavbou (desktop + web).
 > Vyplňovat průběžně podle zjištění z jednotlivých refaktoringových úkolů.
 > Účel: nemuset pokaždé znovu objevovat, kde se realita rozchází se spec.
 
-| Oblast | Cílový stav (viz sekce výše) | Skutečný stav | Poznámka |
-|---|---|---|---|
-| CLI framework | — | Node/TS (`@osiris/cli`, `packages/cli`), ne Go | TUI (§3.7, Bubble Tea) není postaveno; `osiris` je zatím čistě příkazové (`run.ts` dispatch), bez `osiris` bez-argumentů TUI |
-| Bootstrap clusteru | auto při potřebě + volitelně při startu OS | Ruční/skriptované (`operator/hack/bootstrap.sh`) | Žádná automatická detekce/bootstrap z CLI (§3.1) — CLI dnes cluster vůbec nezná, jen mluví s `osiris-server`, který mluví s clusterem |
-| CRD | `OsirisProject`, `OsirisSession`, `OsirisMemoryStore` | `OsirisProject` + `OsirisSession` implementovány (`operator/api/v1alpha1`), Go/kubebuilder v4, controller-runtime | `OsirisMemoryStore` záměrně nepostaveno (mimo rozsah 2026-09-04 úkolu). Skutečná API group je `osiris.osiris.dev` (kubebuilder spojuje `--group`+`--domain`), ne `osiris.dev` jak by naznačovala prozaická zkratka výše |
-| Suspend/resume mechanismus | scale-to-0 + PVC (návrh) | Implementováno přesně takto | `OsirisSessionReconciler` škáluje Deployment 0/1 podle `coordination.k8s.io/v1 Lease` (aktivita) a `spec.desiredPhase`; PVC se vytváří jednou a nikdy nemaže při suspend. Idle-timeout auto-suspend nikdy nepřepisuje `spec.desiredPhase` (zůstává `Running`) — resume z idle stavu stačí bumpnout Lease, bez CR patch. `osiris session rm` = finalizer drénující Deployment→PVC. Ověřeno `envtest` suitou (5 scénářů) + `kind`-backed CI jobem (`.github/workflows/osiris-operator.yml`) |
-| Konfigurace `.osiris` | global+local deep-merge | Existuje (`packages/dot-osiris`), ale ne ve tvaru `llm/*.yml`/`mcp/*.yml` z §3.2 | Necíleno tímto úkolem |
-| Paměť / ChromaDB | 3 vrstvy, skládání kontextu | Existuje (`packages/memory`, `osiris-crew-backlog-memory` memory) | Mimo rozsah 2026-09-04 úkolu (suspend/resume) — nekontrolováno v rámci něj |
-| MCP | lokální detekce + registry install | `packages/mcp` existuje, scope neověřen | Mimo rozsah 2026-09-04 úkolu |
-| TUI | Bubble Tea | Neexistuje | `osiris` je Node/TS CLI bez TUI |
-| `osiris-api` | 1:1 parita s CLI | `apps/osiris-server` (Fastify) — session lifecycle (create/get/suspend/resume/delete/activity) 1:1 s novými CLI příkazy `osiris session resume/suspend/rm`; ostatní CLI příkazy (crew/backlog/memory/init/doctor) běží lokálně v CLI, ne přes API | Parita je zatím jen pro session-lifecycle podmnožinu |
-| `osiris-ide` a extensions | samostatné repo | Odděleno 2026-09-05 do `github.com/richardblaha/osiris-ide` (`git filter-repo`, historie zachována) | Shodné se spec. `shared-core`/`protocol`/`agent-core`/`mcp`/`dot-osiris`/`telemetry` zůstávají v `osiris-ai` (sdílené oběma repy) a publikují se do GitHub Packages pod scope `@richardblaha` (ne `@osiris` — GitHub Packages vyžaduje shodu scope s vlastníkem repa); `osiris-ide` je konzumuje jako běžné semver závislosti, ne `workspace:*`. `toolchain/tsconfig`+`toolchain/eslint-config` jsou zduplikované (dev tooling, ne runtime knihovna). Zbývá: publikovat první verzi balíčků (`packages-v*` tag) a nastavit `PACKAGES_READ_TOKEN` secret v `osiris-ide` (cross-repo GitHub Packages read vyžaduje PAT, ne automatický `GITHUB_TOKEN`) |
+| Oblast                     | Cílový stav (viz sekce výše)                          | Skutečný stav                                                                                                                                                                                                                                     | Poznámka                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI framework              | —                                                     | Node/TS (`@richardblaha/osiris-cli`, `packages/cli`), ne Go                                                                                                                                                                                       | TUI (§3.7, Bubble Tea) není postaveno; `osiris` je zatím čistě příkazové (`run.ts` dispatch), bez `osiris` bez-argumentů TUI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Bootstrap clusteru         | auto při potřebě + volitelně při startu OS            | Ruční/skriptované (`operator/hack/bootstrap.sh`)                                                                                                                                                                                                  | Žádná automatická detekce/bootstrap z CLI (§3.1) — CLI dnes cluster vůbec nezná, jen mluví s `osiris-server`, který mluví s clusterem                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| CRD                        | `OsirisProject`, `OsirisSession`, `OsirisMemoryStore` | `OsirisProject` + `OsirisSession` implementovány (`operator/api/v1alpha1`), Go/kubebuilder v4, controller-runtime                                                                                                                                 | `OsirisMemoryStore` záměrně nepostaveno (mimo rozsah 2026-09-04 úkolu). Skutečná API group je `osiris.osiris.dev` (kubebuilder spojuje `--group`+`--domain`), ne `osiris.dev` jak by naznačovala prozaická zkratka výše                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Suspend/resume mechanismus | scale-to-0 + PVC (návrh)                              | Implementováno přesně takto                                                                                                                                                                                                                       | `OsirisSessionReconciler` škáluje Deployment 0/1 podle `coordination.k8s.io/v1 Lease` (aktivita) a `spec.desiredPhase`; PVC se vytváří jednou a nikdy nemaže při suspend. Idle-timeout auto-suspend nikdy nepřepisuje `spec.desiredPhase` (zůstává `Running`) — resume z idle stavu stačí bumpnout Lease, bez CR patch. `osiris session rm` = finalizer drénující Deployment→PVC. Ověřeno `envtest` suitou (5 scénářů) + `kind`-backed CI jobem (`.github/workflows/osiris-operator.yml`)                                                                                                                                                            |
+| Konfigurace `.osiris`      | global+local deep-merge                               | Existuje (`packages/dot-osiris`), ale ne ve tvaru `llm/*.yml`/`mcp/*.yml` z §3.2                                                                                                                                                                  | Necíleno tímto úkolem                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Paměť / ChromaDB           | 3 vrstvy, skládání kontextu                           | Existuje (`packages/memory`, `osiris-crew-backlog-memory` memory)                                                                                                                                                                                 | Mimo rozsah 2026-09-04 úkolu (suspend/resume) — nekontrolováno v rámci něj                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| MCP                        | lokální detekce + registry install                    | `packages/mcp` existuje, scope neověřen                                                                                                                                                                                                           | Mimo rozsah 2026-09-04 úkolu                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| TUI                        | Bubble Tea                                            | Neexistuje                                                                                                                                                                                                                                        | `osiris` je Node/TS CLI bez TUI                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `osiris-api`               | 1:1 parita s CLI                                      | `apps/osiris-server` (Fastify) — session lifecycle (create/get/suspend/resume/delete/activity) 1:1 s novými CLI příkazy `osiris session resume/suspend/rm`; ostatní CLI příkazy (crew/backlog/memory/init/doctor) běží lokálně v CLI, ne přes API | Parita je zatím jen pro session-lifecycle podmnožinu                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `osiris-ide` a extensions  | samostatné repo                                       | Odděleno 2026-09-05 do `github.com/richardblaha/osiris-ide` (`git filter-repo`, historie zachována)                                                                                                                                               | Shodné se spec. `shared-core`/`protocol`/`agent-core`/`mcp`/`dot-osiris`/`telemetry` zůstávají v `osiris-ai` (sdílené oběma repy) a publikují se do GitHub Packages pod scope `@richardblaha` (ne `@osiris` — GitHub Packages vyžaduje shodu scope s vlastníkem repa); `osiris-ide` je konzumuje jako běžné semver závislosti, ne `workspace:*`. `toolchain/tsconfig`+`toolchain/eslint-config` jsou zduplikované (dev tooling, ne runtime knihovna). Zbývá: publikovat první verzi balíčků (`packages-v*` tag) a nastavit `PACKAGES_READ_TOKEN` secret v `osiris-ide` (cross-repo GitHub Packages read vyžaduje PAT, ne automatický `GITHUB_TOKEN`) |
 
 **Poznámka k historii (2026-09-02 → 2026-09-04):** mezi 2026-09-02 a
 2026-09-04 platila v repu odlišná, čistě TS/Docker-based architektura session
@@ -218,6 +232,7 @@ předmětem tohoto úkolu].
 ```
 
 Poznámky k šabloně:
+
 - **Krok 1 je povinný a oddělený** — u refaktoringu je nejdražší chyba
   začít měnit kód dřív, než se pochopí, proč je současný stav takový, jaký
   je (může tam být záměrný workaround).

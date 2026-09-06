@@ -1,0 +1,47 @@
+{
+  "name": "@richardblaha/osiris-protocol",
+  "version": "0.2.0",
+  "private": false,
+  "description": "The Desktop ⇄ Server wire contract for Osiris: session descriptors, the handover/fetch protocol and SSE events, as zod schemas + inferred types.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/richardblaha/osiris-ai.git",
+    "directory": "packages/osiris-protocol"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "public"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "watch": "tsc -p tsconfig.json --watch",
+    "lint": "eslint src",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "clean": "rimraf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@richardblaha/osiris-tsconfig": "workspace:*",
+    "@types/node": "^22.7.5",
+    "eslint": "^9.12.0",
+    "rimraf": "^6.0.1",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.3"
+  }
+}

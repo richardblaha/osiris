@@ -6,7 +6,19 @@ and the project follows [Semantic Versioning](https://semver.org/).
 
 Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
 
-## [Unreleased]
+## [0.1.0] - 2026-09-06
+
+### Changed
+
+- **All workspace packages renamed to one scheme: `@richardblaha/osiris-*`.**
+  The six published packages lose their old names — `@richardblaha/shared-core` →
+  `@richardblaha/osiris-core`, `protocol` → `osiris-protocol`, `agent-core` →
+  `osiris-agent-core`, `mcp` → `osiris-mcp`, `dot-osiris` → `osiris-config`,
+  `telemetry` → `osiris-telemetry` — and bump to `0.2.0`. The internal `@osiris/*`
+  packages (`cli`, `crew`, `backlog`, `memory`, `server`, `console`,
+  `eslint-config`, `tsconfig`) move to `@richardblaha/osiris-*` as well. Package
+  directories are renamed to match (`packages/osiris-core`, …). `osiris-ide` must
+  update its dependency names and imports after `packages-v0.2.0` is published.
 
 ### Added
 
@@ -40,7 +52,7 @@ Per-extension changes are tracked in `extensions/*/CHANGELOG.md`.
 - **Extensions** `osiris-dexpi` (DEXPI / P&ID) and `osiris-step` (ISO 10303-21)
   have been dropped from the monorepo — each will live in its own repository.
   Their `Dexpi*` / `Step*` domain types and `osiris:dexpi:*` / `osiris:step:*`
-  event channels are gone from `@richardblaha/shared-core`. The in-box extension set is
+  event channels are gone from `@richardblaha/osiris-core`. The in-box extension set is
   now `osiris-ai` and `osiris-workspace`.
 
 ## [0.1.0-alpha.6] - 2026-09-03
@@ -125,11 +137,11 @@ bundle and the packed extensions from a single `v*` tag.
 
 ### Platform packages
 
-- `@osiris/crew` — multi-agent orchestrator with task-class model routing and an
+- `@richardblaha/osiris-crew` — multi-agent orchestrator with task-class model routing and an
   MCP tool bridge.
-- `@richardblaha/mcp` — Model Context Protocol client shared by the crew and `osiris-ai`.
-- `@osiris/memory` — ChromaDB-backed knowledge base with `osiris memory watch`.
-- `@osiris/backlog` — Git orphan-branch backlog with push/pull and `osiris backlog lint`.
+- `@richardblaha/osiris-mcp` — Model Context Protocol client shared by the crew and `osiris-ai`.
+- `@richardblaha/osiris-memory` — ChromaDB-backed knowledge base with `osiris memory watch`.
+- `@richardblaha/osiris-backlog` — Git orphan-branch backlog with push/pull and `osiris backlog lint`.
 - `@osiris/lm-proxy` — editor LM API bridged to the crew.
 - `@osiris/branding` — icon rendering and the shell theme overlay.
 - `osiris` CLI — `init`, `doctor`, `crew run`, `backlog`, `memory` commands.
@@ -147,6 +159,7 @@ bundle and the packed extensions from a single `v*` tag.
 - `release.yml` cuts a GitHub Release from a `v*` tag; `build-desktop.yml` and
   `build-web.yml` attach the installers and the web bundle for the same tag.
 
+[0.1.0]: https://github.com/richardblaha/osiris-ai/releases/tag/v0.1.0
 [0.1.0-alpha.6]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.6
 [0.1.0-alpha.5]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.5
 [0.1.0-alpha.1]: https://github.com/richardblaha/osiris/releases/tag/v0.1.0-alpha.1

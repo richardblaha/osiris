@@ -48,7 +48,11 @@ describe('InMemorySessionStore', () => {
     const unsubscribe = store.subscribe('s1', seen);
 
     store.publish('s1', { type: 'session.phase-changed', sessionId: 's1', phase: 'Suspended' });
-    expect(seen).toHaveBeenCalledWith({ type: 'session.phase-changed', sessionId: 's1', phase: 'Suspended' });
+    expect(seen).toHaveBeenCalledWith({
+      type: 'session.phase-changed',
+      sessionId: 's1',
+      phase: 'Suspended',
+    });
 
     unsubscribe();
     store.publish('s1', { type: 'session.terminated', sessionId: 's1' });
