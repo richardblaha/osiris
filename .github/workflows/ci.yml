@@ -37,8 +37,7 @@ jobs:
       - uses: docker/metadata-action@v5
         id: meta
         with:
-          # The package name "osiris" is taken by the older osiris-agent repo.
-          images: ghcr.io/${{ github.repository_owner }}/osiris-app
+          images: ghcr.io/${{ github.repository }}
           tags: |
             type=raw,value=main
             type=sha,format=long

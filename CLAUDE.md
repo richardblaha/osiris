@@ -58,4 +58,4 @@ Configuration lives in `apps/api/.env` and `apps/web/.env`, with `.env.example` 
 
 ## Deployment
 
-Production runs at https://osiris.k6labs.cz in the `abydos` k3s cluster (namespace `osiris`). CI pushes the `ghcr.io/richardblaha/osiris-app` image on `main`, and the manifests live in `deploy/k8s` (kustomize). In the image the API also serves the web build (`STATIC_DIR`), and the web client reads its OIDC settings at runtime from `/config.js`. See `deploy/README.md` for secrets, PocketID setup and rollout.
+Production runs at https://osiris.k6labs.cz in the `abydos` k3s cluster (namespace `osiris`). CI pushes the `ghcr.io/richardblaha/osiris` image on `main`, and the manifests live in `deploy/k8s` (kustomize). In the image the API also serves the web build (`STATIC_DIR`), and the web client reads its OIDC settings at runtime from `/config.js`. See `deploy/README.md` for secrets, PocketID setup and rollout.

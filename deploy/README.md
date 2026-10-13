@@ -2,7 +2,7 @@
 
 Osiris runs in the `abydos` k3s cluster (Civo) at https://osiris.k6labs.cz, in the `osiris` namespace.
 
-- **Image:** GitHub Actions (`.github/workflows/ci.yml`) runs the tests and, on `main`, pushes `ghcr.io/richardblaha/osiris-app` with the tags `main` and `sha-<commit>`. The image runs the API, which also serves the built web client.
+- **Image:** GitHub Actions (`.github/workflows/ci.yml`) runs the tests and, on `main`, pushes `ghcr.io/richardblaha/osiris` with the tags `main` and `sha-<commit>`. The image runs the API, which also serves the built web client.
 - **Storage:** tenant databases are SQLite files on the `osiris-data` PVC (`/data/tenants`). The volume is ReadWriteOnce, so the deployment runs one replica with the `Recreate` strategy.
 - **TLS:** cert-manager (`letsencrypt` ClusterIssuer). Traefik redirects HTTP to HTTPS.
 
@@ -47,7 +47,7 @@ kubectl -n osiris rollout restart deploy/osiris
 kubectl -n osiris rollout status deploy/osiris
 ```
 
-To pin a release, run `kubectl -n osiris set image deploy/osiris osiris=ghcr.io/richardblaha/osiris-app:sha-<commit>`.
+To pin a release, run `kubectl -n osiris set image deploy/osiris osiris=ghcr.io/richardblaha/osiris:sha-<commit>`.
 
 ## Backups
 

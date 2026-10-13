@@ -25,7 +25,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: osiris
-          image: ghcr.io/richardblaha/osiris-app
+          image: ghcr.io/richardblaha/osiris
           imagePullPolicy: Always
           ports:
             - name: http
