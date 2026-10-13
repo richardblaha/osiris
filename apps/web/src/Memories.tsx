@@ -25,8 +25,8 @@ export function Memories({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className="mx-auto h-full max-w-3xl overflow-y-auto p-6">
-      <h1 className="text-lg font-semibold">Paměť</h1>
-      <p className="mt-1 text-sm text-neutral-500">
+      <h1 className="section-header text-[13px]">Paměť</h1>
+      <p className="mt-1 text-sm text-fg-secondary">
         Co si asistent pamatuje mezi konverzacemi. Osobní záznamy vidíš jen ty, firemní všichni ve firmě.
       </p>
 
@@ -37,35 +37,35 @@ export function Memories({ isAdmin }: { isAdmin: boolean }) {
           placeholder="Např. Nejsem plátce DPH"
           maxLength={500}
           required
-          className="min-w-0 flex-1 rounded-lg border border-neutral-300 px-3 py-2"
+          className="field min-w-0 flex-1"
         />
         {isAdmin && (
           <label className="flex items-center gap-1 text-sm">
             <input type="checkbox" checked={shared} onChange={(e) => setShared(e.target.checked)} /> pro celou firmu
           </label>
         )}
-        <button className="rounded-lg bg-neutral-900 px-4 py-2 text-white">Přidat</button>
+        <button className="btn-primary">Přidat</button>
       </form>
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
 
-      <ul className="mt-8 divide-y divide-neutral-200">
+      <ul className="mt-8 divide-y divide-line">
         {memories.map((m) => (
           <li key={m.id} className="flex items-center justify-between gap-4 py-3">
             <span>
               {m.content}
-              {m.shared && <span className="ml-2 text-xs text-neutral-400">firma</span>}
+              {m.shared && <span className="badge badge-accent ml-2">firma</span>}
             </span>
             {(!m.shared || isAdmin) && (
               <button
                 onClick={() => api.deleteMemory(m.id).then(refresh, (e: Error) => setError(e.message))}
-                className="shrink-0 text-sm text-red-600"
+                className="btn-danger shrink-0 text-sm"
               >
                 Smazat
               </button>
             )}
           </li>
         ))}
-        {!memories.length && <li className="py-3 text-neutral-500">Zatím nic.</li>}
+        {!memories.length && <li className="py-3 text-fg-muted">Zatím nic.</li>}
       </ul>
     </div>
   );

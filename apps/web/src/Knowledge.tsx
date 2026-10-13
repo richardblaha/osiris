@@ -28,9 +28,9 @@ export function Knowledge({ canEdit }: { canEdit: boolean }) {
   };
 
   return (
-    <div className="mx-auto max-w-3xl overflow-y-auto p-6">
-      <h1 className="text-lg font-semibold">Znalostní báze</h1>
-      <p className="mt-1 text-sm text-neutral-500">Poznámky ke klientům, ceníky a postupy, ve kterých asistent vyhledává.</p>
+    <div className="mx-auto h-full max-w-3xl overflow-y-auto p-6">
+      <h1 className="section-header text-[13px]">Znalostní báze</h1>
+      <p className="mt-1 text-sm text-fg-secondary">Poznámky ke klientům, ceníky a postupy, ve kterých asistent vyhledává.</p>
 
       {canEdit && (
         <form onSubmit={submit} className="mt-6 space-y-2">
@@ -39,7 +39,7 @@ export function Knowledge({ canEdit }: { canEdit: boolean }) {
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Název (např. Ceník 2026)"
             required
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2"
+            className="field"
           />
           <textarea
             value={content}
@@ -47,32 +47,32 @@ export function Knowledge({ canEdit }: { canEdit: boolean }) {
             placeholder="Text dokumentu"
             required
             rows={8}
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2"
+            className="field"
           />
-          <button disabled={busy} className="rounded-lg bg-neutral-900 px-4 py-2 text-white disabled:opacity-40">
+          <button disabled={busy} className="btn-primary">
             {busy ? "Ukládám…" : "Přidat"}
           </button>
         </form>
       )}
-      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+      {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
 
-      <ul className="mt-8 divide-y divide-neutral-200">
+      <ul className="mt-8 divide-y divide-line">
         {docs.map((d) => (
           <li key={d.id} className="flex items-center justify-between py-3">
             <span>
-              {d.title} <span className="text-sm text-neutral-500">· {d.chunks} částí</span>
+              {d.title} <span className="text-sm text-fg-secondary">· {d.chunks} částí</span>
             </span>
             {canEdit && (
               <button
                 onClick={() => api.deleteDocument(d.id).then(refresh, (e: Error) => setError(e.message))}
-                className="text-sm text-red-600"
+                className="btn-danger text-sm"
               >
                 Smazat
               </button>
             )}
           </li>
         ))}
-        {!docs.length && <li className="py-3 text-neutral-500">Zatím žádné dokumenty.</li>}
+        {!docs.length && <li className="py-3 text-fg-muted">Zatím žádné dokumenty.</li>}
       </ul>
     </div>
   );

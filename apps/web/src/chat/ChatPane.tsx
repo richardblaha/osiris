@@ -22,8 +22,8 @@ export function ChatPane({ threadId, onThreadCreated, onRunFinished }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  if (error) return <p className="p-6 text-red-600">{error}</p>;
-  if (!initial) return <p className="p-6 text-neutral-500">Načítám…</p>;
+  if (error) return <p className="notice notice-error m-6 px-3 py-2">{error}</p>;
+  if (!initial) return <p className="p-6 text-fg-muted">Načítám…</p>;
   return <Chat threadId={threadId} initial={initial} onThreadCreated={onThreadCreated} onRunFinished={onRunFinished} />;
 }
 

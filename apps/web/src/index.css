@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "./theme.css";
 
 html,
 body,
@@ -8,7 +9,8 @@ body,
 
 .markdown p + p,
 .markdown ul,
-.markdown ol {
+.markdown ol,
+.markdown pre {
   margin-top: 0.5rem;
 }
 .markdown ul {
@@ -22,7 +24,33 @@ body,
 .markdown strong {
   font-weight: 600;
 }
+.markdown a {
+  color: var(--accent-primary);
+  text-decoration: underline;
+}
 .markdown code {
-  font-family: ui-monospace, monospace;
-  font-size: 0.875em;
+  font-size: 0.9em;
+  background: var(--bg-hover);
+  border-radius: var(--radius);
+  padding: 0 0.25em;
+}
+.markdown pre {
+  background: var(--bg-sidebar);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius);
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+}
+.markdown pre code {
+  background: none;
+  padding: 0;
+}
+.markdown table {
+  margin-top: 0.5rem;
+  border-collapse: collapse;
+}
+.markdown th,
+.markdown td {
+  border: 1px solid var(--border-strong);
+  padding: 0.25rem 0.5rem;
 }

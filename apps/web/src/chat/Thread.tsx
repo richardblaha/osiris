@@ -16,12 +16,12 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
 function ToolCall({ toolName, args, result }: ToolCallMessagePartProps) {
   const label = TOOL_LABELS[toolName]?.(args as Record<string, unknown>) ?? toolName;
   return (
-    <details className="my-2 rounded-md border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm text-neutral-600">
+    <details className="notice my-2 px-3 py-2 text-sm text-fg-secondary">
       <summary className="cursor-pointer">
-        {result === undefined ? "⏳ " : "✓ "}
+        {result === undefined ? "⏳ " : <span className="text-success">✓ </span>}
         {label}
       </summary>
-      {result !== undefined && <pre className="mt-2 whitespace-pre-wrap text-xs">{String(result)}</pre>}
+      {result !== undefined && <pre className="mt-2 whitespace-pre-wrap text-xs text-fg-muted">{String(result)}</pre>}
     </details>
   );
 }
@@ -29,7 +29,7 @@ function ToolCall({ toolName, args, result }: ToolCallMessagePartProps) {
 function UserMessage() {
   return (
     <MessagePrimitive.Root className="flex justify-end py-2">
-      <div className="max-w-[80%] rounded-2xl bg-neutral-900 px-4 py-2 text-white whitespace-pre-wrap">
+      <div className="max-w-[80%] rounded-sm border border-line-strong bg-selection px-4 py-2 whitespace-pre-wrap">
         <MessagePrimitive.Parts />
       </div>
     </MessagePrimitive.Root>
@@ -39,12 +39,12 @@ function UserMessage() {
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="py-2">
-      <div className="markdown max-w-[90%] text-neutral-900">
+      <div className="markdown max-w-[90%]">
         <MessagePrimitive.Parts
           components={{ Text: () => <MarkdownTextPrimitive />, tools: { Fallback: ToolCall } }}
         />
         <MessagePrimitive.Error>
-          <p className="mt-2 text-sm text-red-600">Něco se pokazilo. Zkus to znovu.</p>
+          <p className="notice notice-error mt-2 px-3 py-2 text-sm">Něco se pokazilo. Zkus to znovu.</p>
         </MessagePrimitive.Error>
       </div>
     </MessagePrimitive.Root>
@@ -57,27 +57,30 @@ export function Thread() {
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-4">
         <div className="mx-auto max-w-3xl py-6">
           <ThreadPrimitive.Empty>
-            <p className="mt-24 text-center text-neutral-500">S čím ti můžu pomoct?</p>
+            <div className="mt-24 flex flex-col items-center gap-4 text-fg-secondary">
+              <img src="/logo.svg" alt="" className="h-16 w-16 opacity-90" />
+              <p>S čím ti můžu pomoct?</p>
+            </div>
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages>
             {({ message }) => (message.role === "user" ? <UserMessage /> : <AssistantMessage />)}
           </ThreadPrimitive.Messages>
         </div>
       </ThreadPrimitive.Viewport>
-      <div className="border-t border-neutral-200 px-4 py-3">
+      <div className="border-t border-line bg-sidebar px-4 py-3">
         <ComposerPrimitive.Root className="mx-auto flex max-w-3xl items-end gap-2">
           <ComposerPrimitive.Input
             autoFocus
             placeholder="Napiš zprávu…"
-            className="max-h-40 flex-1 resize-none rounded-xl border border-neutral-300 px-3 py-2 outline-none focus:border-neutral-500"
+            className="field max-h-40 flex-1 resize-none"
           />
           <ThreadPrimitive.If running={false}>
-            <ComposerPrimitive.Send className="rounded-xl bg-neutral-900 px-4 py-2 text-white disabled:opacity-40">
+            <ComposerPrimitive.Send className="btn-primary">
               Odeslat
             </ComposerPrimitive.Send>
           </ThreadPrimitive.If>
           <ThreadPrimitive.If running>
-            <ComposerPrimitive.Cancel className="rounded-xl border border-neutral-300 px-4 py-2">Zastavit</ComposerPrimitive.Cancel>
+            <ComposerPrimitive.Cancel className="btn-secondary">Zastavit</ComposerPrimitive.Cancel>
           </ThreadPrimitive.If>
         </ComposerPrimitive.Root>
       </div>

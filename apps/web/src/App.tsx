@@ -17,17 +17,17 @@ export function App() {
   if (loggedIn === undefined) return null;
   if (!loggedIn) {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-4">
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-canvas px-4">
         <img src="/logo.svg" alt="" className="h-28 w-28" />
-        <h1 className="text-2xl font-semibold tracking-wide">Osiris</h1>
+        <h1 className="text-2xl font-semibold tracking-[0.2em]">OSIRIS</h1>
         <button
           onClick={() => login().catch((e: Error) => setLoginError(`Přihlášení selhalo: ${e.message}`))}
           disabled={!!configError}
-          className="rounded-xl bg-neutral-900 px-6 py-3 text-white disabled:opacity-40"
+          className="btn-primary px-6 py-3"
         >
           Přihlásit se
         </button>
-        {loginError && <p className="max-w-md text-center text-sm text-red-600">{loginError}</p>}
+        {loginError && <p className="notice notice-error max-w-md px-3 py-2 text-sm">{loginError}</p>}
       </div>
     );
   }
@@ -66,79 +66,98 @@ function Workspace() {
     await refreshThreads();
   };
 
-  if (error) return <p className="p-6 text-red-600">{error}</p>;
+  if (error) return <p className="notice notice-error m-6 px-3 py-2">{error}</p>;
   if (!me || !tenantId) return null;
-  const isAdmin = me.tenants.find((t) => t.id === tenantId)?.role === "admin";
+  const tenant = me.tenants.find((t) => t.id === tenantId);
+  const isAdmin = tenant?.role === "admin";
+  const navItem = (kind: "knowledge" | "skills" | "memory", label: string) => (
+    <button
+      onClick={() => setView({ kind })}
+      data-active={view.kind === kind}
+      className="list-row block w-full px-2 py-1.5 text-left"
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <div className="flex h-full">
-      <aside className="flex w-64 shrink-0 flex-col border-r border-neutral-200 bg-neutral-50">
-        <div className="flex items-center gap-2 px-3 pt-3">
-          <img src="/logo.svg" alt="" className="h-8 w-8" />
-          <span className="font-semibold tracking-wide">Osiris</span>
-        </div>
-        {me.tenants.length > 1 && (
-          <select
-            value={tenantId}
-            onChange={(e) => selectTenant(e.target.value)}
-            className="m-3 rounded-lg border border-neutral-300 bg-white px-2 py-1"
-          >
-            {me.tenants.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
+    <div className="flex h-full flex-col">
+      <div className="flex min-h-0 flex-1">
+        <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-sidebar text-sm">
+          <div className="flex items-center gap-2 px-3 pt-3">
+            <img src="/logo.svg" alt="" className="h-8 w-8" />
+            <span className="font-semibold tracking-[0.2em]">OSIRIS</span>
+          </div>
+          {me.tenants.length > 1 && (
+            <select value={tenantId} onChange={(e) => selectTenant(e.target.value)} className="field mx-3 mt-3 w-auto py-1">
+              {me.tenants.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <button onClick={() => open(null)} className="btn-primary m-3">
+            + Nový chat
+          </button>
+          <h2 className="section-header px-4 pb-1">Konverzace</h2>
+          <nav className="flex-1 overflow-y-auto px-2">
+            {threads.map((t) => (
+              <div
+                key={t.id}
+                data-active={view.kind === "chat" && view.threadId === t.id}
+                className="list-row group flex items-center px-2"
+              >
+                <button onClick={() => open(t.id)} className="flex-1 truncate py-1.5 text-left">
+                  {t.title ?? "Nový chat"}
+                </button>
+                <button
+                  onClick={() => remove(t.id)}
+                  className="hidden px-1 text-fg-muted hover:text-error group-hover:block"
+                  aria-label="Smazat"
+                >
+                  ×
+                </button>
+              </div>
             ))}
-          </select>
-        )}
-        <button onClick={() => open(null)} className="m-3 rounded-lg bg-neutral-900 px-3 py-2 text-white">
-          + Nový chat
-        </button>
-        <nav className="flex-1 overflow-y-auto px-2">
-          {threads.map((t) => (
-            <div
-              key={t.id}
-              className={`group flex items-center rounded-lg px-2 ${view.kind === "chat" && view.threadId === t.id ? "bg-neutral-200" : "hover:bg-neutral-100"}`}
-            >
-              <button onClick={() => open(t.id)} className="flex-1 truncate py-2 text-left text-sm">
-                {t.title ?? "Nový chat"}
-              </button>
-              <button onClick={() => remove(t.id)} className="hidden text-neutral-400 group-hover:block" aria-label="Smazat">
-                ×
-              </button>
-            </div>
-          ))}
-        </nav>
-        <div className="space-y-1 border-t border-neutral-200 p-3 text-sm">
-          <button onClick={() => setView({ kind: "knowledge" })} className="block">
-            Znalostní báze
+            {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
+          </nav>
+          <div className="border-t border-line p-2">
+            <h2 className="section-header px-2 pb-1 pt-1">Firma</h2>
+            {navItem("knowledge", "Znalostní báze")}
+            {navItem("skills", "Dovednosti")}
+            {navItem("memory", "Paměť")}
+          </div>
+        </aside>
+        <main className="h-full min-w-0 flex-1 bg-canvas">
+          {view.kind === "knowledge" ? (
+            <Knowledge key={tenantId} canEdit={isAdmin} />
+          ) : view.kind === "skills" ? (
+            <Skills key={tenantId} canEdit={isAdmin} />
+          ) : view.kind !== "chat" ? (
+            <Memories key={tenantId} isAdmin={isAdmin} />
+          ) : (
+            <ChatPane
+              key={`${tenantId}:${view.session}`}
+              threadId={view.threadId}
+              onThreadCreated={(id) => setView((v) => (v.kind === "chat" ? { ...v, threadId: id } : v))}
+              onRunFinished={refreshThreads}
+            />
+          )}
+        </main>
+      </div>
+      {/* The OSIRIS signature: a solid accent status bar. */}
+      <footer className="flex h-[26px] shrink-0 items-center justify-between bg-statusbar px-2.5 text-[11.5px] font-medium text-on-statusbar">
+        <span className="truncate">
+          {tenant?.name} · {isAdmin ? "správce" : "člen"}
+        </span>
+        <span className="flex items-center gap-3">
+          <span className="truncate">{me.user.email ?? me.user.name}</span>
+          <button onClick={logout} className="hover:underline">
+            Odhlásit
           </button>
-          <button onClick={() => setView({ kind: "skills" })} className="block">
-            Dovednosti
-          </button>
-          <button onClick={() => setView({ kind: "memory" })} className="block">
-            Paměť
-          </button>
-          <button onClick={logout} className="block text-neutral-500">
-            Odhlásit ({me.user.email ?? me.user.name})
-          </button>
-        </div>
-      </aside>
-      <main className="h-full flex-1">
-        {view.kind === "knowledge" ? (
-          <Knowledge key={tenantId} canEdit={isAdmin} />
-        ) : view.kind === "skills" ? (
-          <Skills key={tenantId} canEdit={isAdmin} />
-        ) : view.kind !== "chat" ? (
-          <Memories key={tenantId} isAdmin={isAdmin} />
-        ) : (
-          <ChatPane
-            key={`${tenantId}:${view.session}`}
-            threadId={view.threadId}
-            onThreadCreated={(id) => setView((v) => (v.kind === "chat" ? { ...v, threadId: id } : v))}
-            onRunFinished={refreshThreads}
-          />
-        )}
-      </main>
+        </span>
+      </footer>
     </div>
   );
 }
