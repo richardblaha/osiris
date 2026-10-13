@@ -15,6 +15,8 @@ export interface AgentDeps {
   model: BaseChatModel;
   /** Tools bound to this tenant's stores. */
   tools: StructuredToolInterface[];
+  /** Tools that can change between turns (the tenant's MCP servers), resolved on every model and tool step. */
+  dynamicTools?: () => Promise<StructuredToolInterface[]>;
   checkpointer: BaseCheckpointSaver;
   timezone: string;
   /** Listed in the system prompt on every call, so edits apply from the next turn. */
@@ -24,9 +26,9 @@ export interface AgentDeps {
 }
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
-export function createAgentGraph({ tenantId, model, tools, checkpointer, timezone, skills, memory }: AgentDeps) {
+export function createAgentGraph({ tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory }: AgentDeps) {
   if (!model.bindTools) throw new Error("Chat model does not support tool calling");
-  const modelWithTools = model.bindTools(tools);
+  const allTools = async () => (dynamicTools ? [...tools, ...(await dynamicTools())] : tools);
 
   const callModel = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const ctx = getRunContext(config);
@@ -40,13 +42,15 @@ export function createAgentGraph({ tenantId, model, tools, checkpointer, timezon
         memories: await memory?.list(ctx.user_id),
       }),
     );
-    const response = await modelWithTools.invoke([system, ...state.messages], config);
+    const response = await model.bindTools!(await allTools()).invoke([system, ...state.messages], config);
     return { messages: [response] };
   };
 
   return new StateGraph(MessagesAnnotation)
     .addNode("agent", callModel)
-    .addNode("tools", new ToolNode(tools))
+    .addNode("tools", async (state: typeof MessagesAnnotation.State, config: RunnableConfig) =>
+      new ToolNode(await allTools()).invoke(state, config),
+    )
     .addEdge(START, "agent")
     .addConditionalEdges("agent", toolsCondition, ["tools", END])
     .addEdge("tools", "agent")

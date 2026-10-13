@@ -1,4 +1,4 @@
-import type { Memory, MeResponse, RunEvent, Skill, SkillSummary, ThreadMessage, ThreadSummary } from "@osiris/shared";
+import type { McpServer, McpServerStatus, Memory, MeResponse, RunEvent, Skill, SkillSummary, ThreadMessage, ThreadSummary } from "@osiris/shared";
 import { getAccessToken, login } from "./auth.ts";
 
 const BASE = (import.meta.env.VITE_API_URL ?? "") + "/api";
@@ -52,6 +52,11 @@ export const api = {
   saveSkill: (name: string, description: string, instructions: string) =>
     json<Skill>(`/skills/${name}`, { method: "PUT", body: JSON.stringify({ description, instructions }) }),
   deleteSkill: (name: string) => request(`/skills/${name}`, { method: "DELETE" }),
+  mcpServers: () => json<McpServer[]>("/mcp-servers"),
+  saveMcpServer: (name: string, body: { url: string; enabled: boolean; headers?: Record<string, string> }) =>
+    request(`/mcp-servers/${name}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteMcpServer: (name: string) => request(`/mcp-servers/${name}`, { method: "DELETE" }),
+  testMcpServer: (name: string) => json<McpServerStatus>(`/mcp-servers/${name}/test`, { method: "POST" }),
   memories: () => json<Memory[]>("/memories"),
   addMemory: (content: string, shared: boolean) =>
     json<Memory>("/memories", { method: "POST", body: JSON.stringify({ content, shared }) }),

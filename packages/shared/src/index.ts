@@ -51,3 +51,16 @@ export interface Memory {
   shared: boolean;
   createdAt: string;
 }
+
+/** A tenant's remote MCP server. Header values are write-only: the API returns only their names. */
+export interface McpServer {
+  name: string;
+  url: string;
+  enabled: boolean;
+  headerNames: string[];
+  updatedAt: string;
+  /** Result of the last connection attempt; absent if not tried yet (or disabled). */
+  status?: McpServerStatus;
+}
+
+export type McpServerStatus = { ok: true; tools: string[] } | { ok: false; error: string };

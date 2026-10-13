@@ -29,12 +29,22 @@ const schema = z
     EMBEDDING_MODEL: z.string().default("mistralai:mistral-embed"),
     TIMEZONE: z.string().default("Europe/Prague"),
     SKILLS_DIR: z.string().default("./skills"),
+    // 32 bytes, base64 (`openssl rand -base64 32`). Encrypts MCP server headers at rest; required in production.
+    SECRETS_KEY: z.string().optional(),
+    // Development only: let MCP servers use http and private addresses (e.g. a server on localhost).
+    MCP_ALLOW_PRIVATE: bool,
     // Built web app (apps/web/dist) to serve from the API; unset in development, where Vite serves it.
     STATIC_DIR: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_DEV_BYPASS && env.NODE_ENV === "production") {
       ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
+    }
+    if (env.NODE_ENV === "production" && !env.SECRETS_KEY) {
+      ctx.addIssue({ code: "custom", path: ["SECRETS_KEY"], message: "is required in production" });
+    }
+    if (env.NODE_ENV === "production" && env.MCP_ALLOW_PRIVATE) {
+      ctx.addIssue({ code: "custom", path: ["MCP_ALLOW_PRIVATE"], message: "must not be enabled in production" });
     }
     const turso = [env.TURSO_ORG, env.TURSO_API_TOKEN, env.TURSO_DB_TOKEN];
     if (turso.some(Boolean) && !turso.every(Boolean)) {

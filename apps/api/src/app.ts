@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { MeResponse, Skill } from "@osiris/shared";
+import type { McpServer, MeResponse, Skill } from "@osiris/shared";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -10,6 +10,8 @@ import { SKILL_NAME } from "./agent/skills.ts";
 import { streamRun, toThreadMessages } from "./agent/run.ts";
 import { authMiddleware, tenantMiddleware, type AuthEnv, type RequestContext } from "./auth/middleware.ts";
 import type { TokenVerifier } from "./auth/oidc.ts";
+import { MCP_SERVER_NAME } from "./mcp/store.ts";
+import { UnsafeUrlError } from "./mcp/url.ts";
 import * as threads from "./repo/threads.ts";
 import type { TenantRegistry } from "./tenants/registry.ts";
 
@@ -27,6 +29,14 @@ const skillBody = z.object({
   description: z.string().trim().min(1).max(500),
   instructions: z.string().trim().min(1).max(50_000),
 });
+const mcpServerBody = z.object({
+  url: z.string().trim().min(1).max(2000),
+  enabled: z.boolean().default(true),
+  // Omitted = keep the stored headers. Values are secrets (tokens) and are never returned.
+  headers: z
+    .record(z.string().regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/, "Neplatný název hlavičky"), z.string().max(4000).regex(/^[^\r\n]*$/))
+    .optional(),
+});
 const memoryBody = z.object({ content: z.string().trim().min(1).max(500), shared: z.boolean().default(false) });
 
 export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
@@ -43,6 +53,14 @@ export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
     const r = schema.safeParse(value);
     if (!r.success) throw new HTTPException(400, { message: z.prettifyError(r.error) });
     return r.data;
+  };
+  const checkMcpUrl = async ({ tenant }: RequestContext, url: string) => {
+    try {
+      await tenant.mcp.checkUrl(url);
+    } catch (err) {
+      if (err instanceof UnsafeUrlError) throw new HTTPException(400, { message: err.message });
+      throw err;
+    }
   };
   const skillName = (name: string) => {
     if (!SKILL_NAME.test(name)) throw new HTTPException(400, { message: "Skill name must be lowercase-kebab-case" });
@@ -163,6 +181,45 @@ export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
         throw new HTTPException(404, { message: "Tenant skill not found" });
       }
       return c.body(null, 204);
+    })
+
+    .get("/mcp-servers", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const status = ctx.tenant.mcp.status();
+      const servers = await ctx.tenant.mcpServers.list();
+      return c.json<McpServer[]>(servers.map((s) => ({ ...s, status: s.enabled ? status.get(s.name) : undefined })));
+    })
+
+    .put("/mcp-servers/:name", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const name = c.req.param("name");
+      if (!MCP_SERVER_NAME.test(name)) throw new HTTPException(400, { message: "Server name must be lowercase-kebab-case" });
+      const body = parse(mcpServerBody, await c.req.json());
+      await checkMcpUrl(ctx, body.url);
+      await ctx.tenant.mcpServers.put(name, body);
+      ctx.tenant.mcp.invalidate();
+      return c.body(null, 204);
+    })
+
+    .delete("/mcp-servers/:name", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      if (!(await ctx.tenant.mcpServers.delete(c.req.param("name")))) {
+        throw new HTTPException(404, { message: "MCP server not found" });
+      }
+      ctx.tenant.mcp.invalidate();
+      return c.body(null, 204);
+    })
+
+    // Connects once with the stored configuration and reports the tools (or the error).
+    .post("/mcp-servers/:name/test", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const server = await ctx.tenant.mcpServers.get(c.req.param("name"));
+      if (!server) throw new HTTPException(404, { message: "MCP server not found" });
+      return c.json(await ctx.tenant.mcp.test(server));
     })
 
     .get("/memories", async (c) => {

@@ -4,10 +4,11 @@ import { api, setTenant } from "./api.ts";
 import { configError, getAccessToken, login, logout } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
 import { Knowledge } from "./Knowledge.tsx";
+import { McpServers } from "./McpServers.tsx";
 import { Memories } from "./Memories.tsx";
 import { Skills } from "./Skills.tsx";
 
-type View = { kind: "chat"; threadId: string | null; session: number } | { kind: "knowledge" | "skills" | "memory" };
+type View = { kind: "chat"; threadId: string | null; session: number } | { kind: "knowledge" | "skills" | "memory" | "mcp" };
 
 export function App() {
   const [loggedIn, setLoggedIn] = useState<boolean>();
@@ -70,7 +71,7 @@ function Workspace() {
   if (!me || !tenantId) return null;
   const tenant = me.tenants.find((t) => t.id === tenantId);
   const isAdmin = tenant?.role === "admin";
-  const navItem = (kind: "knowledge" | "skills" | "memory", label: string) => (
+  const navItem = (kind: "knowledge" | "skills" | "memory" | "mcp", label: string) => (
     <button
       onClick={() => setView({ kind })}
       data-active={view.kind === kind}
@@ -127,6 +128,7 @@ function Workspace() {
             {navItem("knowledge", "Znalostní báze")}
             {navItem("skills", "Dovednosti")}
             {navItem("memory", "Paměť")}
+            {isAdmin && navItem("mcp", "Nástroje (MCP)")}
           </div>
         </aside>
         <main className="h-full min-w-0 flex-1 bg-canvas">
@@ -134,6 +136,8 @@ function Workspace() {
             <Knowledge key={tenantId} canEdit={isAdmin} />
           ) : view.kind === "skills" ? (
             <Skills key={tenantId} canEdit={isAdmin} />
+          ) : view.kind === "mcp" ? (
+            <McpServers key={tenantId} />
           ) : view.kind !== "chat" ? (
             <Memories key={tenantId} isAdmin={isAdmin} />
           ) : (

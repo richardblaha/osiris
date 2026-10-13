@@ -40,6 +40,8 @@ Configuration lives in `apps/api/.env` and `apps/web/.env`, with `.env.example` 
 
 **Memory** (`agent/memory.ts`, table `memories`): long-term facts that are either personal (`user_id`) or shared with the tenant (`user_id` NULL, admin only). The model writes them with the `remember` and `forget` tools, users manage them at `/api/memories`, and they're injected into the prompt as data, not instructions.
 
+**MCP servers** (`mcp/`, table `mcp_servers`): tenant admins register remote MCP servers (`/api/mcp-servers`, "Nástroje (MCP)" in the web app). Only http(s) is allowed, never stdio. `mcp/url.ts` requires https and public addresses to prevent SSRF from inside the cluster. `MCP_ALLOW_PRIVATE` lifts that in development. Headers are sealed with `SECRETS_KEY` (`secrets.ts`), and the API returns only their names. `McpToolset` connects lazily, opening one `MCPAdapter` per server so a failing server is skipped, and caches tools for 5 minutes. Config changes call `invalidate()`. The graph resolves these `dynamicTools` on every model and tool step, so changes apply without recompiling. Tool names are `<server>_<tool>`.
+
 **Checkpointer** (`checkpointer/libsql-saver.ts`): custom libSQL port of the official `PostgresSaver` layout. Channel values go to `checkpoint_blobs`, keyed by (channel, version), so message history isn't duplicated in every checkpoint. `test/checkpointer.test.ts` runs the official `@langchain/langgraph-checkpoint-validation` suite (~700 tests) and must stay green after any change.
 
 **RAG** (`rag/store.ts`): chunks are stored as libSQL `vector32` blobs in the tenant's DB and searched with an exact `vector_distance_cos` scan filtered by `embedding_model`. Changing `EMBEDDING_MODEL` hides old vectors until documents are re-ingested.

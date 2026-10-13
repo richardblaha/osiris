@@ -14,7 +14,8 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
 };
 
 function ToolCall({ toolName, args, result }: ToolCallMessagePartProps) {
-  const label = TOOL_LABELS[toolName]?.(args as Record<string, unknown>) ?? toolName;
+  // Other names are tools of the tenant's MCP servers (`<server>_<tool>`).
+  const label = TOOL_LABELS[toolName]?.(args as Record<string, unknown>) ?? `Nástroj ${toolName}`;
   return (
     <details className="notice my-2 px-3 py-2 text-sm text-fg-secondary">
       <summary className="cursor-pointer">

@@ -19,6 +19,8 @@ Commands below use `KUBECONFIG=.kubeconfig` and read keys from the gitignored ro
 2. Assign tenants with groups. `tenant-<slug>` makes a user a member. `tenant-<slug>-admin` makes them an admin. Users without a tenant group get "not assigned to any tenant".
 3. Optional: give each user the custom claim `phone_number` in `+420…` format.
 
+`OSIRIS_SECRETS_KEY` (`openssl rand -base64 32`) encrypts the MCP server headers in the tenant databases. If it is lost or changed, stored headers can no longer be read and have to be re-entered.
+
 ## First deploy
 
 ```bash
@@ -31,7 +33,8 @@ kubectl -n osiris create secret docker-registry ghcr-pull \
 
 kubectl -n osiris create secret generic osiris-env \
   --from-literal=MISTRAL_API_KEY="$MISTRAL_API_KEY" \
-  --from-literal=OIDC_AUDIENCE="$OSIRIS_OIDC_CLIENT_ID"
+  --from-literal=OIDC_AUDIENCE="$OSIRIS_OIDC_CLIENT_ID" \
+  --from-literal=SECRETS_KEY="$OSIRIS_SECRETS_KEY"
 
 kubectl apply -k deploy/k8s
 ```

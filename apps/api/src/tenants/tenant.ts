@@ -8,7 +8,10 @@ import { searchKnowledgeTool } from "../agent/tools/knowledge.ts";
 import { memoryTools } from "../agent/tools/memory.ts";
 import { loadSkillTool } from "../agent/tools/skills.ts";
 import { LibSQLSaver } from "../checkpointer/libsql-saver.ts";
+import { McpServerStore } from "../mcp/store.ts";
+import { McpToolset, type McpOptions } from "../mcp/toolset.ts";
 import { KnowledgeStore } from "../rag/store.ts";
+import type { SecretBox } from "../secrets.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
 export interface Tenant {
@@ -18,6 +21,8 @@ export interface Tenant {
   knowledge: KnowledgeStore;
   skills: SkillStore;
   memory: MemoryStore;
+  mcpServers: McpServerStore;
+  mcp: McpToolset;
   graph: AgentGraph;
 }
 
@@ -28,6 +33,8 @@ export interface TenantDeps {
   embeddingModel: string;
   bundledSkills: Skill[];
   timezone: string;
+  secrets: SecretBox;
+  mcp?: McpOptions;
 }
 
 export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
@@ -35,14 +42,17 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const knowledge = new KnowledgeStore(db, deps.embeddings, deps.embeddingModel);
   const skills = new SkillStore(db, deps.bundledSkills);
   const memory = new MemoryStore(db);
+  const mcpServers = new McpServerStore(db, deps.secrets);
+  const mcp = new McpToolset(mcpServers, deps.mcp);
   const graph = createAgentGraph({
     tenantId: id,
     model: deps.model,
     tools: [searchKnowledgeTool(knowledge), loadSkillTool(skills), ...memoryTools(memory)],
+    dynamicTools: () => mcp.tools(),
     checkpointer,
     timezone: deps.timezone,
     skills,
     memory,
   });
-  return { id, db, checkpointer, knowledge, skills, memory, graph };
+  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, graph };
 }
