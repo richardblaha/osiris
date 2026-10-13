@@ -1,0 +1,14 @@
+# kubectl apply -k deploy/k8s
+# Secrets (not in git) are created from .env; see deploy/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: osiris
+resources:
+  - namespace.yaml
+  - pvc.yaml
+  - deployment.yaml
+  - service.yaml
+  - ingress.yaml
+images:
+  - name: ghcr.io/richardblaha/osiris
+    newTag: main

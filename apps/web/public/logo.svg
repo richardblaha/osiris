@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" role="img" aria-label="OSIRIS">
+  <title>OSIRIS</title>
+  <defs>
+    <linearGradient id="osiris-cyan" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#00f2fe"/><stop offset="1" stop-color="#00b4d8"/></linearGradient>
+    <linearGradient id="osiris-rose" x1="1" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff2a85"/><stop offset="1" stop-color="#c81d67"/></linearGradient>
+    <clipPath id="osiris-band"><path d="M62,112a38,49 0 1,0 76,0a38,49 0 1,0 -76,0ZM68.5,112a31.5,42.5 0 1,0 63,0a31.5,42.5 0 1,0 -63,0Z" clip-rule="evenodd"/></clipPath>
+  </defs>
+  <polygon points="100,30 20,130 100,170" fill="url(#osiris-cyan)"/>
+  <polygon points="100,30 180,130 100,170" fill="url(#osiris-rose)"/>
+  <polygon points="20,130 100,170 180,130 100,110" fill="#000" opacity="0.35"/>
+  <line x1="100" y1="30" x2="100" y2="59" stroke="#fff" stroke-width="3" opacity="0.6"/>
+  <g clip-path="url(#osiris-band)" fill="none" stroke="#ffffff" stroke-width="0.45" opacity="0.8"><ellipse cx="100" cy="112" rx="1.36" ry="49"/><ellipse cx="100" cy="112" rx="2.71" ry="49"/><ellipse cx="100" cy="112" rx="4.07" ry="49"/><ellipse cx="100" cy="112" rx="5.43" ry="49"/><ellipse cx="100" cy="112" rx="6.79" ry="49"/><ellipse cx="100" cy="112" rx="8.14" ry="49"/><ellipse cx="100" cy="112" rx="9.50" ry="49"/><ellipse cx="100" cy="112" rx="10.86" ry="49"/><ellipse cx="100" cy="112" rx="12.21" ry="49"/><ellipse cx="100" cy="112" rx="13.57" ry="49"/><ellipse cx="100" cy="112" rx="14.93" ry="49"/><ellipse cx="100" cy="112" rx="16.29" ry="49"/><ellipse cx="100" cy="112" rx="17.64" ry="49"/><ellipse cx="100" cy="112" rx="19.00" ry="49"/><ellipse cx="100" cy="112" rx="20.36" ry="49"/><ellipse cx="100" cy="112" rx="21.71" ry="49"/><ellipse cx="100" cy="112" rx="23.07" ry="49"/><ellipse cx="100" cy="112" rx="24.43" ry="49"/><ellipse cx="100" cy="112" rx="25.79" ry="49"/><ellipse cx="100" cy="112" rx="27.14" ry="49"/><ellipse cx="100" cy="112" rx="28.50" ry="49"/><ellipse cx="100" cy="112" rx="29.86" ry="49"/><ellipse cx="100" cy="112" rx="31.21" ry="49"/><ellipse cx="100" cy="112" rx="32.57" ry="49"/><ellipse cx="100" cy="112" rx="33.93" ry="49"/><ellipse cx="100" cy="112" rx="35.29" ry="49"/><ellipse cx="100" cy="112" rx="36.64" ry="49"/><ellipse cx="100" cy="112" rx="38.00" ry="49"/></g>
+  <ellipse cx="100" cy="112" rx="38" ry="49" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <path d="M71,112a29,40 0 1,0 58,0a29,40 0 1,0 -58,0ZM86.5,112a13.5,34 0 1,0 27,0a13.5,34 0 1,0 -27,0Z" fill="#ffffff" fill-rule="evenodd"/>
+</svg>

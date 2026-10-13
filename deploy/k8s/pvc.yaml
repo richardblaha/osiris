@@ -1,0 +1,11 @@
+# Tenant databases (one SQLite file per tenant). ReadWriteOnce, so the deployment runs a single replica.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: osiris-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: civo-volume
+  resources:
+    requests:
+      storage: 5Gi
