@@ -10,5 +10,5 @@ resources:
   - service.yaml
   - ingress.yaml
 images:
-  - name: ghcr.io/richardblaha/osiris
+  - name: ghcr.io/richardblaha/osiris-app
     newTag: main
