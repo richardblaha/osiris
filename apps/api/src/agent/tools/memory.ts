@@ -8,8 +8,8 @@ export function memoryTools(memory: MemoryStore) {
     async ({ content, shared }, config) => {
       const { user_id, role } = getRunContext(config);
       if (shared && role !== "admin") return "Sdílenou paměť pro celou firmu může ukládat jen správce. Ulož to jako osobní.";
-      const m = await memory.add(user_id, content, shared);
-      return `Uloženo (${m.shared ? "sdílené" : "osobní"}, id ${m.id}).`;
+      const m = await memory.add(user_id, content, shared ? "tenant" : "personal");
+      return `Uloženo (${shared ? "firemní" : "osobní"}, id ${m.id}).`;
     },
     {
       name: "remember",
@@ -26,7 +26,9 @@ export function memoryTools(memory: MemoryStore) {
   const forget = tool(
     async ({ id }, config) => {
       const { user_id, role } = getRunContext(config);
-      return (await memory.delete(id, user_id, role === "admin")) ? "Zapomenuto." : "Záznam nenalezen nebo ho nelze smazat.";
+      const deleted =
+        (await memory.delete(id, "personal", user_id)) || (role === "admin" && (await memory.delete(id, "tenant", user_id)));
+      return deleted ? "Zapomenuto." : "Záznam nenalezen nebo ho nelze smazat.";
     },
     {
       name: "forget",

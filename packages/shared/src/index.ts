@@ -50,8 +50,8 @@ export interface Skill extends SkillSummary {
 export interface Memory {
   id: string;
   content: string;
-  /** Shared with everyone in the tenant, otherwise personal. */
-  shared: boolean;
+  /** `tenant`: shared with everyone in the tenant (admins manage it); `personal`: only this user. */
+  scope: Scope;
   createdAt: string;
 }
 
@@ -86,4 +86,14 @@ export interface UserSettings {
   signature: string;
   /** The user's own standing instructions for the agent. */
   instructions: string;
+}
+
+/** A secret without its value: values are write-only and never leave the server. */
+export interface SecretSummary {
+  name: string;
+  scope: Scope;
+  /** Hosts the secret may be sent to (`api.example.com` or `*.example.com`). */
+  allowedHosts: string[];
+  description: string;
+  updatedAt: string;
 }

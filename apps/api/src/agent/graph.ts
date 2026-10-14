@@ -9,6 +9,7 @@ import type { MemoryStore } from "./memory.ts";
 import { buildSystemPrompt } from "./prompt.ts";
 import type { UserSettingsStore } from "./settings.ts";
 import type { SkillStore } from "./skills.ts";
+import type { SecretVault } from "../vault/vault.ts";
 
 export interface AgentDeps {
   /** The tenant this graph serves; runs carrying another `tenant_id` are refused. */
@@ -26,11 +27,13 @@ export interface AgentDeps {
   memory?: MemoryStore;
   /** The user's profile ("Můj profil") is added to the system prompt. */
   settings?: UserSettingsStore;
+  /** Names of the secrets the user can use (never values) are listed in the system prompt. */
+  secrets?: SecretVault;
 }
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
 export function createAgentGraph(deps: AgentDeps) {
-  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings } = deps;
+  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets } = deps;
   if (!model.bindTools) throw new Error("Chat model does not support tool calling");
   const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
 
@@ -46,6 +49,7 @@ export function createAgentGraph(deps: AgentDeps) {
         memories: await memory?.list(ctx.user_id),
         userName: ctx.user_name,
         settings: await settings?.get(ctx.user_id),
+        secrets: await secrets?.list(ctx.user_id),
       }),
     );
     const response = await model.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);

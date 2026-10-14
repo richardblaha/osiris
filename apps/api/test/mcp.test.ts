@@ -6,7 +6,7 @@ import { createApp } from "../src/app.ts";
 import { createDevVerifier } from "../src/auth/oidc.ts";
 import { McpServerStore } from "../src/mcp/store.ts";
 import type { McpConnector } from "../src/mcp/toolset.ts";
-import { assertSafeMcpUrl } from "../src/mcp/url.ts";
+import { assertSafePublicUrl } from "../src/mcp/url.ts";
 import { SecretBox } from "../src/secrets.ts";
 import { createTestDb, createTestTenants } from "./helpers.ts";
 
@@ -38,16 +38,16 @@ describe("SecretBox", () => {
 
 describe("MCP URL guard", () => {
   it("requires https and public addresses", async () => {
-    await expect(assertSafeMcpUrl("http://93.184.215.14/mcp")).rejects.toThrow(/https/);
+    await expect(assertSafePublicUrl("http://93.184.215.14/mcp")).rejects.toThrow(/https/);
     for (const host of ["127.0.0.1", "10.43.0.1", "169.254.169.254", "192.168.1.2", "[::1]", "[fd00::1]", "[::ffff:10.0.0.1]"]) {
-      await expect(assertSafeMcpUrl(`https://${host}/mcp`)).rejects.toThrow(/privátní/);
+      await expect(assertSafePublicUrl(`https://${host}/mcp`)).rejects.toThrow(/privátní/);
     }
-    await expect(assertSafeMcpUrl("https://user:pw@93.184.215.14/mcp")).rejects.toThrow(/hlavičky/);
-    await expect(assertSafeMcpUrl("https://93.184.215.14/mcp")).resolves.toBeInstanceOf(URL);
+    await expect(assertSafePublicUrl("https://user:pw@93.184.215.14/mcp")).rejects.toThrow(/hlavičky/);
+    await expect(assertSafePublicUrl("https://93.184.215.14/mcp")).resolves.toBeInstanceOf(URL);
   });
 
   it("allows localhost over http only in development mode", async () => {
-    await expect(assertSafeMcpUrl("http://localhost:8080/mcp", { allowPrivate: true })).resolves.toBeInstanceOf(URL);
+    await expect(assertSafePublicUrl("http://localhost:8080/mcp", { allowPrivate: true })).resolves.toBeInstanceOf(URL);
   });
 });
 

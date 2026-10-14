@@ -10,6 +10,7 @@ import { createDb } from "../src/db/client.ts";
 import { migrate } from "../src/db/migrate.ts";
 import type { Skill } from "../src/agent/skills.ts";
 import type { McpConnector } from "../src/mcp/toolset.ts";
+import type { TenantDeps } from "../src/tenants/tenant.ts";
 import { SecretBox } from "../src/secrets.ts";
 import { fileProvider } from "../src/tenants/provider.ts";
 import { TenantRegistry } from "../src/tenants/registry.ts";
@@ -24,7 +25,12 @@ export async function createTestDb(): Promise<Client> {
 }
 
 /** Tenant registry over per-tenant files in a temp dir, with one scripted model shared by all tenants. */
-export function createTestTenants(script: AIMessage[] = [], bundledSkills: Skill[] = [], mcpConnect?: McpConnector) {
+export function createTestTenants(
+  script: AIMessage[] = [],
+  bundledSkills: Skill[] = [],
+  mcpConnect?: McpConnector,
+  extra: Partial<TenantDeps> = {},
+) {
   const model = new ScriptedChatModel(script);
   const dir = tempDir();
   const tenants = new TenantRegistry(fileProvider(dir), {
@@ -35,6 +41,7 @@ export function createTestTenants(script: AIMessage[] = [], bundledSkills: Skill
     timezone: "Europe/Prague",
     secrets: SecretBox.insecureDev(),
     mcp: { connect: mcpConnect },
+    ...extra,
   });
   return { tenants, model, dir };
 }

@@ -11,6 +11,11 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   load_skill: (a) => `Načítám postup: ${String(a.name ?? "")}`,
   remember: (a) => `Zapamatovávám si: ${String(a.content ?? "")}`,
   forget: () => "Mažu záznam z paměti",
+  http_request: (a) => {
+    const url = String(a.url ?? "");
+    const host = /^https?:\/\/([^/?#]+)/.exec(url)?.[1] ?? url;
+    return `Volám ${String(a.method ?? "GET")} ${host}`;
+  },
 };
 
 function ToolCall({ toolName, args, result }: ToolCallMessagePartProps) {

@@ -6,6 +6,7 @@ import type {
   MeResponse,
   RunEvent,
   Scope,
+  SecretSummary,
   Skill,
   SkillSummary,
   ThreadMessage,
@@ -67,9 +68,13 @@ export const api = {
   settings: () => json<UserSettings>("/settings"),
   saveSettings: (settings: UserSettings) => json<UserSettings>("/settings", { method: "PUT", body: JSON.stringify(settings) }),
   memories: () => json<Memory[]>("/memories"),
-  addMemory: (content: string, shared: boolean) =>
-    json<Memory>("/memories", { method: "POST", body: JSON.stringify({ content, shared }) }),
-  deleteMemory: (id: string) => request(`/memories/${id}`, { method: "DELETE" }),
+  addMemory: (content: string, scope: Scope) =>
+    json<Memory>("/memories", { method: "POST", body: JSON.stringify({ content, scope }) }),
+  deleteMemory: (id: string, scope: Scope) => request(`/memories/${id}?scope=${scope}`, { method: "DELETE" }),
+  secrets: () => json<SecretSummary[]>("/secrets"),
+  saveSecret: (name: string, body: { value?: string; allowedHosts: string[]; description: string; scope: Scope }) =>
+    request(`/secrets/${name}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteSecret: (name: string, scope: Scope) => request(`/secrets/${name}?scope=${scope}`, { method: "DELETE" }),
 
   /** Starts a run and yields its server-sent events. */
   async *run(threadId: string, message: string, signal: AbortSignal): AsyncGenerator<RunEvent> {

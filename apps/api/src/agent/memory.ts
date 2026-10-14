@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Client } from "@libsql/client";
-import type { Memory } from "@osiris/shared";
+import type { Memory, Scope } from "@osiris/shared";
 
 /** Upper bound on memories injected into the system prompt per call. */
 export const PROMPT_MEMORY_LIMIT = 100;
@@ -22,26 +22,27 @@ export class MemoryStore {
     return rows.map((r) => ({
       id: String(r.id),
       content: String(r.content),
-      shared: r.user_id === null,
+      scope: r.user_id === null ? "tenant" : "personal",
       createdAt: String(r.created_at),
     }));
   }
 
-  async add(userId: string, content: string, shared: boolean): Promise<Memory> {
+  async add(userId: string, content: string, scope: Scope): Promise<Memory> {
     const id = randomUUID();
     await this.db.execute({
       sql: "INSERT INTO memories (id, user_id, content) VALUES (?, ?, ?)",
-      args: [id, shared ? null : userId, content],
+      args: [id, scope === "tenant" ? null : userId, content],
     });
-    return { id, content, shared, createdAt: new Date().toISOString() };
+    return { id, content, scope, createdAt: new Date().toISOString() };
   }
 
-  /** Deletes a personal memory of `userId`, or a shared one when `canDeleteShared`. Returns false otherwise. */
-  async delete(id: string, userId: string, canDeleteShared: boolean): Promise<boolean> {
-    const r = await this.db.execute({
-      sql: `DELETE FROM memories WHERE id = ? AND (user_id = ?${canDeleteShared ? " OR user_id IS NULL" : ""})`,
-      args: [id, userId],
-    });
+  /** Deletes a tenant memory (`scope` tenant) or one of `userId`'s personal ones. Returns false if there's no such memory. */
+  async delete(id: string, scope: Scope, userId: string): Promise<boolean> {
+    const r = await this.db.execute(
+      scope === "tenant"
+        ? { sql: "DELETE FROM memories WHERE id = ? AND user_id IS NULL", args: [id] }
+        : { sql: "DELETE FROM memories WHERE id = ? AND user_id = ?", args: [id, userId] },
+    );
     return r.rowsAffected > 0;
   }
 }

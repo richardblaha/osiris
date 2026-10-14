@@ -7,10 +7,11 @@ import { Knowledge } from "./Knowledge.tsx";
 import { McpServers } from "./McpServers.tsx";
 import { Memories } from "./Memories.tsx";
 import { Profile } from "./Profile.tsx";
+import { Secrets } from "./Secrets.tsx";
 import { Skills } from "./Skills.tsx";
 
 type View = { kind: "chat"; threadId: string | null; session: number } | { kind: SettingsView };
-type SettingsView = "knowledge" | "skills" | "memory" | "mcp" | "profile";
+type SettingsView = "knowledge" | "skills" | "memory" | "mcp" | "secrets" | "profile";
 
 export function App() {
   const [loggedIn, setLoggedIn] = useState<boolean>();
@@ -131,6 +132,7 @@ function Workspace() {
             {navItem("skills", "Dovednosti")}
             {navItem("memory", "Paměť")}
             {navItem("mcp", "Nástroje (MCP)")}
+            {navItem("secrets", "Klíče a hesla")}
             {navItem("profile", "Můj profil")}
           </div>
         </aside>
@@ -141,6 +143,8 @@ function Workspace() {
             <Skills key={tenantId} isAdmin={isAdmin} />
           ) : view.kind === "mcp" ? (
             <McpServers key={tenantId} isAdmin={isAdmin} />
+          ) : view.kind === "secrets" ? (
+            <Secrets key={tenantId} isAdmin={isAdmin} />
           ) : view.kind === "profile" ? (
             <Profile key={tenantId} me={me} />
           ) : view.kind !== "chat" ? (

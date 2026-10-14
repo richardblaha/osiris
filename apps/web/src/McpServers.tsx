@@ -133,7 +133,7 @@ export function McpServers({ isAdmin }: { isAdmin: boolean }) {
           placeholder={
             editing?.headerNames.length
               ? `Uložené hlavičky: ${editing.headerNames.join(", ")}. Nech prázdné pro zachování, nebo zadej nové.`
-              : "Hlavičky, jedna na řádek (nepovinné)\nAuthorization: Bearer …"
+              : "Hlavičky, jedna na řádek (nepovinné). Klíče vkládej ze stránky Klíče a hesla:\nAuthorization: Bearer {{secret:CRM_TOKEN}}"
           }
           rows={3}
           className="field text-sm"

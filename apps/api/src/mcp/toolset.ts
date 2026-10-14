@@ -1,8 +1,10 @@
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { MCPAdapter } from "@langchain/mcp-adapters";
 import type { McpServerStatus } from "@osiris/shared";
+import { SECRET_REF, templateHost } from "../vault/template.ts";
+import type { SecretVault } from "../vault/vault.ts";
 import type { McpServerConfig, McpServerStore } from "./store.ts";
-import { assertSafeMcpUrl } from "./url.ts";
+import { assertSafePublicUrl } from "./url.ts";
 
 export interface McpConnection {
   tools: StructuredToolInterface[];
@@ -30,7 +32,7 @@ const IDLE_MS = 15 * 60_000;
 export const defaultConnector =
   (allowPrivate: boolean): McpConnector =>
   async ({ name, url, headers }) => {
-    await assertSafeMcpUrl(url, { allowPrivate });
+    await assertSafePublicUrl(url, { allowPrivate });
     // One adapter per server, so a failing server is isolated. Tool names get the server prefix (`<server>_<tool>`).
     const adapter = new MCPAdapter({ servers: { [name]: { url, headers } }, defaultToolTimeout: TOOL_TIMEOUT_MS });
     try {
@@ -71,15 +73,41 @@ export class McpToolset {
 
   constructor(
     private readonly store: McpServerStore,
+    private readonly vault: SecretVault,
     options: McpOptions = {},
   ) {
     this.allowPrivate = options.allowPrivate ?? false;
     this.connect = options.connect ?? defaultConnector(this.allowPrivate);
   }
 
-  /** Validates a URL before it is saved (throws UnsafeUrlError). */
+  /** Validates a URL before it is saved (throws UnsafeUrlError or SecretUseError). Secrets may appear only after the host. */
   checkUrl(url: string): Promise<URL> {
-    return assertSafeMcpUrl(url, { allowPrivate: this.allowPrivate });
+    templateHost(url);
+    return assertSafePublicUrl(url.replace(SECRET_REF, "x"), { allowPrivate: this.allowPrivate });
+  }
+
+  /** Any secret may have changed: drop every cached connection set. */
+  invalidateAll(): void {
+    for (const group of this.owners.values()) group.loading = undefined;
+  }
+
+  /**
+   * Fills `{{secret:NAME}}` in the URL and headers. Tenant servers ('' owner) get tenant secrets only;
+   * personal servers get the owner's secrets, then the tenant's. Every secret must allow the URL's host.
+   */
+  private async resolve(server: McpServerConfig, owner: string): Promise<McpServerConfig> {
+    const texts: Record<string, string> = { url: server.url };
+    for (const [k, v] of Object.entries(server.headers)) texts[`h:${k}`] = v;
+    const { filled } = await this.vault.fill(texts, { userId: owner, host: templateHost(server.url) });
+    const headers = Object.fromEntries(Object.keys(server.headers).map((k) => [k, filled[`h:${k}`]!]));
+    return { name: server.name, url: filled.url!, headers };
+  }
+
+  private open(server: McpServerConfig, owner: string): Promise<McpConnection> {
+    return withTimeout(
+      this.resolve(server, owner).then((s) => this.connect(s)),
+      CONNECT_TIMEOUT_MS,
+    );
   }
 
   /** Tools for one user's run: the tenant's servers plus the user's personal ones. */
@@ -103,7 +131,7 @@ export class McpToolset {
   async test(server: McpServerConfig, owner: string): Promise<McpServerStatus> {
     let status: McpServerStatus;
     try {
-      const conn = await withTimeout(this.connect(server), CONNECT_TIMEOUT_MS);
+      const conn = await this.open(server, owner);
       await conn.close().catch(() => {});
       status = { ok: true, tools: conn.tools.map((t) => t.name) };
     } catch (err) {
@@ -150,7 +178,7 @@ export class McpToolset {
     const results = await Promise.all(
       servers.map(async (s) => {
         try {
-          return { name: s.name, conn: await withTimeout(this.connect(s), CONNECT_TIMEOUT_MS) };
+          return { name: s.name, conn: await this.open(s, owner) };
         } catch (err) {
           console.warn(`MCP server ${s.name} unavailable: ${message(err)}`);
           return { name: s.name, error: message(err) };

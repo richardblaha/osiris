@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { McpServer, MeResponse, Scope, Skill, UserSettings } from "@osiris/shared";
+import type { McpServer, MeResponse, Scope, SecretSummary, Skill, UserSettings } from "@osiris/shared";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -13,6 +13,8 @@ import type { TokenVerifier } from "./auth/oidc.ts";
 import { MCP_SERVER_NAME, McpNameTakenError, mcpOwner } from "./mcp/store.ts";
 import { UnsafeUrlError } from "./mcp/url.ts";
 import * as threads from "./repo/threads.ts";
+import { HOST_PATTERN, SECRET_NAME, SecretUseError } from "./vault/template.ts";
+import { secretOwner } from "./vault/vault.ts";
 import type { TenantRegistry } from "./tenants/registry.ts";
 
 export interface AppDeps {
@@ -50,7 +52,17 @@ const settingsBody = z.object({
   signature: z.string().trim().max(1000),
   instructions: z.string().trim().max(4000),
 });
-const memoryBody = z.object({ content: z.string().trim().min(1).max(500), shared: z.boolean().default(false) });
+const memoryBody = z.object({ content: z.string().trim().min(1).max(500), scope });
+const secretBody = z.object({
+  // Omitted = keep the stored value (e.g. when only the hosts change). Never returned.
+  value: z.string().min(1).max(10_000).optional(),
+  allowedHosts: z
+    .array(z.string().trim().toLowerCase().regex(HOST_PATTERN, "Neplatná doména (např. api.example.com nebo *.example.com)"))
+    .min(1, "Zadej aspoň jednu povolenou doménu")
+    .max(20),
+  description: z.string().trim().max(300).default(""),
+  scope,
+});
 
 export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
   // Guards against two concurrent runs on one thread. In-process only: needs a shared lock once the API runs on several replicas.
@@ -80,7 +92,7 @@ export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
     try {
       await tenant.mcp.checkUrl(url);
     } catch (err) {
-      if (err instanceof UnsafeUrlError) throw new HTTPException(400, { message: err.message });
+      if (err instanceof UnsafeUrlError || err instanceof SecretUseError) throw new HTTPException(400, { message: err.message });
       throw err;
     }
   };
@@ -295,16 +307,52 @@ export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
 
     .post("/memories", async (c) => {
       const ctx = c.get("ctx");
-      const { content, shared } = parse(memoryBody, await c.req.json());
-      if (shared) requireAdmin(ctx);
-      return c.json(await ctx.tenant.memory.add(ctx.user.sub, content, shared), 201);
+      const { content, scope } = parse(memoryBody, await c.req.json());
+      requireScope(ctx, scope);
+      return c.json(await ctx.tenant.memory.add(ctx.user.sub, content, scope), 201);
     })
 
     .delete("/memories/:id", async (c) => {
-      const { tenant, user, role } = c.get("ctx");
-      if (!(await tenant.memory.delete(c.req.param("id"), user.sub, role === "admin"))) {
+      const ctx = c.get("ctx");
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      if (!(await ctx.tenant.memory.delete(c.req.param("id"), scope, ctx.user.sub))) {
         throw new HTTPException(404, { message: "Memory not found" });
       }
+      return c.body(null, 204);
+    })
+
+    // Secrets are write-only: the list has names, hosts and descriptions, never values.
+    .get("/secrets", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      return c.json<SecretSummary[]>(await tenant.secrets.list(user.sub));
+    })
+
+    .put("/secrets/:name", async (c) => {
+      const ctx = c.get("ctx");
+      const name = c.req.param("name");
+      if (!SECRET_NAME.test(name)) throw new HTTPException(400, { message: "Název musí být VELKÝMI_PÍSMENY (A-Z, 0-9, _)" });
+      const { scope, ...body } = parse(secretBody, await c.req.json());
+      requireScope(ctx, scope);
+      try {
+        await ctx.tenant.secrets.put(name, secretOwner(scope, ctx.user.sub), body);
+      } catch (err) {
+        if (err instanceof SecretUseError) throw new HTTPException(400, { message: err.message });
+        throw err;
+      }
+      // MCP servers may use the secret: reconnect with the new value.
+      ctx.tenant.mcp.invalidateAll();
+      return c.body(null, 204);
+    })
+
+    .delete("/secrets/:name", async (c) => {
+      const ctx = c.get("ctx");
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      if (!(await ctx.tenant.secrets.delete(c.req.param("name"), secretOwner(scope, ctx.user.sub)))) {
+        throw new HTTPException(404, { message: "Secret not found" });
+      }
+      ctx.tenant.mcp.invalidateAll();
       return c.body(null, 204);
     });
 

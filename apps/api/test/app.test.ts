@@ -207,16 +207,22 @@ describe("API", () => {
     const { as } = await setup();
     const member = as("bob:tenant-acme");
     const admin = as("alice:tenant-acme-admin");
-    const post = (content: string, shared: boolean) => ({ method: "POST", body: JSON.stringify({ content, shared }) });
+    const post = (content: string, scope: string) => ({ method: "POST", body: JSON.stringify({ content, scope }) });
 
-    expect((await member("/memories", post("Firma", true))).status).toBe(403);
-    const shared = await (await admin("/memories", post("Neplátce DPH", true))).json();
-    await member("/memories", post("Tyká", false));
-    await admin("/memories", post("Alice osobní", false));
+    expect((await member("/memories", post("Firma", "tenant"))).status).toBe(403);
+    const shared = await (await admin("/memories", post("Neplátce DPH", "tenant"))).json();
+    const mine = await (await member("/memories", post("Tyká", "personal"))).json();
+    await admin("/memories", post("Alice osobní", "personal"));
 
-    expect((await (await member("/memories")).json()).map((m: { content: string }) => m.content).sort()).toEqual(["Neplátce DPH", "Tyká"]);
+    expect((await (await member("/memories")).json()).map((m: { content: string; scope: string }) => [m.content, m.scope]).sort()).toEqual([
+      ["Neplátce DPH", "tenant"],
+      ["Tyká", "personal"],
+    ]);
+    expect((await member(`/memories/${shared.id}?scope=tenant`, { method: "DELETE" })).status).toBe(403);
     expect((await member(`/memories/${shared.id}`, { method: "DELETE" })).status).toBe(404);
-    expect((await admin(`/memories/${shared.id}`, { method: "DELETE" })).status).toBe(204);
+    expect((await admin(`/memories/${mine.id}`, { method: "DELETE" })).status).toBe(404);
+    expect((await member(`/memories/${mine.id}`, { method: "DELETE" })).status).toBe(204);
+    expect((await admin(`/memories/${shared.id}?scope=tenant`, { method: "DELETE" })).status).toBe(204);
   });
 
   it("deletes a thread and its checkpoints", async () => {

@@ -34,12 +34,12 @@ function isBlocked(address: string): boolean {
 export class UnsafeUrlError extends Error {}
 
 /**
- * Guards against SSRF: tenant admins choose MCP URLs, and the API runs inside the cluster.
+ * Guards against SSRF: users choose MCP and http_request URLs, and the API runs inside the cluster.
  * Requires https and a hostname that resolves only to public addresses. `allowPrivate` (development only)
  * also permits http and private addresses, for MCP servers on localhost.
  * DNS can still change between this check and the connection (rebinding); the check runs again on every connect.
  */
-export async function assertSafeMcpUrl(raw: string, { allowPrivate = false } = {}): Promise<URL> {
+export async function assertSafePublicUrl(raw: string, { allowPrivate = false } = {}): Promise<URL> {
   let url: URL;
   try {
     url = new URL(raw);

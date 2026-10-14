@@ -13,6 +13,8 @@ import { McpServerStore } from "../mcp/store.ts";
 import { McpToolset, type McpOptions } from "../mcp/toolset.ts";
 import { KnowledgeStore } from "../rag/store.ts";
 import type { SecretBox } from "../secrets.ts";
+import { SecretVault } from "../vault/vault.ts";
+import { httpRequestTool } from "../agent/tools/http.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
 export interface Tenant {
@@ -25,6 +27,7 @@ export interface Tenant {
   mcpServers: McpServerStore;
   mcp: McpToolset;
   settings: UserSettingsStore;
+  secrets: SecretVault;
   graph: AgentGraph;
 }
 
@@ -37,6 +40,8 @@ export interface TenantDeps {
   timezone: string;
   secrets: SecretBox;
   mcp?: McpOptions;
+  /** Replaces global fetch for the http_request tool (tests). */
+  fetch?: typeof fetch;
 }
 
 export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
@@ -45,18 +50,25 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const skills = new SkillStore(db, deps.bundledSkills);
   const memory = new MemoryStore(db);
   const mcpServers = new McpServerStore(db, deps.secrets);
-  const mcp = new McpToolset(mcpServers, deps.mcp);
+  const secrets = new SecretVault(db, deps.secrets);
+  const mcp = new McpToolset(mcpServers, secrets, deps.mcp);
   const settings = new UserSettingsStore(db);
   const graph = createAgentGraph({
     tenantId: id,
     model: deps.model,
-    tools: [searchKnowledgeTool(knowledge), loadSkillTool(skills), ...memoryTools(memory)],
+    tools: [
+      searchKnowledgeTool(knowledge),
+      loadSkillTool(skills),
+      ...memoryTools(memory),
+      httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch }),
+    ],
     dynamicTools: (ctx) => mcp.tools(ctx.user_id),
     checkpointer,
     timezone: deps.timezone,
     skills,
     memory,
     settings,
+    secrets,
   });
-  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, graph };
+  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, graph };
 }

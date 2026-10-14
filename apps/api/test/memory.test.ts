@@ -14,13 +14,13 @@ const ctx = (user: string, role: "admin" | "member") => ({
 describe("MemoryStore", () => {
   it("shows a user their own and shared memories, not other users' personal ones", async () => {
     const store = new MemoryStore(await createTestDb());
-    await store.add("alice", "Alice tyká", false);
-    await store.add("bob", "Bob vyká", false);
-    const shared = await store.add("alice", "Firma není plátce DPH", true);
+    await store.add("alice", "Alice tyká", "personal");
+    await store.add("bob", "Bob vyká", "personal");
+    const shared = await store.add("alice", "Firma není plátce DPH", "tenant");
 
     expect((await store.list("bob")).map((m) => m.content)).toEqual(["Firma není plátce DPH", "Bob vyká"]);
-    expect(await store.delete(shared.id, "bob", false)).toBe(false);
-    expect(await store.delete(shared.id, "bob", true)).toBe(true);
+    expect(await store.delete(shared.id, "personal", "bob")).toBe(false);
+    expect(await store.delete(shared.id, "tenant", "bob")).toBe(true);
   });
 });
 
