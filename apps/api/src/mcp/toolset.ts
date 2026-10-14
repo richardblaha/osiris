@@ -24,6 +24,8 @@ const TOOL_TIMEOUT_MS = 60_000;
 const CACHE_TTL_MS = 5 * 60_000;
 /** Replaced connections stay open this long, so runs already using their tools can finish. */
 const CLOSE_GRACE_MS = 2 * 60_000;
+/** Personal connections of users who haven't run the agent for this long are closed. */
+const IDLE_MS = 15 * 60_000;
 
 export const defaultConnector =
   (allowPrivate: boolean): McpConnector =>
@@ -44,17 +46,28 @@ const withTimeout = <T>(p: Promise<T>, ms: number) =>
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 300);
 
+const closeLater = (connections: McpConnection[], ms: number) => {
+  if (connections.length) setTimeout(() => connections.forEach((c) => void c.close().catch(() => {})), ms).unref();
+};
+
+/** The connected servers of one owner ('' = tenant-wide, or a user's sub). */
+class OwnerTools {
+  loading?: Promise<StructuredToolInterface[]>;
+  loadedAt = 0;
+  lastUsed = Date.now();
+  connections: McpConnection[] = [];
+  readonly statuses = new Map<string, McpServerStatus>();
+}
+
 /**
- * The tools of one tenant's enabled MCP servers. Connections are opened lazily, cached, and rebuilt after
- * `invalidate()` (on config change) or the TTL. A server that fails is skipped and reported in `status()`.
+ * MCP tools of one tenant: its tenant-wide servers plus each user's personal servers. Connections open lazily,
+ * are cached per owner and rebuilt after `invalidate(owner)` (config change) or the TTL. A server that fails is
+ * skipped and reported in `status()`.
  */
 export class McpToolset {
   private readonly connect: McpConnector;
   private readonly allowPrivate: boolean;
-  private loading?: Promise<StructuredToolInterface[]>;
-  private loadedAt = 0;
-  private connections: McpConnection[] = [];
-  private readonly statuses = new Map<string, McpServerStatus>();
+  private readonly owners = new Map<string, OwnerTools>();
 
   constructor(
     private readonly store: McpServerStore,
@@ -69,25 +82,25 @@ export class McpToolset {
     return assertSafeMcpUrl(url, { allowPrivate: this.allowPrivate });
   }
 
-  tools(): Promise<StructuredToolInterface[]> {
-    if (!this.loading || Date.now() - this.loadedAt > CACHE_TTL_MS) {
-      this.loadedAt = Date.now();
-      this.loading = this.load();
-    }
-    return this.loading;
+  /** Tools for one user's run: the tenant's servers plus the user's personal ones. */
+  async tools(userId: string): Promise<StructuredToolInterface[]> {
+    this.evictIdle();
+    const [tenant, personal] = await Promise.all([this.ownerTools(""), this.ownerTools(userId)]);
+    return [...tenant, ...personal];
   }
 
-  invalidate(): void {
-    this.loading = undefined;
+  invalidate(owner: string): void {
+    const group = this.owners.get(owner);
+    if (group) group.loading = undefined;
   }
 
-  /** Status per server from the last load. */
-  status(): ReadonlyMap<string, McpServerStatus> {
-    return this.statuses;
+  /** Status per server of one owner, from the last load or test. */
+  status(owner: string): ReadonlyMap<string, McpServerStatus> {
+    return this.owners.get(owner)?.statuses ?? new Map();
   }
 
   /** Connects to one server once, outside the cache, to check a configuration. The result becomes its status. */
-  async test(server: McpServerConfig): Promise<McpServerStatus> {
+  async test(server: McpServerConfig, owner: string): Promise<McpServerStatus> {
     let status: McpServerStatus;
     try {
       const conn = await withTimeout(this.connect(server), CONNECT_TIMEOUT_MS);
@@ -96,12 +109,44 @@ export class McpToolset {
     } catch (err) {
       status = { ok: false, error: message(err) };
     }
-    this.statuses.set(server.name, status);
+    this.group(owner).statuses.set(server.name, status);
     return status;
   }
 
-  private async load(): Promise<StructuredToolInterface[]> {
-    const servers = await this.store.enabled();
+  async close(): Promise<void> {
+    const all = [...this.owners.values()].flatMap((g) => g.connections);
+    this.owners.clear();
+    await Promise.all(all.map((c) => c.close().catch(() => {})));
+  }
+
+  private group(owner: string): OwnerTools {
+    let group = this.owners.get(owner);
+    if (!group) this.owners.set(owner, (group = new OwnerTools()));
+    return group;
+  }
+
+  private ownerTools(owner: string): Promise<StructuredToolInterface[]> {
+    const group = this.group(owner);
+    group.lastUsed = Date.now();
+    if (!group.loading || Date.now() - group.loadedAt > CACHE_TTL_MS) {
+      group.loadedAt = Date.now();
+      group.loading = this.load(owner, group);
+    }
+    return group.loading;
+  }
+
+  private evictIdle(): void {
+    const now = Date.now();
+    for (const [owner, group] of this.owners) {
+      if (owner !== "" && now - group.lastUsed > IDLE_MS) {
+        this.owners.delete(owner);
+        closeLater(group.connections, CLOSE_GRACE_MS);
+      }
+    }
+  }
+
+  private async load(owner: string, group: OwnerTools): Promise<StructuredToolInterface[]> {
+    const servers = await this.store.enabled(owner);
     const results = await Promise.all(
       servers.map(async (s) => {
         try {
@@ -113,18 +158,12 @@ export class McpToolset {
       }),
     );
 
-    const previous = this.connections;
-    if (previous.length) setTimeout(() => previous.forEach((c) => void c.close().catch(() => {})), CLOSE_GRACE_MS).unref();
-    this.connections = results.flatMap((r) => (r.conn ? [r.conn] : []));
-    this.statuses.clear();
+    closeLater(group.connections, CLOSE_GRACE_MS);
+    group.connections = results.flatMap((r) => (r.conn ? [r.conn] : []));
+    group.statuses.clear();
     for (const r of results) {
-      this.statuses.set(r.name, r.conn ? { ok: true, tools: r.conn.tools.map((t) => t.name) } : { ok: false, error: r.error! });
+      group.statuses.set(r.name, r.conn ? { ok: true, tools: r.conn.tools.map((t) => t.name) } : { ok: false, error: r.error! });
     }
-    return this.connections.flatMap((c) => c.tools);
-  }
-
-  async close(): Promise<void> {
-    await Promise.all(this.connections.map((c) => c.close().catch(() => {})));
-    this.connections = [];
+    return group.connections.flatMap((c) => c.tools);
   }
 }

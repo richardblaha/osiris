@@ -4,9 +4,10 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { END, MessagesAnnotation, START, StateGraph, type BaseCheckpointSaver } from "@langchain/langgraph";
 import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
-import { getRunContext } from "./context.ts";
+import { getRunContext, type RunContext } from "./context.ts";
 import type { MemoryStore } from "./memory.ts";
 import { buildSystemPrompt } from "./prompt.ts";
+import type { UserSettingsStore } from "./settings.ts";
 import type { SkillStore } from "./skills.ts";
 
 export interface AgentDeps {
@@ -15,20 +16,23 @@ export interface AgentDeps {
   model: BaseChatModel;
   /** Tools bound to this tenant's stores. */
   tools: StructuredToolInterface[];
-  /** Tools that can change between turns (the tenant's MCP servers), resolved on every model and tool step. */
-  dynamicTools?: () => Promise<StructuredToolInterface[]>;
+  /** Tools that can change between turns or differ per user (MCP servers), resolved on every model and tool step. */
+  dynamicTools?: (ctx: RunContext) => Promise<StructuredToolInterface[]>;
   checkpointer: BaseCheckpointSaver;
   timezone: string;
   /** Listed in the system prompt on every call, so edits apply from the next turn. */
   skills?: SkillStore;
   /** The user's memories are injected into the system prompt on every call. */
   memory?: MemoryStore;
+  /** The user's profile ("Můj profil") is added to the system prompt. */
+  settings?: UserSettingsStore;
 }
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
-export function createAgentGraph({ tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory }: AgentDeps) {
+export function createAgentGraph(deps: AgentDeps) {
+  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings } = deps;
   if (!model.bindTools) throw new Error("Chat model does not support tool calling");
-  const allTools = async () => (dynamicTools ? [...tools, ...(await dynamicTools())] : tools);
+  const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
 
   const callModel = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const ctx = getRunContext(config);
@@ -38,18 +42,20 @@ export function createAgentGraph({ tenantId, model, tools, dynamicTools, checkpo
       buildSystemPrompt({
         channel: ctx.channel,
         timezone,
-        skills: await skills?.list(),
+        skills: await skills?.list(ctx.user_id),
         memories: await memory?.list(ctx.user_id),
+        userName: ctx.user_name,
+        settings: await settings?.get(ctx.user_id),
       }),
     );
-    const response = await model.bindTools!(await allTools()).invoke([system, ...state.messages], config);
+    const response = await model.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);
     return { messages: [response] };
   };
 
   return new StateGraph(MessagesAnnotation)
     .addNode("agent", callModel)
     .addNode("tools", async (state: typeof MessagesAnnotation.State, config: RunnableConfig) =>
-      new ToolNode(await allTools()).invoke(state, config),
+      new ToolNode(await allTools(getRunContext(config))).invoke(state, config),
     )
     .addEdge(START, "agent")
     .addConditionalEdges("agent", toolsCondition, ["tools", END])

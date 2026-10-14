@@ -133,19 +133,74 @@ describe("API", () => {
     expect(events).toContainEqual({ type: "tool-result", toolCallId: "c", result: "Nic nenalezeno." });
   });
 
-  it("lets only admins change the knowledge base and skills", async () => {
+  it("lets members change personal settings but only admins tenant-wide ones", async () => {
     const { as } = await setup();
     const member = as("bob:tenant-acme");
     const admin = as("alice:tenant-acme-admin");
-    const doc = { method: "POST", body: JSON.stringify({ title: "T", content: "obsah" }) };
-    const skill = { method: "PUT", body: JSON.stringify({ description: "Revize", instructions: "Postup." }) };
+    const post = (body: object) => ({ method: "POST", body: JSON.stringify({ title: "T", content: "obsah", ...body }) });
+    const skill = (body: object) => ({ method: "PUT", body: JSON.stringify({ description: "Revize", instructions: "Postup.", ...body }) });
 
-    expect((await member("/knowledge/documents", doc)).status).toBe(403);
-    expect((await member("/skills/revize", skill)).status).toBe(403);
-    expect((await admin("/skills/revize", skill)).status).toBe(200);
-    expect((await admin("/skills/Bad_Name", skill)).status).toBe(400);
-    expect(await (await member("/skills")).json()).toContainEqual({ name: "revize", description: "Revize", source: "tenant" });
-    expect(await (await member("/skills/revize")).json()).toMatchObject({ instructions: "Postup." });
+    expect((await member("/knowledge/documents", post({ scope: "tenant" }))).status).toBe(403);
+    expect((await member("/skills/revize", skill({ scope: "tenant" }))).status).toBe(403);
+    expect((await admin("/skills/Bad_Name", skill({ scope: "tenant" }))).status).toBe(400);
+    expect((await admin("/skills/revize", skill({ scope: "tenant" }))).status).toBe(200);
+    expect((await member("/skills/revize", skill({ instructions: "Můj postup." }))).status).toBe(200);
+
+    expect(await (await member("/skills")).json()).toContainEqual({ name: "revize", description: "Revize", source: "personal" });
+    expect(await (await member("/skills/revize")).json()).toMatchObject({ instructions: "Můj postup.", source: "personal" });
+    expect(await (await admin("/skills/revize")).json()).toMatchObject({ instructions: "Postup.", source: "tenant" });
+    expect((await member("/skills/revize?scope=tenant", { method: "DELETE" })).status).toBe(403);
+    expect((await member("/skills/revize", { method: "DELETE" })).status).toBe(204);
+    expect((await member("/skills/revize?scope=bogus", { method: "DELETE" })).status).toBe(400);
+  });
+
+  it("keeps personal documents to their owner, in the list and in search", async () => {
+    const { as } = await setup([
+      new AIMessage({ content: "", tool_calls: [{ id: "k", name: "search_knowledge", args: { query: "kód od garáže" } }] }),
+      new AIMessage("Nevím."),
+    ]);
+    const bob = as("bob:tenant-acme");
+    const alice = as("alice:tenant-acme-admin");
+    const add = (title: string, content: string, scope: string) =>
+      ({ method: "POST", body: JSON.stringify({ title, content, scope }) });
+
+    const mine = await (await bob("/knowledge/documents", add("Garáž", "Kód od garáže je 4321.", "personal"))).json();
+    await alice("/knowledge/documents", add("Ceník", "Hodinová sazba 650 Kč.", "tenant"));
+
+    expect((await (await bob("/knowledge/documents")).json()).map((d: { title: string; scope: string }) => [d.title, d.scope])).toEqual([
+      ["Ceník", "tenant"],
+      ["Garáž", "personal"],
+    ]);
+    expect((await (await alice("/knowledge/documents")).json()).map((d: { title: string }) => d.title)).toEqual(["Ceník"]);
+
+    const { id } = await (await alice("/threads", { method: "POST" })).json();
+    const events = await readEvents(await alice(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Kód?" }) }));
+    const result = events.find((e) => e.type === "tool-result");
+    expect(result?.type === "tool-result" && result.result).not.toContain("4321");
+
+    expect((await alice(`/knowledge/documents/${mine.id}?scope=personal`, { method: "DELETE" })).status).toBe(404);
+    expect((await bob(`/knowledge/documents/${mine.id}?scope=personal`, { method: "DELETE" })).status).toBe(204);
+  });
+
+  it("stores the user's profile and puts it into the system prompt", async () => {
+    const { as, model } = await setup([new AIMessage("Dobrý den.")]);
+    const bob = as("bob:tenant-acme");
+    expect(await (await bob("/settings")).json()).toEqual({ address: "auto", language: "auto", signature: "", instructions: "" });
+
+    const profile = { address: "vy", language: "sk", signature: "Bob Novák, elektrikář", instructions: "Ceny uváděj s DPH." };
+    expect((await bob("/settings", { method: "PUT", body: JSON.stringify({ ...profile, address: "onikání" }) })).status).toBe(400);
+    expect((await bob("/settings", { method: "PUT", body: JSON.stringify(profile) })).status).toBe(200);
+    expect(await (await bob("/settings")).json()).toEqual(profile);
+    expect(await (await as("alice:tenant-acme")("/settings")).json()).toMatchObject({ address: "auto" });
+
+    const { id } = await (await bob("/threads", { method: "POST" })).json();
+    await (await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
+    const system = model.calls[0]?.[0]?.text ?? "";
+    expect(system).toContain("Jméno uživatele: bob");
+    expect(system).toContain("Uživateli vykej.");
+    expect(system).toContain("Odpovídej slovensky.");
+    expect(system).toContain("Bob Novák, elektrikář");
+    expect(system).toMatch(/pokud nejsou v rozporu s pravidly výše\):\nCeny uváděj s DPH\./);
   });
 
   it("manages personal and shared memories", async () => {

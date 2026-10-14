@@ -11,6 +11,8 @@ export interface RunContext {
   user_id: string;
   role: Role;
   channel: Channel;
+  /** Display name from PocketID, for the prompt. */
+  user_name?: string;
 }
 
 export function getRunContext(config: RunnableConfig | undefined): RunContext {

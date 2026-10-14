@@ -60,24 +60,28 @@ describe("skills", () => {
     expect(result?.text).toBe("Uveď IČO a datum splatnosti.");
   });
 
-  it("lets a tenant override a bundled skill without affecting other tenants", async () => {
+  it("layers personal over tenant over bundled skills, per user and per tenant", async () => {
     const bundled = [{ name: "faktura", description: "Obecná", instructions: "Obecný postup." }];
     const { tenants } = createTestTenants([], bundled);
     const a = await tenants.get("a");
     const b = await tenants.get("b");
 
-    await a.skills.put({ name: "faktura", description: "Naše", instructions: "Náš postup." });
-    await a.skills.put({ name: "revize", description: "Revize elektro", instructions: "Postup revize." });
+    await a.skills.put({ name: "faktura", description: "Naše", instructions: "Náš postup." }, "tenant", "admin");
+    await a.skills.put({ name: "revize", description: "Revize elektro", instructions: "Postup revize." }, "tenant", "admin");
+    await a.skills.put({ name: "faktura", description: "Moje", instructions: "Můj postup." }, "personal", "alice");
 
-    expect(await a.skills.list()).toEqual([
-      { name: "faktura", description: "Naše", source: "tenant" },
+    expect(await a.skills.list("alice")).toEqual([
+      { name: "faktura", description: "Moje", source: "personal" },
       { name: "revize", description: "Revize elektro", source: "tenant" },
     ]);
-    expect(await b.skills.list()).toEqual([{ name: "faktura", description: "Obecná", source: "bundled" }]);
+    expect((await a.skills.list("bob"))[0]).toEqual({ name: "faktura", description: "Naše", source: "tenant" });
+    expect(await b.skills.list("alice")).toEqual([{ name: "faktura", description: "Obecná", source: "bundled" }]);
 
-    expect(await a.skills.delete("faktura")).toBe(true);
-    expect((await a.skills.get("faktura"))?.instructions).toBe("Obecný postup.");
-    expect(await a.skills.delete("faktura")).toBe(false);
+    expect(await a.skills.delete("faktura", "personal", "bob")).toBe(false);
+    expect(await a.skills.delete("faktura", "personal", "alice")).toBe(true);
+    expect((await a.skills.get("faktura", "alice"))?.instructions).toBe("Náš postup.");
+    expect(await a.skills.delete("faktura", "tenant", "admin")).toBe(true);
+    expect((await a.skills.get("faktura", "alice"))?.instructions).toBe("Obecný postup.");
   });
 
   it("omits the skills section when there are none", async () => {

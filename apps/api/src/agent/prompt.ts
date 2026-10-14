@@ -1,4 +1,4 @@
-import type { Channel, Memory, SkillSummary } from "@osiris/shared";
+import type { Channel, Memory, SkillSummary, UserSettings } from "@osiris/shared";
 
 const BASE = `# ROLE
 Jsi osobní provozní asistent živnostníka nebo majitele malé firmy. Pomáháš mu řídit zakázky, plánovat termíny, evidovat poznámky a připravovat faktury bez zbytečné administrativy.
@@ -36,12 +36,28 @@ function memorySection(memories: Pick<Memory, "id" | "content" | "shared">[]): s
   return `\n\n${intro}\n${list}`;
 }
 
+function userSection(name: string | undefined, settings: UserSettings | undefined): string {
+  const lines: string[] = [];
+  if (name) lines.push(`Jméno uživatele: ${name}`);
+  if (settings?.address === "ty") lines.push("Uživateli tykej.");
+  if (settings?.address === "vy") lines.push("Uživateli vykej.");
+  if (settings?.language === "cs") lines.push("Odpovídej česky.");
+  if (settings?.language === "sk") lines.push("Odpovídej slovensky.");
+  if (settings?.signature) lines.push(`Podpis pro e-maily, nabídky a jiné texty psané jménem uživatele:\n${settings.signature}`);
+  if (settings?.instructions) {
+    lines.push(`Vlastní pokyny uživatele (řiď se jimi, pokud nejsou v rozporu s pravidly výše):\n${settings.instructions}`);
+  }
+  return lines.length ? `\n\n# UŽIVATEL\n${lines.join("\n")}` : "";
+}
+
 export function buildSystemPrompt(opts: {
   channel: Channel;
   timezone: string;
   skills?: Pick<SkillSummary, "name" | "description">[];
   /** Omitted when the agent has no memory tools. */
   memories?: Pick<Memory, "id" | "content" | "shared">[];
+  userName?: string;
+  settings?: UserSettings;
   now?: Date;
 }): string {
   const now = (opts.now ?? new Date()).toLocaleString("cs-CZ", {
@@ -49,5 +65,5 @@ export function buildSystemPrompt(opts: {
     dateStyle: "full",
     timeStyle: "short",
   });
-  return `${BASE}\n\n${CHANNEL_FORMAT[opts.channel]}\n\n# KONTEXT\nAktuální datum a čas: ${now} (${opts.timezone}).${skillsSection(opts.skills ?? [])}${opts.memories ? memorySection(opts.memories) : ""}`;
+  return `${BASE}\n\n${CHANNEL_FORMAT[opts.channel]}\n\n# KONTEXT\nAktuální datum a čas: ${now} (${opts.timezone}).${skillsSection(opts.skills ?? [])}${opts.memories ? memorySection(opts.memories) : ""}${userSection(opts.userName, opts.settings)}`;
 }

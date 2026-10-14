@@ -33,11 +33,14 @@ export interface MeResponse {
   tenants: { id: string; name: string; role: Role }[];
 }
 
+/** Who a setting applies to: the whole tenant (managed by admins) or only the current user. */
+export type Scope = "tenant" | "personal";
+
 export interface SkillSummary {
   name: string;
   description: string;
-  /** `bundled` ships with the app; `tenant` was added by the tenant's admin and overrides a bundled one. */
-  source: "bundled" | "tenant";
+  /** Precedence for one name: `personal` (this user) > `tenant` (admin) > `bundled` (ships with the app). */
+  source: "bundled" | Scope;
 }
 
 export interface Skill extends SkillSummary {
@@ -52,9 +55,11 @@ export interface Memory {
   createdAt: string;
 }
 
-/** A tenant's remote MCP server. Header values are write-only: the API returns only their names. */
+/** A remote MCP server, tenant-wide or personal. Header values are write-only: the API returns only their names. */
 export interface McpServer {
   name: string;
+  scope: Scope;
+  /** Empty for tenant servers when the viewer isn't an admin (the URL may carry an API key). */
   url: string;
   enabled: boolean;
   headerNames: string[];
@@ -64,3 +69,21 @@ export interface McpServer {
 }
 
 export type McpServerStatus = { ok: true; tools: string[] } | { ok: false; error: string };
+
+export interface DocumentSummary {
+  id: string;
+  title: string;
+  chunks: number;
+  scope: Scope;
+  createdAt: string;
+}
+
+/** "Můj profil": how the agent should treat this user. */
+export interface UserSettings {
+  address: "auto" | "ty" | "vy";
+  language: "auto" | "cs" | "sk";
+  /** Appended to e-mails, quotes and other texts written on the user's behalf. */
+  signature: string;
+  /** The user's own standing instructions for the agent. */
+  instructions: string;
+}

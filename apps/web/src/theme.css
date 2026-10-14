@@ -214,7 +214,9 @@
       border-color var(--transition),
       box-shadow var(--transition);
   }
-  .field:read-only {
+  /* Only text fields: CSS treats every <select> as :read-only. */
+  input.field:read-only,
+  textarea.field:read-only {
     color: var(--text-muted);
     border-color: var(--border-subtle);
   }

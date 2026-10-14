@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { Client } from "@libsql/client";
-import type { SkillSummary } from "@osiris/shared";
+import type { Scope, SkillSummary } from "@osiris/shared";
 
 /**
  * A skill is a named set of instructions. Only name + description go into the system prompt; the model pulls
@@ -52,7 +52,13 @@ export function parseSkill(source: string, file = "SKILL.md"): Skill {
   return { name, description, instructions };
 }
 
-/** Bundled skills merged with one tenant's own skills (tenant wins on name clash). */
+/** Row owner: '' for tenant-wide rows, the user's sub for personal ones. */
+const ownerOf = (scope: Scope, userId: string) => (scope === "tenant" ? "" : userId);
+
+/**
+ * Bundled skills merged with one tenant's skills and the user's personal ones.
+ * For a given name, personal wins over tenant, which wins over bundled.
+ */
 export class SkillStore {
   private readonly bundled: Map<string, Skill>;
 
@@ -63,35 +69,48 @@ export class SkillStore {
     this.bundled = new Map(bundled.map((s) => [s.name, s]));
   }
 
-  async list(): Promise<SkillSummary[]> {
-    const { rows } = await this.db.execute("SELECT name, description FROM skills");
+  /** Skills visible to `userId`, one per name. */
+  async list(userId: string): Promise<SkillSummary[]> {
+    const { rows } = await this.db.execute({
+      // Tenant rows ('') first, so personal rows overwrite them in the map below.
+      sql: "SELECT owner, name, description FROM skills WHERE owner IN ('', ?) ORDER BY owner = '' DESC",
+      args: [userId],
+    });
     const merged = new Map<string, SkillSummary>();
     for (const s of this.bundled.values()) merged.set(s.name, { name: s.name, description: s.description, source: "bundled" });
-    for (const r of rows) merged.set(String(r.name), { name: String(r.name), description: String(r.description), source: "tenant" });
+    for (const r of rows) {
+      merged.set(String(r.name), { name: String(r.name), description: String(r.description), source: r.owner === "" ? "tenant" : "personal" });
+    }
     return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  async get(name: string): Promise<(Skill & { source: SkillSummary["source"] }) | undefined> {
-    const { rows } = await this.db.execute({ sql: "SELECT * FROM skills WHERE name = ?", args: [name] });
+  /** The skill `userId` gets for `name`, following the precedence. */
+  async get(name: string, userId: string): Promise<(Skill & { source: SkillSummary["source"] }) | undefined> {
+    const { rows } = await this.db.execute({
+      sql: "SELECT * FROM skills WHERE name = ? AND owner IN ('', ?) ORDER BY owner = '' LIMIT 1",
+      args: [name, userId],
+    });
     const r = rows[0];
-    if (r) return { name, description: String(r.description), instructions: String(r.instructions), source: "tenant" };
+    if (r) {
+      return { name, description: String(r.description), instructions: String(r.instructions), source: r.owner === "" ? "tenant" : "personal" };
+    }
     const bundled = this.bundled.get(name);
     return bundled && { ...bundled, source: "bundled" };
   }
 
-  async put(skill: Skill): Promise<void> {
+  async put(skill: Skill, scope: Scope, userId: string): Promise<void> {
     if (!SKILL_NAME.test(skill.name)) throw new Error(`Invalid skill name "${skill.name}"`);
     await this.db.execute({
-      sql: `INSERT INTO skills (name, description, instructions) VALUES (?, ?, ?)
-            ON CONFLICT (name) DO UPDATE SET description = excluded.description,
+      sql: `INSERT INTO skills (owner, name, description, instructions) VALUES (?, ?, ?, ?)
+            ON CONFLICT (owner, name) DO UPDATE SET description = excluded.description,
               instructions = excluded.instructions, updated_at = datetime('now')`,
-      args: [skill.name, skill.description, skill.instructions],
+      args: [ownerOf(scope, userId), skill.name, skill.description, skill.instructions],
     });
   }
 
-  /** Deletes the tenant's own skill; bundled skills can't be deleted (a deleted override reveals the bundled one). */
-  async delete(name: string): Promise<boolean> {
-    const r = await this.db.execute({ sql: "DELETE FROM skills WHERE name = ?", args: [name] });
+  /** Deletes a tenant or personal skill (bundled ones can't be deleted; deleting an override reveals what it hid). */
+  async delete(name: string, scope: Scope, userId: string): Promise<boolean> {
+    const r = await this.db.execute({ sql: "DELETE FROM skills WHERE owner = ? AND name = ?", args: [ownerOf(scope, userId), name] });
     return r.rowsAffected > 0;
   }
 }

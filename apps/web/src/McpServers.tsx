@@ -1,6 +1,7 @@
-import type { McpServer, McpServerStatus } from "@osiris/shared";
+import type { McpServer, McpServerStatus, Scope } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
+import { ScopeBadge, ScopeSelect } from "./Scope.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -27,13 +28,14 @@ function Status({ status }: { status?: McpServerStatus }) {
   );
 }
 
-export function McpServers() {
+export function McpServers({ isAdmin }: { isAdmin: boolean }) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [headers, setHeaders] = useState("");
   const [clearHeaders, setClearHeaders] = useState(false);
   const [enabled, setEnabled] = useState(true);
+  const [scope, setScope] = useState<Scope>("personal");
   const [editing, setEditing] = useState<McpServer>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -48,8 +50,12 @@ export function McpServers() {
     setHeaders("");
     setClearHeaders(false);
     setEnabled(true);
+    setScope("personal");
     setEditing(undefined);
   };
+
+  /** Members manage their personal servers; tenant servers are read-only for them. */
+  const canManage = (s: McpServer) => s.scope === "personal" || isAdmin;
 
   const edit = (s: McpServer) => {
     setEditing(s);
@@ -58,6 +64,7 @@ export function McpServers() {
     setHeaders("");
     setClearHeaders(false);
     setEnabled(s.enabled);
+    setScope(s.scope);
   };
 
   const run = async (action: () => Promise<unknown>) => {
@@ -77,17 +84,17 @@ export function McpServers() {
     void run(async () => {
       // When editing, empty headers keep the stored ones unless "remove" is ticked.
       const h = editing && !headers.trim() ? (clearHeaders ? {} : undefined) : parseHeaders(headers);
-      await api.saveMcpServer(name, { url, enabled, headers: h });
-      const saved = name;
+      await api.saveMcpServer(name, { url, enabled, headers: h, scope });
+      const saved = { name, scope };
       reset();
-      if (enabled) setTested({ name: saved, status: await api.testMcpServer(saved) });
+      if (enabled) setTested({ name: saved.name, status: await api.testMcpServer(saved.name, saved.scope) });
       await refresh();
     });
   };
 
-  const test = (n: string) =>
+  const test = (s: McpServer) =>
     run(async () => {
-      setTested({ name: n, status: await api.testMcpServer(n) });
+      setTested({ name: s.name, status: await api.testMcpServer(s.name, s.scope) });
       await refresh();
     });
 
@@ -96,7 +103,8 @@ export function McpServers() {
       <h1 className="section-header text-[13px]">Nástroje (MCP)</h1>
       <p className="mt-1 text-sm text-fg-secondary">
         Externí služby, jejichž nástroje může asistent používat (např. CRM, kalendář, účetnictví). Připojují se přes
-        Model Context Protocol, jen vzdáleně přes https.
+        Model Context Protocol, jen vzdáleně přes https. Osobní servery (třeba tvůj kalendář s tvým tokenem) používá
+        asistent jen pro tebe.
       </p>
 
       <form onSubmit={submit} className="mt-6 space-y-2">
@@ -145,6 +153,7 @@ export function McpServers() {
           <button disabled={busy} className="btn-primary">
             {busy ? "Ukládám…" : editing ? "Uložit" : "Přidat"}
           </button>
+          <ScopeSelect isAdmin={isAdmin} value={scope} onChange={setScope} disabled={!!editing} />
           {editing && (
             <button type="button" onClick={reset} className="btn-secondary">
               Zrušit
@@ -164,26 +173,31 @@ export function McpServers() {
 
       <ul className="mt-8 divide-y divide-line">
         {servers.map((s) => (
-          <li key={s.name} className="flex items-center justify-between gap-4 py-3">
+          <li key={`${s.scope}:${s.name}`} className="flex items-center justify-between gap-4 py-3">
             <span className="min-w-0">
               <span className="font-medium">{s.name}</span>
-              <span className="ml-2">{s.enabled ? <Status status={s.status} /> : <span className="badge">vypnuto</span>}</span>
-              <span className="block truncate text-sm text-fg-secondary">{s.url}</span>
+              <span className="ml-2 inline-flex gap-1">
+                <ScopeBadge scope={s.scope} />
+                {s.enabled ? <Status status={s.status} /> : <span className="badge">vypnuto</span>}
+              </span>
+              <span className="block truncate text-sm text-fg-secondary">{s.url || "spravuje správce firmy"}</span>
             </span>
+            {canManage(s) && (
             <span className="flex shrink-0 gap-3 text-sm">
-              <button onClick={() => test(s.name)} disabled={busy} className="btn-link">
+              <button onClick={() => test(s)} disabled={busy} className="btn-link">
                 Vyzkoušet
               </button>
               <button onClick={() => edit(s)} className="btn-link">
                 Upravit
               </button>
               <button
-                onClick={() => run(async () => (await api.deleteMcpServer(s.name), await refresh()))}
+                onClick={() => run(async () => (await api.deleteMcpServer(s.name, s.scope), await refresh()))}
                 className="btn-danger"
               >
                 Smazat
               </button>
             </span>
+            )}
           </li>
         ))}
         {!servers.length && <li className="py-3 text-fg-muted">Zatím žádné servery.</li>}

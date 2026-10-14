@@ -6,9 +6,11 @@ import { ChatPane } from "./chat/ChatPane.tsx";
 import { Knowledge } from "./Knowledge.tsx";
 import { McpServers } from "./McpServers.tsx";
 import { Memories } from "./Memories.tsx";
+import { Profile } from "./Profile.tsx";
 import { Skills } from "./Skills.tsx";
 
-type View = { kind: "chat"; threadId: string | null; session: number } | { kind: "knowledge" | "skills" | "memory" | "mcp" };
+type View = { kind: "chat"; threadId: string | null; session: number } | { kind: SettingsView };
+type SettingsView = "knowledge" | "skills" | "memory" | "mcp" | "profile";
 
 export function App() {
   const [loggedIn, setLoggedIn] = useState<boolean>();
@@ -71,7 +73,7 @@ function Workspace() {
   if (!me || !tenantId) return null;
   const tenant = me.tenants.find((t) => t.id === tenantId);
   const isAdmin = tenant?.role === "admin";
-  const navItem = (kind: "knowledge" | "skills" | "memory" | "mcp", label: string) => (
+  const navItem = (kind: SettingsView, label: string) => (
     <button
       onClick={() => setView({ kind })}
       data-active={view.kind === kind}
@@ -124,20 +126,23 @@ function Workspace() {
             {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
           </nav>
           <div className="border-t border-line p-2">
-            <h2 className="section-header px-2 pb-1 pt-1">Firma</h2>
+            <h2 className="section-header px-2 pb-1 pt-1">Nastavení</h2>
             {navItem("knowledge", "Znalostní báze")}
             {navItem("skills", "Dovednosti")}
             {navItem("memory", "Paměť")}
-            {isAdmin && navItem("mcp", "Nástroje (MCP)")}
+            {navItem("mcp", "Nástroje (MCP)")}
+            {navItem("profile", "Můj profil")}
           </div>
         </aside>
         <main className="h-full min-w-0 flex-1 bg-canvas">
           {view.kind === "knowledge" ? (
-            <Knowledge key={tenantId} canEdit={isAdmin} />
+            <Knowledge key={tenantId} isAdmin={isAdmin} />
           ) : view.kind === "skills" ? (
-            <Skills key={tenantId} canEdit={isAdmin} />
+            <Skills key={tenantId} isAdmin={isAdmin} />
           ) : view.kind === "mcp" ? (
-            <McpServers key={tenantId} />
+            <McpServers key={tenantId} isAdmin={isAdmin} />
+          ) : view.kind === "profile" ? (
+            <Profile key={tenantId} me={me} />
           ) : view.kind !== "chat" ? (
             <Memories key={tenantId} isAdmin={isAdmin} />
           ) : (

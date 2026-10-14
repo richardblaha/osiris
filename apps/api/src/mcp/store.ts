@@ -1,5 +1,5 @@
 import type { Client } from "@libsql/client";
-import type { McpServer } from "@osiris/shared";
+import type { McpServer, Scope } from "@osiris/shared";
 import type { SecretBox } from "../secrets.ts";
 
 export const MCP_SERVER_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -9,6 +9,12 @@ export interface McpServerConfig {
   url: string;
   headers: Record<string, string>;
 }
+
+/** The name is used by another server in the tenant (tool names `<server>_<tool>` must not clash). */
+export class McpNameTakenError extends Error {}
+
+/** Row owner: '' for tenant-wide servers, the user's sub for personal ones. */
+export const mcpOwner = (scope: Scope, userId: string) => (scope === "tenant" ? "" : userId);
 
 /** MCP server configuration in one tenant's database. Headers are sealed with the SecretBox. */
 export class McpServerStore {
@@ -21,44 +27,57 @@ export class McpServerStore {
     return row.headers_enc ? (JSON.parse(this.secrets.open(String(row.headers_enc))) as Record<string, string>) : {};
   }
 
-  /** For the API: header names only, never values. */
-  async list(): Promise<Omit<McpServer, "status">[]> {
-    const { rows } = await this.db.execute("SELECT * FROM mcp_servers ORDER BY name");
-    return rows.map((r) => ({
-      name: String(r.name),
-      url: String(r.url),
-      enabled: Number(r.enabled) === 1,
-      headerNames: Object.keys(this.headers(r)),
-      updatedAt: String(r.updated_at),
-    }));
+  /** Tenant servers plus `userId`'s personal ones, for the API: header names only, never values. */
+  async list(userId: string, { showTenantUrls }: { showTenantUrls: boolean }): Promise<Omit<McpServer, "status">[]> {
+    const { rows } = await this.db.execute({
+      sql: "SELECT * FROM mcp_servers WHERE owner IN ('', ?) ORDER BY owner <> '', name",
+      args: [userId],
+    });
+    return rows.map((r) => {
+      const scope: Scope = r.owner === "" ? "tenant" : "personal";
+      return {
+        name: String(r.name),
+        scope,
+        url: scope === "tenant" && !showTenantUrls ? "" : String(r.url),
+        enabled: Number(r.enabled) === 1,
+        headerNames: Object.keys(this.headers(r)),
+        updatedAt: String(r.updated_at),
+      };
+    });
   }
 
-  async get(name: string): Promise<(McpServerConfig & { enabled: boolean }) | undefined> {
-    const { rows } = await this.db.execute({ sql: "SELECT * FROM mcp_servers WHERE name = ?", args: [name] });
+  async get(name: string, owner: string): Promise<(McpServerConfig & { enabled: boolean }) | undefined> {
+    const { rows } = await this.db.execute({ sql: "SELECT * FROM mcp_servers WHERE owner = ? AND name = ?", args: [owner, name] });
     const r = rows[0];
     return r && { name, url: String(r.url), headers: this.headers(r), enabled: Number(r.enabled) === 1 };
   }
 
-  /** Enabled servers with decrypted headers, for connecting. */
-  async enabled(): Promise<McpServerConfig[]> {
-    const { rows } = await this.db.execute("SELECT * FROM mcp_servers WHERE enabled = 1 ORDER BY name");
+  /** Enabled servers of one owner with decrypted headers, for connecting. */
+  async enabled(owner: string): Promise<McpServerConfig[]> {
+    const { rows } = await this.db.execute({
+      sql: "SELECT * FROM mcp_servers WHERE owner = ? AND enabled = 1 ORDER BY name",
+      args: [owner],
+    });
     return rows.map((r) => ({ name: String(r.name), url: String(r.url), headers: this.headers(r) }));
   }
 
   /** Creates or updates a server. `headers: undefined` keeps the stored headers; `{}` clears them. */
-  async put(name: string, { url, enabled, headers }: { url: string; enabled: boolean; headers?: Record<string, string> }) {
+  async put(name: string, owner: string, { url, enabled, headers }: { url: string; enabled: boolean; headers?: Record<string, string> }) {
     if (!MCP_SERVER_NAME.test(name)) throw new Error(`Invalid MCP server name "${name}"`);
+    const taken = await this.db.execute({ sql: "SELECT 1 FROM mcp_servers WHERE name = ? AND owner <> ?", args: [name, owner] });
+    if (taken.rows.length) throw new McpNameTakenError(`Název „${name}“ už ve firmě používá jiný server`);
     const sealed = headers === undefined ? undefined : Object.keys(headers).length ? this.secrets.seal(JSON.stringify(headers)) : null;
     await this.db.execute({
-      sql: `INSERT INTO mcp_servers (name, url, enabled, headers_enc) VALUES (?, ?, ?, ?)
-            ON CONFLICT (name) DO UPDATE SET url = excluded.url, enabled = excluded.enabled,
+      sql: `INSERT INTO mcp_servers (owner, name, url, enabled, headers_enc) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT (owner, name) DO UPDATE SET url = excluded.url, enabled = excluded.enabled,
               headers_enc = ${sealed === undefined ? "mcp_servers.headers_enc" : "excluded.headers_enc"},
               updated_at = datetime('now')`,
-      args: [name, url, enabled ? 1 : 0, sealed ?? null],
+      args: [owner, name, url, enabled ? 1 : 0, sealed ?? null],
     });
   }
 
-  async delete(name: string): Promise<boolean> {
-    return (await this.db.execute({ sql: "DELETE FROM mcp_servers WHERE name = ?", args: [name] })).rowsAffected > 0;
+  async delete(name: string, owner: string): Promise<boolean> {
+    const r = await this.db.execute({ sql: "DELETE FROM mcp_servers WHERE owner = ? AND name = ?", args: [owner, name] });
+    return r.rowsAffected > 0;
   }
 }

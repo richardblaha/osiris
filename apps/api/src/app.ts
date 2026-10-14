@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { McpServer, MeResponse, Skill } from "@osiris/shared";
+import type { McpServer, MeResponse, Scope, Skill, UserSettings } from "@osiris/shared";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -10,7 +10,7 @@ import { SKILL_NAME } from "./agent/skills.ts";
 import { streamRun, toThreadMessages } from "./agent/run.ts";
 import { authMiddleware, tenantMiddleware, type AuthEnv, type RequestContext } from "./auth/middleware.ts";
 import type { TokenVerifier } from "./auth/oidc.ts";
-import { MCP_SERVER_NAME } from "./mcp/store.ts";
+import { MCP_SERVER_NAME, McpNameTakenError, mcpOwner } from "./mcp/store.ts";
 import { UnsafeUrlError } from "./mcp/url.ts";
 import * as threads from "./repo/threads.ts";
 import type { TenantRegistry } from "./tenants/registry.ts";
@@ -24,10 +24,16 @@ export interface AppDeps {
 }
 
 const runBody = z.object({ message: z.string().trim().min(1).max(20_000) });
-const documentBody = z.object({ title: z.string().trim().min(1).max(200), content: z.string().min(1).max(500_000) });
+const scope = z.enum(["tenant", "personal"]).default("personal");
+const documentBody = z.object({
+  title: z.string().trim().min(1).max(200),
+  content: z.string().min(1).max(500_000),
+  scope,
+});
 const skillBody = z.object({
   description: z.string().trim().min(1).max(500),
   instructions: z.string().trim().min(1).max(50_000),
+  scope,
 });
 const mcpServerBody = z.object({
   url: z.string().trim().min(1).max(2000),
@@ -36,6 +42,13 @@ const mcpServerBody = z.object({
   headers: z
     .record(z.string().regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/, "Neplatný název hlavičky"), z.string().max(4000).regex(/^[^\r\n]*$/))
     .optional(),
+  scope,
+});
+const settingsBody = z.object({
+  address: z.enum(["auto", "ty", "vy"]),
+  language: z.enum(["auto", "cs", "sk"]),
+  signature: z.string().trim().max(1000),
+  instructions: z.string().trim().max(4000),
 });
 const memoryBody = z.object({ content: z.string().trim().min(1).max(500), shared: z.boolean().default(false) });
 
@@ -48,6 +61,15 @@ export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
   };
   const requireAdmin = (ctx: RequestContext) => {
     if (ctx.role !== "admin") throw new HTTPException(403, { message: "Requires admin role" });
+  };
+  /** Anyone may change their personal settings; tenant-wide ones need an admin. */
+  const requireScope = (ctx: RequestContext, scope: Scope) => {
+    if (scope === "tenant") requireAdmin(ctx);
+  };
+  const queryScope = (value: string | undefined): Scope => {
+    if (value === undefined || value === "personal") return "personal";
+    if (value === "tenant") return "tenant";
+    throw new HTTPException(400, { message: "scope must be tenant or personal" });
   };
   const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
     const r = schema.safeParse(value);
@@ -125,7 +147,14 @@ export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
       return streamSSE(c, async (sse) => {
         sse.onAbort(() => abort.abort());
         try {
-          const runCtx = { thread_id: id, tenant_id: tenant.id, user_id: user.sub, role, channel: "web" as const };
+          const runCtx = {
+            thread_id: id,
+            tenant_id: tenant.id,
+            user_id: user.sub,
+            role,
+            channel: "web" as const,
+            user_name: user.name ?? undefined,
+          };
           for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal)) {
             await sse.writeSSE({ data: JSON.stringify(event) });
           }
@@ -140,86 +169,123 @@ export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
       });
     })
 
-    .get("/knowledge/documents", async (c) => c.json(await c.get("ctx").tenant.knowledge.listDocuments()))
+    // Settings come in two scopes: `tenant` (everyone in the tenant, admins only) and `personal` (the caller only).
+
+    .get("/knowledge/documents", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      return c.json(await tenant.knowledge.listDocuments(user.sub));
+    })
 
     .post("/knowledge/documents", async (c) => {
       const ctx = c.get("ctx");
-      requireAdmin(ctx);
-      const { title, content } = parse(documentBody, await c.req.json());
-      return c.json(await ctx.tenant.knowledge.addDocument(title, content), 201);
+      const { title, content, scope } = parse(documentBody, await c.req.json());
+      requireScope(ctx, scope);
+      return c.json(await ctx.tenant.knowledge.addDocument(title, content, scope, ctx.user.sub), 201);
     })
 
     .delete("/knowledge/documents/:id", async (c) => {
       const ctx = c.get("ctx");
-      requireAdmin(ctx);
-      if (!(await ctx.tenant.knowledge.deleteDocument(c.req.param("id")))) {
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      if (!(await ctx.tenant.knowledge.deleteDocument(c.req.param("id"), scope, ctx.user.sub))) {
         throw new HTTPException(404, { message: "Document not found" });
       }
       return c.body(null, 204);
     })
 
-    .get("/skills", async (c) => c.json(await c.get("ctx").tenant.skills.list()))
+    .get("/skills", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      return c.json(await tenant.skills.list(user.sub));
+    })
 
     .get("/skills/:name", async (c) => {
-      const skill = await c.get("ctx").tenant.skills.get(c.req.param("name"));
+      const { tenant, user } = c.get("ctx");
+      const skill = await tenant.skills.get(c.req.param("name"), user.sub);
       if (!skill) throw new HTTPException(404, { message: "Skill not found" });
       return c.json<Skill>(skill);
     })
 
     .put("/skills/:name", async (c) => {
       const ctx = c.get("ctx");
-      requireAdmin(ctx);
       const name = skillName(c.req.param("name"));
-      await ctx.tenant.skills.put({ name, ...parse(skillBody, await c.req.json()) });
-      return c.json<Skill>((await ctx.tenant.skills.get(name))!);
+      const { scope, ...skill } = parse(skillBody, await c.req.json());
+      requireScope(ctx, scope);
+      await ctx.tenant.skills.put({ name, ...skill }, scope, ctx.user.sub);
+      return c.json<Skill>((await ctx.tenant.skills.get(name, ctx.user.sub))!);
     })
 
     .delete("/skills/:name", async (c) => {
       const ctx = c.get("ctx");
-      requireAdmin(ctx);
-      if (!(await ctx.tenant.skills.delete(c.req.param("name")))) {
-        throw new HTTPException(404, { message: "Tenant skill not found" });
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      if (!(await ctx.tenant.skills.delete(c.req.param("name"), scope, ctx.user.sub))) {
+        throw new HTTPException(404, { message: "Skill not found" });
       }
       return c.body(null, 204);
     })
 
     .get("/mcp-servers", async (c) => {
-      const ctx = c.get("ctx");
-      requireAdmin(ctx);
-      const status = ctx.tenant.mcp.status();
-      const servers = await ctx.tenant.mcpServers.list();
-      return c.json<McpServer[]>(servers.map((s) => ({ ...s, status: s.enabled ? status.get(s.name) : undefined })));
+      const { tenant, user, role } = c.get("ctx");
+      const servers = await tenant.mcpServers.list(user.sub, { showTenantUrls: role === "admin" });
+      return c.json<McpServer[]>(
+        servers.map((s) => ({
+          ...s,
+          status: s.enabled ? tenant.mcp.status(mcpOwner(s.scope, user.sub)).get(s.name) : undefined,
+        })),
+      );
     })
 
     .put("/mcp-servers/:name", async (c) => {
       const ctx = c.get("ctx");
-      requireAdmin(ctx);
       const name = c.req.param("name");
       if (!MCP_SERVER_NAME.test(name)) throw new HTTPException(400, { message: "Server name must be lowercase-kebab-case" });
-      const body = parse(mcpServerBody, await c.req.json());
+      const { scope, ...body } = parse(mcpServerBody, await c.req.json());
+      requireScope(ctx, scope);
       await checkMcpUrl(ctx, body.url);
-      await ctx.tenant.mcpServers.put(name, body);
-      ctx.tenant.mcp.invalidate();
+      const owner = mcpOwner(scope, ctx.user.sub);
+      try {
+        await ctx.tenant.mcpServers.put(name, owner, body);
+      } catch (err) {
+        if (err instanceof McpNameTakenError) throw new HTTPException(409, { message: err.message });
+        throw err;
+      }
+      ctx.tenant.mcp.invalidate(owner);
       return c.body(null, 204);
     })
 
     .delete("/mcp-servers/:name", async (c) => {
       const ctx = c.get("ctx");
-      requireAdmin(ctx);
-      if (!(await ctx.tenant.mcpServers.delete(c.req.param("name")))) {
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      const owner = mcpOwner(scope, ctx.user.sub);
+      if (!(await ctx.tenant.mcpServers.delete(c.req.param("name"), owner))) {
         throw new HTTPException(404, { message: "MCP server not found" });
       }
-      ctx.tenant.mcp.invalidate();
+      ctx.tenant.mcp.invalidate(owner);
       return c.body(null, 204);
     })
 
     // Connects once with the stored configuration and reports the tools (or the error).
     .post("/mcp-servers/:name/test", async (c) => {
       const ctx = c.get("ctx");
-      requireAdmin(ctx);
-      const server = await ctx.tenant.mcpServers.get(c.req.param("name"));
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      const owner = mcpOwner(scope, ctx.user.sub);
+      const server = await ctx.tenant.mcpServers.get(c.req.param("name"), owner);
       if (!server) throw new HTTPException(404, { message: "MCP server not found" });
-      return c.json(await ctx.tenant.mcp.test(server));
+      return c.json(await ctx.tenant.mcp.test(server, owner));
+    })
+
+    .get("/settings", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      return c.json<UserSettings>(await tenant.settings.get(user.sub));
+    })
+
+    .put("/settings", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      const settings = parse(settingsBody, await c.req.json());
+      await tenant.settings.put(user.sub, settings);
+      return c.json<UserSettings>(settings);
     })
 
     .get("/memories", async (c) => {
