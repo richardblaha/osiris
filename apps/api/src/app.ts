@@ -16,6 +16,7 @@ import * as threads from "./repo/threads.ts";
 import { HOST_PATTERN, SECRET_NAME, SecretUseError } from "./vault/template.ts";
 import { secretOwner } from "./vault/vault.ts";
 import type { TenantRegistry } from "./tenants/registry.ts";
+import { whatsappWebhook, type WhatsAppWebhookOptions } from "./whatsapp/webhook.ts";
 
 export interface AppDeps {
   verifier: TokenVerifier;
@@ -23,6 +24,8 @@ export interface AppDeps {
   corsOrigin: string;
   /** In production the API also serves the built web app from `dir`, plus its runtime config at `/config.js`. */
   web?: { dir: string; oidcAuthority?: string; oidcClientId?: string };
+  /** The WhatsApp channel; without it `/webhooks/whatsapp` answers 404. */
+  whatsapp?: WhatsAppWebhookOptions;
 }
 
 const runBody = z.object({ message: z.string().trim().min(1).max(20_000) });
@@ -64,7 +67,7 @@ const secretBody = z.object({
   scope,
 });
 
-export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
+export function createApp({ verifier, tenants, corsOrigin, web, whatsapp }: AppDeps) {
   // Guards against two concurrent runs on one thread. In-process only: needs a shared lock once the API runs on several replicas.
   const activeRuns = new Set<string>();
 
@@ -360,6 +363,8 @@ export function createApp({ verifier, tenants, corsOrigin, web }: AppDeps) {
     .use("/api/*", cors({ origin: corsOrigin, allowHeaders: ["authorization", "content-type", "x-tenant-id"] }))
     .get("/health", (c) => c.json({ ok: true }))
     .route("/api", api)
+    // Registered even when off, so the SPA fallback doesn't answer Meta's verification with index.html.
+    .route("/webhooks/whatsapp", whatsapp ? whatsappWebhook(whatsapp) : new Hono().all("/", (c) => c.text("WhatsApp is not configured", 404)))
     // Runtime config for the web client, so one image works with any PocketID client. Loaded before the app bundle.
     .get("/config.js", (c) => {
       const config = { oidcAuthority: web?.oidcAuthority, oidcClientId: web?.oidcClientId };

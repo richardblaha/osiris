@@ -7,6 +7,9 @@ import { loadConfig, tenantDbProvider } from "./config.ts";
 import { createEmbeddings } from "./rag/embeddings.ts";
 import { SecretBox } from "./secrets.ts";
 import { TenantRegistry } from "./tenants/registry.ts";
+import { WhatsAppChannel } from "./whatsapp/channel.ts";
+import { WhatsAppClient } from "./whatsapp/cloud-api.ts";
+import { pocketIdDirectory } from "./whatsapp/directory.ts";
 
 const config = loadConfig();
 
@@ -32,6 +35,19 @@ const verifier = config.AUTH_DEV_BYPASS
   ? createDevVerifier()
   : createOidcVerifier(config.OIDC_ISSUER!, config.OIDC_AUDIENCE!);
 
+const whatsapp = config.WHATSAPP_ACCESS_TOKEN
+  ? {
+      channel: new WhatsAppChannel({
+        tenants,
+        directory: pocketIdDirectory(config.OIDC_ISSUER!, config.POCKETID_API_KEY!),
+        client: new WhatsAppClient(config.WHATSAPP_ACCESS_TOKEN),
+      }),
+      verifyToken: config.WHATSAPP_VERIFY_TOKEN!,
+      appSecret: config.WHATSAPP_APP_SECRET!,
+    }
+  : undefined;
+if (!whatsapp) console.log("WhatsApp is not configured: /webhooks/whatsapp answers 404.");
+
 const app = createApp({
   verifier,
   tenants,
@@ -40,5 +56,6 @@ const app = createApp({
   web: config.STATIC_DIR
     ? { dir: config.STATIC_DIR, oidcAuthority: config.OIDC_ISSUER, oidcClientId: config.OIDC_AUDIENCE }
     : undefined,
+  whatsapp,
 });
 serve({ fetch: app.fetch, port: config.PORT }, ({ port }) => console.log(`API listening on http://localhost:${port}`));

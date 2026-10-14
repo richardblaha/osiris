@@ -35,7 +35,8 @@ spec:
               value: https://auth.k6labs.cz
             - name: CORS_ORIGIN
               value: https://osiris.k6labs.cz
-          # MISTRAL_API_KEY, OIDC_AUDIENCE (PocketID client ID), SECRETS_KEY (MCP header encryption)
+          # MISTRAL_API_KEY, OIDC_AUDIENCE (PocketID client ID), SECRETS_KEY (MCP header encryption),
+          # optional WhatsApp: POCKETID_API_KEY, WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_ACCESS_TOKEN
           envFrom:
             - secretRef:
                 name: osiris-env

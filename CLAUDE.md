@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Multi-tenant SaaS assistant for tradespeople and small-business owners (jobs, scheduling, notes, invoices). The LangGraph agent runs in our own Node server. The clients are a web chat (Assistant UI) and, later, WhatsApp. Users write in Czech and Slovak, so the prompts and the UI are in Czech.
+Multi-tenant SaaS assistant for tradespeople and small-business owners (jobs, scheduling, notes, invoices). The LangGraph agent runs in our own Node server. The clients are a web chat (Assistant UI) and WhatsApp. Users write in Czech and Slovak, so the prompts and the UI are in Czech.
 
 ## Commands
 
@@ -48,6 +48,8 @@ Configuration lives in `apps/api/.env` and `apps/web/.env`, with `.env.example` 
 
 **`http_request` tool** (`agent/tools/http.ts`): a generic HTTPS call for skills that describe a web API. It uses the same SSRF guard as MCP, does not follow redirects (so tokens can't bounce elsewhere), has a 20 s timeout, truncates output to 20k characters and masks used secret values in the output. Requests that change data need an explicit instruction from the user (system prompt).
 
+**WhatsApp** (`whatsapp/`, table `whatsapp_sessions`): one webhook for all tenants, `/webhooks/whatsapp`, outside `/api` and authenticated by Meta's `X-Hub-Signature-256` instead of a token. It is on when `WHATSAPP_VERIFY_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_ACCESS_TOKEN` and `POCKETID_API_KEY` are set, and answers 404 otherwise. The sender's number is matched (digits only) to the PocketID claim `phone_number` through the PocketID admin API (`GET /api/users` with `X-API-KEY`, cached for 60 s), and a number held by two users matches nobody. The tenant comes from the user's groups. A user in several tenants picks one with `/firma <slug>`, stored as `selected_at` in that tenant's DB (the most recent wins), and `/nova` starts a new thread. The webhook answers at once, and `WhatsAppChannel` handles messages in the background, one at a time per number, dropping redelivered message IDs. Each user has one running thread per tenant (channel `whatsapp`, also listed in the web chat), and the reply is the run's final message, split at 4096 characters.
+
 **Checkpointer** (`checkpointer/libsql-saver.ts`): custom libSQL port of the official `PostgresSaver` layout. Channel values go to `checkpoint_blobs`, keyed by (channel, version), so message history isn't duplicated in every checkpoint. `test/checkpointer.test.ts` runs the official `@langchain/langgraph-checkpoint-validation` suite (~700 tests) and must stay green after any change.
 
 **RAG** (`rag/store.ts`): chunks are stored as libSQL `vector32` blobs in the tenant's DB and searched with an exact `vector_distance_cos` scan filtered by `embedding_model`. Changing `EMBEDDING_MODEL` hides old vectors until documents are re-ingested.
@@ -60,8 +62,8 @@ Configuration lives in `apps/api/.env` and `apps/web/.env`, with `.env.example` 
 
 - In tests, `:memory:` libSQL loses data across `batch` transactions, so use `createTestDb()` (one tenant DB) or `createTestTenants()` (registry over temp files) from `test/helpers.ts`. `ScriptedChatModel` and `WordEmbeddings` there replace real providers.
 - Vitest runs with `globals: true` because the checkpoint validation suite needs Jest-style globals.
-- The concurrent-run guard in `app.ts` (`activeRuns`) and the tenant cache are in-process only. A shared lock is needed before the API runs with more than one replica.
-- WhatsApp (not built yet) has no token, so mapping phone → user will need the PocketID admin API (`GET /api/users` with `X-API-KEY`, which returns `customClaims`).
+- The concurrent-run guard in `app.ts` (`activeRuns`), the WhatsApp per-number queue and dedup, and the tenant cache are in-process only. A shared lock is needed before the API runs with more than one replica.
+- Migration comments must not end a line with `;`, because the runner splits statements there.
 - The workspace root `.env` and `.kubeconfig` hold local credentials and are gitignored. Never commit or print them.
 
 ## Deployment
