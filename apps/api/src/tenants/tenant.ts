@@ -15,6 +15,9 @@ import { KnowledgeStore } from "../rag/store.ts";
 import type { SecretBox } from "../secrets.ts";
 import { SecretVault } from "../vault/vault.ts";
 import { httpRequestTool } from "../agent/tools/http.ts";
+import type { StructuredToolInterface } from "@langchain/core/tools";
+import type { Feature } from "@osiris/shared";
+import { TenantFeatureStore } from "./features.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
 export interface Tenant {
@@ -28,6 +31,7 @@ export interface Tenant {
   mcp: McpToolset;
   settings: UserSettingsStore;
   secrets: SecretVault;
+  features: TenantFeatureStore;
   graph: AgentGraph;
 }
 
@@ -53,16 +57,25 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const secrets = new SecretVault(db, deps.secrets);
   const mcp = new McpToolset(mcpServers, secrets, deps.mcp);
   const settings = new UserSettingsStore(db);
+  const features = new TenantFeatureStore(db);
+  // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
+  const builtins: [Feature, StructuredToolInterface][] = [
+    ["knowledge", searchKnowledgeTool(knowledge)],
+    ["skills", loadSkillTool(skills)],
+    ...memoryTools(memory).map((t): [Feature, StructuredToolInterface] => ["memory", t]),
+    ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
+  ];
   const graph = createAgentGraph({
     tenantId: id,
     model: deps.model,
-    tools: [
-      searchKnowledgeTool(knowledge),
-      loadSkillTool(skills),
-      ...memoryTools(memory),
-      httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch }),
-    ],
-    dynamicTools: (ctx) => mcp.tools(ctx.user_id),
+    tools: [],
+    // Resolved on every step, so switching a feature applies from the next step.
+    dynamicTools: async (ctx) => {
+      const on = await features.get();
+      const tools = builtins.filter(([f]) => on[f]).map(([, t]) => t);
+      return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id))] : tools;
+    },
+    features,
     checkpointer,
     timezone: deps.timezone,
     skills,
@@ -70,5 +83,5 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     settings,
     secrets,
   });
-  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, graph };
+  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, graph };
 }

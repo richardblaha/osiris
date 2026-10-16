@@ -16,22 +16,23 @@ Commands below use `KUBECONFIG=.kubeconfig` and read keys from the gitignored ro
    - logout callback URL `https://osiris.k6labs.cz`
 
    Put its client ID in `.env` as `OSIRIS_OIDC_CLIENT_ID`.
-2. Assign tenants with groups. `tenant-<slug>` makes a user a member. `tenant-<slug>-admin` makes them an admin. Users without a tenant group get "not assigned to any tenant".
+2. Create the group `osiris-admin` and add yourself. Its members manage tenants in the web app (Správa → Tenanti): creating a tenant creates the groups `osiris-tenant-<slug>` (members) and `osiris-tenant-<slug>-admin` (admins), and members are added there too. Users without a tenant group get "not assigned to any tenant".
 3. Optional: give each user the custom claim `phone_number` in `+420…` format.
+
+4. Create an API key (Settings → API keys) and put it in `.env` as `POCKETID_API_KEY`. The API needs it in production: tenants are PocketID groups.
 
 `OSIRIS_SECRETS_KEY` (`openssl rand -base64 32`) encrypts the MCP server headers in the tenant databases. If it is lost or changed, stored headers can no longer be read and have to be re-entered.
 
 ## WhatsApp
 
-One webhook serves all tenants: `https://osiris.k6labs.cz/webhooks/whatsapp`. The sender's number is matched to the PocketID custom claim `phone_number` (digits are compared, so `+420 777 123 456` works). Users in several tenants pick one with `/firma <slug>` in the chat, and `/nova` starts a new conversation.
+One webhook serves all tenants: `https://osiris.k6labs.cz/webhooks/whatsapp`. The sender's number is matched to the PocketID custom claim `phone_number` (digits are compared, so `+420 777 123 456` works). Users in several tenants pick one with `/tenant <slug>` in the chat, and `/nova` starts a new conversation.
 
-1. In PocketID, create an API key (Settings → API keys) and put it in `.env` as `OSIRIS_POCKETID_API_KEY`.
-2. In the Meta app (WhatsApp → Configuration → Webhook):
+1. In the Meta app (WhatsApp → Configuration → Webhook):
    - callback URL `https://osiris.k6labs.cz/webhooks/whatsapp`
    - verify token: a random string (`openssl rand -hex 16`), in `.env` as `OSIRIS_WHATSAPP_VERIFY_TOKEN`
    - subscribe to the `messages` field
-3. Put the app secret (App settings → Basic) in `.env` as `OSIRIS_WHATSAPP_APP_SECRET`, and a permanent System User token with `whatsapp_business_messaging` as `OSIRIS_WHATSAPP_ACCESS_TOKEN`.
-4. Add the four values to the `osiris-env` secret (see below) and restart the deployment **before** saving the webhook in Meta. Until they are set, the URL answers 404 and Meta's verification fails.
+2. Put the app secret (App settings → Basic) in `.env` as `OSIRIS_WHATSAPP_APP_SECRET`, and a permanent System User token with `whatsapp_business_messaging` as `OSIRIS_WHATSAPP_ACCESS_TOKEN`.
+3. Add the three values to the `osiris-env` secret (see below) and restart the deployment **before** saving the webhook in Meta. Until they are set, the URL answers 404 and Meta's verification fails.
 
 ## First deploy
 
@@ -47,7 +48,7 @@ kubectl -n osiris create secret generic osiris-env \
   --from-literal=MISTRAL_API_KEY="$MISTRAL_API_KEY" \
   --from-literal=OIDC_AUDIENCE="$OSIRIS_OIDC_CLIENT_ID" \
   --from-literal=SECRETS_KEY="$OSIRIS_SECRETS_KEY" \
-  --from-literal=POCKETID_API_KEY="$OSIRIS_POCKETID_API_KEY" \
+  --from-literal=POCKETID_API_KEY="$POCKETID_API_KEY" \
   --from-literal=WHATSAPP_VERIFY_TOKEN="$OSIRIS_WHATSAPP_VERIFY_TOKEN" \
   --from-literal=WHATSAPP_APP_SECRET="$OSIRIS_WHATSAPP_APP_SECRET" \
   --from-literal=WHATSAPP_ACCESS_TOKEN="$OSIRIS_WHATSAPP_ACCESS_TOKEN"

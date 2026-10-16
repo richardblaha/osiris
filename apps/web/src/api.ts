@@ -1,4 +1,5 @@
 import type {
+  DirectoryUser,
   DocumentSummary,
   McpServer,
   McpServerStatus,
@@ -9,6 +10,10 @@ import type {
   SecretSummary,
   Skill,
   SkillSummary,
+  TenantDetail,
+  TenantFeatures,
+  TenantInfo,
+  TenantSummary,
   ThreadMessage,
   ThreadSummary,
   UserSettings,
@@ -46,6 +51,7 @@ const json = async <T>(path: string, init?: RequestInit) => (await request(path,
 
 export const api = {
   me: () => json<MeResponse>("/me"),
+  tenant: () => json<TenantInfo>("/tenant"),
   threads: () => json<ThreadSummary[]>("/threads"),
   createThread: () => json<{ id: string }>("/threads", { method: "POST" }),
   deleteThread: (id: string) => request(`/threads/${id}`, { method: "DELETE" }),
@@ -54,8 +60,8 @@ export const api = {
   addDocument: (title: string, content: string, scope: Scope) =>
     json<DocumentSummary>("/knowledge/documents", { method: "POST", body: JSON.stringify({ title, content, scope }) }),
   deleteDocument: (id: string, scope: Scope) => request(`/knowledge/documents/${id}?scope=${scope}`, { method: "DELETE" }),
-  skills: () => json<SkillSummary[]>("/skills"),
-  skill: (name: string) => json<Skill>(`/skills/${name}`),
+  skills: (scope: Scope) => json<SkillSummary[]>(`/skills?scope=${scope}`),
+  skill: (name: string, scope: Scope) => json<Skill>(`/skills/${name}?scope=${scope}`),
   saveSkill: (name: string, description: string, instructions: string, scope: Scope) =>
     json<Skill>(`/skills/${name}`, { method: "PUT", body: JSON.stringify({ description, instructions, scope }) }),
   deleteSkill: (name: string, scope: Scope) => request(`/skills/${name}?scope=${scope}`, { method: "DELETE" }),
@@ -75,6 +81,21 @@ export const api = {
   saveSecret: (name: string, body: { value?: string; allowedHosts: string[]; description: string; scope: Scope }) =>
     request(`/secrets/${name}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteSecret: (name: string, scope: Scope) => request(`/secrets/${name}?scope=${scope}`, { method: "DELETE" }),
+
+  admin: {
+    tenants: () => json<TenantSummary[]>("/admin/tenants"),
+    tenant: (id: string) => json<TenantDetail>(`/admin/tenants/${id}`),
+    createTenant: (id: string, name: string) =>
+      json<TenantSummary>("/admin/tenants", { method: "POST", body: JSON.stringify({ id, name }) }),
+    updateTenant: (id: string, body: { name?: string; features?: Partial<TenantFeatures> }) =>
+      request(`/admin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    deleteTenant: (id: string) => request(`/admin/tenants/${id}`, { method: "DELETE" }),
+    setMember: (id: string, userId: string, role: "admin" | "member") =>
+      request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
+    removeMember: (id: string, userId: string) =>
+      request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+    users: () => json<DirectoryUser[]>("/admin/users"),
+  },
 
   /** Starts a run and yields its server-sent events. */
   async *run(threadId: string, message: string, signal: AbortSignal): AsyncGenerator<RunEvent> {

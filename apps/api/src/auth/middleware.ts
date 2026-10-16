@@ -2,13 +2,16 @@ import type { Role } from "@osiris/shared";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import type { Tenant } from "../tenants/tenant.ts";
+import type { TenantDirectory } from "../tenants/directory.ts";
 import type { TenantRegistry } from "../tenants/registry.ts";
 import type { Identity, TokenVerifier } from "./oidc.ts";
-import { membershipsFromGroups, type Membership } from "./tenants.ts";
+import { accessibleTenants, isSystemAdmin, type Membership } from "./tenants.ts";
 
 export interface Authenticated {
   user: Identity;
   memberships: Membership[];
+  /** Group `osiris-admin`: admin of every tenant, may manage tenants. */
+  systemAdmin: boolean;
 }
 
 export interface RequestContext extends Authenticated {
@@ -18,8 +21,11 @@ export interface RequestContext extends Authenticated {
 
 export type AuthEnv = { Variables: { auth: Authenticated; ctx: RequestContext } };
 
-/** Authenticates the bearer token. Memberships come from the user's PocketID groups; users with none are refused. */
-export function authMiddleware(verifier: TokenVerifier) {
+/**
+ * Authenticates the bearer token. Memberships come from the user's PocketID groups (a system admin gets every tenant);
+ * users with none are refused, except system admins, who may have no tenant yet.
+ */
+export function authMiddleware(verifier: TokenVerifier, directory: TenantDirectory) {
   return createMiddleware<AuthEnv>(async (c, next) => {
     const token = c.req.header("authorization")?.match(/^Bearer (.+)$/i)?.[1];
     if (!token) throw new HTTPException(401, { message: "Missing bearer token" });
@@ -31,9 +37,10 @@ export function authMiddleware(verifier: TokenVerifier) {
       throw new HTTPException(401, { message: "Invalid token" });
     }
 
-    const memberships = membershipsFromGroups(user.groups);
-    if (!memberships.length) throw new HTTPException(403, { message: "User is not assigned to any tenant" });
-    c.set("auth", { user, memberships });
+    const systemAdmin = isSystemAdmin(user.groups);
+    const memberships = await accessibleTenants(user.groups, directory);
+    if (!memberships.length && !systemAdmin) throw new HTTPException(403, { message: "User is not assigned to any tenant" });
+    c.set("auth", { user, memberships, systemAdmin });
     await next();
   });
 }
@@ -44,7 +51,7 @@ export function authMiddleware(verifier: TokenVerifier) {
  */
 export function tenantMiddleware(tenants: TenantRegistry) {
   return createMiddleware<AuthEnv>(async (c, next) => {
-    const { user, memberships } = c.get("auth");
+    const { memberships } = c.get("auth");
     const requested = c.req.header("x-tenant-id");
     const membership = requested
       ? memberships.find((m) => m.tenantId === requested)
@@ -58,7 +65,7 @@ export function tenantMiddleware(tenants: TenantRegistry) {
       });
     }
 
-    c.set("ctx", { user, memberships, tenant: await tenants.get(membership.tenantId), role: membership.role });
+    c.set("ctx", { ...c.get("auth"), tenant: await tenants.get(membership.tenantId), role: membership.role });
     await next();
   });
 }

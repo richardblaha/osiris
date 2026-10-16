@@ -1,3 +1,4 @@
+import { existsSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export interface DbLocation {
@@ -8,6 +9,8 @@ export interface DbLocation {
 /** Finds a tenant's database, creating it on first use. `tenantId` is a validated slug (see auth/tenants.ts). */
 export interface TenantDbProvider {
   locate(tenantId: string): Promise<DbLocation>;
+  /** Takes a removed tenant's database out of use but keeps its data. Called after the tenant's client is closed. */
+  archive(tenantId: string): Promise<void>;
 }
 
 /** Local development: one SQLite file per tenant, `<dir>/<tenant>.db`. */
@@ -15,6 +18,14 @@ export function fileProvider(dir: string): TenantDbProvider {
   return {
     async locate(tenantId) {
       return { url: `file:${join(resolve(dir), `${tenantId}.db`)}` };
+    },
+    // Renamed rather than deleted: a new tenant with the same slug starts empty and the old data can be restored.
+    async archive(tenantId) {
+      const base = join(resolve(dir), `${tenantId}.db`);
+      const archived = `${base}.deleted-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+      for (const suffix of ["", "-wal", "-shm"]) {
+        if (existsSync(base + suffix)) renameSync(base + suffix, archived + suffix);
+      }
     },
   };
 }
@@ -53,6 +64,10 @@ export function tursoProvider({ org, group, apiToken, dbToken, prefix, fetch: f 
         if (res.status === 409) res = await f(`${base}/${name}`, { headers });
       }
       return { url: `libsql://${await hostname(res, `lookup of ${name}`)}`, authToken: dbToken };
+    },
+    // Turso databases can't be renamed, so the database is kept as is: recreating the slug brings the data back.
+    async archive(tenantId) {
+      console.warn(`Tenant ${tenantId} removed; Turso database ${prefix}${tenantId} is kept.`);
     },
   };
 }

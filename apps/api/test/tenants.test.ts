@@ -7,9 +7,18 @@ import { tursoProvider } from "../src/tenants/provider.ts";
 import { createTestTenants } from "./helpers.ts";
 
 describe("tenant memberships from PocketID groups", () => {
-  it("maps tenant-<slug> to member and tenant-<slug>-admin to admin", () => {
+  it("maps osiris-tenant-<slug> to member and osiris-tenant-<slug>-admin to admin", () => {
     expect(
-      membershipsFromGroups(["tenant-acme", "tenant-acme-admin", "tenant-novak-stavby", "tenant-beta-admin", "admins", "tenant-Bad"]),
+      membershipsFromGroups([
+        "osiris-tenant-acme",
+        "osiris-tenant-acme-admin",
+        "osiris-tenant-novak-stavby",
+        "osiris-tenant-beta-admin",
+        "admins",
+        "osiris-tenant-Bad",
+        // The old names no longer count.
+        "tenant-old-admin",
+      ]),
     ).toEqual([
       { tenantId: "acme", role: "admin" },
       { tenantId: "beta", role: "admin" },
@@ -18,19 +27,19 @@ describe("tenant memberships from PocketID groups", () => {
   });
 
   it("reads profile, phone and groups from userinfo", () => {
-    expect(toIdentity({ sub: "s", email: "a@b.cz", name: "A", phone_number: "+420777123456", groups: ["tenant-a", 5] })).toEqual({
+    expect(toIdentity({ sub: "s", email: "a@b.cz", name: "A", phone_number: "+420777123456", groups: ["osiris-tenant-a", 5] })).toEqual({
       sub: "s",
       email: "a@b.cz",
       name: "A",
       phone: "+420777123456",
-      groups: ["tenant-a"],
+      groups: ["osiris-tenant-a"],
     });
   });
 
   it("dev verifier gives a user their own tenant unless groups are given", async () => {
     const dev = createDevVerifier();
-    expect((await dev.identify("alice")).groups).toEqual(["tenant-alice-admin"]);
-    expect((await dev.identify("bob:tenant-acme")).groups).toEqual(["tenant-acme"]);
+    expect((await dev.identify("alice")).groups).toEqual(["osiris-tenant-alice-admin"]);
+    expect((await dev.identify("bob:osiris-tenant-acme")).groups).toEqual(["osiris-tenant-acme"]);
     await expect(dev.identify("../x")).rejects.toThrow();
   });
 });

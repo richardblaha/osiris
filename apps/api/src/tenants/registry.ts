@@ -26,6 +26,18 @@ export class TenantRegistry {
     return tenant;
   }
 
+  /** Closes a removed tenant and archives its database; the next `get` would start a fresh one. */
+  async remove(tenantId: string): Promise<void> {
+    const open = this.open.get(tenantId);
+    this.open.delete(tenantId);
+    const tenant = await open?.catch(() => undefined);
+    if (tenant) {
+      await tenant.mcp.close();
+      tenant.db.close();
+    }
+    await this.provider.archive(tenantId);
+  }
+
   private async connect(tenantId: string): Promise<Tenant> {
     const { url, authToken } = await this.provider.locate(tenantId);
     const db = createDb(url, authToken);

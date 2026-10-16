@@ -1,7 +1,7 @@
-import type { McpServer, McpServerStatus, Scope } from "@osiris/shared";
+import type { McpServer, McpServerStatus } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { ScopeBadge, ScopeSelect } from "./Scope.tsx";
+import { PageHeader, type ScopedProps } from "./Scope.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -28,20 +28,19 @@ function Status({ status }: { status?: McpServerStatus }) {
   );
 }
 
-export function McpServers({ isAdmin }: { isAdmin: boolean }) {
+export function McpServers({ scope, canEdit }: ScopedProps) {
   const [servers, setServers] = useState<McpServer[]>([]);
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [headers, setHeaders] = useState("");
   const [clearHeaders, setClearHeaders] = useState(false);
   const [enabled, setEnabled] = useState(true);
-  const [scope, setScope] = useState<Scope>("personal");
   const [editing, setEditing] = useState<McpServer>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [tested, setTested] = useState<{ name: string; status: McpServerStatus }>();
 
-  const refresh = () => api.mcpServers().then(setServers, (e: Error) => setError(e.message));
+  const refresh = () => api.mcpServers().then((all) => setServers(all.filter((s) => s.scope === scope)), (e: Error) => setError(e.message));
   useEffect(() => void refresh(), []);
 
   const reset = () => {
@@ -50,12 +49,8 @@ export function McpServers({ isAdmin }: { isAdmin: boolean }) {
     setHeaders("");
     setClearHeaders(false);
     setEnabled(true);
-    setScope("personal");
     setEditing(undefined);
   };
-
-  /** Members manage their personal servers; tenant servers are read-only for them. */
-  const canManage = (s: McpServer) => s.scope === "personal" || isAdmin;
 
   const edit = (s: McpServer) => {
     setEditing(s);
@@ -64,7 +59,6 @@ export function McpServers({ isAdmin }: { isAdmin: boolean }) {
     setHeaders("");
     setClearHeaders(false);
     setEnabled(s.enabled);
-    setScope(s.scope);
   };
 
   const run = async (action: () => Promise<unknown>) => {
@@ -100,13 +94,13 @@ export function McpServers({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className="mx-auto h-full max-w-3xl overflow-y-auto p-6">
-      <h1 className="section-header text-[13px]">Nástroje (MCP)</h1>
-      <p className="mt-1 text-sm text-fg-secondary">
+      <PageHeader title="Nástroje (MCP)" scope={scope} canEdit={canEdit}>
         Externí služby, jejichž nástroje může asistent používat (např. CRM, kalendář, účetnictví). Připojují se přes
-        Model Context Protocol, jen vzdáleně přes https. Osobní servery (třeba tvůj kalendář s tvým tokenem) používá
-        asistent jen pro tebe.
-      </p>
+        Model Context Protocol, jen vzdáleně přes https.
+        {scope === "personal" && " Osobní servery (třeba tvůj kalendář s tvým tokenem) používá asistent jen pro tebe."}
+      </PageHeader>
 
+      {canEdit && (
       <form onSubmit={submit} className="mt-6 space-y-2">
         <div className="flex gap-2">
           <input
@@ -153,7 +147,6 @@ export function McpServers({ isAdmin }: { isAdmin: boolean }) {
           <button disabled={busy} className="btn-primary">
             {busy ? "Ukládám…" : editing ? "Uložit" : "Přidat"}
           </button>
-          <ScopeSelect isAdmin={isAdmin} value={scope} onChange={setScope} disabled={!!editing} />
           {editing && (
             <button type="button" onClick={reset} className="btn-secondary">
               Zrušit
@@ -161,6 +154,7 @@ export function McpServers({ isAdmin }: { isAdmin: boolean }) {
           )}
         </div>
       </form>
+      )}
       {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
       {tested && (
         <p className={`notice mt-3 px-3 py-2 text-sm ${tested.status.ok ? "" : "notice-error"}`}>
@@ -177,12 +171,11 @@ export function McpServers({ isAdmin }: { isAdmin: boolean }) {
             <span className="min-w-0">
               <span className="font-medium">{s.name}</span>
               <span className="ml-2 inline-flex gap-1">
-                <ScopeBadge scope={s.scope} />
                 {s.enabled ? <Status status={s.status} /> : <span className="badge">vypnuto</span>}
               </span>
-              <span className="block truncate text-sm text-fg-secondary">{s.url || "spravuje správce firmy"}</span>
+              <span className="block truncate text-sm text-fg-secondary">{s.url || "spravuje správce tenanta"}</span>
             </span>
-            {canManage(s) && (
+            {canEdit && (
             <span className="flex shrink-0 gap-3 text-sm">
               <button onClick={() => test(s)} disabled={busy} className="btn-link">
                 Vyzkoušet

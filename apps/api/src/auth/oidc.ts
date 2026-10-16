@@ -86,7 +86,8 @@ export function toIdentity(info: Record<string, unknown>): Identity {
 
 /**
  * Development-only verifier, rejected in production by config. The bearer token is `<user>` or
- * `<user>:<group>,<group>`; without groups the user is admin of their own tenant `<user>`.
+ * `<user>:<group>,<group>`; without groups the user is admin of their own tenant `<user>`
+ * (e.g. `alice:osiris-tenant-acme,osiris-admin`).
  */
 export function createDevVerifier(): TokenVerifier {
   return {
@@ -98,7 +99,7 @@ export function createDevVerifier(): TokenVerifier {
         email: `${user}@dev.local`,
         name: user,
         phone: null,
-        groups: groups ? groups.split(",") : [`tenant-${user}-admin`],
+        groups: groups ? groups.split(",") : [`osiris-tenant-${user}-admin`],
       };
     },
   };

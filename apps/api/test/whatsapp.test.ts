@@ -7,6 +7,8 @@ import { createDevVerifier } from "../src/auth/oidc.ts";
 import { WhatsAppChannel } from "../src/whatsapp/channel.ts";
 import { WhatsAppClient, splitText } from "../src/whatsapp/cloud-api.ts";
 import { phoneKey, pocketIdDirectory, type PhoneDirectory } from "../src/whatsapp/directory.ts";
+import { PocketIdClient } from "../src/pocketid.ts";
+import { memoryTenants } from "../src/tenants/directory.ts";
 import { createTestTenants } from "./helpers.ts";
 
 const APP_SECRET = "app-secret";
@@ -29,15 +31,17 @@ function setup(script: AIMessage[] = [], users: Identity[] = []) {
     sent.push({ to: body.to, text: body.text?.body, status: body.status });
     return new Response("{}");
   }) as typeof fetch;
-  const directory: PhoneDirectory = {
+  const directory = memoryTenants([{ id: "acme" }, { id: "beta" }, { id: "gamma" }]);
+  const phones: PhoneDirectory = {
     async lookup(phone) {
       return users.find((u) => phoneKey(u.phone!) === phoneKey(phone)) ?? null;
     },
   };
-  const channel = new WhatsAppChannel({ tenants, directory, client: new WhatsAppClient("token", graphFetch) });
+  const channel = new WhatsAppChannel({ tenants, directory, phones, client: new WhatsAppClient("token", graphFetch) });
   const app = createApp({
     verifier: createDevVerifier(),
     tenants,
+    directory,
     corsOrigin: "*",
     whatsapp: { channel, verifyToken: "verify-me", appSecret: APP_SECRET },
   });
@@ -78,7 +82,7 @@ function setup(script: AIMessage[] = [], users: Identity[] = []) {
   };
   const replies = () => sent.filter((m) => m.text).map((m) => m.text);
   const web = (token: string, tenant: string) => app.request("/api/threads", { headers: { authorization: `Bearer ${token}`, "x-tenant-id": tenant } });
-  return { app, model, send, post, sent, replies, web };
+  return { app, model, send, post, sent, replies, web, tenants };
 }
 
 describe("WhatsApp webhook", () => {
@@ -92,7 +96,7 @@ describe("WhatsApp webhook", () => {
 
   it("answers 404 when WhatsApp is not configured", async () => {
     const { tenants } = createTestTenants();
-    const app = createApp({ verifier: createDevVerifier(), tenants, corsOrigin: "*", web: { dir: "/nonexistent" } });
+    const app = createApp({ verifier: createDevVerifier(), tenants, directory: memoryTenants(), corsOrigin: "*", web: { dir: "/nonexistent" } });
     expect((await app.request("/webhooks/whatsapp?hub.mode=subscribe")).status).toBe(404);
   });
 
@@ -103,18 +107,18 @@ describe("WhatsApp webhook", () => {
   });
 
   it("runs the agent for the sender's user and tenant and replies", async () => {
-    const { send, sent, replies, model, web } = setup([new AIMessage("Dobrý den, Bobe.")], [user("bob", "+420 777 123 456", ["tenant-acme"])]);
+    const { send, sent, replies, model, web } = setup([new AIMessage("Dobrý den, Bobe.")], [user("bob", "+420 777 123 456", ["osiris-tenant-acme"])]);
     await send("420777123456", "Ahoj");
 
     expect(sent[0]).toMatchObject({ status: "read" });
     expect(replies()).toEqual(["Dobrý den, Bobe."]);
     expect(model.calls[0]?.[0]?.text).toContain("WhatsAppu");
-    const threads = await (await web("bob:tenant-acme", "acme")).json();
+    const threads = await (await web("bob:osiris-tenant-acme", "acme")).json();
     expect(threads).toMatchObject([{ title: "Ahoj", channel: "whatsapp" }]);
   });
 
   it("keeps one conversation until /nova", async () => {
-    const { send, model } = setup([new AIMessage("1"), new AIMessage("2"), new AIMessage("3")], [user("bob", "420777123456", ["tenant-acme"])]);
+    const { send, model } = setup([new AIMessage("1"), new AIMessage("2"), new AIMessage("3")], [user("bob", "420777123456", ["osiris-tenant-acme"])]);
     await send("420777123456", "první");
     await send("420777123456", "druhá");
     expect(model.calls[1]?.map((m) => m.text)).toContain("první");
@@ -123,25 +127,25 @@ describe("WhatsApp webhook", () => {
     expect(model.calls[2]?.map((m) => m.text)).not.toContain("první");
   });
 
-  it("lets a user in several tenants switch with /firma", async () => {
+  it("lets a user in several tenants switch with /tenant", async () => {
     const { send, replies, model } = setup(
       [new AIMessage("z beta"), new AIMessage("z acme")],
-      [user("alice", "420600111222", ["tenant-acme", "tenant-beta-admin"])],
+      [user("alice", "420600111222", ["osiris-tenant-acme", "osiris-tenant-beta-admin"])],
     );
     await send("420600111222", "Ahoj");
-    expect(replies().at(-1)).toContain("Tvoje firmy: acme, beta");
+    expect(replies().at(-1)).toContain("Tvoji tenanti: acme, beta");
     expect(model.calls).toHaveLength(0);
 
-    await send("420600111222", "/firma gamma");
-    expect(replies().at(-1)).toContain("Firmu „gamma“ nemáš");
-    await send("420600111222", "/firma beta");
-    expect(replies().at(-1)).toBe("Přepnuto na firmu *beta*.");
+    await send("420600111222", "/tenant gamma");
+    expect(replies().at(-1)).toContain("Tenanta „gamma“ nemáš");
+    await send("420600111222", "/tenant beta");
+    expect(replies().at(-1)).toBe("Přepnuto na tenanta *beta*.");
     await send("420600111222", "Ahoj");
     expect(replies().at(-1)).toBe("z beta");
 
-    await send("420600111222", "/firma acme");
-    await send("420600111222", "/firma");
-    expect(replies().at(-1)).toContain("Aktivní firma: *acme*.");
+    await send("420600111222", "/tenant acme");
+    await send("420600111222", "/tenant");
+    expect(replies().at(-1)).toContain("Aktivní tenant: *acme*.");
     await send("420600111222", "Ahoj znovu");
     expect(replies().at(-1)).toBe("z acme");
     // A new tenant means a new conversation: acme's thread doesn't contain beta's history.
@@ -154,13 +158,27 @@ describe("WhatsApp webhook", () => {
     await send("420700000000", "Ahoj");
     expect(replies()).toEqual([
       "Tohle číslo nemá v Osirisu účet. Požádej správce, ať ti ho nastaví v profilu.",
-      "Nejsi přiřazený k žádné firmě. Obrať se na správce.",
+      "Nejsi přiřazený k žádnému tenantovi. Obrať se na správce.",
     ]);
     expect(model.calls).toHaveLength(0);
   });
 
+  it("gives a system admin every tenant and respects the tenant's WhatsApp switch", async () => {
+    const { send, replies, model, tenants } = setup([new AIMessage("z gamma")], [user("root", "420700111222", ["osiris-admin"])]);
+    await send("420700111222", "Ahoj");
+    expect(replies().at(-1)).toContain("Tvoji tenanti: acme, beta, gamma");
+    await (await tenants.get("beta")).features.set({ whatsapp: false });
+    await send("420700111222", "/tenant beta");
+    await send("420700111222", "Ahoj");
+    expect(replies().at(-1)).toBe("WhatsApp není pro tenanta *beta* povolený.");
+    await send("420700111222", "/tenant gamma");
+    await send("420700111222", "Ahoj");
+    expect(replies().at(-1)).toBe("z gamma");
+    expect(model.calls).toHaveLength(1);
+  });
+
   it("handles a redelivered message once", async () => {
-    const { send, replies } = setup([new AIMessage("jednou"), new AIMessage("dvakrát")], [user("bob", "420777123456", ["tenant-acme"])]);
+    const { send, replies } = setup([new AIMessage("jednou"), new AIMessage("dvakrát")], [user("bob", "420777123456", ["osiris-tenant-acme"])]);
     await send("420777123456", "Ahoj", "wamid.same");
     await send("420777123456", "Ahoj", "wamid.same");
     expect(replies()).toEqual(["jednou"]);
@@ -172,7 +190,7 @@ describe("PocketID phone directory", () => {
     const pages: Record<string, object> = {
       "1": {
         data: [
-          { id: "u1", firstName: "Bob", lastName: "Novák", customClaims: [{ key: "phone_number", value: "+420 777 123 456" }], userGroups: [{ name: "tenant-acme" }] },
+          { id: "u1", firstName: "Bob", lastName: "Novák", customClaims: [{ key: "phone_number", value: "+420 777 123 456" }], userGroups: [{ name: "osiris-tenant-acme" }] },
           { id: "u2", disabled: true, customClaims: [{ key: "phone_number", value: "+420600000001" }], userGroups: [] },
         ],
         pagination: { totalPages: 2 },
@@ -191,20 +209,20 @@ describe("PocketID phone directory", () => {
       expect((init.headers as Record<string, string>)["x-api-key"]).toBe("key");
       requests.push(url.pathname);
       if (url.pathname === "/api/users") return Response.json(pages[url.searchParams.get("pagination[page]")!]);
-      return Response.json([{ name: "tenant-sk" }]);
+      return Response.json([{ name: "osiris-tenant-sk" }]);
     }) as unknown as typeof fetch;
-    const directory = pocketIdDirectory("https://auth.example.cz", "key", fetchFn);
+    const directory = pocketIdDirectory(new PocketIdClient("https://auth.example.cz", "key", fetchFn));
 
     expect(await directory.lookup("420777123456")).toEqual({
       sub: "u1",
       email: null,
       name: "Bob Novák",
       phone: "+420 777 123 456",
-      groups: ["tenant-acme"],
+      groups: ["osiris-tenant-acme"],
     });
     expect(await directory.lookup("420600000001")).toBeNull();
     expect(await directory.lookup("420600000002")).toBeNull();
-    expect(await directory.lookup("421900000000")).toMatchObject({ sub: "u5", name: "Eva", groups: ["tenant-sk"] });
+    expect(await directory.lookup("421900000000")).toMatchObject({ sub: "u5", name: "Eva", groups: ["osiris-tenant-sk"] });
     // Loaded once and cached.
     expect(requests.filter((p) => p === "/api/users")).toHaveLength(2);
   });

@@ -4,7 +4,7 @@ import type { Client } from "@libsql/client";
 
 export interface WhatsAppSession {
   threadId: string | null;
-  /** When the user last picked this tenant with `/firma` (epoch ms), or null if never. */
+  /** When the user last picked this tenant with `/tenant` (epoch ms), or null if never. */
   selectedAt: number | null;
 }
 

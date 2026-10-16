@@ -1,5 +1,19 @@
 import { randomUUID } from "node:crypto";
-import type { McpServer, MeResponse, Scope, SecretSummary, Skill, UserSettings } from "@osiris/shared";
+import {
+  FEATURES,
+  type DirectoryUser,
+  type Feature,
+  type McpServer,
+  type MeResponse,
+  type Scope,
+  type SecretSummary,
+  type Skill,
+  type TenantDetail,
+  type TenantFeatures,
+  type TenantInfo,
+  type TenantSummary,
+  type UserSettings,
+} from "@osiris/shared";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono } from "hono";
 import { cors } from "hono/cors";
@@ -8,7 +22,9 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { SKILL_NAME } from "./agent/skills.ts";
 import { streamRun, toThreadMessages } from "./agent/run.ts";
-import { authMiddleware, tenantMiddleware, type AuthEnv, type RequestContext } from "./auth/middleware.ts";
+import { authMiddleware, tenantMiddleware, type AuthEnv, type Authenticated, type RequestContext } from "./auth/middleware.ts";
+import { TENANT_SLUG } from "./auth/tenants.ts";
+import { TenantExistsError, TenantNotFoundError, type TenantDirectory } from "./tenants/directory.ts";
 import type { TokenVerifier } from "./auth/oidc.ts";
 import { MCP_SERVER_NAME, McpNameTakenError, mcpOwner } from "./mcp/store.ts";
 import { UnsafeUrlError } from "./mcp/url.ts";
@@ -21,6 +37,8 @@ import { whatsappWebhook, type WhatsAppWebhookOptions } from "./whatsapp/webhook
 export interface AppDeps {
   verifier: TokenVerifier;
   tenants: TenantRegistry;
+  /** Which tenants exist and who is in them (PocketID groups in production). */
+  directory: TenantDirectory;
   corsOrigin: string;
   /** In production the API also serves the built web app from `dir`, plus its runtime config at `/config.js`. */
   web?: { dir: string; oidcAuthority?: string; oidcClientId?: string };
@@ -55,6 +73,15 @@ const settingsBody = z.object({
   signature: z.string().trim().max(1000),
   instructions: z.string().trim().max(4000),
 });
+const featuresBody = z.object(Object.fromEntries(FEATURES.map((f) => [f, z.boolean().optional()]))) as z.ZodType<Partial<TenantFeatures>>;
+const tenantName = z.string().trim().min(1).max(100);
+const createTenantBody = z.object({
+  id: z.string().trim().max(40).regex(TENANT_SLUG, "Zkratka: malá písmena, číslice a pomlčky, nesmí končit na -admin"),
+  name: tenantName,
+  features: featuresBody.optional(),
+});
+const updateTenantBody = z.object({ name: tenantName.optional(), features: featuresBody.optional() });
+const memberBody = z.object({ role: z.enum(["admin", "member"]) });
 const memoryBody = z.object({ content: z.string().trim().min(1).max(500), scope });
 const secretBody = z.object({
   // Omitted = keep the stored value (e.g. when only the hosts change). Never returned.
@@ -67,7 +94,16 @@ const secretBody = z.object({
   scope,
 });
 
-export function createApp({ verifier, tenants, corsOrigin, web, whatsapp }: AppDeps) {
+/** Which settings pages need which feature. Secrets serve both http_request and MCP. */
+const FEATURE_ROUTES: [string, Feature[]][] = [
+  ["/knowledge", ["knowledge"]],
+  ["/skills", ["skills"]],
+  ["/memories", ["memory"]],
+  ["/mcp-servers", ["mcp"]],
+  ["/secrets", ["http", "mcp"]],
+];
+
+export function createApp({ verifier, tenants, directory, corsOrigin, web, whatsapp }: AppDeps) {
   // Guards against two concurrent runs on one thread. In-process only: needs a shared lock once the API runs on several replicas.
   const activeRuns = new Set<string>();
 
@@ -99,24 +135,135 @@ export function createApp({ verifier, tenants, corsOrigin, web, whatsapp }: AppD
       throw err;
     }
   };
+  const requireSystemAdmin = (auth: Authenticated) => {
+    if (!auth.systemAdmin) throw new HTTPException(403, { message: "Requires osiris-admin" });
+  };
+  /** Display names from the directory; if it's unavailable, the slugs. */
+  const tenantNames = async () => {
+    try {
+      return new Map((await directory.list()).map((t) => [t.id, t.name]));
+    } catch (err) {
+      console.error("Tenant directory unavailable", err);
+      return new Map<string, string>();
+    }
+  };
+  /** A tenant from the directory, so a typo never creates a database. */
+  const knownTenant = async (id: string): Promise<TenantSummary> => {
+    const tenant = (await directory.list()).find((t) => t.id === id);
+    if (!tenant) throw new HTTPException(404, { message: "Tenant not found" });
+    return tenant;
+  };
+  const directoryErrors = async <T>(action: () => Promise<T>): Promise<T> => {
+    try {
+      return await action();
+    } catch (err) {
+      if (err instanceof TenantExistsError) throw new HTTPException(409, { message: "Tenant s touto zkratkou už existuje" });
+      if (err instanceof TenantNotFoundError) throw new HTTPException(404, { message: "Tenant not found" });
+      throw err;
+    }
+  };
   const skillName = (name: string) => {
     if (!SKILL_NAME.test(name)) throw new HTTPException(400, { message: "Skill name must be lowercase-kebab-case" });
     return name;
   };
 
-  const api = new Hono<AuthEnv>()
-    .use(authMiddleware(verifier))
+  // System admins (group osiris-admin) manage tenants: create, rename, remove, features and members.
+  const admin = new Hono<AuthEnv>()
+    .use(async (c, next) => {
+      requireSystemAdmin(c.get("auth"));
+      await next();
+    })
 
-    // Before tenantMiddleware: the client calls this to learn which tenants it can pick.
-    .get("/me", async (c) => {
-      const { user, memberships } = c.get("auth");
-      return c.json<MeResponse>({
-        user: { id: user.sub, email: user.email, name: user.name, phone: user.phone },
-        tenants: memberships.map((m) => ({ id: m.tenantId, name: m.tenantId, role: m.role })),
+    .get("/tenants", async (c) => c.json<TenantSummary[]>(await directory.list()))
+
+    .post("/tenants", async (c) => {
+      const { id, name, features } = parse(createTenantBody, await c.req.json());
+      await directoryErrors(() => directory.create(id, name));
+      // Creates and migrates the database now, so a broken setup shows up here and not on the first login.
+      const tenant = await tenants.get(id);
+      if (features) await tenant.features.set(features);
+      return c.json<TenantSummary>(await knownTenant(id), 201);
+    })
+
+    .get("/tenants/:id", async (c) => {
+      const summary = await knownTenant(c.req.param("id"));
+      const tenant = await tenants.get(summary.id);
+      return c.json<TenantDetail>({
+        ...summary,
+        features: await tenant.features.get(),
+        memberList: await directoryErrors(() => directory.members(summary.id)),
       });
     })
 
+    .patch("/tenants/:id", async (c) => {
+      const { id } = await knownTenant(c.req.param("id"));
+      const { name, features } = parse(updateTenantBody, await c.req.json());
+      if (name) await directoryErrors(() => directory.rename(id, name));
+      if (features) {
+        const tenant = await tenants.get(id);
+        await tenant.features.set(features);
+        // MCP tools are cached per owner; switching MCP should apply at once.
+        tenant.mcp.invalidateAll();
+      }
+      return c.body(null, 204);
+    })
+
+    // Removes everyone's access (the PocketID groups) and archives the database.
+    .delete("/tenants/:id", async (c) => {
+      const { id } = await knownTenant(c.req.param("id"));
+      await directoryErrors(() => directory.remove(id));
+      await tenants.remove(id);
+      return c.body(null, 204);
+    })
+
+    .put("/tenants/:id/members/:userId", async (c) => {
+      const { id } = await knownTenant(c.req.param("id"));
+      const { role } = parse(memberBody, await c.req.json());
+      await directoryErrors(() => directory.setRole(id, c.req.param("userId"), role));
+      return c.body(null, 204);
+    })
+
+    .delete("/tenants/:id/members/:userId", async (c) => {
+      const { id } = await knownTenant(c.req.param("id"));
+      await directoryErrors(() => directory.setRole(id, c.req.param("userId"), null));
+      return c.body(null, 204);
+    })
+
+    .get("/users", async (c) => c.json<DirectoryUser[]>(await directory.users()));
+
+  const api = new Hono<AuthEnv>()
+    .use(authMiddleware(verifier, directory))
+
+    // Before tenantMiddleware: the client calls this to learn which tenants it can pick.
+    .get("/me", async (c) => {
+      const { user, memberships, systemAdmin } = c.get("auth");
+      const names = await tenantNames();
+      return c.json<MeResponse>({
+        user: { id: user.sub, email: user.email, name: user.name, phone: user.phone },
+        systemAdmin,
+        tenants: memberships.map((m) => ({ id: m.tenantId, name: names.get(m.tenantId) ?? m.tenantId, role: m.role })),
+      });
+    })
+
+    .route("/admin", admin)
+
     .use(tenantMiddleware(tenants))
+
+    .get("/tenant", async (c) => {
+      const { tenant, role } = c.get("ctx");
+      const names = await tenantNames();
+      return c.json<TenantInfo>({ id: tenant.id, name: names.get(tenant.id) ?? tenant.id, role, features: await tenant.features.get() });
+    })
+
+    // Settings of a feature the tenant doesn't have are refused, not just hidden in the web app.
+    .use(async (c, next) => {
+      const route = FEATURE_ROUTES.find(([prefix]) => c.req.path === `/api${prefix}` || c.req.path.startsWith(`/api${prefix}/`));
+      if (route) {
+        const on = await c.get("ctx").tenant.features.get();
+        if (!route[1].some((f) => on[f])) throw new HTTPException(403, { message: "Tato funkce není pro tenant povolená" });
+      }
+      await next();
+    })
 
     .get("/threads", async (c) => {
       const { tenant, user } = c.get("ctx");
@@ -208,14 +355,16 @@ export function createApp({ verifier, tenants, corsOrigin, web, whatsapp }: AppD
       return c.body(null, 204);
     })
 
+    // `?scope=tenant` shows what the tenant has (tenant and bundled skills), without the caller's personal overrides.
     .get("/skills", async (c) => {
       const { tenant, user } = c.get("ctx");
-      return c.json(await tenant.skills.list(user.sub));
+      return c.json(await tenant.skills.list(queryScope(c.req.query("scope")) === "tenant" ? "" : user.sub));
     })
 
     .get("/skills/:name", async (c) => {
       const { tenant, user } = c.get("ctx");
-      const skill = await tenant.skills.get(c.req.param("name"), user.sub);
+      const viewer = queryScope(c.req.query("scope")) === "tenant" ? "" : user.sub;
+      const skill = await tenant.skills.get(c.req.param("name"), viewer);
       if (!skill) throw new HTTPException(404, { message: "Skill not found" });
       return c.json<Skill>(skill);
     })

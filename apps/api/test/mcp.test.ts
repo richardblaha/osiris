@@ -3,6 +3,7 @@ import { tool } from "@langchain/core/tools";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createApp } from "../src/app.ts";
+import { memoryTenants } from "../src/tenants/directory.ts";
 import { createDevVerifier } from "../src/auth/oidc.ts";
 import { McpServerStore } from "../src/mcp/store.ts";
 import type { McpConnector } from "../src/mcp/toolset.ts";
@@ -124,7 +125,7 @@ describe("MCP API", () => {
   async function setup() {
     const mcp = fakeMcp();
     const { tenants } = createTestTenants([], [], mcp.connect);
-    const app = createApp({ verifier: createDevVerifier(), tenants, corsOrigin: "*" });
+    const app = createApp({ verifier: createDevVerifier(), tenants, directory: memoryTenants(), corsOrigin: "*" });
     const as = (user: string) => (path: string, init: RequestInit = {}) =>
       app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${user}`, "content-type": "application/json" } });
     return { as, tenants };
@@ -134,7 +135,7 @@ describe("MCP API", () => {
 
   it("validates input and never returns header values", async () => {
     const { as } = await setup();
-    const admin = as("alice:tenant-acme-admin");
+    const admin = as("alice:osiris-tenant-acme-admin");
 
     expect((await admin("/mcp-servers/Bad_Name", put({ url }))).status).toBe(400);
     expect((await admin("/mcp-servers/x", put({ url: "https://169.254.169.254/latest" }))).status).toBe(400);
@@ -156,8 +157,8 @@ describe("MCP API", () => {
 
   it("lets members manage personal servers but not tenant ones", async () => {
     const { as } = await setup();
-    const admin = as("alice:tenant-acme-admin");
-    const member = as("bob:tenant-acme");
+    const admin = as("alice:osiris-tenant-acme-admin");
+    const member = as("bob:osiris-tenant-acme");
     await admin("/mcp-servers/weather", put({ url, scope: "tenant" }));
 
     expect((await member("/mcp-servers/crm", put({ url, scope: "tenant" }))).status).toBe(403);
@@ -176,7 +177,7 @@ describe("MCP API", () => {
 
   it("applies config changes to the agent without a restart", async () => {
     const { as, tenants } = await setup();
-    const admin = as("alice:tenant-acme-admin");
+    const admin = as("alice:osiris-tenant-acme-admin");
     const tenant = await tenants.get("acme");
     expect(await tenant.mcp.tools("dev:alice")).toEqual([]);
 

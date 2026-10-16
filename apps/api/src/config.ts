@@ -36,12 +36,14 @@ const schema = z
     // Built web app (apps/web/dist) to serve from the API; unset in development, where Vite serves it.
     STATIC_DIR: z.string().optional(),
 
-    // WhatsApp channel (webhook /webhooks/whatsapp), on when all four are set. Users are found by their PocketID
-    // custom claim phone_number through the PocketID admin API at OIDC_ISSUER.
+    // PocketID admin API at OIDC_ISSUER: tenants are its groups (managed by osiris-admin), WhatsApp finds users by
+    // phone. Required in production; in development tenants are kept in memory, seeded from TENANT_DATA_DIR.
+    POCKETID_API_KEY: z.string().optional(),
+
+    // WhatsApp channel (webhook /webhooks/whatsapp), on when all three are set (plus POCKETID_API_KEY).
     WHATSAPP_VERIFY_TOKEN: z.string().optional(),
     WHATSAPP_APP_SECRET: z.string().optional(),
     WHATSAPP_ACCESS_TOKEN: z.string().optional(),
-    POCKETID_API_KEY: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     if (env.AUTH_DEV_BYPASS && env.NODE_ENV === "production") {
@@ -57,16 +59,22 @@ const schema = z
     if (turso.some(Boolean) && !turso.every(Boolean)) {
       ctx.addIssue({ code: "custom", path: ["TURSO_ORG"], message: "TURSO_ORG, TURSO_API_TOKEN and TURSO_DB_TOKEN go together" });
     }
-    const whatsapp = [env.WHATSAPP_VERIFY_TOKEN, env.WHATSAPP_APP_SECRET, env.WHATSAPP_ACCESS_TOKEN, env.POCKETID_API_KEY];
+    const whatsapp = [env.WHATSAPP_VERIFY_TOKEN, env.WHATSAPP_APP_SECRET, env.WHATSAPP_ACCESS_TOKEN];
     if (whatsapp.some(Boolean) && !whatsapp.every(Boolean)) {
       ctx.addIssue({
         code: "custom",
         path: ["WHATSAPP_ACCESS_TOKEN"],
-        message: "WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET, WHATSAPP_ACCESS_TOKEN and POCKETID_API_KEY go together",
+        message: "WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_ACCESS_TOKEN go together",
       });
     }
-    if (whatsapp.every(Boolean) && !env.OIDC_ISSUER) {
-      ctx.addIssue({ code: "custom", path: ["OIDC_ISSUER"], message: "is required for WhatsApp (PocketID admin API)" });
+    if (whatsapp.every(Boolean) && !env.POCKETID_API_KEY) {
+      ctx.addIssue({ code: "custom", path: ["POCKETID_API_KEY"], message: "is required for WhatsApp" });
+    }
+    if (env.NODE_ENV === "production" && !env.POCKETID_API_KEY) {
+      ctx.addIssue({ code: "custom", path: ["POCKETID_API_KEY"], message: "is required in production (tenants are PocketID groups)" });
+    }
+    if (env.POCKETID_API_KEY && !env.OIDC_ISSUER) {
+      ctx.addIssue({ code: "custom", path: ["OIDC_ISSUER"], message: "is required with POCKETID_API_KEY (PocketID URL)" });
     }
     if (!env.AUTH_DEV_BYPASS && (!env.OIDC_ISSUER || !env.OIDC_AUDIENCE)) {
       ctx.addIssue({ code: "custom", path: ["OIDC_ISSUER"], message: "OIDC_ISSUER and OIDC_AUDIENCE are required" });

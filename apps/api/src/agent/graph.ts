@@ -10,6 +10,8 @@ import { buildSystemPrompt } from "./prompt.ts";
 import type { UserSettingsStore } from "./settings.ts";
 import type { SkillStore } from "./skills.ts";
 import type { SecretVault } from "../vault/vault.ts";
+import type { TenantFeatureStore } from "../tenants/features.ts";
+import { DEFAULT_FEATURES } from "../tenants/features.ts";
 
 export interface AgentDeps {
   /** The tenant this graph serves; runs carrying another `tenant_id` are refused. */
@@ -29,27 +31,31 @@ export interface AgentDeps {
   settings?: UserSettingsStore;
   /** Names of the secrets the user can use (never values) are listed in the system prompt. */
   secrets?: SecretVault;
+  /** Switched-off features drop out of the prompt too (skills, memory, secrets, knowledge rule). */
+  features?: TenantFeatureStore;
 }
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
 export function createAgentGraph(deps: AgentDeps) {
-  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets } = deps;
+  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features } = deps;
   if (!model.bindTools) throw new Error("Chat model does not support tool calling");
   const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
 
   const callModel = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const ctx = getRunContext(config);
     if (ctx.tenant_id !== tenantId) throw new Error(`Run for tenant ${ctx.tenant_id} sent to graph of ${tenantId}`);
+    const on = (await features?.get()) ?? DEFAULT_FEATURES;
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.
     const system = new SystemMessage(
       buildSystemPrompt({
         channel: ctx.channel,
         timezone,
-        skills: await skills?.list(ctx.user_id),
-        memories: await memory?.list(ctx.user_id),
+        knowledge: on.knowledge,
+        skills: on.skills ? await skills?.list(ctx.user_id) : undefined,
+        memories: on.memory ? await memory?.list(ctx.user_id) : undefined,
         userName: ctx.user_name,
         settings: await settings?.get(ctx.user_id),
-        secrets: await secrets?.list(ctx.user_id),
+        secrets: on.http || on.mcp ? await secrets?.list(ctx.user_id) : undefined,
       }),
     );
     const response = await model.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);

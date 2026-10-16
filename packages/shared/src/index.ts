@@ -30,7 +30,49 @@ export type Role = "admin" | "member";
 /** Identity and memberships come from PocketID (claims and groups); see apps/api/src/auth/. */
 export interface MeResponse {
   user: { id: string; email: string | null; name: string | null; phone: string | null };
+  /** Group `osiris-admin`: admin of every tenant, manages tenants. */
+  systemAdmin: boolean;
   tenants: { id: string; name: string; role: Role }[];
+}
+
+/** What a system admin can switch on or off per tenant. */
+export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp"] as const;
+export type Feature = (typeof FEATURES)[number];
+export type TenantFeatures = Record<Feature, boolean>;
+
+/** The active tenant (`GET /api/tenant`). */
+export interface TenantInfo {
+  id: string;
+  name: string;
+  role: Role;
+  features: TenantFeatures;
+}
+
+/** A tenant as system admins see it (`/api/admin/tenants`). */
+export interface TenantSummary {
+  id: string;
+  name: string;
+  /** Users in the tenant's member or admin group. */
+  members: number;
+}
+
+export interface TenantMember {
+  userId: string;
+  name: string | null;
+  email: string | null;
+  role: Role;
+}
+
+export interface TenantDetail extends TenantSummary {
+  features: TenantFeatures;
+  memberList: TenantMember[];
+}
+
+/** A PocketID user, for adding members to a tenant. */
+export interface DirectoryUser {
+  id: string;
+  name: string | null;
+  email: string | null;
 }
 
 /** Who a setting applies to: the whole tenant (managed by admins) or only the current user. */
