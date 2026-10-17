@@ -7,16 +7,17 @@ import { tursoProvider } from "../src/tenants/provider.ts";
 import { createTestTenants } from "./helpers.ts";
 
 describe("tenant memberships from PocketID groups", () => {
-  it("maps osiris-tenant-<slug> to member and osiris-tenant-<slug>-admin to admin", () => {
+  it("maps osiris-tenant-<slug>-user to member and osiris-tenant-<slug>-admin to admin", () => {
     expect(
       membershipsFromGroups([
-        "osiris-tenant-acme",
+        "osiris-tenant-acme-user",
         "osiris-tenant-acme-admin",
-        "osiris-tenant-novak-stavby",
+        "osiris-tenant-novak-stavby-user",
         "osiris-tenant-beta-admin",
         "admins",
         "osiris-tenant-Bad",
         // The old names no longer count.
+        "osiris-tenant-legacy",
         "tenant-old-admin",
       ]),
     ).toEqual([
@@ -27,19 +28,20 @@ describe("tenant memberships from PocketID groups", () => {
   });
 
   it("reads profile, phone and groups from userinfo", () => {
-    expect(toIdentity({ sub: "s", email: "a@b.cz", name: "A", phone_number: "+420777123456", groups: ["osiris-tenant-a", 5] })).toEqual({
+    expect(toIdentity({ sub: "s", email: "a@b.cz", name: "A", phone_number: "+420777123456", groups: ["osiris-tenant-a-user", 5] })).toEqual({
       sub: "s",
       email: "a@b.cz",
       name: "A",
       phone: "+420777123456",
-      groups: ["osiris-tenant-a"],
+      picture: null,
+      groups: ["osiris-tenant-a-user"],
     });
   });
 
   it("dev verifier gives a user their own tenant unless groups are given", async () => {
     const dev = createDevVerifier();
     expect((await dev.identify("alice")).groups).toEqual(["osiris-tenant-alice-admin"]);
-    expect((await dev.identify("bob:osiris-tenant-acme")).groups).toEqual(["osiris-tenant-acme"]);
+    expect((await dev.identify("bob:osiris-tenant-acme-user")).groups).toEqual(["osiris-tenant-acme-user"]);
     await expect(dev.identify("../x")).rejects.toThrow();
   });
 });

@@ -7,6 +7,8 @@ export interface Identity {
   name: string | null;
   /** PocketID custom claim `phone_number` (E.164), set on the user. */
   phone: string | null;
+  /** Profile picture URL (standard claim `picture`). */
+  picture: string | null;
   groups: string[];
 }
 
@@ -80,6 +82,7 @@ export function toIdentity(info: Record<string, unknown>): Identity {
     email: str(info.email),
     name: str(info.name),
     phone: str(info.phone_number),
+    picture: str(info.picture),
     groups: Array.isArray(info.groups) ? info.groups.filter((g): g is string => typeof g === "string") : [],
   };
 }
@@ -87,7 +90,7 @@ export function toIdentity(info: Record<string, unknown>): Identity {
 /**
  * Development-only verifier, rejected in production by config. The bearer token is `<user>` or
  * `<user>:<group>,<group>`; without groups the user is admin of their own tenant `<user>`
- * (e.g. `alice:osiris-tenant-acme,osiris-admin`).
+ * (e.g. `alice:osiris-tenant-acme-user,osiris-admin`).
  */
 export function createDevVerifier(): TokenVerifier {
   return {
@@ -99,6 +102,7 @@ export function createDevVerifier(): TokenVerifier {
         email: `${user}@dev.local`,
         name: user,
         phone: null,
+        picture: null,
         groups: groups ? groups.split(",") : [`osiris-tenant-${user}-admin`],
       };
     },

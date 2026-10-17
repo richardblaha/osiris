@@ -16,7 +16,7 @@ Commands below use `KUBECONFIG=.kubeconfig` and read keys from the gitignored ro
    - logout callback URL `https://osiris.k6labs.cz`
 
    Put its client ID in `.env` as `OSIRIS_OIDC_CLIENT_ID`.
-2. Create the group `osiris-admin` and add yourself. Its members manage tenants in the web app (Správa → Tenanti): creating a tenant creates the groups `osiris-tenant-<slug>` (members) and `osiris-tenant-<slug>-admin` (admins), and members are added there too. Users without a tenant group get "not assigned to any tenant".
+2. Create the group `osiris-admin` and add yourself. Its members manage tenants in the web app (Správa → Tenanti): creating a tenant creates the groups `osiris-tenant-<slug>-user` (members) and `osiris-tenant-<slug>-admin` (admins), and members are added there too. Users without a tenant group get "not assigned to any tenant".
 3. Optional: give each user the custom claim `phone_number` in `+420…` format.
 
 4. Create an API key (Settings → API keys) and put it in `.env` as `POCKETID_API_KEY`. The API needs it in production: tenants are PocketID groups.

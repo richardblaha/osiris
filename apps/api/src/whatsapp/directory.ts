@@ -37,6 +37,7 @@ export function pocketIdDirectory(pocketId: PocketIdClient): PhoneDirectory {
         email: user.email || null,
         name: displayName(user),
         phone: phone!,
+        picture: null,
         groups: groups.map((g) => g.name),
       });
     }

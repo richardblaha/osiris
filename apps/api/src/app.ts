@@ -76,7 +76,7 @@ const settingsBody = z.object({
 const featuresBody = z.object(Object.fromEntries(FEATURES.map((f) => [f, z.boolean().optional()]))) as z.ZodType<Partial<TenantFeatures>>;
 const tenantName = z.string().trim().min(1).max(100);
 const createTenantBody = z.object({
-  id: z.string().trim().max(40).regex(TENANT_SLUG, "Zkratka: malá písmena, číslice a pomlčky, nesmí končit na -admin"),
+  id: z.string().trim().max(40).regex(TENANT_SLUG, "Zkratka: malá písmena, číslice a pomlčky, nesmí končit na -admin ani -user"),
   name: tenantName,
   features: featuresBody.optional(),
 });
@@ -239,7 +239,7 @@ export function createApp({ verifier, tenants, directory, corsOrigin, web, whats
       const { user, memberships, systemAdmin } = c.get("auth");
       const names = await tenantNames();
       return c.json<MeResponse>({
-        user: { id: user.sub, email: user.email, name: user.name, phone: user.phone },
+        user: { id: user.sub, email: user.email, name: user.name, phone: user.phone, picture: user.picture },
         systemAdmin,
         tenants: memberships.map((m) => ({ id: m.tenantId, name: names.get(m.tenantId) ?? m.tenantId, role: m.role })),
       });

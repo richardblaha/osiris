@@ -59,8 +59,8 @@ describe("API", () => {
 
   it("takes the user's tenants and roles from PocketID groups", async () => {
     const { as } = await setup();
-    const me = await (await as("alice:osiris-tenant-acme,osiris-tenant-beta-admin,other")("/me")).json();
-    expect(me.user).toEqual({ id: "dev:alice", email: "alice@dev.local", name: "alice", phone: null });
+    const me = await (await as("alice:osiris-tenant-acme-user,osiris-tenant-beta-admin,other")("/me")).json();
+    expect(me.user).toEqual({ id: "dev:alice", email: "alice@dev.local", name: "alice", phone: null, picture: null });
     expect(me.tenants).toEqual([
       { id: "acme", name: "ACME s.r.o.", role: "member" },
       { id: "beta", name: "beta", role: "admin" },
@@ -74,7 +74,7 @@ describe("API", () => {
 
   it("requires choosing a tenant when the user has several", async () => {
     const { as } = await setup();
-    const alice = as("alice:osiris-tenant-acme,osiris-tenant-beta");
+    const alice = as("alice:osiris-tenant-acme-user,osiris-tenant-beta-user");
     expect((await alice("/threads")).status).toBe(400);
     expect((await alice("/threads", { headers: { "x-tenant-id": "beta" } })).status).toBe(200);
   });
@@ -86,9 +86,9 @@ describe("API", () => {
 
   it("hides one user's threads from another in the same tenant", async () => {
     const { as } = await setup();
-    const { id } = await (await as("alice:osiris-tenant-acme")("/threads", { method: "POST" })).json();
-    expect((await as("bob:osiris-tenant-acme")(`/threads/${id}/messages`)).status).toBe(404);
-    expect(await (await as("bob:osiris-tenant-acme")("/threads")).json()).toEqual([]);
+    const { id } = await (await as("alice:osiris-tenant-acme-user")("/threads", { method: "POST" })).json();
+    expect((await as("bob:osiris-tenant-acme-user")(`/threads/${id}/messages`)).status).toBe(404);
+    expect(await (await as("bob:osiris-tenant-acme-user")("/threads")).json()).toEqual([]);
   });
 
   it("streams a run with a tool call and persists the conversation", async () => {
@@ -138,7 +138,7 @@ describe("API", () => {
 
   it("lets members change personal settings but only admins tenant-wide ones", async () => {
     const { as } = await setup();
-    const member = as("bob:osiris-tenant-acme");
+    const member = as("bob:osiris-tenant-acme-user");
     const admin = as("alice:osiris-tenant-acme-admin");
     const post = (body: object) => ({ method: "POST", body: JSON.stringify({ title: "T", content: "obsah", ...body }) });
     const skill = (body: object) => ({ method: "PUT", body: JSON.stringify({ description: "Revize", instructions: "Postup.", ...body }) });
@@ -164,7 +164,7 @@ describe("API", () => {
       new AIMessage({ content: "", tool_calls: [{ id: "k", name: "search_knowledge", args: { query: "kód od garáže" } }] }),
       new AIMessage("Nevím."),
     ]);
-    const bob = as("bob:osiris-tenant-acme");
+    const bob = as("bob:osiris-tenant-acme-user");
     const alice = as("alice:osiris-tenant-acme-admin");
     const add = (title: string, content: string, scope: string) =>
       ({ method: "POST", body: JSON.stringify({ title, content, scope }) });
@@ -189,14 +189,14 @@ describe("API", () => {
 
   it("stores the user's profile and puts it into the system prompt", async () => {
     const { as, model } = await setup([new AIMessage("Dobrý den.")]);
-    const bob = as("bob:osiris-tenant-acme");
+    const bob = as("bob:osiris-tenant-acme-user");
     expect(await (await bob("/settings")).json()).toEqual({ address: "auto", language: "auto", signature: "", instructions: "" });
 
     const profile = { address: "vy", language: "sk", signature: "Bob Novák, elektrikář", instructions: "Ceny uváděj s DPH." };
     expect((await bob("/settings", { method: "PUT", body: JSON.stringify({ ...profile, address: "onikání" }) })).status).toBe(400);
     expect((await bob("/settings", { method: "PUT", body: JSON.stringify(profile) })).status).toBe(200);
     expect(await (await bob("/settings")).json()).toEqual(profile);
-    expect(await (await as("alice:osiris-tenant-acme")("/settings")).json()).toMatchObject({ address: "auto" });
+    expect(await (await as("alice:osiris-tenant-acme-user")("/settings")).json()).toMatchObject({ address: "auto" });
 
     const { id } = await (await bob("/threads", { method: "POST" })).json();
     await (await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
@@ -210,7 +210,7 @@ describe("API", () => {
 
   it("manages personal and shared memories", async () => {
     const { as } = await setup();
-    const member = as("bob:osiris-tenant-acme");
+    const member = as("bob:osiris-tenant-acme-user");
     const admin = as("alice:osiris-tenant-acme-admin");
     const post = (content: string, scope: string) => ({ method: "POST", body: JSON.stringify({ content, scope }) });
 
@@ -253,8 +253,8 @@ describe("tenant administration", () => {
     expect((await as("root:osiris-admin")("/threads", { headers: { "x-tenant-id": "beta" } })).status).toBe(200);
     // A tenant that doesn't exist is not opened (and so not created).
     expect((await as("root:osiris-admin")("/threads", { headers: { "x-tenant-id": "nope" } })).status).toBe(403);
-    expect((await as("bob:osiris-tenant-acme")("/me")).status).toBe(200);
-    expect((await (await as("bob:osiris-tenant-acme")("/me")).json()).systemAdmin).toBe(false);
+    expect((await as("bob:osiris-tenant-acme-user")("/me")).status).toBe(200);
+    expect((await (await as("bob:osiris-tenant-acme-user")("/me")).json()).systemAdmin).toBe(false);
   });
 
   it("lets only osiris-admin create, configure and remove tenants", async () => {
@@ -264,6 +264,7 @@ describe("tenant administration", () => {
 
     expect((await as("alice:osiris-tenant-acme-admin")("/admin/tenants")).status).toBe(403);
     expect((await root("/admin/tenants", { method: "POST", ...json({ id: "x-admin", name: "X" }) })).status).toBe(400);
+    expect((await root("/admin/tenants", { method: "POST", ...json({ id: "x-user", name: "X" }) })).status).toBe(400);
     expect((await root("/admin/tenants", { method: "POST", ...json({ id: "acme", name: "Dup" }) })).status).toBe(409);
     const created = await root("/admin/tenants", { method: "POST", ...json({ id: "novak", name: "Novák stavby", features: { mcp: false } }) });
     expect(created.status).toBe(201);
@@ -284,7 +285,7 @@ describe("tenant administration", () => {
   it("refuses settings of switched-off features and drops their tools", async () => {
     const { as, tenants, model } = await setup([new AIMessage("Ahoj.")]);
     await (await tenants.get("acme")).features.set({ skills: false, mcp: false, http: false });
-    const bob = as("bob:osiris-tenant-acme");
+    const bob = as("bob:osiris-tenant-acme-user");
 
     expect((await bob("/skills")).status).toBe(403);
     expect((await bob("/mcp-servers")).status).toBe(403);

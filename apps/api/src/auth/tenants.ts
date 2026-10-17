@@ -9,25 +9,24 @@ export interface Membership {
 /** PocketID group whose members are admins of every tenant and manage tenants. */
 export const SYSTEM_ADMIN_GROUP = "osiris-admin";
 
-const GROUP = /^osiris-tenant-([a-z0-9]+(?:-[a-z0-9]+)*?)(-admin)?$/;
+const GROUP = /^osiris-tenant-([a-z0-9]+(?:-[a-z0-9]+)*)-(admin|user)$/;
 
-/** A tenant slug: lowercase kebab-case, not ending in `-admin` (that suffix marks the admin group). */
-export const TENANT_SLUG = /^(?!.*-admin$)[a-z0-9]+(-[a-z0-9]+)*$/;
+/** A tenant slug: lowercase kebab-case, not ending in `-admin` or `-user` (those suffixes mark the groups). */
+export const TENANT_SLUG = /^(?!.*-(admin|user)$)[a-z0-9]+(-[a-z0-9]+)*$/;
 
-export const tenantGroup = (tenantId: string, role: Role) =>
-  role === "admin" ? `osiris-tenant-${tenantId}-admin` : `osiris-tenant-${tenantId}`;
+export const tenantGroup = (tenantId: string, role: Role) => `osiris-tenant-${tenantId}-${role === "admin" ? "admin" : "user"}`;
 
-/** Parses a tenant group name: `osiris-tenant-<slug>` (member) or `osiris-tenant-<slug>-admin` (admin). */
+/** Parses a tenant group name: `osiris-tenant-<slug>-user` (member) or `osiris-tenant-<slug>-admin` (admin). */
 export function parseTenantGroup(group: string): Membership | null {
   const m = GROUP.exec(group);
-  return m ? { tenantId: m[1]!, role: m[2] ? "admin" : "member" } : null;
+  return m ? { tenantId: m[1]!, role: m[2] === "admin" ? "admin" : "member" } : null;
 }
 
 export const isSystemAdmin = (groups: readonly string[]) => groups.includes(SYSTEM_ADMIN_GROUP);
 
 /**
  * Derives tenant memberships from PocketID group names:
- * `osiris-tenant-<slug>` makes the user a member, `osiris-tenant-<slug>-admin` an admin (no need to be in both).
+ * `osiris-tenant-<slug>-user` makes the user a member, `osiris-tenant-<slug>-admin` an admin (no need to be in both).
  * Other groups are ignored.
  */
 export function membershipsFromGroups(groups: readonly string[]): Membership[] {

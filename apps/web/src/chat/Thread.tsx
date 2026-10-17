@@ -59,9 +59,9 @@ function AssistantMessage() {
 
 export function Thread() {
   return (
-    <ThreadPrimitive.Root className="flex h-full flex-col">
-      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto px-4">
-        <div className="mx-auto max-w-3xl py-6">
+    <ThreadPrimitive.Root className="h-full">
+      <ThreadPrimitive.Viewport className="flex h-full flex-col overflow-y-auto px-4">
+        <div className="mx-auto w-full max-w-3xl flex-1 py-6">
           <ThreadPrimitive.Empty>
             <div className="mt-24 flex flex-col items-center gap-4 text-fg-secondary">
               <img src="/logo.svg" alt="" className="h-16 w-16 opacity-90" />
@@ -72,24 +72,35 @@ export function Thread() {
             {({ message }) => (message.role === "user" ? <UserMessage /> : <AssistantMessage />)}
           </ThreadPrimitive.Messages>
         </div>
+        {/* The composer floats over the conversation, which scrolls underneath it. */}
+        <ThreadPrimitive.ViewportFooter className="sticky bottom-0 mx-auto w-full max-w-3xl bg-gradient-to-t from-canvas from-70% pb-4 pt-2">
+          <ComposerPrimitive.Root className="composer relative rounded-md border border-line-strong bg-input shadow-lg">
+            <ComposerPrimitive.Input
+              autoFocus
+              placeholder="Napiš zprávu…"
+              minRows={3}
+              maxRows={12}
+              className="block w-full resize-none bg-transparent px-4 pt-3 pb-12 outline-none"
+            />
+            <div className="absolute right-2 bottom-2">
+              <ThreadPrimitive.If running={false}>
+                <ComposerPrimitive.Send className="icon-button btn-primary" aria-label="Odeslat" title="Odeslat (Enter)">
+                  <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+                    <path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                </ComposerPrimitive.Send>
+              </ThreadPrimitive.If>
+              <ThreadPrimitive.If running>
+                <ComposerPrimitive.Cancel className="icon-button btn-secondary" aria-label="Zastavit" title="Zastavit">
+                  <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
+                    <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
+                  </svg>
+                </ComposerPrimitive.Cancel>
+              </ThreadPrimitive.If>
+            </div>
+          </ComposerPrimitive.Root>
+        </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>
-      <div className="border-t border-line bg-sidebar px-4 py-3">
-        <ComposerPrimitive.Root className="mx-auto flex max-w-3xl items-end gap-2">
-          <ComposerPrimitive.Input
-            autoFocus
-            placeholder="Napiš zprávu…"
-            className="field max-h-40 flex-1 resize-none"
-          />
-          <ThreadPrimitive.If running={false}>
-            <ComposerPrimitive.Send className="btn-primary">
-              Odeslat
-            </ComposerPrimitive.Send>
-          </ThreadPrimitive.If>
-          <ThreadPrimitive.If running>
-            <ComposerPrimitive.Cancel className="btn-secondary">Zastavit</ComposerPrimitive.Cancel>
-          </ThreadPrimitive.If>
-        </ComposerPrimitive.Root>
-      </div>
     </ThreadPrimitive.Root>
   );
 }

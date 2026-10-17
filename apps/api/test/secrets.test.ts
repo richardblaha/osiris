@@ -133,7 +133,7 @@ describe("secrets API", () => {
   it("never returns values and enforces scopes", async () => {
     const { as } = await setup();
     const admin = as("alice:osiris-tenant-acme-admin");
-    const member = as("bob:osiris-tenant-acme");
+    const member = as("bob:osiris-tenant-acme-user");
 
     expect((await member("/secrets/CRM", put({ value: "x", scope: "tenant" }))).status).toBe(403);
     expect((await admin("/secrets/crm", put({ value: "x" }))).status).toBe(400);

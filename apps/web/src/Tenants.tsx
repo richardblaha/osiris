@@ -1,8 +1,9 @@
 import { FEATURES, type DirectoryUser, type Feature, type Role, type TenantDetail, type TenantSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
+import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 
-const SLUG = /^(?!.*-admin$)[a-z0-9]+(-[a-z0-9]+)*$/;
+const SLUG = /^(?!.*-(admin|user)$)[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = {
   knowledge: { label: "Znalostní báze", hint: "dokumenty, ve kterých asistent vyhledává" },
@@ -13,95 +14,54 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   whatsapp: { label: "WhatsApp", hint: "asistent odpovídá i ve WhatsAppu" },
 };
 
-/** System admins (group osiris-admin): tenants, what they may use and who is in them. */
-export function Tenants({ onChanged }: { onChanged: () => void }) {
-  const [tenants, setTenants] = useState<TenantSummary[]>([]);
-  const [selected, setSelected] = useState<string>();
+/** System admins (group osiris-admin) create tenants here; each tenant's detail is a `TenantPanel`. */
+export function NewTenant({ onCreated }: { onCreated: (id: string) => void }) {
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
-  const refresh = () => api.admin.tenants().then(setTenants, (e: Error) => setError(e.message));
-  useEffect(() => void refresh(), []);
-
-  const create = async (e: FormEvent) => {
+  const create = (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
-    setError(undefined);
-    try {
+    void attempt(setBusy, setError, async () => {
       await api.admin.createTenant(id, name);
-      setId("");
-      setName("");
-      setSelected(id);
-      await refresh();
-      onChanged();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+      onCreated(id);
+    });
   };
 
   return (
-    <div className="mx-auto h-full max-w-5xl overflow-y-auto p-6">
-      <h1 className="section-header text-[13px]">Tenanti</h1>
+    <div className="detail">
+      <h1 className="text-lg font-semibold">Nový tenant</h1>
       <p className="mt-1 text-sm text-fg-secondary">
-        Každý tenant má vlastní databázi. Členství jsou skupiny v PocketID: <code>osiris-tenant-&lt;zkratka&gt;</code> pro
-        členy a <code>osiris-tenant-&lt;zkratka&gt;-admin</code> pro správce.
+        Každý tenant má vlastní databázi. Členství jsou skupiny v PocketID: <code>osiris-tenant-&lt;zkratka&gt;-user</code> pro
+        uživatele a <code>osiris-tenant-&lt;zkratka&gt;-admin</code> pro správce.
       </p>
-
-      <form onSubmit={create} className="mt-6 flex flex-wrap gap-2">
-        <input
-          value={id}
-          onChange={(e) => setId(e.target.value.toLowerCase())}
-          placeholder="zkratka, např. novak-stavby"
-          pattern={SLUG.source}
-          title="Malá písmena, číslice a pomlčky; nesmí končit na -admin"
-          maxLength={40}
-          required
-          className="field w-56"
-        />
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Název, např. Novák stavby s.r.o." required className="field min-w-0 flex-1" />
+      <form onSubmit={create} className="mt-6 space-y-4">
+        <Field label="Zkratka">
+          <input
+            value={id}
+            onChange={(e) => setId(e.target.value.toLowerCase())}
+            placeholder="např. novak-stavby"
+            pattern={SLUG.source}
+            title="Malá písmena, číslice a pomlčky; nesmí končit na -admin ani -user"
+            maxLength={40}
+            required
+            className="field"
+          />
+        </Field>
+        <Field label="Název">
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="např. Novák stavby s.r.o." required className="field" />
+        </Field>
         <button disabled={busy} className="btn-primary">
           {busy ? "Zakládám…" : "Založit tenanta"}
         </button>
       </form>
-      {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
-
-      <div className="mt-8 grid gap-6 md:grid-cols-[16rem_1fr]">
-        <ul className="divide-y divide-line">
-          {tenants.map((t) => (
-            <li key={t.id}>
-              <button onClick={() => setSelected(t.id)} data-active={selected === t.id} className="list-row block w-full px-2 py-2 text-left">
-                <span className="block font-medium">{t.name}</span>
-                <span className="text-xs text-fg-muted">
-                  {t.id} · {t.members} {t.members === 1 ? "uživatel" : t.members >= 2 && t.members <= 4 ? "uživatelé" : "uživatelů"}
-                </span>
-              </button>
-            </li>
-          ))}
-          {!tenants.length && <li className="py-2 text-fg-muted">Zatím žádní tenanti.</li>}
-        </ul>
-        {selected ? (
-          <TenantPanel
-            key={selected}
-            id={selected}
-            onChanged={() => void refresh().then(onChanged)}
-            onDeleted={() => {
-              setSelected(undefined);
-              void refresh().then(onChanged);
-            }}
-          />
-        ) : (
-          <p className="text-sm text-fg-muted">Vyber tenanta vlevo.</p>
-        )}
-      </div>
+      <ErrorNotice error={error} />
     </div>
   );
 }
 
-function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChanged: () => void; onDeleted: () => void }) {
+export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChanged: () => void; onDeleted: () => void }) {
   const [tenant, setTenant] = useState<TenantDetail>();
   const [users, setUsers] = useState<DirectoryUser[]>([]);
   const [name, setName] = useState("");
@@ -142,7 +102,8 @@ function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChanged: () =
   const candidates = users.filter((u) => !memberIds.has(u.id));
 
   return (
-    <div className="space-y-8">
+    <div className="detail space-y-8">
+      <h1 className="text-lg font-semibold">{tenant.name}</h1>
       <section>
         <h2 className="section-header">Název</h2>
         <form
@@ -196,7 +157,7 @@ function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChanged: () =
                   onChange={(e) => void run(() => api.admin.setMember(id, m.userId, e.target.value as Role))}
                   className="field w-auto py-1"
                 >
-                  <option value="member">člen</option>
+                  <option value="member">uživatel</option>
                   <option value="admin">správce</option>
                 </select>
                 <button disabled={busy} onClick={() => void run(() => api.admin.removeMember(id, m.userId))} className="btn-danger">
@@ -227,7 +188,7 @@ function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChanged: () =
             ))}
           </select>
           <select value={newRole} onChange={(e) => setNewRole(e.target.value as Role)} className="field w-auto">
-            <option value="member">člen</option>
+            <option value="member">uživatel</option>
             <option value="admin">správce</option>
           </select>
           <button disabled={busy || !newUser} className="btn-primary">

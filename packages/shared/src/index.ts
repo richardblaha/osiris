@@ -29,7 +29,7 @@ export type Role = "admin" | "member";
 
 /** Identity and memberships come from PocketID (claims and groups); see apps/api/src/auth/. */
 export interface MeResponse {
-  user: { id: string; email: string | null; name: string | null; phone: string | null };
+  user: { id: string; email: string | null; name: string | null; phone: string | null; picture: string | null };
   /** Group `osiris-admin`: admin of every tenant, manages tenants. */
   systemAdmin: boolean;
   tenants: { id: string; name: string; role: Role }[];

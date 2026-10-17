@@ -4,7 +4,7 @@ import { displayName, type PocketIdClient, type PocketIdGroup, type PocketIdUser
 
 /**
  * Which tenants exist, what they're called and who is in them. In production these are PocketID groups
- * (`osiris-tenant-<slug>` and `osiris-tenant-<slug>-admin`), so there is still no global database.
+ * (`osiris-tenant-<slug>-user` and `osiris-tenant-<slug>-admin`), so there is still no global database.
  */
 export interface TenantDirectory {
   /** Every tenant, sorted by id. Cached briefly; writes refresh it. */

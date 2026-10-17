@@ -1,6 +1,30 @@
 import type { MeResponse, UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
+import { logout } from "./auth.ts";
+
+const initials = (name: string) =>
+  name
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0]!.toUpperCase())
+    .join("");
+
+/** The PocketID profile picture (claim `picture`), or the user's initials when there is none or it fails to load. */
+export function Avatar({ user, size = 32 }: { user: MeResponse["user"]; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const label = user.name ?? user.email ?? "?";
+  const style = { width: size, height: size, fontSize: size * 0.4 };
+  if (user.picture && !failed) {
+    return <img src={user.picture} alt="" style={style} onError={() => setFailed(true)} className="shrink-0 rounded-full object-cover" />;
+  }
+  return (
+    <span style={style} className="flex shrink-0 items-center justify-center rounded-full bg-primary-soft font-semibold text-primary">
+      {initials(label)}
+    </span>
+  );
+}
 
 export function Profile({ me }: { me: MeResponse }) {
   const [settings, setSettings] = useState<UserSettings>();
@@ -31,9 +55,17 @@ export function Profile({ me }: { me: MeResponse }) {
   };
 
   return (
-    <div className="mx-auto h-full max-w-3xl overflow-y-auto p-6">
-      <h1 className="section-header text-[13px]">Můj profil</h1>
-      <p className="mt-1 text-sm text-fg-secondary">Jak s tebou má asistent jednat. Platí jen pro tebe.</p>
+    <div className="detail">
+      <div className="flex items-center gap-4">
+        <Avatar user={me.user} size={56} />
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-lg font-semibold">{me.user.name ?? me.user.email ?? "Můj profil"}</h1>
+          <p className="text-sm text-fg-secondary">Jak s tebou má asistent jednat. Platí jen pro tebe.</p>
+        </div>
+        <button onClick={logout} className="btn-secondary shrink-0">
+          Odhlásit
+        </button>
+      </div>
 
       <dl className="notice mt-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-3 py-2 text-sm">
         <dt className="text-fg-secondary">Jméno</dt>
@@ -43,7 +75,7 @@ export function Profile({ me }: { me: MeResponse }) {
         <dt className="text-fg-secondary">Telefon</dt>
         <dd>{me.user.phone ?? "—"}</dd>
       </dl>
-      <p className="mt-1 text-xs text-fg-muted">Jméno, e-mail a telefon se mění v účtu na auth.k6labs.cz.</p>
+      <p className="mt-1 text-xs text-fg-muted">Jméno, e-mail, telefon a fotka se mění v účtu na auth.k6labs.cz.</p>
 
       {settings && (
         <form onSubmit={submit} className="mt-6 space-y-4">

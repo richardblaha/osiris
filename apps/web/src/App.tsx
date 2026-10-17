@@ -1,22 +1,29 @@
-import type { MeResponse, Scope, TenantFeatures, TenantInfo, ThreadSummary } from "@osiris/shared";
-import { useCallback, useEffect, useState } from "react";
+import type {
+  DocumentSummary,
+  McpServer,
+  Memory,
+  MeResponse,
+  Scope,
+  SecretSummary,
+  SkillSummary,
+  TenantFeatures,
+  TenantInfo as Tenant,
+  TenantSummary,
+  ThreadSummary,
+} from "@osiris/shared";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, setTenant } from "./api.ts";
-import { configError, getAccessToken, login, logout } from "./auth.ts";
+import { configError, getAccessToken, login } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
-import { Knowledge } from "./Knowledge.tsx";
-import { McpServers } from "./McpServers.tsx";
-import { Memories } from "./Memories.tsx";
-import { Profile } from "./Profile.tsx";
-import type { ScopedProps } from "./Scope.tsx";
-import { Secrets } from "./Secrets.tsx";
-import { Skills } from "./Skills.tsx";
-import { Tenants } from "./Tenants.tsx";
-
-type View =
-  | { kind: "chat"; threadId: string | null; session: number }
-  | { kind: "settings"; page: Page; scope: Scope }
-  | { kind: "profile" }
-  | { kind: "tenants" };
+import { documentKey, KnowledgeDetail } from "./Knowledge.tsx";
+import { mcpKey, McpServerDetail, McpStatus } from "./McpServers.tsx";
+import { MemoryDetail, memoryKey } from "./Memories.tsx";
+import { Avatar, Profile } from "./Profile.tsx";
+import { ScopeBadge } from "./Scope.tsx";
+import { SecretDetail, secretKey } from "./Secrets.tsx";
+import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
+import { roleLabel, TenantInfo } from "./TenantInfo.tsx";
+import { NewTenant, TenantPanel } from "./Tenants.tsx";
 
 export function App() {
   const [loggedIn, setLoggedIn] = useState<boolean>();
@@ -43,43 +50,130 @@ export function App() {
   return <Workspace />;
 }
 
-type Page = "knowledge" | "skills" | "memory" | "mcp" | "secrets";
+/** Sidebar sections whose records open as a detail form; `tenants` is the system admin's tenant administration. */
+type Section = "knowledge" | "skills" | "memory" | "mcp" | "secrets" | "tenants";
 
-const PAGES: { page: Page; label: string; enabled: (f: TenantFeatures) => boolean }[] = [
-  { page: "knowledge", label: "Znalostní báze", enabled: (f) => f.knowledge },
-  { page: "skills", label: "Dovednosti", enabled: (f) => f.skills },
-  { page: "memory", label: "Paměť", enabled: (f) => f.memory },
-  { page: "mcp", label: "Nástroje (MCP)", enabled: (f) => f.mcp },
-  { page: "secrets", label: "Klíče a hesla", enabled: (f) => f.http || f.mcp },
+type View =
+  | { kind: "chat"; threadId: string | null; session: number }
+  /** A record of a section by its key, or `null` for the form of a new one. */
+  | { kind: "item"; section: Section; id: string | null }
+  | { kind: "profile" }
+  | { kind: "tenant" };
+
+interface Lists {
+  knowledge: DocumentSummary[];
+  skills: SkillSummary[];
+  memory: Memory[];
+  mcp: McpServer[];
+  secrets: SecretSummary[];
+  tenants: TenantSummary[];
+}
+
+const EMPTY: Lists = { knowledge: [], skills: [], memory: [], mcp: [], secrets: [], tenants: [] };
+
+const LOADERS: { [S in Section]: () => Promise<Lists[S]> } = {
+  knowledge: api.documents,
+  skills: loadSkills,
+  memory: api.memories,
+  mcp: api.mcpServers,
+  secrets: api.secrets,
+  tenants: api.admin.tenants,
+};
+
+const SECTIONS: { id: Exclude<Section, "tenants">; label: string; add: string; enabled: (f: TenantFeatures) => boolean }[] = [
+  { id: "knowledge", label: "Znalostní báze", add: "Přidat dokument", enabled: (f) => f.knowledge },
+  { id: "skills", label: "Dovednosti", add: "Přidat dovednost", enabled: (f) => f.skills },
+  { id: "memory", label: "Paměť", add: "Přidat záznam", enabled: (f) => f.memory },
+  { id: "mcp", label: "Nástroje (MCP)", add: "Přidat server", enabled: (f) => f.mcp },
+  { id: "secrets", label: "Klíče a hesla", add: "Přidat klíč", enabled: (f) => f.http || f.mcp },
 ];
 
+interface Row {
+  key: string;
+  label: string;
+  badge?: ReactNode;
+}
+
+/** Personal records are the default, so only tenant-wide and bundled ones get a badge in the sidebar. */
+const scopeBadge = (scope: Scope | "bundled") => (scope === "personal" ? undefined : <ScopeBadge scope={scope} />);
+
+function rows(section: Section, lists: Lists): Row[] {
+  switch (section) {
+    case "knowledge":
+      return lists.knowledge.map((d) => ({ key: documentKey(d), label: d.title, badge: scopeBadge(d.scope) }));
+    case "skills":
+      return lists.skills.map((s) => ({ key: skillKey(s), label: s.name, badge: scopeBadge(s.source) }));
+    case "memory":
+      return lists.memory.map((m) => ({ key: memoryKey(m), label: m.content, badge: scopeBadge(m.scope) }));
+    case "mcp":
+      return lists.mcp.map((s) => ({
+        key: mcpKey(s),
+        label: s.name,
+        badge: (
+          <>
+            {scopeBadge(s.scope)} <McpStatus server={s} />
+          </>
+        ),
+      }));
+    case "secrets":
+      return lists.secrets.map((s) => ({ key: secretKey(s), label: s.name, badge: scopeBadge(s.scope) }));
+    default:
+      return lists.tenants.map((t) => ({ key: t.id, label: t.name }));
+  }
+}
+
 const LAST_TENANT = "osiris.tenant";
-const remembered = () => {
+const OPEN_SECTIONS = "osiris.sections";
+
+/** Per-browser conveniences only; the app works the same when storage is unavailable. */
+const stored = <T,>(key: string, fallback: T): T => {
   try {
-    return localStorage.getItem(LAST_TENANT);
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : (JSON.parse(v) as T);
   } catch {
-    return null;
+    return fallback;
+  }
+};
+const store = (key: string, value: unknown) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Ignored, see `stored`.
   }
 };
 
 function Workspace() {
   const [me, setMe] = useState<MeResponse>();
-  const [tenant, setTenantInfo] = useState<TenantInfo>();
+  const [tenant, setTenantInfo] = useState<Tenant>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [lists, setLists] = useState<Lists>(EMPTY);
   const [view, setView] = useState<View>({ kind: "chat", threadId: null, session: 0 });
+  const [open, setOpen] = useState<Record<string, boolean>>(() => stored(OPEN_SECTIONS, { threads: true }));
   const [error, setError] = useState<string>();
 
   const refreshThreads = useCallback(() => api.threads().then(setThreads, (e: Error) => setError(e.message)), []);
+  const refresh = (section: Section) =>
+    LOADERS[section]().then((items) => setLists((l) => ({ ...l, [section]: items })), (e: Error) => setError(e.message));
+
+  const toggle = (section: string, value?: boolean) =>
+    setOpen((o) => {
+      const next = { ...o, [section]: value ?? !o[section] };
+      store(OPEN_SECTIONS, next);
+      return next;
+    });
+
+  const loadTenant = () =>
+    api.tenant().then((t) => {
+      setTenantInfo(t);
+      for (const s of SECTIONS) if (s.enabled(t.features)) void refresh(s.id);
+    }, (e: Error) => setError(e.message));
 
   const selectTenant = (id: string) => {
     setTenant(id);
-    try {
-      localStorage.setItem(LAST_TENANT, id);
-    } catch {
-      // Remembering the tenant is a convenience only.
-    }
+    store(LAST_TENANT, id);
     setTenantInfo(undefined);
-    api.tenant().then(setTenantInfo, (e: Error) => setError(e.message));
+    setLists((l) => ({ ...EMPTY, tenants: l.tenants }));
+    void loadTenant();
     setView((v) => ({ kind: "chat", threadId: null, session: (v.kind === "chat" ? v.session : 0) + 1 }));
     void refreshThreads();
   };
@@ -88,163 +182,232 @@ function Workspace() {
   const loadMe = (current?: string) =>
     api.me().then((m) => {
       setMe(m);
+      if (m.systemAdmin) void refresh("tenants");
       const ids = m.tenants.map((t) => t.id);
-      const pick = [current, remembered()].find((id) => id && ids.includes(id)) ?? ids[0];
+      const pick = [current, stored<string | null>(LAST_TENANT, null)].find((id) => id && ids.includes(id)) ?? ids[0];
       if (!pick) {
-        // A system admin with no tenant yet starts in the tenant administration.
+        // A system admin with no tenant yet starts with creating one.
         setTenantInfo(undefined);
-        setView({ kind: "tenants" });
+        setView({ kind: "item", section: "tenants", id: null });
       } else if (pick !== current) selectTenant(pick);
     }, (e: Error) => setError(e.message));
 
   useEffect(() => void loadMe(), []);
 
-  const open = (threadId: string | null) =>
+  const openThread = (threadId: string | null) =>
     setView((v) => ({ kind: "chat", threadId, session: (v.kind === "chat" ? v.session : 0) + 1 }));
 
-  const remove = async (id: string) => {
+  const removeThread = async (id: string) => {
     await api.deleteThread(id);
-    if (view.kind === "chat" && view.threadId === id) open(null);
+    if (view.kind === "chat" && view.threadId === id) openThread(null);
     await refreshThreads();
   };
 
   if (error) return <p className="notice notice-error m-6 px-3 py-2">{error}</p>;
   if (!me) return null;
   const isAdmin = tenant?.role === "admin";
-  const pages = tenant ? PAGES.filter((p) => p.enabled(tenant.features)) : [];
-  const navButton = (target: View, label: string, active: boolean) => (
-    <button key={label} onClick={() => setView(target)} data-active={active} className="list-row block w-full px-2 py-1.5 text-left">
-      {label}
-    </button>
+  const sections = tenant ? SECTIONS.filter((s) => s.enabled(tenant.features)) : [];
+  const select = (section: Section, id: string | null) => {
+    if (id === null) toggle(section, true);
+    setView({ kind: "item", section, id });
+  };
+
+  const sectionNav = (section: Section, label: string, add: string, empty: string) => (
+    <SidebarSection key={section} title={label} count={lists[section].length} open={!!open[section]} onToggle={() => toggle(section)} onAdd={() => select(section, null)} addLabel={add}>
+      {rows(section, lists).map((r) => (
+        <button
+          key={r.key}
+          onClick={() => select(section, r.key)}
+          data-active={view.kind === "item" && view.section === section && view.id === r.key}
+          className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left"
+        >
+          <span className="min-w-0 flex-1 truncate">{r.label}</span>
+          {r.badge && <span className="flex shrink-0 gap-1">{r.badge}</span>}
+        </button>
+      ))}
+      {!lists[section].length && <p className="px-2 py-1.5 text-fg-muted">{empty}</p>}
+    </SidebarSection>
   );
-  const pageNav = (scope: Scope) =>
-    pages.map((p) =>
-      navButton({ kind: "settings", page: p.page, scope }, p.label, view.kind === "settings" && view.page === p.page && view.scope === scope),
-    );
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex min-h-0 flex-1">
-        <aside className="flex w-64 shrink-0 flex-col border-r border-line bg-sidebar text-sm">
-          <div className="flex items-center gap-2 px-3 pt-3">
-            <img src="/logo.svg" alt="" className="h-8 w-8" />
-            <span className="font-semibold tracking-[0.2em]">OSIRIS</span>
-          </div>
-          {(me.tenants.length > 1 || me.systemAdmin) && me.tenants.length > 0 && (
-            <label className="mx-3 mt-3 block">
-              <span className="section-header block pb-1">Tenant</span>
-              <select value={tenant?.id ?? ""} onChange={(e) => selectTenant(e.target.value)} className="field w-full py-1">
-                {me.tenants.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+    <div className="flex h-full">
+      <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-sidebar text-sm">
+        <div className="flex items-center gap-2 px-3 pt-3">
+          <img src="/logo.svg" alt="" className="h-8 w-8" />
+          <span className="font-semibold tracking-[0.2em]">OSIRIS</span>
+        </div>
+        {tenant && (
+          <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
+            + Nový chat
+          </button>
+        )}
+        <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           {tenant && (
-            <>
-              <button onClick={() => open(null)} className="btn-primary m-3">
-                + Nový chat
-              </button>
-              <h2 className="section-header px-4 pb-1">Konverzace</h2>
-              <nav className="flex-1 overflow-y-auto px-2">
-                {threads.map((t) => (
-                  <div
-                    key={t.id}
-                    data-active={view.kind === "chat" && view.threadId === t.id}
-                    className="list-row group flex items-center px-2"
-                  >
-                    <button onClick={() => open(t.id)} className="flex-1 truncate py-1.5 text-left">
-                      {t.channel === "whatsapp" && <span className="mr-1 text-fg-muted">WA</span>}
-                      {t.title ?? "Nový chat"}
-                    </button>
-                    <button
-                      onClick={() => remove(t.id)}
-                      className="hidden px-1 text-fg-muted hover:text-error group-hover:block"
-                      aria-label="Smazat"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-                {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
-              </nav>
-            </>
+            <SidebarSection title="Konverzace" count={threads.length} open={!!open.threads} onToggle={() => toggle("threads")}>
+              {threads.map((t) => (
+                <div key={t.id} data-active={view.kind === "chat" && view.threadId === t.id} className="list-row group flex items-center px-2">
+                  <button onClick={() => openThread(t.id)} className="flex-1 truncate py-1.5 text-left">
+                    {t.channel === "whatsapp" && <span className="mr-1 text-fg-muted">WA</span>}
+                    {t.title ?? "Nový chat"}
+                  </button>
+                  <button onClick={() => removeThread(t.id)} className="hidden px-1 text-fg-muted hover:text-error group-hover:block" aria-label="Smazat">
+                    ×
+                  </button>
+                </div>
+              ))}
+              {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
+            </SidebarSection>
           )}
-          <div className={`overflow-y-auto border-t border-line p-2 ${tenant ? "max-h-[55%]" : "mt-3 flex-1"}`}>
-            {tenant && (
-              <>
-                <h2 className="section-header px-2 pb-1 pt-1">Moje nastavení</h2>
-                {navButton({ kind: "profile" }, "Můj profil", view.kind === "profile")}
-                {pageNav("personal")}
-                {pages.length > 0 && (
-                  <>
-                    <h2 className="section-header px-2 pb-1 pt-3">Nastavení tenanta</h2>
-                    {pageNav("tenant")}
-                  </>
-                )}
-              </>
-            )}
-            {me.systemAdmin && (
-              <>
-                <h2 className="section-header px-2 pb-1 pt-3">Správa</h2>
-                {navButton({ kind: "tenants" }, "Tenanti", view.kind === "tenants")}
-              </>
-            )}
-          </div>
-        </aside>
-        <main className="h-full min-w-0 flex-1 bg-canvas">
-          {view.kind === "tenants" ? (
-            <Tenants
+          {sections.map((s) => sectionNav(s.id, s.label, s.add, "Zatím nic."))}
+          {me.systemAdmin && sectionNav("tenants", "Tenanti", "Založit tenanta", "Zatím žádní.")}
+        </nav>
+
+        <div className="border-t border-line p-2">
+          <button onClick={() => setView({ kind: "tenant" })} data-active={view.kind === "tenant"} className="list-row flex w-full items-center gap-3 px-2 py-2 text-left">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-secondary-soft font-semibold text-secondary">
+              {(tenant?.name ?? "?").slice(0, 1).toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{tenant?.name ?? "Žádný tenant"}</span>
+              <span className="block truncate text-xs text-fg-muted">
+                {tenant ? roleLabel(tenant.role) : "vyber nebo založ tenanta"}
+                {me.tenants.length > 1 && ` · ${me.tenants.length} ${me.tenants.length <= 4 ? "tenanti" : "tenantů"}`}
+              </span>
+            </span>
+          </button>
+          <button onClick={() => setView({ kind: "profile" })} data-active={view.kind === "profile"} className="list-row flex w-full items-center gap-3 px-2 py-2 text-left">
+            <Avatar user={me.user} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{me.user.name ?? me.user.email}</span>
+              {me.user.name && me.user.email && <span className="block truncate text-xs text-fg-muted">{me.user.email}</span>}
+            </span>
+          </button>
+        </div>
+      </aside>
+
+      <main className="h-full min-w-0 flex-1 bg-canvas">
+        {view.kind === "item" && view.section === "tenants" ? (
+          view.id ? (
+            <TenantPanel
+              key={view.id}
+              id={view.id}
               onChanged={() => {
+                void refresh("tenants");
                 void loadMe(tenant?.id);
                 // The current tenant's name or features may have changed.
-                if (tenant) api.tenant().then(setTenantInfo, () => {});
+                if (tenant) void loadTenant();
+              }}
+              onDeleted={() => {
+                void refresh("tenants");
+                void loadMe(tenant?.id);
+                setView({ kind: "item", section: "tenants", id: null });
               }}
             />
-          ) : !tenant ? null : view.kind === "settings" ? (
-            <SettingsPage key={`${tenant.id}:${view.page}:${view.scope}`} page={view.page} scope={view.scope} canEdit={view.scope === "personal" || isAdmin} />
-          ) : view.kind === "profile" ? (
-            <Profile key={tenant.id} me={me} />
           ) : (
-            <ChatPane
-              key={`${tenant.id}:${view.session}`}
-              threadId={view.threadId}
-              onThreadCreated={(id) => setView((v) => (v.kind === "chat" ? { ...v, threadId: id } : v))}
-              onRunFinished={refreshThreads}
+            <NewTenant
+              onCreated={(id) => {
+                void refresh("tenants");
+                void loadMe(tenant?.id);
+                setView({ kind: "item", section: "tenants", id });
+              }}
             />
-          )}
-        </main>
-      </div>
-      {/* The OSIRIS signature: a solid accent status bar. */}
-      <footer className="flex h-[26px] shrink-0 items-center justify-between bg-statusbar px-2.5 text-[11.5px] font-medium text-on-statusbar">
-        <span className="truncate">
-          {tenant ? `${tenant.name} · ${isAdmin ? "správce" : "člen"}` : "bez tenanta"}
-          {me.systemAdmin && " · osiris-admin"}
-        </span>
-        <span className="flex items-center gap-3">
-          <span className="truncate">{me.user.email ?? me.user.name}</span>
-          <button onClick={logout} className="hover:underline">
-            Odhlásit
-          </button>
-        </span>
-      </footer>
+          )
+        ) : view.kind === "tenant" ? (
+          <TenantInfo me={me} tenant={tenant} onSelect={selectTenant} />
+        ) : view.kind === "profile" ? (
+          <Profile key={tenant?.id} me={me} />
+        ) : !tenant ? null : view.kind === "item" ? (
+          <Detail
+            key={`${tenant.id}:${view.section}:${view.id ?? "new"}`}
+            section={view.section}
+            id={view.id}
+            lists={lists}
+            isAdmin={isAdmin}
+            onSaved={(key) => void refresh(view.section).then(() => setView({ kind: "item", section: view.section, id: key }))}
+            onDeleted={() => void refresh(view.section).then(() => setView({ kind: "item", section: view.section, id: null }))}
+          />
+        ) : (
+          <ChatPane
+            key={`${tenant.id}:${view.session}`}
+            threadId={view.threadId}
+            onThreadCreated={(id) => setView((v) => (v.kind === "chat" ? { ...v, threadId: id } : v))}
+            onRunFinished={refreshThreads}
+          />
+        )}
+      </main>
     </div>
   );
 }
 
-function SettingsPage({ page, ...props }: { page: Page } & ScopedProps) {
-  switch (page) {
-    case "knowledge":
-      return <Knowledge {...props} />;
-    case "skills":
-      return <Skills {...props} />;
-    case "memory":
-      return <Memories {...props} />;
-    case "mcp":
-      return <McpServers {...props} />;
-    case "secrets":
-      return <Secrets {...props} />;
+function SidebarSection(props: {
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  onAdd?: () => void;
+  addLabel?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="mt-2 first:mt-0">
+      <div className="flex items-center">
+        <button onClick={props.onToggle} aria-expanded={props.open} className="section-header flex flex-1 items-center gap-1 px-2 py-1 text-left">
+          <svg viewBox="0 0 16 16" className={`h-3 w-3 transition-transform ${props.open ? "rotate-90" : ""}`} aria-hidden="true">
+            <path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" />
+          </svg>
+          {props.title}
+          {props.count > 0 && <span className="font-normal text-fg-muted">{props.count}</span>}
+        </button>
+        {props.onAdd && (
+          <button onClick={props.onAdd} title={props.addLabel} aria-label={props.addLabel} className="list-row px-2 text-base leading-6 text-fg-secondary hover:text-primary">
+            +
+          </button>
+        )}
+      </div>
+      {props.open && <div className="mt-0.5">{props.children}</div>}
+    </section>
+  );
+}
+
+function Detail({
+  section,
+  id,
+  lists,
+  ...props
+}: {
+  section: Section;
+  id: string | null;
+  lists: Lists;
+  isAdmin: boolean;
+  onSaved: (key: string) => void;
+  onDeleted: () => void;
+}) {
+  const find = <T,>(items: T[], key: (item: T) => string) => (id === null ? undefined : items.find((i) => key(i) === id));
+  // A record that is gone (removed elsewhere, or the list is still loading) shows nothing rather than the "new" form.
+  const missing = <T,>(item: T | undefined) => id !== null && !item;
+  switch (section) {
+    case "knowledge": {
+      const item = find(lists.knowledge, documentKey);
+      return missing(item) ? null : <KnowledgeDetail item={item} {...props} />;
+    }
+    case "skills": {
+      const item = find(lists.skills, skillKey);
+      return missing(item) ? null : <SkillDetail item={item} {...props} />;
+    }
+    case "memory": {
+      const item = find(lists.memory, memoryKey);
+      return missing(item) ? null : <MemoryDetail item={item} {...props} />;
+    }
+    case "mcp": {
+      const item = find(lists.mcp, mcpKey);
+      return missing(item) ? null : <McpServerDetail item={item} {...props} />;
+    }
+    case "secrets": {
+      const item = find(lists.secrets, secretKey);
+      return missing(item) ? null : <SecretDetail item={item} {...props} />;
+    }
+    default:
+      // Tenants have their own panel, see Workspace.
+      return null;
   }
 }

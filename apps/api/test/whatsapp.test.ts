@@ -20,6 +20,7 @@ const user = (name: string, phone: string, groups: string[]): Identity => ({
   email: null,
   name,
   phone,
+  picture: null,
   groups,
 });
 
@@ -107,18 +108,18 @@ describe("WhatsApp webhook", () => {
   });
 
   it("runs the agent for the sender's user and tenant and replies", async () => {
-    const { send, sent, replies, model, web } = setup([new AIMessage("Dobrý den, Bobe.")], [user("bob", "+420 777 123 456", ["osiris-tenant-acme"])]);
+    const { send, sent, replies, model, web } = setup([new AIMessage("Dobrý den, Bobe.")], [user("bob", "+420 777 123 456", ["osiris-tenant-acme-user"])]);
     await send("420777123456", "Ahoj");
 
     expect(sent[0]).toMatchObject({ status: "read" });
     expect(replies()).toEqual(["Dobrý den, Bobe."]);
     expect(model.calls[0]?.[0]?.text).toContain("WhatsAppu");
-    const threads = await (await web("bob:osiris-tenant-acme", "acme")).json();
+    const threads = await (await web("bob:osiris-tenant-acme-user", "acme")).json();
     expect(threads).toMatchObject([{ title: "Ahoj", channel: "whatsapp" }]);
   });
 
   it("keeps one conversation until /nova", async () => {
-    const { send, model } = setup([new AIMessage("1"), new AIMessage("2"), new AIMessage("3")], [user("bob", "420777123456", ["osiris-tenant-acme"])]);
+    const { send, model } = setup([new AIMessage("1"), new AIMessage("2"), new AIMessage("3")], [user("bob", "420777123456", ["osiris-tenant-acme-user"])]);
     await send("420777123456", "první");
     await send("420777123456", "druhá");
     expect(model.calls[1]?.map((m) => m.text)).toContain("první");
@@ -130,7 +131,7 @@ describe("WhatsApp webhook", () => {
   it("lets a user in several tenants switch with /tenant", async () => {
     const { send, replies, model } = setup(
       [new AIMessage("z beta"), new AIMessage("z acme")],
-      [user("alice", "420600111222", ["osiris-tenant-acme", "osiris-tenant-beta-admin"])],
+      [user("alice", "420600111222", ["osiris-tenant-acme-user", "osiris-tenant-beta-admin"])],
     );
     await send("420600111222", "Ahoj");
     expect(replies().at(-1)).toContain("Tvoji tenanti: acme, beta");
@@ -178,7 +179,7 @@ describe("WhatsApp webhook", () => {
   });
 
   it("handles a redelivered message once", async () => {
-    const { send, replies } = setup([new AIMessage("jednou"), new AIMessage("dvakrát")], [user("bob", "420777123456", ["osiris-tenant-acme"])]);
+    const { send, replies } = setup([new AIMessage("jednou"), new AIMessage("dvakrát")], [user("bob", "420777123456", ["osiris-tenant-acme-user"])]);
     await send("420777123456", "Ahoj", "wamid.same");
     await send("420777123456", "Ahoj", "wamid.same");
     expect(replies()).toEqual(["jednou"]);
@@ -190,7 +191,7 @@ describe("PocketID phone directory", () => {
     const pages: Record<string, object> = {
       "1": {
         data: [
-          { id: "u1", firstName: "Bob", lastName: "Novák", customClaims: [{ key: "phone_number", value: "+420 777 123 456" }], userGroups: [{ name: "osiris-tenant-acme" }] },
+          { id: "u1", firstName: "Bob", lastName: "Novák", customClaims: [{ key: "phone_number", value: "+420 777 123 456" }], userGroups: [{ name: "osiris-tenant-acme-user" }] },
           { id: "u2", disabled: true, customClaims: [{ key: "phone_number", value: "+420600000001" }], userGroups: [] },
         ],
         pagination: { totalPages: 2 },
@@ -209,7 +210,7 @@ describe("PocketID phone directory", () => {
       expect((init.headers as Record<string, string>)["x-api-key"]).toBe("key");
       requests.push(url.pathname);
       if (url.pathname === "/api/users") return Response.json(pages[url.searchParams.get("pagination[page]")!]);
-      return Response.json([{ name: "osiris-tenant-sk" }]);
+      return Response.json([{ name: "osiris-tenant-sk-user" }]);
     }) as unknown as typeof fetch;
     const directory = pocketIdDirectory(new PocketIdClient("https://auth.example.cz", "key", fetchFn));
 
@@ -218,11 +219,12 @@ describe("PocketID phone directory", () => {
       email: null,
       name: "Bob Novák",
       phone: "+420 777 123 456",
-      groups: ["osiris-tenant-acme"],
+      picture: null,
+      groups: ["osiris-tenant-acme-user"],
     });
     expect(await directory.lookup("420600000001")).toBeNull();
     expect(await directory.lookup("420600000002")).toBeNull();
-    expect(await directory.lookup("421900000000")).toMatchObject({ sub: "u5", name: "Eva", groups: ["osiris-tenant-sk"] });
+    expect(await directory.lookup("421900000000")).toMatchObject({ sub: "u5", name: "Eva", groups: ["osiris-tenant-sk-user"] });
     // Loaded once and cached.
     expect(requests.filter((p) => p === "/api/users")).toHaveLength(2);
   });

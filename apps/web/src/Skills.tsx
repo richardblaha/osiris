@@ -1,140 +1,94 @@
-import type { SkillSummary } from "@osiris/shared";
+import type { Scope, SkillSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { PageHeader, ScopeBadge, type ScopedProps } from "./Scope.tsx";
+import { attempt, canEdit, DetailHeader, ErrorNotice, Field, ScopePicker, type DetailProps } from "./Scope.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-export function Skills({ scope, canEdit }: ScopedProps) {
-  const [skills, setSkills] = useState<SkillSummary[]>([]);
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
+export const skillKey = (s: Pick<SkillSummary, "source" | "name">) => `${s.source}:${s.name}`;
+
+/**
+ * Every skill the user can see: their own, the tenant's and the bundled ones not replaced by the tenant.
+ * A personal skill shadows a tenant skill of the same name for the user, but both are listed.
+ */
+export async function loadSkills(): Promise<SkillSummary[]> {
+  const [personal, tenant] = await Promise.all([api.skills("personal"), api.skills("tenant")]);
+  return [...personal.filter((s) => s.source === "personal"), ...tenant].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+const INTRO =
+  "Postupy, podle kterých asistent pracuje (např. jak sestavit nabídku). Osobní dovednost má přednost před dovedností tenanta a ta před výchozí se stejným názvem.";
+
+export function SkillDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<SkillSummary>) {
+  const [name, setName] = useState(item?.name ?? "");
+  const [description, setDescription] = useState(item?.description ?? "");
   const [instructions, setInstructions] = useState("");
-  /** Editing a skill of this scope in place; false for a new skill or a copy of an inherited one. */
-  const [editing, setEditing] = useState(false);
+  /** A bundled skill, or a tenant one for a member, is changed by saving a copy at a scope the user may write. */
+  const own = item && item.source !== "bundled" && canEdit(item.source, isAdmin);
+  const [scope, setScope] = useState<Scope>(own ? (item.source as Scope) : "personal");
+  const [loaded, setLoaded] = useState(!item);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
-  // The tenant view lists tenant and bundled skills; the personal one also the user's own, which win by name.
-  const refresh = () => api.skills(scope).then(setSkills, (e: Error) => setError(e.message));
-  useEffect(() => void refresh(), []);
-
-  const reset = () => {
-    setName("");
-    setDescription("");
-    setInstructions("");
-    setEditing(false);
-  };
-
-  /** A skill from a lower level (bundled, or tenant in the personal view) is changed by saving a copy here. */
-  const own = (s: SkillSummary) => s.source === scope;
-
-  const edit = async (summary: SkillSummary) => {
-    setError(undefined);
-    try {
-      const s = await api.skill(summary.name, scope);
-      setName(s.name);
-      setDescription(s.description);
+  useEffect(() => {
+    if (!item) return;
+    api.skill(item.name, item.source === "personal" ? "personal" : "tenant").then((s) => {
       setInstructions(s.instructions);
-      setEditing(own(summary));
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
+      setLoaded(true);
+    }, (e: Error) => setError(e.message));
+  }, []);
 
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
-    setError(undefined);
-    try {
+    void attempt(setBusy, setError, async () => {
       await api.saveSkill(name, description, instructions, scope);
-      reset();
-      await refresh();
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+      onSaved(skillKey({ source: scope, name }));
+    });
   };
 
   return (
-    <div className="mx-auto h-full max-w-3xl overflow-y-auto p-6">
-      <PageHeader title="Dovednosti" scope={scope} canEdit={canEdit}>
-        Postupy, podle kterých asistent pracuje (např. jak sestavit nabídku). Osobní dovednost má přednost před dovedností
-        tenanta a ta před výchozí se stejným názvem.
-      </PageHeader>
-
-      {canEdit && (
-        <form onSubmit={submit} className="mt-6 space-y-2">
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value.toLowerCase())}
-            placeholder="Název (malá písmena a pomlčky, např. revize-elektro)"
-            pattern={NAME.source}
-            readOnly={editing}
-            required
-            className="field"
-          />
-          <input
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            placeholder="Kdy ji použít (jedna věta)"
-            required
-            className="field"
-          />
-          <textarea
-            value={instructions}
-            onChange={(e) => setInstructions(e.target.value)}
-            placeholder="Postup krok za krokem"
-            required
-            rows={10}
-            className="field text-sm"
-          />
-          <div className="flex items-center gap-2">
+    <div className="detail">
+      <DetailHeader title={item?.name ?? "Nová dovednost"} scope={item?.source === "bundled" ? undefined : item?.source} canEdit={!!own}>
+        {item?.source === "bundled" ? "Výchozí dovednost, která je součástí aplikace. Změníš ji uložením kopie se stejným názvem." : INTRO}
+      </DetailHeader>
+      {loaded && (
+        <form onSubmit={submit} className="mt-6 space-y-4">
+          {!own && <ScopePicker value={scope} onChange={setScope} isAdmin={isAdmin} />}
+          <Field label="Název">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value.toLowerCase())}
+              placeholder="malá písmena a pomlčky, např. revize-elektro"
+              pattern={NAME.source}
+              readOnly={!!item}
+              required
+              className="field"
+            />
+          </Field>
+          <Field label="Kdy ji použít">
+            <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="jedna věta" required className="field" />
+          </Field>
+          <Field label="Postup">
+            <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="krok za krokem" required rows={16} className="field text-sm" />
+          </Field>
+          <div className="flex items-center gap-4">
             <button disabled={busy} className="btn-primary">
-              {busy ? "Ukládám…" : editing ? "Uložit" : "Přidat"}
+              {busy ? "Ukládám…" : !item ? "Přidat" : own ? "Uložit" : "Uložit kopii"}
             </button>
-            {(editing || name) && (
-              <button type="button" onClick={reset} className="btn-secondary">
-                Zrušit
+            {own && (
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => attempt(setBusy, setError, async () => (await api.deleteSkill(item.name, item.source as Scope), onDeleted()))}
+                className="btn-danger text-sm"
+              >
+                Smazat
               </button>
             )}
           </div>
         </form>
       )}
-      {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
-
-      <ul className="mt-8 divide-y divide-line">
-        {skills.map((s) => (
-          <li key={s.name} className="flex items-center justify-between gap-4 py-3">
-            <span>
-              <span className="font-medium">{s.name}</span>
-              {!own(s) && (
-                <span className="ml-2">
-                  <ScopeBadge scope={s.source} />
-                </span>
-              )}
-              <span className="block text-sm text-fg-secondary">{s.description}</span>
-            </span>
-            {canEdit && (
-              <span className="flex shrink-0 gap-3 text-sm">
-                <button onClick={() => edit(s)} className="btn-link">
-                  {own(s) ? "Upravit" : "Upravit kopii"}
-                </button>
-                {own(s) && (
-                  <button
-                    onClick={() => api.deleteSkill(s.name, scope).then(refresh, (e: Error) => setError(e.message))}
-                    className="btn-danger"
-                  >
-                    Smazat
-                  </button>
-                )}
-              </span>
-            )}
-          </li>
-        ))}
-        {!skills.length && <li className="py-3 text-fg-muted">Zatím žádné dovednosti.</li>}
-      </ul>
+      <ErrorNotice error={error} />
     </div>
   );
 }

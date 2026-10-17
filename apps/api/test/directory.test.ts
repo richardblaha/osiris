@@ -57,7 +57,7 @@ describe("tenants as PocketID groups", () => {
     await directory.create("acme", "ACME");
     await expect(directory.create("acme", "Again")).rejects.toBeInstanceOf(TenantExistsError);
     expect(groups.map((g) => [g.name, g.friendlyName])).toEqual([
-      ["osiris-tenant-acme", "Osiris: ACME"],
+      ["osiris-tenant-acme-user", "Osiris: ACME"],
       ["osiris-tenant-acme-admin", "Osiris: ACME (správci)"],
     ]);
 

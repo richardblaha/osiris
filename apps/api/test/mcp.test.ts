@@ -158,7 +158,7 @@ describe("MCP API", () => {
   it("lets members manage personal servers but not tenant ones", async () => {
     const { as } = await setup();
     const admin = as("alice:osiris-tenant-acme-admin");
-    const member = as("bob:osiris-tenant-acme");
+    const member = as("bob:osiris-tenant-acme-user");
     await admin("/mcp-servers/weather", put({ url, scope: "tenant" }));
 
     expect((await member("/mcp-servers/crm", put({ url, scope: "tenant" }))).status).toBe(403);

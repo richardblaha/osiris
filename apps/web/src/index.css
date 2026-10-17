@@ -7,6 +7,37 @@ body,
   height: 100%;
 }
 
+@layer components {
+  /* A record's detail form in the main area. */
+  .detail {
+    margin-inline: auto;
+    height: 100%;
+    max-width: 48rem;
+    overflow-y: auto;
+    padding: 1.5rem;
+  }
+
+  /* Square icon-only button (send/stop in the composer). */
+  .icon-button {
+    display: flex;
+    height: 2.25rem;
+    width: 2.25rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  /* The composer box takes the focus ring of its textarea. */
+  .composer:focus-within {
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 3px var(--accent-primary-soft);
+  }
+  .composer textarea:focus-visible {
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
+}
+
 .markdown p + p,
 .markdown ul,
 .markdown ol,
