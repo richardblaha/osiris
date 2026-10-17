@@ -14,6 +14,8 @@ spec:
       labels: { app: sites }
     spec:
       automountServiceAccountToken: false
+      # Service env vars (SITES_PORT=tcp://…) would clash with our settings.
+      enableServiceLinks: false
       serviceAccountName: sites
       imagePullSecrets: [{ name: ghcr-pull }]
       securityContext:
