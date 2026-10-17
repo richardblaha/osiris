@@ -19,7 +19,7 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
           podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
 ---
 # Control: user calls relayed by the gateway, and tenant runtimes (features, backups, schedules, publishing).
@@ -49,3 +49,16 @@ spec:
     - from:
         - podSelector: { matchExpressions: [{ key: app, operator: In, values: [rqlite, control, sites, legacy-import] }] }
       ports: [{ port: 4001, protocol: TCP }, { port: 4002, protocol: TCP }]
+---
+# cert-manager's HTTP-01 solvers (certificates for osiris.k6labs.cz and tenant domains) answer Traefik.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: acme-solver
+spec:
+  podSelector: { matchLabels: { acme.cert-manager.io/http01-solver: "true" } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }

@@ -83,7 +83,7 @@ apply osiris-control \
   --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY" \
   --from-literal=WHATSAPP_VERIFY_TOKEN="$OSIRIS_WHATSAPP_VERIFY_TOKEN" --from-literal=WHATSAPP_APP_SECRET="$OSIRIS_WHATSAPP_APP_SECRET" \
   --from-literal=WHATSAPP_ACCESS_TOKEN="$OSIRIS_WHATSAPP_ACCESS_TOKEN" --from-literal=WHATSAPP_DISPLAY_NUMBER="$OSIRIS_WHATSAPP_DISPLAY_NUMBER" \
-  --from-literal=SITES_INGRESS_IPS="$(kubectl -n kube-system get svc traefik -o jsonpath='{.status.loadBalancer.ingress[*].ip}')"
+  --from-literal=SITES_INGRESS_IPS="$(kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[*].ip}')"
 
 apply osiris-operator \
   --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")" \
@@ -139,7 +139,7 @@ kubectl -n osiris get tenants
 
 ## Checks after a rollout
 
-- Network policies are enforced (k3s runs kube-router's policy controller unless disabled). From a tenant runtime,
+- Network policies are enforced (the cluster runs Cilium). From a tenant runtime,
   everything inside the cluster must fail:
   ```bash
   kubectl -n osiris-t-<slug> exec statefulset/runtime -- node -e "fetch('http://rqlite.osiris.svc:4001/status').then(r=>console.log('REACHABLE',r.status),e=>console.log('blocked',e.cause?.code))"
