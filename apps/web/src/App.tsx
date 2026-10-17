@@ -15,6 +15,9 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, setTenant } from "./api.ts";
 import { configError, getAccessToken, login, logout } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
+import { Files } from "./Files.tsx";
+import { Schedules } from "./Schedules.tsx";
+import { Sites } from "./Sites.tsx";
 import { documentKey, KnowledgeDetail } from "./Knowledge.tsx";
 import { mcpKey, McpServerDetail, McpStatus } from "./McpServers.tsx";
 import { MemoryDetail, memoryKey } from "./Memories.tsx";
@@ -58,7 +61,10 @@ type View =
   /** A record of a section by its key, or `null` for the form of a new one. */
   | { kind: "item"; section: Section; id: string | null }
   | { kind: "profile" }
-  | { kind: "tenant" };
+  | { kind: "tenant" }
+  | { kind: "files" }
+  | { kind: "schedules" }
+  | { kind: "sites" };
 
 interface Lists {
   knowledge: DocumentSummary[];
@@ -267,6 +273,15 @@ function Workspace() {
               {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
             </SidebarSection>
           )}
+          {tenant?.features.files && (
+            <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />
+          )}
+          {tenant?.features.scheduler && (
+            <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
+          )}
+          {tenant?.features.sites && (
+            <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Web" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
+          )}
           {sections.map((s) => sectionNav(s.id, s.label, s.add, "Zatím nic."))}
           {me.systemAdmin && sectionNav("tenants", "Tenanti", "Založit tenanta", "Zatím žádní.")}
         </nav>
@@ -325,7 +340,13 @@ function Workspace() {
           <TenantInfo me={me} tenant={tenant} onSelect={selectTenant} />
         ) : view.kind === "profile" ? (
           <Profile key={tenant?.id} me={me} />
-        ) : !tenant ? null : view.kind === "item" ? (
+        ) : !tenant ? null : view.kind === "files" ? (
+          tenant.features.files ? <Files key={tenant.id} isAdmin={isAdmin} /> : null
+        ) : view.kind === "schedules" ? (
+          tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
+        ) : view.kind === "sites" ? (
+          tenant.features.sites ? <Sites key={tenant.id} isAdmin={isAdmin} /> : null
+        ) : view.kind === "item" ? (
           <Detail
             key={`${tenant.id}:${view.section}:${view.id ?? "new"}`}
             section={view.section}
@@ -345,6 +366,17 @@ function Workspace() {
         )}
       </main>
     </div>
+  );
+}
+
+function NavLink({ active, onClick, label, icon }: { active: boolean; onClick: () => void; label: string; icon: string }) {
+  return (
+    <button onClick={onClick} data-active={active} className="section-header list-row mt-2 flex w-full items-center gap-1 px-2 py-1 text-left">
+      <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden="true">
+        <path d={icon} fill="none" stroke="currentColor" strokeWidth="1.4" />
+      </svg>
+      {label}
+    </button>
   );
 }
 

@@ -9,6 +9,7 @@ resources:
   - deployment.yaml
   - service.yaml
   - ingress.yaml
+  - gotenberg.yaml
 images:
   - name: ghcr.io/richardblaha/osiris
     newTag: main

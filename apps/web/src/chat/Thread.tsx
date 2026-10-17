@@ -5,12 +5,28 @@ import {
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
+import type { FileScope } from "@osiris/shared";
+import { createContext, useContext, useState } from "react";
+import { api, saveBlob } from "../api.ts";
+
+/** The open thread's id (null until the first message creates it), for downloading the thread's temp files. */
+export const ThreadIdContext = createContext<() => string | null>(() => null);
+
+const file = (a: Record<string, unknown>, scope = "scope", path = "path") => `${String(a[scope] ?? "personal")}:${String(a[path] ?? "")}`;
 
 const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   search_knowledge: (a) => `Hledám ve znalostní bázi: „${String(a.query ?? "")}“`,
   load_skill: (a) => `Načítám postup: ${String(a.name ?? "")}`,
   remember: (a) => `Zapamatovávám si: ${String(a.content ?? "")}`,
   forget: () => "Mažu záznam z paměti",
+  list_files: (a) => `Prohlížím soubory ${file(a, "scope", "dir")}`,
+  read_file: (a) => `Čtu soubor ${file(a)}`,
+  write_file: (a) => `Ukládám soubor ${file(a)}`,
+  delete_file: (a) => `Mažu ${file(a)}`,
+  move_file: (a) => `Přesouvám ${file(a, "from_scope", "from_path")} → ${file(a, "to_scope", "to_path")}`,
+  render_template: (a) => `Vyplňuji šablonu ${file(a, "template_scope", "template_path")}`,
+  convert_to_pdf: (a) => `Převádím do PDF ${file(a)}`,
+  resize_image: (a) => `Upravuji obrázek ${file(a)}`,
   http_request: (a) => {
     const url = String(a.url ?? "");
     const host = /^https?:\/\/([^/?#]+)/.exec(url)?.[1] ?? url;
@@ -18,17 +34,40 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   },
 };
 
+/** File tools report what they created as `<scope>:<path>` after one of these words. */
+const CREATED = /(?:Uloženo|Vytvořeno|PDF vytvořeno|Přesunuto do):? (personal|tenant|temp):([^\s()]+)/;
+
+function Download({ scope, path }: { scope: FileScope; path: string }) {
+  const threadId = useContext(ThreadIdContext);
+  const [error, setError] = useState<string>();
+  const name = path.slice(path.lastIndexOf("/") + 1).replace(/\.$/, "");
+  const download = () =>
+    api.downloadFile({ scope, path: path.replace(/\.$/, ""), thread: threadId() ?? undefined }).then((b) => saveBlob(b, name), (e: Error) => setError(e.message));
+  return (
+    <span className="ml-2">
+      <button onClick={download} className="btn-link">
+        Stáhnout {name}
+      </button>
+      {error && <span className="ml-2 text-error">{error}</span>}
+    </span>
+  );
+}
+
 function ToolCall({ toolName, args, result }: ToolCallMessagePartProps) {
   // Other names are tools of the tenant's MCP servers (`<server>_<tool>`).
   const label = TOOL_LABELS[toolName]?.(args as Record<string, unknown>) ?? `Nástroj ${toolName}`;
+  const created = result === undefined ? null : CREATED.exec(String(result));
   return (
-    <details className="notice my-2 px-3 py-2 text-sm text-fg-secondary">
-      <summary className="cursor-pointer">
-        {result === undefined ? "⏳ " : <span className="text-success">✓ </span>}
-        {label}
-      </summary>
-      {result !== undefined && <pre className="mt-2 whitespace-pre-wrap text-xs text-fg-muted">{String(result)}</pre>}
-    </details>
+    <div className="notice my-2 px-3 py-2 text-sm text-fg-secondary">
+      <details>
+        <summary className="cursor-pointer">
+          {result === undefined ? "⏳ " : <span className="text-success">✓ </span>}
+          {label}
+        </summary>
+        {result !== undefined && <pre className="mt-2 whitespace-pre-wrap text-xs text-fg-muted">{String(result)}</pre>}
+      </details>
+      {created && <Download scope={created[1] as FileScope} path={created[2]!} />}
+    </div>
   );
 }
 

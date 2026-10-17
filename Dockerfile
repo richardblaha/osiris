@@ -7,6 +7,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/
 COPY apps/web/package.json apps/web/
 COPY packages/shared/package.json packages/shared/
+COPY packages/core/package.json packages/core/
 RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm --filter @osiris/web build
@@ -17,8 +18,10 @@ RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY apps/api/package.json apps/api/
 COPY packages/shared/package.json packages/shared/
+COPY packages/core/package.json packages/core/
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/api..." && pnpm store prune
 COPY packages/shared packages/shared
+COPY packages/core packages/core
 COPY apps/api/src apps/api/src
 COPY apps/api/skills apps/api/skills
 COPY apps/api/tsconfig.json apps/api/
@@ -28,7 +31,8 @@ ENV NODE_ENV=production \
     PORT=3001 \
     STATIC_DIR=/app/apps/web/dist \
     SKILLS_DIR=/app/apps/api/skills \
-    TENANT_DATA_DIR=/data/tenants
+    TENANT_DATA_DIR=/data/tenants \
+    FILES_DIR=/data/files
 WORKDIR /app/apps/api
 USER node
 EXPOSE 3001

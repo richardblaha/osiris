@@ -2,7 +2,7 @@ import { AssistantRuntimeProvider, useLocalRuntime, type ThreadMessageLike } fro
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { createAdapter, toInitialMessages } from "./adapter.ts";
-import { Thread } from "./Thread.tsx";
+import { Thread, ThreadIdContext } from "./Thread.tsx";
 
 interface Props {
   /** Existing thread to open, or null for a new conversation (created on first send). */
@@ -50,7 +50,9 @@ function Chat({ threadId, initial, onThreadCreated, onRunFinished }: Props & { i
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Thread />
+      <ThreadIdContext.Provider value={() => idRef.current}>
+        <Thread />
+      </ThreadIdContext.Provider>
     </AssistantRuntimeProvider>
   );
 }

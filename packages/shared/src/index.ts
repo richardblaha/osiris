@@ -36,7 +36,7 @@ export interface MeResponse {
 }
 
 /** What a system admin can switch on or off per tenant. */
-export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp"] as const;
+export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type TenantFeatures = Record<Feature, boolean>;
 
@@ -66,6 +66,11 @@ export interface TenantMember {
 export interface TenantDetail extends TenantSummary {
   features: TenantFeatures;
   memberList: TenantMember[];
+  /** Minutes without activity before the tenant's runtime sleeps; 0 = always on. */
+  idleMinutes: number;
+  /** Size of the tenant's volume (database and files). */
+  storageGb: number;
+  backups: { key: string; bytes: number; reason: string; createdAt: string }[];
 }
 
 /** A PocketID user, for adding members to a tenant. */
@@ -139,3 +144,90 @@ export interface SecretSummary {
   description: string;
   updatedAt: string;
 }
+
+/** A scheduled task: a prompt the agent runs on the owner's behalf at set times (`/api/schedules`). */
+export interface Schedule {
+  id: string;
+  ownerId: string;
+  ownerName: string | null;
+  title: string;
+  prompt: string;
+  /** Cron expression (5 fields) for repeating tasks, or null for a one-off at `runAt`. */
+  cron: string | null;
+  runAt: string | null;
+  timezone: string;
+  /** Where the result goes; WhatsApp results also stay in a web thread. */
+  delivery: "web" | "whatsapp";
+  enabled: boolean;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastStatus: "done" | "failed" | "skipped" | null;
+  lastError: string | null;
+  lastThreadId: string | null;
+}
+
+export interface ScheduleInput {
+  title: string;
+  prompt: string;
+  cron?: string | null;
+  runAt?: string | null;
+  timezone?: string;
+  delivery?: "web" | "whatsapp";
+  enabled?: boolean;
+}
+
+/** A custom domain for the tenant's site (`/api/domains`); served once DNS proves it's the tenant's. */
+export interface SiteDomain {
+  domain: string;
+  status: "pending" | "verified" | "failed";
+  /** TXT record `_osiris-challenge.<domain>` must hold this value. */
+  token: string;
+  error: string | null;
+  releaseId: string | null;
+  verifiedAt: string | null;
+  /** What the domain must point to: A records to these IPs, or a CNAME to `cname`. */
+  target: { ips: string[]; cname: string | null };
+}
+
+export interface SiteRelease {
+  id: string;
+  domain: string;
+  files: number;
+  bytes: number;
+  createdBy: string | null;
+  createdAt: string;
+  current: boolean;
+}
+
+/** The user's PocketID profile, edited from Osiris (`/api/me/profile`). */
+export interface UserProfile {
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  /** A pending phone verification: send `OVERENI <code>` from the phone to `whatsappNumber`. */
+  phoneChallenge?: { phone: string; code: string; whatsappNumber: string | null; expiresAt: string };
+}
+
+/** Result of adding someone to a tenant by email (`POST /api/members`). */
+export interface InviteResult {
+  userId: string;
+  created: boolean;
+  /** One-time sign-in link for a new user, to pass on to them. */
+  loginLink?: string;
+}
+
+/** Tenant files (`/api/files`): shared by the tenant (admins write), the user's own, or one thread's temporary files. */
+export type FileScope = "tenant" | "personal" | "temp";
+
+export interface FileEntry {
+  scope: FileScope;
+  /** Relative to the scope root, `/`-separated. */
+  path: string;
+  name: string;
+  type: "file" | "dir";
+  size: number;
+  mime: string | null;
+  modifiedAt: string;
+}
+export * from "./files.ts";

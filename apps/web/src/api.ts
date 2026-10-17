@@ -1,6 +1,15 @@
 import type {
   DirectoryUser,
   DocumentSummary,
+  FileEntry,
+  FileScope,
+  InviteResult,
+  Schedule,
+  ScheduleInput,
+  SiteDomain,
+  SiteRelease,
+  TenantMember,
+  UserProfile,
   McpServer,
   McpServerStatus,
   Memory,
@@ -56,6 +65,26 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
 
 const json = async <T>(path: string, init?: RequestInit) => (await request(path, init)).json() as Promise<T>;
 
+/** A file the API addresses by scope and path; temp files also by the thread they belong to. */
+export interface FileRef {
+  scope: FileScope;
+  path: string;
+  thread?: string;
+}
+
+const query = (params: Record<string, string | undefined>) =>
+  new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => e[1] !== undefined)).toString();
+
+/** Saves a downloaded file through a temporary link. */
+export function saveBlob(blob: Blob, name: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
 export const api = {
   me: () => json<MeResponse>("/me"),
   tenant: () => json<TenantInfo>("/tenant"),
@@ -88,13 +117,54 @@ export const api = {
   saveSecret: (name: string, body: { value?: string; allowedHosts: string[]; description: string; scope: Scope }) =>
     request(`/secrets/${name}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteSecret: (name: string, scope: Scope) => request(`/secrets/${name}?scope=${scope}`, { method: "DELETE" }),
+  files: (scope: FileScope, dir = "", thread?: string) => json<FileEntry[]>(`/files?${query({ scope, path: dir || undefined, thread })}`),
+  downloadFile: async ({ scope, path, thread }: FileRef) => (await request(`/files/content?${query({ scope, path, thread })}`)).blob(),
+  uploadFile: ({ scope, path, thread }: FileRef, file: Blob, overwrite = false) =>
+    json<FileEntry>(`/files/content?${query({ scope, path, thread, overwrite: overwrite ? "true" : undefined })}`, {
+      method: "PUT",
+      body: file,
+      headers: { "content-type": file.type || "application/octet-stream" },
+    }),
+  makeDir: (ref: FileRef) => json<FileEntry>("/files/dir", { method: "POST", body: JSON.stringify(ref) }),
+  moveFile: (from: FileRef, to: FileRef) => json<FileEntry>("/files/move", { method: "POST", body: JSON.stringify({ from, to }) }),
+  deleteFile: ({ scope, path, thread }: FileRef) => request(`/files?${query({ scope, path, thread })}`, { method: "DELETE" }),
+
+  profile: () => json<UserProfile>("/me/profile"),
+  saveProfile: (changes: { firstName?: string; lastName?: string; email?: string }) =>
+    json<UserProfile>("/me/profile", { method: "PATCH", body: JSON.stringify(changes) }),
+  savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
+  startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
+  removePhone: () => request("/me/phone", { method: "DELETE" }),
+
+  members: () => json<TenantMember[]>("/members"),
+  invite: (body: { email: string; firstName: string; lastName: string; role: "admin" | "member" }) =>
+    json<InviteResult>("/members", { method: "POST", body: JSON.stringify(body) }),
+  setMemberRole: (userId: string, role: "admin" | "member") =>
+    request(`/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
+  removeMember: (userId: string) => request(`/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+  loginLink: (userId: string) => json<{ loginLink: string }>(`/members/${encodeURIComponent(userId)}/login-link`, { method: "POST" }),
+
+  schedules: (all = false) => json<Schedule[]>(`/schedules${all ? "?all=true" : ""}`),
+  createSchedule: (input: ScheduleInput) => json<Schedule>("/schedules", { method: "POST", body: JSON.stringify(input) }),
+  updateSchedule: (id: string, input: Partial<ScheduleInput>) => json<Schedule>(`/schedules/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  runSchedule: (id: string) => json<Schedule>(`/schedules/${id}/run`, { method: "POST" }),
+  deleteSchedule: (id: string) => request(`/schedules/${id}`, { method: "DELETE" }),
+
+  domains: () => json<SiteDomain[]>("/domains"),
+  addDomain: (domain: string) => json<SiteDomain>("/domains", { method: "POST", body: JSON.stringify({ domain }) }),
+  verifyDomain: (domain: string) => json<SiteDomain>(`/domains/${encodeURIComponent(domain)}/verify`, { method: "POST" }),
+  removeDomain: (domain: string) => request(`/domains/${encodeURIComponent(domain)}`, { method: "DELETE" }),
+  releases: (domain: string) => json<SiteRelease[]>(`/sites/releases?domain=${encodeURIComponent(domain)}`),
+  activateRelease: (domain: string, id: string) => request(`/sites/releases/${id}/activate`, { method: "POST", body: JSON.stringify({ domain }) }),
+  publishSite: (body: { scope: FileScope; dir: string; domain: string }) =>
+    json<SiteRelease>("/site-publish", { method: "POST", body: JSON.stringify(body) }),
 
   admin: {
     tenants: () => json<TenantSummary[]>("/admin/tenants"),
     tenant: (id: string) => json<TenantDetail>(`/admin/tenants/${id}`),
     createTenant: (id: string, name: string) =>
       json<TenantSummary>("/admin/tenants", { method: "POST", body: JSON.stringify({ id, name }) }),
-    updateTenant: (id: string, body: { name?: string; features?: Partial<TenantFeatures> }) =>
+    updateTenant: (id: string, body: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number }) =>
       request(`/admin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteTenant: (id: string) => request(`/admin/tenants/${id}`, { method: "DELETE" }),
     setMember: (id: string, userId: string, role: "admin" | "member") =>
@@ -102,6 +172,9 @@ export const api = {
     removeMember: (id: string, userId: string) =>
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
     users: () => json<DirectoryUser[]>("/admin/users"),
+    invite: (id: string, body: { email: string; firstName: string; lastName: string; role: "admin" | "member" }) =>
+      json<InviteResult>(`/admin/tenants/${id}/members`, { method: "POST", body: JSON.stringify(body) }),
+    backup: (id: string) => request(`/admin/tenants/${id}/backups`, { method: "POST" }),
   },
 
   /** Starts a run and yields its server-sent events. */

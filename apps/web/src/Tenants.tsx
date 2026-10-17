@@ -1,7 +1,10 @@
 import { FEATURES, type DirectoryUser, type Feature, type Role, type TenantDetail, type TenantSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
+import { InviteForm } from "./Invite.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { LoginLink } from "./TenantInfo.tsx";
+import { fileSize } from "./Files.tsx";
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -12,6 +15,9 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   mcp: { label: "Nástroje (MCP)", hint: "externí služby připojené přes MCP servery" },
   http: { label: "Webová API", hint: "nástroj http_request pro volání API z dovedností" },
   whatsapp: { label: "WhatsApp", hint: "asistent odpovídá i ve WhatsAppu" },
+  files: { label: "Soubory", hint: "úložiště šablon, obrázků a dokumentů, se kterými asistent pracuje" },
+  scheduler: { label: "Plánované úlohy", hint: "asistent v nastavený čas sám spustí zadaný úkol" },
+  sites: { label: "Weby", hint: "publikování webu tenanta na vlastní doméně" },
 };
 
 /** System admins (claim role=osiris-admin) create tenants here; each tenant's detail is a `TenantPanel`. */
@@ -33,8 +39,9 @@ export function NewTenant({ onCreated }: { onCreated: (id: string) => void }) {
     <div className="detail">
       <h1 className="text-lg font-semibold">Nový tenant</h1>
       <p className="mt-1 text-sm text-fg-secondary">
-        Každý tenant má vlastní databázi. Členství jsou claimy uživatelů v PocketID: <code>tenant=&lt;zkratka&gt;</code> pro
-        uživatele a <code>tenant-admin=&lt;zkratka&gt;</code> pro správce, oba potřebují <code>role=osiris-user</code>.
+        Každý tenant běží ve vlastním kontejneru s vlastní databází a soubory. Členství jsou claimy uživatelů v PocketID:{" "}
+        <code>tenant=&lt;zkratka&gt;</code> pro uživatele a <code>tenant-admin=&lt;zkratka&gt;</code> pro správce, oba potřebují{" "}
+        <code>role=osiris-user</code>.
       </p>
       <form onSubmit={create} className="mt-6 space-y-4">
         <Field label="Zkratka">
@@ -68,6 +75,8 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
   const [newUser, setNewUser] = useState("");
   const [newRole, setNewRole] = useState<Role>("member");
   const [confirm, setConfirm] = useState("");
+  const [ops, setOps] = useState({ idleMinutes: 30, storageGb: 5 });
+  const [link, setLink] = useState<{ who: string; url: string }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -75,6 +84,7 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
     api.admin.tenant(id).then((t) => {
       setTenant(t);
       setName(t.name);
+      setOps({ idleMinutes: t.idleMinutes, storageGb: t.storageGb });
     });
 
   useEffect(() => {
@@ -142,6 +152,41 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
       </section>
 
       <section>
+        <h2 className="section-header">Provoz</h2>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void run(() => api.admin.updateTenant(id, ops));
+          }}
+          className="mt-2 flex flex-wrap items-end gap-3"
+        >
+          <Field label="Uspat po (minut nečinnosti, 0 = stále běží)">
+            <input type="number" min={0} max={1440} value={ops.idleMinutes} onChange={(e) => setOps({ ...ops, idleMinutes: Number(e.target.value) })} className="field w-28" />
+          </Field>
+          <Field label="Disk (GB, jen zvětšit)">
+            <input type="number" min={tenant.storageGb} max={500} value={ops.storageGb} onChange={(e) => setOps({ ...ops, storageGb: Number(e.target.value) })} className="field w-28" />
+          </Field>
+          <button disabled={busy || (ops.idleMinutes === tenant.idleMinutes && ops.storageGb === tenant.storageGb)} className="btn-secondary">
+            Uložit
+          </button>
+        </form>
+        <div className="mt-4 flex items-center gap-3">
+          <h3 className="section-header flex-1">Zálohy</h3>
+          <button disabled={busy} onClick={() => void run(() => api.admin.backup(id))} className="btn-link text-sm">
+            Zálohovat teď
+          </button>
+        </div>
+        <ul className="mt-1 text-xs text-fg-secondary">
+          {tenant.backups.map((b) => (
+            <li key={b.key}>
+              {new Date(b.createdAt).toLocaleString("cs-CZ")} · {b.reason} · {fileSize(b.bytes)}
+            </li>
+          ))}
+          {!tenant.backups.length && <li className="text-fg-muted">Zatím žádné. Záloha vzniká před každým uspáním a denně.</li>}
+        </ul>
+      </section>
+
+      <section>
         <h2 className="section-header">Uživatelé</h2>
         <ul className="mt-2 divide-y divide-line">
           {tenant.memberList.map((m) => (
@@ -195,7 +240,16 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
             Přidat
           </button>
         </form>
-        <p className="mt-1 text-xs text-fg-muted">Uživatelé se zakládají v PocketID. Změny členství platí do minuty.</p>
+        {link && <LoginLink who={link.who} url={link.url} />}
+        <InviteForm
+          onInvite={(body) =>
+            run(async () => {
+              const result = await api.admin.invite(id, body);
+              if (result.loginLink) setLink({ who: body.email, url: result.loginLink });
+            })
+          }
+        />
+        <p className="mt-1 text-xs text-fg-muted">Nový uživatel se založí v PocketID. Změny členství platí do minuty.</p>
       </section>
 
       {error && <p className="notice notice-error px-3 py-2 text-sm">{error}</p>}
@@ -203,7 +257,7 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
       <section className="border-t border-line pt-6">
         <h2 className="section-header text-error">Odebrat tenanta</h2>
         <p className="mt-1 text-sm text-fg-secondary">
-          Odebere tenanta z claimů všech uživatelů, takže nikdo z tenanta se už nepřihlásí. Databáze se archivuje a data zůstanou zachovaná.
+          Odebere tenanta z claimů všech uživatelů, takže nikdo z tenanta se už nepřihlásí. Kontejner se zastaví, disk a zálohy zůstanou zachované.
         </p>
         <form
           onSubmit={(e) => {

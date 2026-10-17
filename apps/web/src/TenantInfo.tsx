@@ -1,4 +1,8 @@
-import { FEATURES, type MeResponse, type TenantInfo as Tenant } from "@osiris/shared";
+import { FEATURES, type MeResponse, type TenantInfo as Tenant, type TenantMember } from "@osiris/shared";
+import { useEffect, useState } from "react";
+import { api } from "./api.ts";
+import { InviteForm } from "./Invite.tsx";
+import { attempt, ErrorNotice } from "./Scope.tsx";
 import { FEATURE_LABELS } from "./Tenants.tsx";
 
 export const roleLabel = (role: Tenant["role"]) => (role === "admin" ? "správce" : "uživatel");
@@ -33,6 +37,7 @@ export function TenantInfo({ me, tenant, onSelect }: { me: MeResponse; tenant?: 
             ))}
           </ul>
           <p className="mt-1 text-xs text-fg-muted">Funkce zapíná a vypíná správce systému.</p>
+          {tenant.role === "admin" && <Members key={tenant.id} self={me.user.id} />}
         </>
       ) : (
         <h1 className="text-lg font-semibold">Žádný tenant</h1>
@@ -52,6 +57,81 @@ export function TenantInfo({ me, tenant, onSelect }: { me: MeResponse; tenant?: 
           </ul>
         </>
       )}
+    </div>
+  );
+}
+
+/** A tenant admin's view of the tenant's people: roles, removal, invitations and new sign-in links. */
+function Members({ self }: { self: string }) {
+  const [members, setMembers] = useState<TenantMember[]>();
+  const [link, setLink] = useState<{ who: string; url: string }>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const load = () => api.members().then(setMembers, (e: Error) => setError(e.message));
+  useEffect(() => void load(), []);
+  const act = (action: () => Promise<unknown>) => attempt(setBusy, setError, async () => (await action(), await load()));
+
+  return (
+    <section className="mt-8">
+      <h2 className="section-header">Lidé v tenantovi</h2>
+      <ul className="mt-2 divide-y divide-line">
+        {members?.map((m) => (
+          <li key={m.userId} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">
+            <span className="min-w-0 truncate">
+              {m.name ?? m.email ?? m.userId}
+              {m.name && m.email && <span className="text-fg-muted"> · {m.email}</span>}
+            </span>
+            {m.userId !== self && (
+              <span className="flex shrink-0 items-center gap-3">
+                <select
+                  value={m.role}
+                  disabled={busy}
+                  onChange={(e) => void act(() => api.setMemberRole(m.userId, e.target.value as TenantMember["role"]))}
+                  className="field w-auto py-1"
+                >
+                  <option value="member">uživatel</option>
+                  <option value="admin">správce</option>
+                </select>
+                <button
+                  disabled={busy}
+                  onClick={() => void attempt(setBusy, setError, async () => setLink({ who: m.name ?? m.email ?? m.userId, url: (await api.loginLink(m.userId)).loginLink }))}
+                  className="btn-link"
+                >
+                  Přihlašovací odkaz
+                </button>
+                <button disabled={busy} onClick={() => window.confirm(`Odebrat ${m.name ?? m.email} z tenanta?`) && void act(() => api.removeMember(m.userId))} className="btn-danger">
+                  Odebrat
+                </button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
+      {link && <LoginLink who={link.who} url={link.url} />}
+      <InviteForm
+        onInvite={async (body) => {
+          const result = await api.invite(body);
+          await load();
+          if (result.loginLink) setLink({ who: body.email, url: result.loginLink });
+        }}
+      />
+      <ErrorNotice error={error} />
+    </section>
+  );
+}
+
+export function LoginLink({ who, url }: { who: string; url: string }) {
+  return (
+    <div className="notice mt-3 space-y-1 px-3 py-2 text-sm">
+      <p>
+        Jednorázový přihlašovací odkaz pro <strong>{who}</strong> (platí 3 dny). Pošli ho dotyčnému, po přihlášení si nastaví přístupový klíč.
+      </p>
+      <div className="flex gap-2">
+        <input readOnly value={url} className="field min-w-0 flex-1 text-xs" onFocus={(e) => e.target.select()} />
+        <button onClick={() => void navigator.clipboard.writeText(url)} className="btn-secondary text-sm">
+          Kopírovat
+        </button>
+      </div>
     </div>
   );
 }

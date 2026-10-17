@@ -35,6 +35,8 @@ spec:
               value: https://auth.k6labs.cz
             - name: CORS_ORIGIN
               value: https://osiris.k6labs.cz
+            - name: GOTENBERG_URL
+              value: http://gotenberg:3000
           # MISTRAL_API_KEY, OIDC_AUDIENCE (PocketID client ID), SECRETS_KEY (MCP header encryption),
           # POCKETID_API_KEY (tenants are PocketID groups), optional WhatsApp: WHATSAPP_VERIFY_TOKEN,
           # WHATSAPP_APP_SECRET, WHATSAPP_ACCESS_TOKEN

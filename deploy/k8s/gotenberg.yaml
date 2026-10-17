@@ -1,0 +1,109 @@
+# Gotenberg converts the tenants' HTML and office documents to PDF (tool convert_to_pdf). It renders untrusted
+# content, so it is stateless, unprivileged, reachable only from Osiris and cut off from the network: Chromium may
+# load only the files Gotenberg itself wrote to /tmp, and the NetworkPolicy denies all egress.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gotenberg
+  labels:
+    app: gotenberg
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gotenberg
+  template:
+    metadata:
+      labels:
+        app: gotenberg
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        runAsGroup: 1001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gotenberg
+          image: gotenberg/gotenberg:8.37.0
+          args:
+            - gotenberg
+            - --api-timeout=60s
+            - --chromium-allow-list=^file:///tmp/.*
+            - --chromium-deny-list=^(https?|ftp|wss?):.*
+          ports:
+            - name: http
+              containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /home/gotenberg
+            - name: shm
+              mountPath: /dev/shm
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 512Mi
+        - name: home
+          emptyDir:
+            sizeLimit: 64Mi
+        # Chromium needs more shared memory than the container default.
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gotenberg
+spec:
+  selector:
+    app: gotenberg
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: gotenberg
+spec:
+  podSelector:
+    matchLabels:
+      app: gotenberg
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: osiris
+      ports:
+        - port: 3000
+  # No egress rules: Gotenberg can't reach anything, not even DNS.
+  egress: []

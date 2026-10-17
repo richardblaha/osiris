@@ -1,7 +1,8 @@
-import type { MeResponse, UserSettings } from "@osiris/shared";
+import type { MeResponse, UserProfile, UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { logout } from "./auth.ts";
+import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 
 const initials = (name: string) =>
   name
@@ -67,16 +68,9 @@ export function Profile({ me }: { me: MeResponse }) {
         </button>
       </div>
 
-      <dl className="notice mt-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-3 py-2 text-sm">
-        <dt className="text-fg-secondary">Jméno</dt>
-        <dd>{me.user.name ?? "—"}</dd>
-        <dt className="text-fg-secondary">E-mail</dt>
-        <dd>{me.user.email ?? "—"}</dd>
-        <dt className="text-fg-secondary">Telefon</dt>
-        <dd>{me.user.phone ?? "—"}</dd>
-      </dl>
-      <p className="mt-1 text-xs text-fg-muted">Jméno, e-mail, telefon a fotka se mění v účtu na auth.k6labs.cz.</p>
+      <Account />
 
+      <h2 className="section-header mt-8">Asistent</h2>
       {settings && (
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="flex flex-wrap gap-6">
@@ -129,5 +123,120 @@ export function Profile({ me }: { me: MeResponse }) {
       )}
       {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
     </div>
+  );
+}
+
+/** Name, email, picture and phone, kept in PocketID and edited from here. */
+function Account() {
+  const [profile, setProfile] = useState<UserProfile>();
+  const [form, setForm] = useState({ firstName: "", lastName: "", email: "" });
+  const [phone, setPhone] = useState("");
+  const [saved, setSaved] = useState<string>();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const show = (p: UserProfile) => {
+    setProfile(p);
+    setForm({ firstName: p.firstName, lastName: p.lastName, email: p.email ?? "" });
+  };
+  useEffect(() => void api.profile().then(show, (e: Error) => setError(e.message)), []);
+  const act = (action: () => Promise<unknown>, message?: string) =>
+    attempt(setBusy, setError, async () => {
+      setSaved(undefined);
+      await action();
+      if (message) setSaved(message);
+    });
+
+  if (!profile) return <ErrorNotice error={error} />;
+  const challenge = profile.phoneChallenge;
+  const waLink = challenge?.whatsappNumber
+    ? `https://wa.me/${challenge.whatsappNumber.replace(/\D/g, "")}?text=${encodeURIComponent(`OVERENI ${challenge.code}`)}`
+    : undefined;
+
+  return (
+    <section className="mt-6 space-y-4">
+      <h2 className="section-header">Účet</h2>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void act(async () => show(await api.saveProfile(form)), "Uloženo. Nové jméno se projeví po dalším přihlášení.");
+        }}
+        className="space-y-3"
+      >
+        <div className="flex flex-wrap gap-3">
+          <Field label="Jméno">
+            <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required maxLength={50} className="field" />
+          </Field>
+          <Field label="Příjmení">
+            <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} maxLength={50} className="field" />
+          </Field>
+        </div>
+        <Field label="E-mail">
+          <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} maxLength={200} className="field" />
+        </Field>
+        <div className="flex flex-wrap items-center gap-3">
+          <button disabled={busy} className="btn-primary">
+            Uložit účet
+          </button>
+          <label className="btn-secondary cursor-pointer">
+            Změnit fotku
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void act(() => api.savePicture(file), "Fotka uložena. Projeví se do minuty.");
+              }}
+            />
+          </label>
+        </div>
+      </form>
+
+      <div>
+        <span className="section-header block">Telefon pro WhatsApp</span>
+        <p className="mt-1 text-sm">
+          {profile.phone ?? <span className="text-fg-muted">neověřený</span>}
+          {profile.phone && (
+            <button onClick={() => void act(async () => (await api.removePhone(), show(await api.profile())))} className="btn-danger ml-3 text-sm">
+              Odebrat
+            </button>
+          )}
+        </p>
+        {challenge ? (
+          <div className="notice mt-2 space-y-2 px-3 py-2 text-sm">
+            <p>
+              Pošli z čísla <strong>{challenge.phone}</strong> zprávu <code>OVERENI {challenge.code}</code> na WhatsApp
+              {challenge.whatsappNumber ? <> číslo <strong>{challenge.whatsappNumber}</strong></> : " Osirisu"}. Kód platí 15 minut.
+            </p>
+            <div className="flex gap-3">
+              {waLink && (
+                <a href={waLink} target="_blank" rel="noreferrer" className="btn-primary">
+                  Otevřít WhatsApp
+                </a>
+              )}
+              <button onClick={() => void act(async () => show(await api.profile()))} className="btn-secondary">
+                Hotovo, zkontrolovat
+              </button>
+            </div>
+          </div>
+        ) : (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void act(async () => show(await api.startPhone(phone)));
+            }}
+            className="mt-2 flex gap-2"
+          >
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+420 777 123 456" required className="field min-w-0 flex-1" />
+            <button disabled={busy} className="btn-secondary">
+              {profile.phone ? "Změnit číslo" : "Ověřit číslo"}
+            </button>
+          </form>
+        )}
+      </div>
+      {saved && <p className="text-sm text-success">{saved}</p>}
+      <ErrorNotice error={error} />
+    </section>
   );
 }

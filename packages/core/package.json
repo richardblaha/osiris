@@ -1,0 +1,33 @@
+{
+  "name": "@osiris/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@langchain/anthropic": "^1.5.12",
+    "@langchain/core": "^1.2.17",
+    "@langchain/langgraph": "^1.4.21",
+    "@langchain/langgraph-checkpoint": "^1.1.6",
+    "@langchain/mcp-adapters": "2.0.1",
+    "@langchain/mistralai": "^1.2.0",
+    "@langchain/openai": "^1.6.2",
+    "@langchain/textsplitters": "^1.0.2",
+    "@libsql/client": "^0.18.0",
+    "@osiris/platform": "workspace:*",
+    "@osiris/shared": "workspace:*",
+    "langchain": "^1.5.16",
+    "mustache": "4.2.0",
+    "sharp": "0.35.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/mustache": "4.2.6",
+    "@types/node": "^26.6.4",
+    "typescript": "6.0.3"
+  }
+}
