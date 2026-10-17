@@ -1,6 +1,7 @@
 import { createRemoteJWKSet, jwtVerify } from "jose";
+import { accessFromClaims, type Access } from "./tenants.ts";
 
-/** Everything we know about a user; PocketID is the only source (standard claims, custom claims and groups). */
+/** Everything we know about a user; PocketID is the only source (standard and custom claims). */
 export interface Identity {
   sub: string;
   email: string | null;
@@ -9,7 +10,10 @@ export interface Identity {
   phone: string | null;
   /** Profile picture URL (standard claim `picture`). */
   picture: string | null;
-  groups: string[];
+  /** Custom claims `role`, `tenant` and `tenant-admin`: whether the user may use Osiris and in which tenants. */
+  access: Access;
+  /** Names of every claim userinfo returned, to tell a missing claim from a wrong value when access is refused. */
+  claimKeys?: string[];
 }
 
 export interface TokenVerifier {
@@ -23,14 +27,14 @@ interface Discovery {
   userinfo_endpoint: string;
 }
 
-/** How long a token's userinfo is reused, so role and group changes in PocketID apply within this time. */
+/** How long a token's userinfo is reused, so role and tenant changes in PocketID apply within this time. */
 const USERINFO_TTL_MS = 60_000;
 const USERINFO_CACHE_MAX = 1000;
 
 /**
  * Verifies PocketID access tokens against the issuer's JWKS. PocketID access tokens carry only `sub`;
- * profile, custom claims and groups come from the userinfo endpoint, cached briefly per token.
- * The web client must request the `profile email groups` scopes.
+ * profile and custom claims come from the userinfo endpoint, cached briefly per token.
+ * The web client must request the `profile email` scopes (custom claims come with `profile`).
  */
 export function createOidcVerifier(issuer: string, audience: string): TokenVerifier {
   let discovery: Promise<{ doc: Discovery; jwks: ReturnType<typeof createRemoteJWKSet> }> | undefined;
@@ -83,27 +87,30 @@ export function toIdentity(info: Record<string, unknown>): Identity {
     name: str(info.name),
     phone: str(info.phone_number),
     picture: str(info.picture),
-    groups: Array.isArray(info.groups) ? info.groups.filter((g): g is string => typeof g === "string") : [],
+    access: accessFromClaims((key) => info[key]),
+    claimKeys: Object.keys(info).sort(),
   };
 }
 
 /**
- * Development-only verifier, rejected in production by config. The bearer token is `<user>` or
- * `<user>:<group>,<group>`; without groups the user is admin of their own tenant `<user>`
- * (e.g. `alice:osiris-tenant-acme-user,osiris-admin`).
+ * Development-only verifier, rejected in production by config. The bearer token is `<user>` or `<user>:<claims>`,
+ * the claims written like a query string: `alice:tenant=acme,beta&tenant-admin=gamma&role=osiris-admin`.
+ * `role` defaults to `osiris-user` (`role=` for none); a bare `<user>` is admin of their own tenant `<user>`.
  */
 export function createDevVerifier(): TokenVerifier {
   return {
     async identify(token) {
-      const [user = "", groups] = token.split(":", 2);
+      const [user = "", query] = token.split(":", 2);
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(user)) throw new Error("Dev user must be a lowercase slug");
+      const claims = new URLSearchParams(query ?? `tenant-admin=${user}`);
+      if (!claims.has("role")) claims.set("role", "osiris-user");
       return {
         sub: `dev:${user}`,
         email: `${user}@dev.local`,
         name: user,
         phone: null,
         picture: null,
-        groups: groups ? groups.split(",") : [`osiris-tenant-${user}-admin`],
+        access: accessFromClaims((key) => claims.get(key) ?? undefined),
       };
     },
   };

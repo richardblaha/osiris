@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 
-const SLUG = /^(?!.*-(admin|user)$)[a-z0-9]+(-[a-z0-9]+)*$/;
+const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = {
   knowledge: { label: "Znalostní báze", hint: "dokumenty, ve kterých asistent vyhledává" },
@@ -14,7 +14,7 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   whatsapp: { label: "WhatsApp", hint: "asistent odpovídá i ve WhatsAppu" },
 };
 
-/** System admins (group osiris-admin) create tenants here; each tenant's detail is a `TenantPanel`. */
+/** System admins (claim role=osiris-admin) create tenants here; each tenant's detail is a `TenantPanel`. */
 export function NewTenant({ onCreated }: { onCreated: (id: string) => void }) {
   const [id, setId] = useState("");
   const [name, setName] = useState("");
@@ -33,8 +33,8 @@ export function NewTenant({ onCreated }: { onCreated: (id: string) => void }) {
     <div className="detail">
       <h1 className="text-lg font-semibold">Nový tenant</h1>
       <p className="mt-1 text-sm text-fg-secondary">
-        Každý tenant má vlastní databázi. Členství jsou skupiny v PocketID: <code>osiris-tenant-&lt;zkratka&gt;-user</code> pro
-        uživatele a <code>osiris-tenant-&lt;zkratka&gt;-admin</code> pro správce.
+        Každý tenant má vlastní databázi. Členství jsou claimy uživatelů v PocketID: <code>tenant=&lt;zkratka&gt;</code> pro
+        uživatele a <code>tenant-admin=&lt;zkratka&gt;</code> pro správce, oba potřebují <code>role=osiris-user</code>.
       </p>
       <form onSubmit={create} className="mt-6 space-y-4">
         <Field label="Zkratka">
@@ -43,7 +43,7 @@ export function NewTenant({ onCreated }: { onCreated: (id: string) => void }) {
             onChange={(e) => setId(e.target.value.toLowerCase())}
             placeholder="např. novak-stavby"
             pattern={SLUG.source}
-            title="Malá písmena, číslice a pomlčky; nesmí končit na -admin ani -user"
+            title="Malá písmena, číslice a pomlčky"
             maxLength={40}
             required
             className="field"
@@ -203,7 +203,7 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
       <section className="border-t border-line pt-6">
         <h2 className="section-header text-error">Odebrat tenanta</h2>
         <p className="mt-1 text-sm text-fg-secondary">
-          Smaže skupiny v PocketID, takže nikdo z tenanta se už nepřihlásí. Databáze se archivuje a data zůstanou zachovaná.
+          Odebere tenanta z claimů všech uživatelů, takže nikdo z tenanta se už nepřihlásí. Databáze se archivuje a data zůstanou zachovaná.
         </p>
         <form
           onSubmit={(e) => {

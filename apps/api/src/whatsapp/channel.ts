@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { HumanMessage } from "@langchain/core/messages";
 import type { RunContext } from "../agent/context.ts";
 import type { Identity } from "../auth/oidc.ts";
-import { accessibleTenants, type Membership } from "../auth/tenants.ts";
+import { accessibleTenants, isAuthorized, type Membership } from "../auth/tenants.ts";
 import * as threads from "../repo/threads.ts";
 import * as sessions from "../repo/whatsapp.ts";
 import type { TenantDirectory } from "../tenants/directory.ts";
@@ -36,7 +36,7 @@ const SEEN_MAX = 2000;
 
 /**
  * WhatsApp as a client of the agent. The user comes from the sender's number (PocketID `phone_number`) and the tenant
- * from their groups; a user in several tenants picks one with `/tenant <slug>`. Each user has one running WhatsApp
+ * from their claims `tenant` / `tenant-admin`; a user in several tenants picks one with `/tenant <slug>`. Each user has one running WhatsApp
  * thread per tenant (it also shows in the web chat), and `/nova` starts a new one.
  */
 export class WhatsAppChannel {
@@ -71,7 +71,8 @@ export class WhatsAppChannel {
     try {
       const user = await this.deps.phones.lookup(message.from);
       if (!user) return await reply(NOT_REGISTERED);
-      const memberships = await accessibleTenants(user.groups, this.deps.directory);
+      if (!isAuthorized(user.access)) return await reply(NOT_REGISTERED);
+      const memberships = await accessibleTenants(user.access, this.deps.directory);
       if (!memberships.length) return await reply(NO_TENANT);
       if (message.type === "reaction") return;
       const text = message.text?.trim();

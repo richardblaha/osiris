@@ -16,10 +16,10 @@ Commands below use `KUBECONFIG=.kubeconfig` and read keys from the gitignored ro
    - logout callback URL `https://osiris.k6labs.cz`
 
    Put its client ID in `.env` as `OSIRIS_OIDC_CLIENT_ID`.
-2. Create the group `osiris-admin` and add yourself. Its members manage tenants in the web app (Správa → Tenanti): creating a tenant creates the groups `osiris-tenant-<slug>-user` (members) and `osiris-tenant-<slug>-admin` (admins), and members are added there too. Users without a tenant group get "not assigned to any tenant".
+2. Give yourself the custom claim `role` = `osiris-admin`. System admins manage tenants in the web app (section Tenanti) and add members there, which writes the users' custom claims: `tenant` = `<slug>` (member) or `tenant-admin` = `<slug>` (admin), comma-separated for several tenants, plus `role` = `osiris-user`. Claims can also be set by hand in PocketID. Users without an Osiris role get 403, users without a tenant get "not assigned to any tenant".
 3. Optional: give each user the custom claim `phone_number` in `+420…` format.
 
-4. Create an API key (Settings → API keys) and put it in `.env` as `POCKETID_API_KEY`. The API needs it in production: tenants are PocketID groups.
+4. Create an API key (Settings → API keys) and put it in `.env` as `POCKETID_API_KEY`. The API needs it in production: tenant members are written as PocketID custom claims.
 
 `OSIRIS_SECRETS_KEY` (`openssl rand -base64 32`) encrypts the MCP server headers in the tenant databases. If it is lost or changed, stored headers can no longer be read and have to be re-entered.
 

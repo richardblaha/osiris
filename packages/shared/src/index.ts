@@ -27,10 +27,10 @@ export type RunEvent =
 
 export type Role = "admin" | "member";
 
-/** Identity and memberships come from PocketID (claims and groups); see apps/api/src/auth/. */
+/** Identity and memberships come from PocketID custom claims (`role`, `tenant`, `tenant-admin`); see apps/api/src/auth/. */
 export interface MeResponse {
   user: { id: string; email: string | null; name: string | null; phone: string | null; picture: string | null };
-  /** Group `osiris-admin`: admin of every tenant, manages tenants. */
+  /** Claim `role=osiris-admin`: admin of every tenant, manages tenants. */
   systemAdmin: boolean;
   tenants: { id: string; name: string; role: Role }[];
 }
@@ -52,7 +52,7 @@ export interface TenantInfo {
 export interface TenantSummary {
   id: string;
   name: string;
-  /** Users in the tenant's member or admin group. */
+  /** Users whose claim `tenant` or `tenant-admin` names the tenant. */
   members: number;
 }
 

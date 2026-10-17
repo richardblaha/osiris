@@ -17,7 +17,7 @@ import { SecretVault } from "../vault/vault.ts";
 import { httpRequestTool } from "../agent/tools/http.ts";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { Feature } from "@osiris/shared";
-import { TenantFeatureStore } from "./features.ts";
+import { TenantFeatureStore, TenantProfileStore } from "./features.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
 export interface Tenant {
@@ -32,6 +32,8 @@ export interface Tenant {
   settings: UserSettingsStore;
   secrets: SecretVault;
   features: TenantFeatureStore;
+  /** Display name and archived flag, managed by system admins. */
+  profile: TenantProfileStore;
   graph: AgentGraph;
 }
 
@@ -58,6 +60,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const mcp = new McpToolset(mcpServers, secrets, deps.mcp);
   const settings = new UserSettingsStore(db);
   const features = new TenantFeatureStore(db);
+  const profile = new TenantProfileStore(db);
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
   const builtins: [Feature, StructuredToolInterface][] = [
     ["knowledge", searchKnowledgeTool(knowledge)],
@@ -83,5 +86,5 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     settings,
     secrets,
   });
-  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, graph };
+  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, profile, graph };
 }

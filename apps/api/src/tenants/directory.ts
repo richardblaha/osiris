@@ -1,17 +1,19 @@
 import type { DirectoryUser, Role, TenantMember, TenantSummary } from "@osiris/shared";
-import { parseTenantGroup, tenantGroup } from "../auth/tenants.ts";
-import { displayName, type PocketIdClient, type PocketIdGroup, type PocketIdUser } from "../pocketid.ts";
+import { claimList, CLAIMS, isAuthorized, USER_ROLE, type Access } from "../auth/tenants.ts";
+import type { UserDirectory, UserRecord } from "../users.ts";
+import type { TenantRegistry } from "./registry.ts";
 
 /**
- * Which tenants exist, what they're called and who is in them. In production these are PocketID groups
- * (`osiris-tenant-<slug>-user` and `osiris-tenant-<slug>-admin`), so there is still no global database.
+ * Which tenants exist, what they're called and who is in them. A tenant exists when its database does and keeps its
+ * name in it (`tenant_settings`); members are the users whose PocketID claims `tenant` / `tenant-admin` name it.
  */
 export interface TenantDirectory {
-  /** Every tenant, sorted by id. Cached briefly; writes refresh it. */
+  /** Every tenant, sorted by id. */
   list(): Promise<TenantSummary[]>;
+  /** Creates the tenant's database (or brings back an archived one) and names it. */
   create(id: string, name: string): Promise<void>;
   rename(id: string, name: string): Promise<void>;
-  /** Removes the tenant's groups and with them everyone's access. Its database is archived separately. */
+  /** Removes the tenant from everyone's claims and hides it. The database is archived separately (`TenantRegistry.remove`). */
   remove(id: string): Promise<void>;
   members(id: string): Promise<TenantMember[]>;
   /** Makes the user a member or admin of the tenant, or removes them (`null`). */
@@ -23,175 +25,99 @@ export interface TenantDirectory {
 export class TenantExistsError extends Error {}
 export class TenantNotFoundError extends Error {}
 
-const LIST_TTL_MS = 60_000;
-const PREFIX = "Osiris: ";
-const ADMIN_SUFFIX = " (správci)";
+/** The user's role in a tenant from their claims; `tenant-admin` wins over `tenant`. */
+const roleIn = (user: UserRecord, id: string): Role | null =>
+  claimList(user.claims[CLAIMS.tenantAdmin]).includes(id) ? "admin" : claimList(user.claims[CLAIMS.tenant]).includes(id) ? "member" : null;
 
-/** Tenants as PocketID groups. Display names live in the groups' friendly names ("Osiris: <name>"). */
-export function pocketIdTenants(pocketId: PocketIdClient): TenantDirectory {
-  let cache: { at: number; groups: Promise<PocketIdGroup[]> } | undefined;
+/** The claim value with `id` added or removed, or null when nothing is left. */
+const withTenant = (value: string | undefined, id: string, present: boolean) => {
+  const ids = claimList(value).filter((t) => t !== id);
+  if (present) ids.push(id);
+  return ids.length ? ids.join(",") : null;
+};
 
-  const groups = () => {
-    if (!cache || Date.now() - cache.at > LIST_TTL_MS) {
-      const loading = pocketId.all<PocketIdGroup>("api/user-groups");
-      loading.catch(() => {
-        if (cache?.groups === loading) cache = undefined;
-      });
-      cache = { at: Date.now(), groups: loading };
+/** The claims of a user record, as the auth code reads them from a token. */
+export const userAccess = (user: UserRecord): Access => ({
+  roles: claimList(user.claims[CLAIMS.role]),
+  tenants: claimList(user.claims[CLAIMS.tenant]),
+  adminTenants: claimList(user.claims[CLAIMS.tenantAdmin]),
+});
+
+export function tenantDirectory(tenants: TenantRegistry, users: UserDirectory): TenantDirectory {
+  /** Existing tenants; archived ones (kept Turso databases) are left out. */
+  const live = async () => {
+    const result: { id: string; name: string }[] = [];
+    for (const id of await tenants.ids()) {
+      const { profile } = await tenants.get(id);
+      if (!(await profile.archived())) result.push({ id, name: (await profile.name()) ?? id });
     }
-    return cache.groups;
-  };
-
-  /** The tenant's member and admin group; at least one exists for a known tenant. */
-  const tenantGroups = async (id: string) => {
-    const all = await groups();
-    const find = (role: Role) => all.find((g) => g.name === tenantGroup(id, role));
-    const result = { member: find("member"), admin: find("admin") };
-    if (!result.member && !result.admin) throw new TenantNotFoundError(`Tenant ${id} not found`);
     return result;
   };
 
-  const friendly = (name: string, role: Role) => `${PREFIX}${name}${role === "admin" ? ADMIN_SUFFIX : ""}`;
-  const nameOf = (g: PocketIdGroup) => g.friendlyName.replace(PREFIX, "").replace(ADMIN_SUFFIX, "").trim();
+  const known = async (id: string) => {
+    if (!(await live()).some((t) => t.id === id)) throw new TenantNotFoundError(`Tenant ${id} not found`);
+    return tenants.get(id);
+  };
 
-  const createGroup = (id: string, name: string, role: Role) =>
-    pocketId.request<PocketIdGroup>("POST", "api/user-groups", { name: tenantGroup(id, role), friendlyName: friendly(name, role) });
-
-  const groupUsers = async (group: PocketIdGroup | undefined) =>
-    group ? ((await pocketId.get<PocketIdGroup>(`api/user-groups/${group.id}`)).users ?? []) : [];
-
-  const setGroupUsers = (group: PocketIdGroup, userIds: string[]) =>
-    pocketId.request("PUT", `api/user-groups/${group.id}/users`, { userIds });
+  const activeUsers = async () => (await users.list()).filter((u) => !u.disabled);
 
   return {
     async list() {
-      const byId = new Map<string, TenantSummary>();
-      for (const g of await groups()) {
-        const m = parseTenantGroup(g.name);
-        if (!m) continue;
-        const t = byId.get(m.tenantId) ?? { id: m.tenantId, name: m.tenantId, members: 0 };
-        // The member group's name wins; an admin-only tenant (created by hand) takes the admin group's.
-        if (m.role === "member" || t.name === t.id) t.name = nameOf(g) || t.id;
-        t.members += g.userCount ?? 0;
-        byId.set(m.tenantId, t);
-      }
-      return [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+      const all = await activeUsers();
+      return (await live()).map((t) => ({ ...t, members: all.filter((u) => roleIn(u, t.id)).length }));
     },
 
     async create(id, name) {
-      const all = await groups();
-      if (all.some((g) => parseTenantGroup(g.name)?.tenantId === id)) throw new TenantExistsError(`Tenant ${id} already exists`);
-      try {
-        await createGroup(id, name, "member");
-        await createGroup(id, name, "admin");
-      } finally {
-        cache = undefined;
-      }
+      if ((await live()).some((t) => t.id === id)) throw new TenantExistsError(`Tenant ${id} already exists`);
+      // Creates and migrates the database now, so a broken setup shows up here and not on the first login.
+      const { profile } = await tenants.get(id);
+      await profile.setName(name);
+      await profile.setArchived(false);
     },
 
     async rename(id, name) {
-      const { member, admin } = await tenantGroups(id);
-      try {
-        // An admin-only tenant gets its member group now.
-        if (member) await pocketId.request("PUT", `api/user-groups/${member.id}`, { name: member.name, friendlyName: friendly(name, "member") });
-        else await createGroup(id, name, "member");
-        if (admin) await pocketId.request("PUT", `api/user-groups/${admin.id}`, { name: admin.name, friendlyName: friendly(name, "admin") });
-        else await createGroup(id, name, "admin");
-      } finally {
-        cache = undefined;
-      }
+      await (await known(id)).profile.setName(name);
     },
 
     async remove(id) {
-      const { member, admin } = await tenantGroups(id);
-      try {
-        for (const g of [member, admin]) if (g) await pocketId.request("DELETE", `api/user-groups/${g.id}`);
-      } finally {
-        cache = undefined;
+      const { profile } = await known(id);
+      for (const user of await users.list()) {
+        if (!roleIn(user, id)) continue;
+        await users.setClaims(user.id, {
+          [CLAIMS.tenant]: withTenant(user.claims[CLAIMS.tenant], id, false),
+          [CLAIMS.tenantAdmin]: withTenant(user.claims[CLAIMS.tenantAdmin], id, false),
+        });
       }
+      await profile.setArchived(true);
     },
 
     async members(id) {
-      const { member, admin } = await tenantGroups(id);
-      const byId = new Map<string, TenantMember>();
-      for (const [group, role] of [[member, "member"], [admin, "admin"]] as const) {
-        for (const u of await groupUsers(group)) {
-          if (role === "admin" || !byId.has(u.id)) byId.set(u.id, { userId: u.id, name: displayName(u), email: u.email || null, role });
-        }
-      }
-      return [...byId.values()].sort((a, b) => (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""));
-    },
-
-    async setRole(id, userId, role) {
-      let { member, admin } = await tenantGroups(id);
-      try {
-        // Missing groups are created on demand (e.g. an admin-only tenant gets its first plain member).
-        const name = nameOf((member ?? admin)!);
-        if (role === "member" && !member) member = await createGroup(id, name, "member");
-        if (role === "admin" && !admin) admin = await createGroup(id, name, "admin");
-        // An admin is in the admin group only, a member in the member group only.
-        for (const [group, groupRole] of [[member, "member"], [admin, "admin"]] as const) {
-          if (!group) continue;
-          const ids = (await groupUsers(group)).map((u) => u.id);
-          const want = role === groupRole;
-          if (want !== ids.includes(userId)) await setGroupUsers(group, want ? [...ids, userId] : ids.filter((u) => u !== userId));
-        }
-      } finally {
-        cache = undefined;
-      }
-    },
-
-    async users() {
-      const users = await pocketId.all<PocketIdUser>("api/users");
-      return users
-        .filter((u) => !u.disabled)
-        .map((u) => ({ id: u.id, name: displayName(u), email: u.email || null }))
+      await known(id);
+      return (await activeUsers())
+        .flatMap((u) => {
+          const role = roleIn(u, id);
+          return role ? [{ userId: u.id, name: u.name, email: u.email, role }] : [];
+        })
         .sort((a, b) => (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""));
     },
-  };
-}
 
-/**
- * In-memory directory for development without a PocketID API key, and for tests. Memberships still come from
- * the (dev) token's groups; the members kept here are only for the admin UI and are lost on restart.
- */
-export function memoryTenants(initial: { id: string; name?: string }[] = [], users: DirectoryUser[] = []): TenantDirectory {
-  const tenants = new Map(initial.map((t) => [t.id, { name: t.name ?? t.id, members: new Map<string, Role>() }]));
-  const get = (id: string) => {
-    const t = tenants.get(id);
-    if (!t) throw new TenantNotFoundError(`Tenant ${id} not found`);
-    return t;
-  };
-  return {
-    async list() {
-      return [...tenants]
-        .map(([id, t]) => ({ id, name: t.name, members: t.members.size }))
-        .sort((a, b) => a.id.localeCompare(b.id));
-    },
-    async create(id, name) {
-      if (tenants.has(id)) throw new TenantExistsError(`Tenant ${id} already exists`);
-      tenants.set(id, { name, members: new Map() });
-    },
-    async rename(id, name) {
-      get(id).name = name;
-    },
-    async remove(id) {
-      get(id);
-      tenants.delete(id);
-    },
-    async members(id) {
-      return [...get(id).members].map(([userId, role]) => {
-        const u = users.find((x) => x.id === userId);
-        return { userId, name: u?.name ?? null, email: u?.email ?? null, role };
+    async setRole(id, userId, role) {
+      await known(id);
+      const user = (await users.list()).find((u) => u.id === userId);
+      const claims = user?.claims ?? {};
+      await users.setClaims(userId, {
+        // A user is in one of the two claims only.
+        [CLAIMS.tenant]: withTenant(claims[CLAIMS.tenant], id, role === "member"),
+        [CLAIMS.tenantAdmin]: withTenant(claims[CLAIMS.tenantAdmin], id, role === "admin"),
+        // A new member also needs the Osiris role, or the tenant claim alone would get them nowhere.
+        ...(role && user && !isAuthorized(userAccess(user)) ? { [CLAIMS.role]: USER_ROLE } : {}),
       });
     },
-    async setRole(id, userId, role) {
-      const t = get(id);
-      if (role) t.members.set(userId, role);
-      else t.members.delete(userId);
-    },
+
     async users() {
-      return users;
+      return (await activeUsers())
+        .map((u) => ({ id: u.id, name: u.name, email: u.email }))
+        .sort((a, b) => (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? ""));
     },
   };
 }

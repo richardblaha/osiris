@@ -1,5 +1,5 @@
--- Settings of the tenant itself, managed by system admins (group osiris-admin). One JSON value per key,
--- e.g. `features` (which tools and channels the tenant may use).
+-- Settings of the tenant itself, managed by system admins (role osiris-admin). One JSON value per key:
+-- `features` (which tools and channels the tenant may use), `name` (display name), `archived` (removed).
 CREATE TABLE tenant_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL,

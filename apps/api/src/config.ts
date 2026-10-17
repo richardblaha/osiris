@@ -36,8 +36,8 @@ const schema = z
     // Built web app (apps/web/dist) to serve from the API; unset in development, where Vite serves it.
     STATIC_DIR: z.string().optional(),
 
-    // PocketID admin API at OIDC_ISSUER: tenants are its groups (managed by osiris-admin), WhatsApp finds users by
-    // phone. Required in production; in development tenants are kept in memory, seeded from TENANT_DATA_DIR.
+    // PocketID admin API at OIDC_ISSUER: tenant members are users' custom claims (managed by osiris-admin), WhatsApp
+    // finds users by phone. Required in production; in development members are kept in memory.
     POCKETID_API_KEY: z.string().optional(),
 
     // WhatsApp channel (webhook /webhooks/whatsapp), on when all three are set (plus POCKETID_API_KEY).
@@ -71,7 +71,7 @@ const schema = z
       ctx.addIssue({ code: "custom", path: ["POCKETID_API_KEY"], message: "is required for WhatsApp" });
     }
     if (env.NODE_ENV === "production" && !env.POCKETID_API_KEY) {
-      ctx.addIssue({ code: "custom", path: ["POCKETID_API_KEY"], message: "is required in production (tenants are PocketID groups)" });
+      ctx.addIssue({ code: "custom", path: ["POCKETID_API_KEY"], message: "is required in production (tenant members are PocketID claims)" });
     }
     if (env.POCKETID_API_KEY && !env.OIDC_ISSUER) {
       ctx.addIssue({ code: "custom", path: ["OIDC_ISSUER"], message: "is required with POCKETID_API_KEY (PocketID URL)" });

@@ -43,7 +43,14 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     },
   });
   if (res.status === 401) await login();
-  if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: string; user?: Record<string, unknown> } | null;
+    // A refused account comes with who is signed in and which claims arrived, to see what to fix in PocketID.
+    const user = body?.user
+      ? "\n\n" + Object.entries(body.user).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") || "—" : (v ?? "—")}`).join("\n")
+      : "";
+    throw new Error((body?.error ?? `HTTP ${res.status}`) + user);
+  }
   return res;
 }
 

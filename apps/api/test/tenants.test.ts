@@ -2,46 +2,52 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createDevVerifier, toIdentity } from "../src/auth/oidc.ts";
-import { membershipsFromGroups } from "../src/auth/tenants.ts";
+import { accessFromClaims, accessibleTenants, isAuthorized, isSystemAdmin, membershipsFromClaims } from "../src/auth/tenants.ts";
 import { tursoProvider } from "../src/tenants/provider.ts";
 import { createTestTenants } from "./helpers.ts";
 
-describe("tenant memberships from PocketID groups", () => {
-  it("maps osiris-tenant-<slug>-user to member and osiris-tenant-<slug>-admin to admin", () => {
-    expect(
-      membershipsFromGroups([
-        "osiris-tenant-acme-user",
-        "osiris-tenant-acme-admin",
-        "osiris-tenant-novak-stavby-user",
-        "osiris-tenant-beta-admin",
-        "admins",
-        "osiris-tenant-Bad",
-        // The old names no longer count.
-        "osiris-tenant-legacy",
-        "tenant-old-admin",
-      ]),
-    ).toEqual([
+describe("access from PocketID claims", () => {
+  it("maps tenant to member and tenant-admin to admin, from single values or comma-separated lists", () => {
+    const access = accessFromClaims((key) => ({ role: "osiris-user", tenant: "acme, novak-stavby,Bad", "tenant-admin": ["acme", "beta"] })[key]);
+    expect(isAuthorized(access)).toBe(true);
+    expect(membershipsFromClaims(access)).toEqual([
       { tenantId: "acme", role: "admin" },
       { tenantId: "beta", role: "admin" },
       { tenantId: "novak-stavby", role: "member" },
     ]);
   });
 
-  it("reads profile, phone and groups from userinfo", () => {
-    expect(toIdentity({ sub: "s", email: "a@b.cz", name: "A", phone_number: "+420777123456", groups: ["osiris-tenant-a-user", 5] })).toEqual({
+  it("requires the role osiris-user or osiris-admin", async () => {
+    const without = accessFromClaims((key) => ({ tenant: "acme", role: "admin" })[key]);
+    expect(isAuthorized(without)).toBe(false);
+    expect(await accessibleTenants(without, { list: async () => [] } as never)).toEqual([]);
+    const admin = accessFromClaims((key) => ({ role: "osiris-admin" })[key]);
+    expect(isAuthorized(admin) && isSystemAdmin(admin)).toBe(true);
+    expect(await accessibleTenants(admin, { list: async () => [{ id: "x", name: "X", members: 0 }] } as never)).toEqual([
+      { tenantId: "x", role: "admin" },
+    ]);
+  });
+
+  it("reads profile, phone and access claims from userinfo", () => {
+    expect(toIdentity({ sub: "s", email: "a@b.cz", name: "A", phone_number: "+420777123456", role: "osiris-user", tenant: "a", groups: ["x"] })).toEqual({
       sub: "s",
       email: "a@b.cz",
       name: "A",
       phone: "+420777123456",
       picture: null,
-      groups: ["osiris-tenant-a-user"],
+      access: { roles: ["osiris-user"], tenants: ["a"], adminTenants: [] },
+      claimKeys: ["email", "groups", "name", "phone_number", "role", "sub", "tenant"],
     });
   });
 
-  it("dev verifier gives a user their own tenant unless groups are given", async () => {
+  it("dev verifier gives a user their own tenant unless claims are given", async () => {
     const dev = createDevVerifier();
-    expect((await dev.identify("alice")).groups).toEqual(["osiris-tenant-alice-admin"]);
-    expect((await dev.identify("bob:osiris-tenant-acme-user")).groups).toEqual(["osiris-tenant-acme-user"]);
+    expect((await dev.identify("alice")).access).toEqual({ roles: ["osiris-user"], tenants: [], adminTenants: ["alice"] });
+    expect((await dev.identify("bob:tenant=acme,beta&role=osiris-admin")).access).toEqual({
+      roles: ["osiris-admin"],
+      tenants: ["acme", "beta"],
+      adminTenants: [],
+    });
     await expect(dev.identify("../x")).rejects.toThrow();
   });
 });

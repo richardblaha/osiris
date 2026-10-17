@@ -1,5 +1,6 @@
 import type { Identity } from "../auth/oidc.ts";
-import { displayName, type PocketIdClient, type PocketIdUser } from "../pocketid.ts";
+import { userAccess } from "../tenants/directory.ts";
+import type { UserDirectory } from "../users.ts";
 
 /** Finds the PocketID user behind a WhatsApp number. WhatsApp has no token, so this replaces OIDC for the channel. */
 export interface PhoneDirectory {
@@ -10,52 +11,29 @@ export interface PhoneDirectory {
 /** Digits only, so PocketID's "+420 777 123 456" matches WhatsApp's "420777123456". */
 export const phoneKey = (phone: string) => phone.replace(/\D/g, "");
 
-/** How long the user list is reused, so new users, numbers and group changes apply within this time. */
-const DIRECTORY_TTL_MS = 60_000;
-
 /**
- * Reads users from the PocketID admin API (`GET /api/users`) and indexes them by `phone_number`.
- * The whole list is cached for a minute; a number claimed by two users matches neither.
+ * Indexes the users (PocketID admin API, cached for a minute by the user directory) by `phone_number`.
+ * A number claimed by two users matches neither.
  */
-export function pocketIdDirectory(pocketId: PocketIdClient): PhoneDirectory {
-  let snapshot: Promise<Map<string, Identity | null>> | undefined;
-  let loadedAt = 0;
-
-  const load = async () => {
-    const byPhone = new Map<string, Identity | null>();
-    for (const user of await pocketId.all<PocketIdUser>("api/users")) {
-      const phone = user.customClaims?.find((c) => c.key === "phone_number")?.value;
-      const key = phone ? phoneKey(phone) : "";
-      if (!key || user.disabled) continue;
-      if (byPhone.has(key)) {
-        byPhone.set(key, null);
-        continue;
-      }
-      const groups = user.userGroups ?? (await pocketId.get<{ name: string }[]>(`api/users/${encodeURIComponent(user.id)}/groups`));
-      byPhone.set(key, {
-        sub: user.id,
-        email: user.email || null,
-        name: displayName(user),
-        phone: phone!,
-        picture: null,
-        groups: groups.map((g) => g.name),
-      });
-    }
-    return byPhone;
-  };
-
+export function phoneDirectory(users: UserDirectory): PhoneDirectory {
   return {
     async lookup(phone) {
-      if (!snapshot || Date.now() - loadedAt > DIRECTORY_TTL_MS) {
-        loadedAt = Date.now();
-        const loading = load();
-        // Don't cache failures; the next message retries.
-        loading.catch(() => {
-          if (snapshot === loading) snapshot = undefined;
-        });
-        snapshot = loading;
-      }
-      return (await snapshot).get(phoneKey(phone)) ?? null;
+      const key = phoneKey(phone);
+      if (!key) return null;
+      const matches = (await users.list()).filter((u) => {
+        const claim = u.claims.phone_number;
+        return claim && !u.disabled && phoneKey(claim) === key;
+      });
+      if (matches.length !== 1) return null;
+      const user = matches[0]!;
+      return {
+        sub: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.claims.phone_number!,
+        picture: null,
+        access: userAccess(user),
+      };
     },
   };
 }

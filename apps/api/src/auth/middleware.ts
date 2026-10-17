@@ -5,12 +5,12 @@ import type { Tenant } from "../tenants/tenant.ts";
 import type { TenantDirectory } from "../tenants/directory.ts";
 import type { TenantRegistry } from "../tenants/registry.ts";
 import type { Identity, TokenVerifier } from "./oidc.ts";
-import { accessibleTenants, isSystemAdmin, type Membership } from "./tenants.ts";
+import { accessibleTenants, isAuthorized, isSystemAdmin, type Membership } from "./tenants.ts";
 
 export interface Authenticated {
   user: Identity;
   memberships: Membership[];
-  /** Group `osiris-admin`: admin of every tenant, may manage tenants. */
+  /** Claim `role=osiris-admin`: admin of every tenant, may manage tenants. */
   systemAdmin: boolean;
 }
 
@@ -19,11 +19,32 @@ export interface RequestContext extends Authenticated {
   role: Role;
 }
 
+/** A 403 that tells the user who they are signed in as and which claims arrived, so a misconfigured account is easy to fix. */
+export class AccessDeniedError extends HTTPException {
+  constructor(
+    message: string,
+    readonly user: Record<string, unknown>,
+  ) {
+    super(403, { message });
+  }
+}
+
+const describeUser = (user: Identity) => ({
+  sub: user.sub,
+  name: user.name,
+  email: user.email,
+  role: user.access.roles,
+  tenant: user.access.tenants,
+  "tenant-admin": user.access.adminTenants,
+  ...(user.claimKeys ? { claims: user.claimKeys } : {}),
+});
+
 export type AuthEnv = { Variables: { auth: Authenticated; ctx: RequestContext } };
 
 /**
- * Authenticates the bearer token. Memberships come from the user's PocketID groups (a system admin gets every tenant);
- * users with none are refused, except system admins, who may have no tenant yet.
+ * Authenticates the bearer token. Users need the claim `role` (`osiris-user` or `osiris-admin`); memberships come from
+ * the claims `tenant` and `tenant-admin` (a system admin gets every tenant). Users with no tenant are refused, except
+ * system admins, who may have no tenant yet.
  */
 export function authMiddleware(verifier: TokenVerifier, directory: TenantDirectory) {
   return createMiddleware<AuthEnv>(async (c, next) => {
@@ -37,9 +58,15 @@ export function authMiddleware(verifier: TokenVerifier, directory: TenantDirecto
       throw new HTTPException(401, { message: "Invalid token" });
     }
 
-    const systemAdmin = isSystemAdmin(user.groups);
-    const memberships = await accessibleTenants(user.groups, directory);
-    if (!memberships.length && !systemAdmin) throw new HTTPException(403, { message: "User is not assigned to any tenant" });
+    const deny = (message: string) => {
+      const details = describeUser(user);
+      console.warn(`Access denied: ${message}`, details);
+      return new AccessDeniedError(message, details);
+    };
+    if (!isAuthorized(user.access)) throw deny("User has no Osiris role (claim role=osiris-user or osiris-admin)");
+    const systemAdmin = isSystemAdmin(user.access);
+    const memberships = await accessibleTenants(user.access, directory);
+    if (!memberships.length && !systemAdmin) throw deny("User is not assigned to any tenant (claim tenant or tenant-admin)");
     c.set("auth", { user, memberships, systemAdmin });
     await next();
   });
@@ -65,7 +92,10 @@ export function tenantMiddleware(tenants: TenantRegistry) {
       });
     }
 
-    c.set("ctx", { ...c.get("auth"), tenant: await tenants.get(membership.tenantId), role: membership.role });
+    const tenant = await tenants.get(membership.tenantId);
+    // A removed tenant whose database is kept (Turso) stays closed, even for a claim that wasn't cleaned up.
+    if (await tenant.profile.archived()) throw new HTTPException(403, { message: "Tenant was removed" });
+    c.set("ctx", { ...c.get("auth"), tenant, role: membership.role });
     await next();
   });
 }

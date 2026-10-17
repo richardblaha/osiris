@@ -1,4 +1,3 @@
-import { existsSync, readdirSync } from "node:fs";
 import { serve } from "@hono/node-server";
 import { createChatModel } from "./agent/model.ts";
 import { loadSkills } from "./agent/skills.ts";
@@ -8,11 +7,12 @@ import { loadConfig, tenantDbProvider } from "./config.ts";
 import { createEmbeddings } from "./rag/embeddings.ts";
 import { SecretBox } from "./secrets.ts";
 import { PocketIdClient } from "./pocketid.ts";
-import { memoryTenants, pocketIdTenants } from "./tenants/directory.ts";
+import { tenantDirectory } from "./tenants/directory.ts";
 import { TenantRegistry } from "./tenants/registry.ts";
 import { WhatsAppChannel } from "./whatsapp/channel.ts";
 import { WhatsAppClient } from "./whatsapp/cloud-api.ts";
-import { pocketIdDirectory } from "./whatsapp/directory.ts";
+import { phoneDirectory } from "./whatsapp/directory.ts";
+import { memoryUsers, pocketIdUsers } from "./users.ts";
 
 const config = loadConfig();
 
@@ -39,22 +39,17 @@ const verifier = config.AUTH_DEV_BYPASS
   : createOidcVerifier(config.OIDC_ISSUER!, config.OIDC_AUDIENCE!);
 
 const pocketId = config.POCKETID_API_KEY ? new PocketIdClient(config.OIDC_ISSUER!, config.POCKETID_API_KEY) : undefined;
-if (!pocketId) console.warn("POCKETID_API_KEY not set: tenants are kept in memory (development only).");
-// Without PocketID (development), the tenants are the database files already in TENANT_DATA_DIR.
-const directory = pocketId
-  ? pocketIdTenants(pocketId)
-  : memoryTenants(
-      existsSync(config.TENANT_DATA_DIR)
-        ? readdirSync(config.TENANT_DATA_DIR).filter((f) => f.endsWith(".db")).map((f) => ({ id: f.slice(0, -3) }))
-        : [],
-    );
+if (!pocketId) console.warn("POCKETID_API_KEY not set: tenant members are kept in memory (development only).");
+// Tenants are their databases; members are PocketID users with the claims tenant / tenant-admin.
+const users = pocketId ? pocketIdUsers(pocketId) : memoryUsers();
+const directory = tenantDirectory(tenants, users);
 
 const whatsapp = config.WHATSAPP_ACCESS_TOKEN
   ? {
       channel: new WhatsAppChannel({
         tenants,
         directory,
-        phones: pocketIdDirectory(pocketId!),
+        phones: phoneDirectory(users),
         client: new WhatsAppClient(config.WHATSAPP_ACCESS_TOKEN),
       }),
       verifyToken: config.WHATSAPP_VERIFY_TOKEN!,

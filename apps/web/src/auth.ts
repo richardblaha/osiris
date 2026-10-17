@@ -25,8 +25,8 @@ const manager =
         client_id: clientId!,
         redirect_uri: `${location.origin}/callback`,
         post_logout_redirect_uri: location.origin,
-        // groups = tenants and roles; profile carries custom claims such as phone_number.
-        scope: "openid profile email groups",
+        // profile carries the custom claims: role, tenant, tenant-admin and phone_number.
+        scope: "openid profile email",
         userStore: new WebStorageStateStore({ store: localStorage }),
         automaticSilentRenew: true,
       });

@@ -3,7 +3,7 @@ import { FEATURE_LABELS } from "./Tenants.tsx";
 
 export const roleLabel = (role: Tenant["role"]) => (role === "admin" ? "správce" : "uživatel");
 
-/** The active tenant as the user's PocketID groups describe it, and the other tenants they can switch to. */
+/** The active tenant as the user's PocketID claims describe it, and the other tenants they can switch to. */
 export function TenantInfo({ me, tenant, onSelect }: { me: MeResponse; tenant?: Tenant; onSelect: (id: string) => void }) {
   return (
     <div className="detail">
@@ -16,11 +16,11 @@ export function TenantInfo({ me, tenant, onSelect }: { me: MeResponse; tenant?: 
             <dt className="text-fg-secondary">Moje role</dt>
             <dd>
               {roleLabel(tenant.role)}
-              {me.systemAdmin && <span className="text-fg-muted"> · správce systému (osiris-admin)</span>}
+              {me.systemAdmin && <span className="text-fg-muted"> · správce systému</span>}
             </dd>
-            <dt className="text-fg-secondary">Skupina</dt>
+            <dt className="text-fg-secondary">Oprávnění</dt>
             <dd>
-              <code>{me.systemAdmin ? "osiris-admin" : `osiris-tenant-${tenant.id}-${tenant.role === "admin" ? "admin" : "user"}`}</code>
+              <code>{me.systemAdmin ? "role=osiris-admin" : `${tenant.role === "admin" ? "tenant-admin" : "tenant"}=${tenant.id}`}</code>
             </dd>
           </dl>
 

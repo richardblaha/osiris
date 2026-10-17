@@ -22,9 +22,10 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { SKILL_NAME } from "./agent/skills.ts";
 import { streamRun, toThreadMessages } from "./agent/run.ts";
-import { authMiddleware, tenantMiddleware, type AuthEnv, type Authenticated, type RequestContext } from "./auth/middleware.ts";
+import { AccessDeniedError, authMiddleware, tenantMiddleware, type AuthEnv, type Authenticated, type RequestContext } from "./auth/middleware.ts";
 import { TENANT_SLUG } from "./auth/tenants.ts";
 import { TenantExistsError, TenantNotFoundError, type TenantDirectory } from "./tenants/directory.ts";
+import { UserNotFoundError } from "./users.ts";
 import type { TokenVerifier } from "./auth/oidc.ts";
 import { MCP_SERVER_NAME, McpNameTakenError, mcpOwner } from "./mcp/store.ts";
 import { UnsafeUrlError } from "./mcp/url.ts";
@@ -76,7 +77,7 @@ const settingsBody = z.object({
 const featuresBody = z.object(Object.fromEntries(FEATURES.map((f) => [f, z.boolean().optional()]))) as z.ZodType<Partial<TenantFeatures>>;
 const tenantName = z.string().trim().min(1).max(100);
 const createTenantBody = z.object({
-  id: z.string().trim().max(40).regex(TENANT_SLUG, "Zkratka: malá písmena, číslice a pomlčky, nesmí končit na -admin ani -user"),
+  id: z.string().trim().max(40).regex(TENANT_SLUG, "Zkratka: malá písmena, číslice a pomlčky"),
   name: tenantName,
   features: featuresBody.optional(),
 });
@@ -159,6 +160,7 @@ export function createApp({ verifier, tenants, directory, corsOrigin, web, whats
     } catch (err) {
       if (err instanceof TenantExistsError) throw new HTTPException(409, { message: "Tenant s touto zkratkou už existuje" });
       if (err instanceof TenantNotFoundError) throw new HTTPException(404, { message: "Tenant not found" });
+      if (err instanceof UserNotFoundError) throw new HTTPException(404, { message: "User not found" });
       throw err;
     }
   };
@@ -167,7 +169,7 @@ export function createApp({ verifier, tenants, directory, corsOrigin, web, whats
     return name;
   };
 
-  // System admins (group osiris-admin) manage tenants: create, rename, remove, features and members.
+  // System admins (claim role=osiris-admin) manage tenants: create, rename, remove, features and members.
   const admin = new Hono<AuthEnv>()
     .use(async (c, next) => {
       requireSystemAdmin(c.get("auth"));
@@ -179,7 +181,6 @@ export function createApp({ verifier, tenants, directory, corsOrigin, web, whats
     .post("/tenants", async (c) => {
       const { id, name, features } = parse(createTenantBody, await c.req.json());
       await directoryErrors(() => directory.create(id, name));
-      // Creates and migrates the database now, so a broken setup shows up here and not on the first login.
       const tenant = await tenants.get(id);
       if (features) await tenant.features.set(features);
       return c.json<TenantSummary>(await knownTenant(id), 201);
@@ -208,7 +209,7 @@ export function createApp({ verifier, tenants, directory, corsOrigin, web, whats
       return c.body(null, 204);
     })
 
-    // Removes everyone's access (the PocketID groups) and archives the database.
+    // Removes everyone's access (the tenant claims) and archives the database.
     .delete("/tenants/:id", async (c) => {
       const { id } = await knownTenant(c.req.param("id"));
       await directoryErrors(() => directory.remove(id));
@@ -534,6 +535,7 @@ export function createApp({ verifier, tenants, directory, corsOrigin, web, whats
   }
 
   return app.onError((err, c) => {
+      if (err instanceof AccessDeniedError) return c.json({ error: err.message, user: err.user }, err.status);
       if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
       console.error(err);
       return c.json({ error: "Internal server error" }, 500);

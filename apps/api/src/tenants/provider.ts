@@ -1,4 +1,4 @@
-import { existsSync, renameSync } from "node:fs";
+import { existsSync, readdirSync, renameSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 export interface DbLocation {
@@ -9,6 +9,8 @@ export interface DbLocation {
 /** Finds a tenant's database, creating it on first use. `tenantId` is a validated slug (see auth/tenants.ts). */
 export interface TenantDbProvider {
   locate(tenantId: string): Promise<DbLocation>;
+  /** Ids of the tenants that have a database. A tenant exists when its database does. */
+  list(): Promise<string[]>;
   /** Takes a removed tenant's database out of use but keeps its data. Called after the tenant's client is closed. */
   archive(tenantId: string): Promise<void>;
 }
@@ -18,6 +20,11 @@ export function fileProvider(dir: string): TenantDbProvider {
   return {
     async locate(tenantId) {
       return { url: `file:${join(resolve(dir), `${tenantId}.db`)}` };
+    },
+    async list() {
+      if (!existsSync(dir)) return [];
+      // Archived files are `<tenant>.db.deleted-<time>`, so they don't match.
+      return readdirSync(dir).flatMap((f) => /^([a-z0-9]+(?:-[a-z0-9]+)*)\.db$/.exec(f)?.[1] ?? []);
     },
     // Renamed rather than deleted: a new tenant with the same slug starts empty and the old data can be restored.
     async archive(tenantId) {
@@ -65,7 +72,14 @@ export function tursoProvider({ org, group, apiToken, dbToken, prefix, fetch: f 
       }
       return { url: `libsql://${await hostname(res, `lookup of ${name}`)}`, authToken: dbToken };
     },
-    // Turso databases can't be renamed, so the database is kept as is: recreating the slug brings the data back.
+    async list() {
+      const res = await f(base, { headers });
+      if (!res.ok) throw new Error(`Turso database list failed: ${res.status} ${await res.text()}`);
+      const { databases } = (await res.json()) as { databases: { Name: string }[] };
+      return databases.flatMap((d) => (d.Name.startsWith(prefix) ? [d.Name.slice(prefix.length)] : []));
+    },
+    // Turso databases can't be renamed, so the database is kept (the directory marks it archived and hides it):
+    // recreating the slug brings the data back.
     async archive(tenantId) {
       console.warn(`Tenant ${tenantId} removed; Turso database ${prefix}${tenantId} is kept.`);
     },

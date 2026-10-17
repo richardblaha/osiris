@@ -14,6 +14,8 @@ import type { TenantDeps } from "../src/tenants/tenant.ts";
 import { SecretBox } from "../src/secrets.ts";
 import { fileProvider } from "../src/tenants/provider.ts";
 import { TenantRegistry } from "../src/tenants/registry.ts";
+import { tenantDirectory } from "../src/tenants/directory.ts";
+import { memoryUsers, type UserRecord } from "../src/users.ts";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "osiris-test-"));
 
@@ -47,6 +49,20 @@ export function createTestTenants(
 }
 
 /** Chat model that replies with a scripted sequence of messages and records what it was sent. */
+/**
+ * Tenant directory over the registry, with users in memory. Seeded tenants are created (with a name) or just opened
+ * (without one, so their name is their id).
+ */
+export async function createTestDirectory(tenants: TenantRegistry, seed: { id: string; name?: string }[] = [], users: UserRecord[] = []) {
+  const people = memoryUsers(users);
+  const directory = tenantDirectory(tenants, people);
+  for (const t of seed) {
+    if (t.name) await directory.create(t.id, t.name);
+    else await tenants.get(t.id);
+  }
+  return { directory, users: people };
+}
+
 export class ScriptedChatModel extends BaseChatModel {
   calls: BaseMessage[][] = [];
 

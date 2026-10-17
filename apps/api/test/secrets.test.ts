@@ -3,13 +3,12 @@ import { tool } from "@langchain/core/tools";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { createApp } from "../src/app.ts";
-import { memoryTenants } from "../src/tenants/directory.ts";
 import { createDevVerifier } from "../src/auth/oidc.ts";
 import type { McpConnector } from "../src/mcp/toolset.ts";
 import { SecretBox } from "../src/secrets.ts";
 import { hostAllowed, redact, templateHost } from "../src/vault/template.ts";
 import { SecretVault } from "../src/vault/vault.ts";
-import { createTestDb, createTestTenants } from "./helpers.ts";
+import { createTestDb, createTestDirectory, createTestTenants } from "./helpers.ts";
 
 const run = (user: string, role: "admin" | "member" = "member") => ({
   configurable: { thread_id: `t-${user}`, tenant_id: "acme", user_id: user, role, channel: "web" as const },
@@ -123,7 +122,7 @@ describe("secrets in MCP servers", () => {
 describe("secrets API", () => {
   async function setup() {
     const { tenants } = createTestTenants();
-    const app = createApp({ verifier: createDevVerifier(), tenants, directory: memoryTenants(), corsOrigin: "*" });
+    const app = createApp({ verifier: createDevVerifier(), tenants, directory: (await createTestDirectory(tenants)).directory, corsOrigin: "*" });
     const as = (user: string) => (path: string, init: RequestInit = {}) =>
       app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${user}`, "content-type": "application/json" } });
     return { as };
@@ -132,8 +131,8 @@ describe("secrets API", () => {
 
   it("never returns values and enforces scopes", async () => {
     const { as } = await setup();
-    const admin = as("alice:osiris-tenant-acme-admin");
-    const member = as("bob:osiris-tenant-acme-user");
+    const admin = as("alice:tenant-admin=acme");
+    const member = as("bob:tenant=acme");
 
     expect((await member("/secrets/CRM", put({ value: "x", scope: "tenant" }))).status).toBe(403);
     expect((await admin("/secrets/crm", put({ value: "x" }))).status).toBe(400);
@@ -155,7 +154,7 @@ describe("secrets API", () => {
 
   it("rejects MCP URLs with a secret in the host", async () => {
     const { as } = await setup();
-    const res = await as("alice:osiris-tenant-acme-admin")("/mcp-servers/x", {
+    const res = await as("alice:tenant-admin=acme")("/mcp-servers/x", {
       method: "PUT",
       body: JSON.stringify({ url: "https://{{secret:CRM}}.example.com/mcp", scope: "tenant" }),
     });

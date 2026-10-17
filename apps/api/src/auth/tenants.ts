@@ -6,40 +6,60 @@ export interface Membership {
   role: Role;
 }
 
-/** PocketID group whose members are admins of every tenant and manage tenants. */
-export const SYSTEM_ADMIN_GROUP = "osiris-admin";
+/**
+ * PocketID custom claims that grant access, set on the user. Each takes one value or a comma-separated list
+ * (PocketID stores one string per claim): `role=osiris-user`, `tenant=acme`, `tenant-admin=acme,beta`.
+ */
+export const CLAIMS = { role: "role", tenant: "tenant", tenantAdmin: "tenant-admin" } as const;
 
-const GROUP = /^osiris-tenant-([a-z0-9]+(?:-[a-z0-9]+)*)-(admin|user)$/;
+/** Every user of Osiris has one of these roles; without it, the user is refused. */
+export const USER_ROLE = "osiris-user";
+/** Admin of every tenant, manages tenants. */
+export const SYSTEM_ADMIN_ROLE = "osiris-admin";
 
-/** A tenant slug: lowercase kebab-case, not ending in `-admin` or `-user` (those suffixes mark the groups). */
-export const TENANT_SLUG = /^(?!.*-(admin|user)$)[a-z0-9]+(-[a-z0-9]+)*$/;
+/** A tenant slug: lowercase kebab-case. */
+export const TENANT_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-export const tenantGroup = (tenantId: string, role: Role) => `osiris-tenant-${tenantId}-${role === "admin" ? "admin" : "user"}`;
-
-/** Parses a tenant group name: `osiris-tenant-<slug>-user` (member) or `osiris-tenant-<slug>-admin` (admin). */
-export function parseTenantGroup(group: string): Membership | null {
-  const m = GROUP.exec(group);
-  return m ? { tenantId: m[1]!, role: m[2] === "admin" ? "admin" : "member" } : null;
+export interface Access {
+  roles: string[];
+  /** Tenants the user is a member of (claim `tenant`). */
+  tenants: string[];
+  /** Tenants the user administers (claim `tenant-admin`). */
+  adminTenants: string[];
 }
 
-export const isSystemAdmin = (groups: readonly string[]) => groups.includes(SYSTEM_ADMIN_GROUP);
+/** Claim values as a list: a string is split on commas, an array (a JSON claim value) is taken as is. */
+export function claimList(value: unknown): string[] {
+  const items = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+  return [...new Set(items.filter((v): v is string => typeof v === "string").map((v) => v.trim()).filter(Boolean))];
+}
+
+export const accessFromClaims = (claim: (key: string) => unknown): Access => ({
+  roles: claimList(claim(CLAIMS.role)),
+  tenants: claimList(claim(CLAIMS.tenant)),
+  adminTenants: claimList(claim(CLAIMS.tenantAdmin)),
+});
+
+export const isSystemAdmin = (access: Access) => access.roles.includes(SYSTEM_ADMIN_ROLE);
+export const isAuthorized = (access: Access) => access.roles.includes(USER_ROLE) || isSystemAdmin(access);
 
 /**
- * Derives tenant memberships from PocketID group names:
- * `osiris-tenant-<slug>-user` makes the user a member, `osiris-tenant-<slug>-admin` an admin (no need to be in both).
- * Other groups are ignored.
+ * Tenant memberships from the claims: `tenant-admin` makes the user an admin, `tenant` a member (no need for both).
+ * Values that aren't valid slugs are ignored.
  */
-export function membershipsFromGroups(groups: readonly string[]): Membership[] {
+export function membershipsFromClaims(access: Access): Membership[] {
   const roles = new Map<string, Role>();
-  for (const group of groups) {
-    const m = parseTenantGroup(group);
-    if (m && (m.role === "admin" || !roles.has(m.tenantId))) roles.set(m.tenantId, m.role);
-  }
+  for (const id of access.tenants) if (TENANT_SLUG.test(id)) roles.set(id, "member");
+  for (const id of access.adminTenants) if (TENANT_SLUG.test(id)) roles.set(id, "admin");
   return [...roles].map(([tenantId, role]) => ({ tenantId, role })).sort((a, b) => a.tenantId.localeCompare(b.tenantId));
 }
 
-/** The tenants a user can open: from their groups, or every tenant (as admin) for a system admin. */
-export async function accessibleTenants(groups: readonly string[], directory: TenantDirectory): Promise<Membership[]> {
-  if (!isSystemAdmin(groups)) return membershipsFromGroups(groups);
+/**
+ * The tenants a user can open: none without an Osiris role, every tenant (as admin) for a system admin,
+ * otherwise those in their claims.
+ */
+export async function accessibleTenants(access: Access, directory: TenantDirectory): Promise<Membership[]> {
+  if (!isAuthorized(access)) return [];
+  if (!isSystemAdmin(access)) return membershipsFromClaims(access);
   return (await directory.list()).map((t) => ({ tenantId: t.id, role: "admin" as const }));
 }

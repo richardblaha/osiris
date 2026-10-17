@@ -1,4 +1,4 @@
-/** PocketID admin API (`/api/...` with `X-API-KEY`), used for what OIDC doesn't cover: users by phone, tenant groups. */
+/** PocketID admin API (`/api/...` with `X-API-KEY`), used for what OIDC doesn't cover: users by phone, tenant members. */
 export class PocketIdClient {
   private readonly base: string;
 
@@ -54,15 +54,6 @@ export interface PocketIdUser {
   displayName?: string;
   disabled?: boolean;
   customClaims?: { key: string; value: string }[];
-  userGroups?: { name: string }[];
-}
-
-export interface PocketIdGroup {
-  id: string;
-  name: string;
-  friendlyName: string;
-  userCount?: number;
-  users?: PocketIdUser[];
 }
 
 export const displayName = (u: PocketIdUser) =>

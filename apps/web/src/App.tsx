@@ -13,7 +13,7 @@ import type {
 } from "@osiris/shared";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, setTenant } from "./api.ts";
-import { configError, getAccessToken, login } from "./auth.ts";
+import { configError, getAccessToken, login, logout } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
 import { documentKey, KnowledgeDetail } from "./Knowledge.tsx";
 import { mcpKey, McpServerDetail, McpStatus } from "./McpServers.tsx";
@@ -203,7 +203,16 @@ function Workspace() {
     await refreshThreads();
   };
 
-  if (error) return <p className="notice notice-error m-6 px-3 py-2">{error}</p>;
+  if (error) {
+    return (
+      <div className="m-6 max-w-2xl space-y-3">
+        <p className="notice notice-error px-3 py-2 text-sm whitespace-pre-wrap">{error}</p>
+        <button onClick={logout} className="btn-secondary">
+          Odhlásit
+        </button>
+      </div>
+    );
+  }
   if (!me) return null;
   const isAdmin = tenant?.role === "admin";
   const sections = tenant ? SECTIONS.filter((s) => s.enabled(tenant.features)) : [];
