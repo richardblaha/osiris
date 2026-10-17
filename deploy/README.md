@@ -62,6 +62,7 @@ unreadable; changing the JWT keys only needs a restart of all services):
 
 ```bash
 pnpm --filter @osiris/platform gen-keys   # → OSIRIS_INTERNAL_JWT_PRIVATE_KEY, OSIRIS_INTERNAL_JWT_PUBLIC_KEY, OSIRIS_SECRETS_MASTER_KEY
+                                          #   (put the two PEM values in single quotes in .env: they contain spaces)
 openssl rand -hex 24                      # → OSIRIS_RQLITE_CONTROL_PASSWORD, OSIRIS_RQLITE_SITES_PASSWORD, OSIRIS_RQLITE_NODE_PASSWORD
 ```
 

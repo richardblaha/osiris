@@ -32,6 +32,9 @@ export function assertKey(key: string): string {
   return key;
 }
 
+/** A listing prefix: a key, optionally ending with `/`. */
+const listPrefix = (prefix: string) => (prefix.endsWith("/") ? `${assertKey(prefix.slice(0, -1))}/` : assertKey(prefix));
+
 export interface S3Options {
   endpoint: string;
   region: string;
@@ -77,7 +80,7 @@ export class S3ObjectStore implements ObjectStore {
     let token: string | undefined;
     do {
       const res = await this.client.send(
-        new ListObjectsV2Command({ Bucket: this.options.bucket, Prefix: assertKey(prefix), ContinuationToken: token }),
+        new ListObjectsV2Command({ Bucket: this.options.bucket, Prefix: listPrefix(prefix), ContinuationToken: token }),
       );
       for (const o of res.Contents ?? []) out.push({ key: o.Key!, size: o.Size ?? 0, modified: o.LastModified ?? new Date(0) });
       token = res.IsTruncated ? res.NextContinuationToken : undefined;
@@ -116,6 +119,7 @@ export class FsObjectStore implements ObjectStore {
   }
 
   async list(prefix: string) {
+    listPrefix(prefix);
     const out: StoredObject[] = [];
     const walk = async (dir: string) => {
       for (const d of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
