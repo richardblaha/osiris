@@ -1,0 +1,72 @@
+# Least privilege per service. Only the operator can touch tenant namespaces; control can only write Tenant
+# objects (and ask the API server who a runtime token belongs to); the gateway and sites have no API access.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: control
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: operator
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gateway
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sites
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: control
+rules:
+  - apiGroups: [osiris.k6labs.cz]
+    resources: [tenants]
+    verbs: [get, list, watch, create, patch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: control
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: Role, name: control }
+subjects: [{ kind: ServiceAccount, name: control, namespace: osiris }]
+---
+# TokenReview: control checks which tenant a runtime's projected token belongs to.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: osiris-control-token-review
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator }
+subjects: [{ kind: ServiceAccount, name: control, namespace: osiris }]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: osiris-operator
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, serviceaccounts, secrets, configmaps, services, resourcequotas, limitranges]
+    verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: [apps]
+    resources: [statefulsets]
+    verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: [networking.k8s.io]
+    resources: [networkpolicies, ingresses]
+    verbs: [get, list, watch, create, patch, update, delete]
+  - apiGroups: [osiris.k6labs.cz]
+    resources: [tenants, tenants/status]
+    verbs: [get, list, watch, patch, update]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: osiris-operator
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: osiris-operator }
+subjects: [{ kind: ServiceAccount, name: operator, namespace: osiris }]

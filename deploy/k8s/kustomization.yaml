@@ -5,11 +5,15 @@ kind: Kustomization
 namespace: osiris
 resources:
   - namespace.yaml
-  - pvc.yaml
-  - deployment.yaml
-  - service.yaml
-  - ingress.yaml
+  - crd.yaml
+  - rbac.yaml
+  - networkpolicies.yaml
+  - rqlite.yaml
+  - control.yaml
+  - gateway.yaml
+  - operator.yaml
+  - sites.yaml
   - gotenberg.yaml
-images:
-  - name: ghcr.io/richardblaha/osiris
-    newTag: main
+  - ingress.yaml
+  # The monolith's data volume, kept until the import (legacy-import-job.yaml) is done and checked.
+  - pvc.yaml

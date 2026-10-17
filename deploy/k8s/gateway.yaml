@@ -1,0 +1,73 @@
+# The only way in for osiris.k6labs.cz: PocketID tokens, routing to control or the tenant's runtime, the web app.
+# Secret osiris-gateway: OIDC_AUDIENCE, INTERNAL_JWT_PRIVATE_KEY.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  labels: { app: gateway }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: gateway }
+  template:
+    metadata:
+      labels: { app: gateway }
+    spec:
+      automountServiceAccountToken: false
+      serviceAccountName: gateway
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: gateway
+          image: ghcr.io/richardblaha/osiris-gateway:main
+          imagePullPolicy: Always
+          ports:
+            - { name: http, containerPort: 3001 }
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: OIDC_ISSUER, value: https://auth.k6labs.cz }
+            - { name: CORS_ORIGIN, value: https://osiris.k6labs.cz }
+            - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
+          envFrom:
+            - secretRef: { name: osiris-gateway }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+spec:
+  selector: { app: gateway }
+  ports:
+    - { name: http, port: 3001, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gateway
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: gateway }

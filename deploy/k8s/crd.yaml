@@ -1,0 +1,54 @@
+# A tenant, as control declares it and the operator runs it: namespace osiris-t-<name> with the runtime
+# (StatefulSet, volume), network policies and quotas, plus ingresses for its verified site domains.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: tenants.osiris.k6labs.cz
+spec:
+  group: osiris.k6labs.cz
+  scope: Namespaced
+  names:
+    kind: Tenant
+    plural: tenants
+    singular: tenant
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - { name: Display name, type: string, jsonPath: .spec.displayName }
+        - { name: Phase, type: string, jsonPath: .status.phase }
+        - { name: Last activity, type: string, jsonPath: .status.lastActivity }
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            metadata:
+              type: object
+              properties:
+                name:
+                  type: string
+                  maxLength: 40
+                  pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"
+            spec:
+              type: object
+              required: [displayName]
+              properties:
+                displayName: { type: string, maxLength: 100 }
+                suspended: { type: boolean }
+                idleMinutes: { type: integer, minimum: 0, maximum: 1440 }
+                storageGi: { type: integer, minimum: 1, maximum: 500 }
+                domains:
+                  type: array
+                  maxItems: 20
+                  items: { type: string, maxLength: 253, pattern: "^[a-z0-9.-]+$" }
+                wakeRequestedAt: { type: string, format: date-time }
+            status:
+              type: object
+              properties:
+                phase: { type: string, enum: [Sleeping, Running, Suspended] }
+                sleptAt: { type: string }
+                lastActivity: { type: string }
+                message: { type: string }

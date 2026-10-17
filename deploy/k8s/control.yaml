@@ -1,0 +1,77 @@
+# Tenants, users (PocketID), schedules, WhatsApp, domains, site publishing and backups. Writes Tenant objects only.
+# Secret osiris-control: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, POCKETID_API_KEY, RQLITE_USERNAME,
+# RQLITE_PASSWORD, S3_*, WHATSAPP_*, SITES_INGRESS_IPS (see deploy/README.md).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: control
+  labels: { app: control }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: control }
+  template:
+    metadata:
+      labels: { app: control }
+    spec:
+      automountServiceAccountToken: true
+      serviceAccountName: control
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: control
+          image: ghcr.io/richardblaha/osiris-control:main
+          imagePullPolicy: Always
+          ports:
+            - { name: http, containerPort: 3002 }
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: ORCHESTRATOR, value: kubernetes }
+            - { name: K8S_NAMESPACE, value: osiris }
+            - { name: RQLITE_URL, value: http://rqlite.osiris.svc.cluster.local:4001 }
+            - { name: OIDC_ISSUER, value: https://auth.k6labs.cz }
+            - { name: TIMEZONE, value: Europe/Prague }
+            - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
+          envFrom:
+            - secretRef: { name: osiris-control }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: control
+spec:
+  selector: { app: control }
+  ports:
+    - { name: http, port: 3002, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: control
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: control }

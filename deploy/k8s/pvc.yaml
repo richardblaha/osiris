@@ -1,4 +1,4 @@
-# Tenant databases (one SQLite file per tenant). ReadWriteOnce, so the deployment runs a single replica.
+# The monolith's data (tenants/<slug>.db, files/<slug>/). Read once by legacy-import-job.yaml, then kept as a fallback.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

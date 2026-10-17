@@ -1,5 +1,5 @@
 # Gotenberg converts the tenants' HTML and office documents to PDF (tool convert_to_pdf). It renders untrusted
-# content, so it is stateless, unprivileged, reachable only from Osiris and cut off from the network: Chromium may
+# content, so it is stateless, unprivileged, reachable only from tenant runtimes and cut off from the network: Chromium may
 # load only the files Gotenberg itself wrote to /tmp, and the NetworkPolicy denies all egress.
 apiVersion: apps/v1
 kind: Deployment
@@ -100,9 +100,9 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
-        - podSelector:
-            matchLabels:
-              app: osiris
+        # Tenant runtimes (convert_to_pdf).
+        - namespaceSelector: { matchExpressions: [{ key: osiris.k6labs.cz/tenant, operator: Exists }] }
+          podSelector: { matchLabels: { app: runtime } }
       ports:
         - port: 3000
   # No egress rules: Gotenberg can't reach anything, not even DNS.

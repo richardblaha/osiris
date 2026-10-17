@@ -120,6 +120,8 @@ export function tenantResources(t: TenantResource, s: OperatorSettings, replicas
               {
                 name: "runtime",
                 image: s.runtimeImage,
+                // Images follow a moving tag; a runtime picks up the new one whenever it wakes.
+                imagePullPolicy: "Always",
                 ports: [{ name: "http", containerPort: RUNTIME_PORT }],
                 envFrom: [{ configMapRef: { name: "runtime-config" } }, { secretRef: { name: "runtime-env" } }],
                 securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: { drop: ["ALL"] } },

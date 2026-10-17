@@ -1,0 +1,54 @@
+# One-off import of the monolith's tenants into the split setup (not part of the kustomization):
+#   kubectl -n osiris scale deploy/osiris --replicas=0      # the old volume is ReadWriteOnce
+#   kubectl -n osiris apply -f deploy/k8s/legacy-import-job.yaml && kubectl -n osiris logs -f job/legacy-import
+# Each tenant's name, features and archived flag go to rqlite, secrets are re-sealed with the tenant's own key, and
+# database + files become a backup that the tenant's runtime restores on its first start.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: legacy-import
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels: { app: legacy-import }
+    spec:
+      restartPolicy: Never
+      serviceAccountName: control
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: import
+          image: ghcr.io/richardblaha/osiris-control:main
+          imagePullPolicy: Always
+          command: ["node_modules/.bin/tsx", "src/legacy/migrate-cli.ts"]
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: ORCHESTRATOR, value: kubernetes }
+            - { name: K8S_NAMESPACE, value: osiris }
+            - { name: RQLITE_URL, value: http://rqlite.osiris.svc.cluster.local:4001 }
+            - { name: OIDC_ISSUER, value: https://auth.k6labs.cz }
+            - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
+            - { name: LEGACY_DATA_DIR, value: /legacy/tenants }
+            - { name: LEGACY_FILES_DIR, value: /legacy/files }
+          envFrom:
+            - secretRef: { name: osiris-control }
+            # LEGACY_SECRETS_KEY (the monolith's SECRETS_KEY) and SECRETS_MASTER_KEY.
+            - secretRef: { name: osiris-legacy-import }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: legacy, mountPath: /legacy, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: legacy
+          persistentVolumeClaim: { claimName: osiris-data, readOnly: true }
+        - name: tmp
+          emptyDir: { sizeLimit: 8Gi }

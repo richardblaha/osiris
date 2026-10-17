@@ -1,0 +1,63 @@
+# Runs tenants: reconciles Tenant objects into namespaces with the runtime, sleeps idle runtimes, site ingresses.
+# One replica (Recreate), so two operators never act at once.
+# Secret osiris-operator: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, SECRETS_MASTER_KEY,
+# RUNTIME_SECRET_MISTRAL_API_KEY (passed to every runtime as MISTRAL_API_KEY).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: operator
+  labels: { app: operator }
+spec:
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: operator }
+  template:
+    metadata:
+      labels: { app: operator }
+    spec:
+      automountServiceAccountToken: true
+      serviceAccountName: operator
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: operator
+          image: ghcr.io/richardblaha/osiris-operator:main
+          imagePullPolicy: Always
+          ports:
+            - { name: http, containerPort: 8081 }
+          env:
+            - { name: NAMESPACE, value: osiris }
+            - { name: RUNTIME_IMAGE, value: ghcr.io/richardblaha/osiris-runtime:main }
+            - { name: IMAGE_PULL_SECRET, value: ghcr-pull }
+            - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
+            - { name: GOTENBERG_URL, value: http://gotenberg.osiris.svc.cluster.local:3000 }
+            - { name: CLUSTER_ISSUER, value: letsencrypt }
+            - { name: SITES_MIDDLEWARE, value: osiris-redirect-https@kubernetescrd }
+            - { name: RUNTIME_ENV_TIMEZONE, value: Europe/Prague }
+            - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
+          envFrom:
+            - secretRef: { name: osiris-operator }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 20m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }

@@ -1,0 +1,51 @@
+# Nothing in the osiris namespace takes traffic unless allowed here. Tenant namespaces get their own policies from
+# the operator (only gateway, control and operator may reach a runtime).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# The internet comes in through Traefik: to the gateway (osiris.k6labs.cz) and to sites (tenant domains).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: from-ingress
+spec:
+  podSelector:
+    matchExpressions: [{ key: app, operator: In, values: [gateway, sites] }]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+---
+# Control: user calls relayed by the gateway, and tenant runtimes (features, backups, schedules, publishing).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: control
+spec:
+  podSelector: { matchLabels: { app: control } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: gateway } }
+        - namespaceSelector: { matchExpressions: [{ key: osiris.k6labs.cz/tenant, operator: Exists }] }
+          podSelector: { matchLabels: { app: runtime } }
+      ports: [{ port: 3002, protocol: TCP }]
+---
+# rqlite: its own nodes (Raft and joins), control (read/write) and sites (read-only user).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: rqlite
+spec:
+  podSelector: { matchLabels: { app: rqlite } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchExpressions: [{ key: app, operator: In, values: [rqlite, control, sites, legacy-import] }] }
+      ports: [{ port: 4001, protocol: TCP }, { port: 4002, protocol: TCP }]
