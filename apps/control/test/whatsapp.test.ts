@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
 import { splitText } from "../src/whatsapp/cloud-api.ts";
 import { userByPhone } from "../src/whatsapp/phones.ts";
@@ -73,7 +73,7 @@ describe("WhatsApp router", () => {
   });
 
   it("handles a sender's messages in order, one at a time", async () => {
-    const { inbox } = await setup([bob]);
+    const { inbox, db } = await setup([bob]);
     await inbox.enqueue([
       { id: "a", from: "1", phoneNumberId: BUSINESS, type: "text", text: "first" },
       { id: "b", from: "1", phoneNumberId: BUSINESS, type: "text", text: "second" },
@@ -83,7 +83,11 @@ describe("WhatsApp router", () => {
     const other = await inbox.claim();
     // The sender's second message waits for the first.
     expect([first?.id, other?.id]).toEqual(["a", "c"]);
+    // Nothing to claim means no write: rqlite can't snapshot away writes that change nothing.
+    const execute = vi.spyOn(db, "execute");
     expect(await inbox.claim()).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
+    execute.mockRestore();
     await inbox.finish("a", "done");
     expect((await inbox.claim())?.id).toBe("b");
   });

@@ -83,6 +83,7 @@ Packages: `packages/shared` (types and constants shared with the web client, fil
 - In runtime tests, `:memory:` libSQL loses data across `batch` transactions, so use `createTestDb()` or `createTestTenants()` from `apps/runtime/test/helpers.ts`. `createTestApp(tenants)` stands in for the gateway (dev tokens → internal JWT). `ScriptedChatModel` and `WordEmbeddings` replace real providers. Control tests use `createTestControl()` (temp SQLite with seeded users, fake orchestrator, runtimes, DNS, WhatsApp and mailer).
 - Vitest runs with `globals: true` because the checkpoint validation suite needs Jest-style globals.
 - rqlite: never read-then-write expecting isolation; claim with a single conditional UPDATE. Pass times as parameters.
+- rqlite: polling loops must not write when there is nothing to do. An UPDATE that changes no rows still adds a Raft log entry, and rqlite can't snapshot (and so truncate the log) without new data, so the log grows forever. Check with a read first, then claim.
 - `tar.c` returns a Minipass stream: wrap it in `Readable.from()` before `Readable.toWeb` or `pipe` into Node streams.
 - Migration comments (tenant and central) must not end a line with `;`, because the runners split statements there.
 - In-process state (run guard, wake-up waits, rate limits, caches) is per replica by design: a tenant has exactly one runtime, and everything shared between control replicas goes through rqlite.

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { tenantAudience, InternalVerifier } from "@osiris/platform/internal-auth.ts";
 import { checkCron, nextCron, SchedulerWorker } from "../src/scheduler.ts";
 import { createTestControl, keys } from "./helpers.ts";
@@ -33,11 +33,15 @@ describe("cron", () => {
 
 describe("scheduler", () => {
   it("lets only one worker claim a due task", async () => {
-    const { schedules } = await setup();
+    const { schedules, db } = await setup();
     await schedules.create("acme", { id: "bob", name: "Bob" }, { title: "A", prompt: "p", runAt: new Date(T0).toISOString() }, T0 - 60_000);
     const first = await schedules.claim(T0);
     expect(first?.title).toBe("A");
+    // Nothing to claim means no write (see Inbox.claim).
+    const execute = vi.spyOn(db, "execute");
     expect(await schedules.claim(T0)).toBeNull();
+    expect(execute).not.toHaveBeenCalled();
+    execute.mockRestore();
     // Once the lease runs out (the worker died), another worker takes it.
     expect((await schedules.claim(T0 + 16 * 60_000))?.id).toBe(first!.id);
   });

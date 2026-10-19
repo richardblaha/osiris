@@ -201,18 +201,11 @@ export class ScheduleStore {
 
   /** Claims the next due task; its lease keeps other workers off until it's finished or the lease runs out. */
   async claim(now = Date.now()): Promise<(Schedule & { tenantId: string; dueAt: number; attempts: number }) | null> {
+    const next = "SELECT id FROM schedules WHERE enabled = 1 AND next_run_at <= ? AND (lease_until IS NULL OR lease_until < ?) ORDER BY next_run_at LIMIT 1";
+    // Look before claiming: an UPDATE that changes nothing still grows rqlite's Raft log (see Inbox.claim).
+    if (!(await this.db.query(next, [now, now])).length) return null;
     const claim = randomUUID();
-    await this.db.execute([
-      run(
-        `UPDATE schedules SET claim = ?, lease_until = ?
-         WHERE id = (SELECT id FROM schedules WHERE enabled = 1 AND next_run_at <= ? AND (lease_until IS NULL OR lease_until < ?)
-                     ORDER BY next_run_at LIMIT 1)`,
-        claim,
-        now + LEASE_MS,
-        now,
-        now,
-      ),
-    ]);
+    await this.db.execute([run(`UPDATE schedules SET claim = ?, lease_until = ? WHERE id = (${next})`, claim, now + LEASE_MS, now, now)]);
     const [row] = await this.db.query<Row>("SELECT * FROM schedules WHERE claim = ?", [claim], { fresh: true });
     return row ? { ...toSchedule(row), tenantId: row.tenant_id, dueAt: Number(row.next_run_at), attempts: Number(row.attempts) } : null;
   }

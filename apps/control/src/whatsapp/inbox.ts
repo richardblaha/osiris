@@ -49,21 +49,19 @@ export class Inbox {
    * A message whose worker died gets back in line once its lease expires.
    */
   async claim(now = Date.now()): Promise<InboxMessage | null> {
+    const next = `SELECT m.message_id FROM wa_inbox m
+      WHERE m.status = 'pending' AND m.next_at <= ?
+        AND NOT EXISTS (SELECT 1 FROM wa_inbox p WHERE p.from_number = m.from_number AND p.status = 'processing')
+        AND NOT EXISTS (SELECT 1 FROM wa_inbox e WHERE e.from_number = m.from_number AND e.status = 'pending' AND e.received_at < m.received_at)
+      ORDER BY m.received_at LIMIT 1`;
+    // Look before claiming: an UPDATE that changes nothing still grows rqlite's Raft log, and without new data rqlite
+    // can't snapshot it away, so an idle poll every second would fill the disk.
+    const [due] = await this.db.query(`SELECT 1 FROM wa_inbox WHERE status = 'processing' AND lease_until < ? UNION ALL SELECT * FROM (${next})`, [now, now]);
+    if (!due) return null;
     const claim = randomUUID();
     await this.db.execute([
       run("UPDATE wa_inbox SET status = 'pending', claim = NULL WHERE status = 'processing' AND lease_until < ?", now),
-      run(
-        `UPDATE wa_inbox SET status = 'processing', claim = ?, lease_until = ?, attempts = attempts + 1
-         WHERE message_id = (
-           SELECT m.message_id FROM wa_inbox m
-           WHERE m.status = 'pending' AND m.next_at <= ?
-             AND NOT EXISTS (SELECT 1 FROM wa_inbox p WHERE p.from_number = m.from_number AND p.status = 'processing')
-             AND NOT EXISTS (SELECT 1 FROM wa_inbox e WHERE e.from_number = m.from_number AND e.status = 'pending' AND e.received_at < m.received_at)
-           ORDER BY m.received_at LIMIT 1)`,
-        claim,
-        now + this.leaseMs,
-        now,
-      ),
+      run(`UPDATE wa_inbox SET status = 'processing', claim = ?, lease_until = ?, attempts = attempts + 1 WHERE message_id = (${next})`, claim, now + this.leaseMs, now),
     ]);
     const [row] = await this.db.query<Row>("SELECT * FROM wa_inbox WHERE claim = ?", [claim], { fresh: true });
     return row
