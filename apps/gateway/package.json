@@ -13,7 +13,6 @@
     "@osiris/platform": "workspace:*",
     "@osiris/shared": "workspace:*",
     "hono": "4.13.13",
-    "jose": "6.2.12",
     "tsx": "4.23.15",
     "zod": "4.6.5"
   },

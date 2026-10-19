@@ -7,6 +7,10 @@ const bool = z
 // Sent in HTTP headers, which take printable ASCII only.
 const headerToken = z.string().regex(/^[\x21-\x7e]+$/, "must be printable ASCII without spaces").optional();
 const pem = z.string().transform((v) => v.replace(/\\n/g, "\n"));
+const list = z
+  .string()
+  .default("")
+  .transform((v) => v.split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean));
 
 const schema = z
   .object({
@@ -24,8 +28,31 @@ const schema = z
     INTERNAL_JWT_PRIVATE_KEY: pem,
     INTERNAL_JWT_PUBLIC_KEY: pem,
 
-    // PocketID: the issuer URL and its admin API key. Without the key (development) users are kept in memory.
-    OIDC_ISSUER: z.url().optional(),
+    // Sign-in: control is the OpenID Connect provider at <PUBLIC_URL>/auth; the web app runs at PUBLIC_URL.
+    PUBLIC_URL: z.url().default("http://localhost:5173").transform((v) => v.replace(/\/$/, "")),
+    // More origins the web app may run at (comma-separated), e.g. a preview; each gets <origin>/callback.
+    AUTH_EXTRA_ORIGINS: list,
+    // Signs ID tokens: an EC P-256 private key (PEM). `pnpm --filter @osiris/platform gen-keys` makes one.
+    AUTH_SIGNING_KEY: pem.optional(),
+    // 32 bytes, base64: signs the provider's cookies and seals TOTP secrets.
+    AUTH_SECRET: z.string().optional(),
+    // Social sign-in, each on when its client ID and secret are set. Redirect URI <PUBLIC_URL>/auth/social/<name>/callback.
+    GOOGLE_CLIENT_ID: z.string().optional(),
+    GOOGLE_CLIENT_SECRET: z.string().optional(),
+    FACEBOOK_CLIENT_ID: z.string().optional(),
+    FACEBOOK_CLIENT_SECRET: z.string().optional(),
+    MICROSOFT_CLIENT_ID: z.string().optional(),
+    MICROSOFT_CLIENT_SECRET: z.string().optional(),
+    // common (personal and work accounts), consumers, organizations, or one directory's id.
+    MICROSOFT_TENANT: z.string().default("common"),
+    SEZNAM_CLIENT_ID: z.string().optional(),
+    SEZNAM_CLIENT_SECRET: z.string().optional(),
+    // Email (sign-in links): smtp(s)://user:pass@host:port. Without it there are no links by email (development prints them).
+    SMTP_URL: z.string().optional(),
+    MAIL_FROM: z.string().default("Osiris <auth@k6labs.cz>"),
+
+    // PocketID admin API, only for the one-off import of its users (`pnpm users import-pocketid`).
+    POCKETID_URL: z.url().optional(),
     POCKETID_API_KEY: headerToken,
 
     // How tenant runtimes run: Kubernetes (Tenant custom resources, operator) or local child processes (development).
@@ -50,7 +77,7 @@ const schema = z
     LOCAL_OBJECTS_DIR: z.string().default("./data/objects"),
     BACKUP_RETENTION_DAYS: z.coerce.number().int().positive().default(30),
 
-    // WhatsApp (Meta Cloud API), on when all three are set (plus POCKETID_API_KEY).
+    // WhatsApp (Meta Cloud API), on when all three are set.
     WHATSAPP_VERIFY_TOKEN: z.string().optional(),
     WHATSAPP_APP_SECRET: z.string().optional(),
     WHATSAPP_ACCESS_TOKEN: headerToken,
@@ -68,20 +95,26 @@ const schema = z
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";
     if (prod && !env.RQLITE_URL) ctx.addIssue({ code: "custom", path: ["RQLITE_URL"], message: "is required in production" });
-    if (prod && !env.POCKETID_API_KEY) ctx.addIssue({ code: "custom", path: ["POCKETID_API_KEY"], message: "is required in production" });
+    if (prod && !env.AUTH_SIGNING_KEY) ctx.addIssue({ code: "custom", path: ["AUTH_SIGNING_KEY"], message: "is required in production" });
+    if (prod && !env.AUTH_SECRET) ctx.addIssue({ code: "custom", path: ["AUTH_SECRET"], message: "is required in production" });
+    if (env.AUTH_SECRET && Buffer.from(env.AUTH_SECRET, "base64").length !== 32) {
+      ctx.addIssue({ code: "custom", path: ["AUTH_SECRET"], message: "must be 32 bytes, base64-encoded" });
+    }
+    if (prod && !env.PUBLIC_URL.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["PUBLIC_URL"], message: "must be https in production" });
+    for (const p of ["GOOGLE", "FACEBOOK", "MICROSOFT", "SEZNAM"] as const) {
+      if (!env[`${p}_CLIENT_ID`] !== !env[`${p}_CLIENT_SECRET`]) {
+        ctx.addIssue({ code: "custom", path: [`${p}_CLIENT_SECRET`], message: `${p}_CLIENT_ID and ${p}_CLIENT_SECRET go together` });
+      }
+    }
     if (prod && !env.S3_BUCKET) ctx.addIssue({ code: "custom", path: ["S3_BUCKET"], message: "is required in production" });
     if (prod && env.DEV_RUNTIME_AUTH) ctx.addIssue({ code: "custom", path: ["DEV_RUNTIME_AUTH"], message: "must not be enabled in production" });
     if (prod && env.ORCHESTRATOR !== "kubernetes") ctx.addIssue({ code: "custom", path: ["ORCHESTRATOR"], message: "must be kubernetes in production" });
-    if (env.POCKETID_API_KEY && !env.OIDC_ISSUER) ctx.addIssue({ code: "custom", path: ["OIDC_ISSUER"], message: "is required with POCKETID_API_KEY" });
     if (env.S3_BUCKET && !(env.S3_ENDPOINT && env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY)) {
       ctx.addIssue({ code: "custom", path: ["S3_BUCKET"], message: "needs S3_ENDPOINT, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY" });
     }
     const whatsapp = [env.WHATSAPP_VERIFY_TOKEN, env.WHATSAPP_APP_SECRET, env.WHATSAPP_ACCESS_TOKEN];
     if (whatsapp.some(Boolean) && !whatsapp.every(Boolean)) {
       ctx.addIssue({ code: "custom", path: ["WHATSAPP_ACCESS_TOKEN"], message: "WHATSAPP_VERIFY_TOKEN, WHATSAPP_APP_SECRET and WHATSAPP_ACCESS_TOKEN go together" });
-    }
-    if (whatsapp.every(Boolean) && !env.POCKETID_API_KEY) {
-      ctx.addIssue({ code: "custom", path: ["POCKETID_API_KEY"], message: "is required for WhatsApp" });
     }
   });
 

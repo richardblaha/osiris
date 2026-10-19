@@ -5,7 +5,7 @@ import type { Access } from "@osiris/platform/claims.ts";
 import { userAccess } from "../tenants.ts";
 import type { UserDirectory } from "../users.ts";
 
-/** Digits only, so PocketID's "+420 777 123 456" matches WhatsApp's "420777123456". */
+/** Digits only, so a stored "+420 777 123 456" matches WhatsApp's "420777123456". */
 export const phoneKey = (phone: string) => phone.replace(/\D/g, "");
 
 export const PHONE_CLAIM = "phone_number";

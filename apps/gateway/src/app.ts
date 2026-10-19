@@ -5,7 +5,7 @@ import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { accessibleTenants, isAuthorized, isSystemAdmin, membershipsFromClaims, type Membership } from "@osiris/platform/claims.ts";
-import { isUnreachable, retryUntil } from "@osiris/platform/http.ts";
+import { isUnreachable, retryUntil, ServiceError } from "@osiris/platform/http.ts";
 import { CONTROL_AUDIENCE, tenantAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import type { ControlDirectory } from "./control.ts";
@@ -21,8 +21,8 @@ export interface GatewayDeps {
   corsOrigin: string;
   maxBodyBytes: number;
   limits: { requestsPerMinute: number; runsPerMinute: number };
-  /** In production the gateway also serves the built web app from `dir`, plus its runtime config at `/config.js`. */
-  web?: { dir: string; oidcAuthority?: string; oidcClientId?: string };
+  /** In production the gateway also serves the built web app from `dir`. */
+  web?: { dir: string };
   fetchFn?: typeof fetch;
 }
 
@@ -41,6 +41,10 @@ const CONTROL_PATHS = /^\/api\/(me|admin|tenant|members|schedules|domains|sites)
 const FORWARD_REQUEST = ["content-type", "accept", "x-tenant-id", "x-hub-signature-256"];
 /** Response headers passed back to the browser. */
 const FORWARD_RESPONSE = ["content-type", "content-disposition", "cache-control", "content-security-policy", "x-content-type-options", "retry-after"];
+/** Sign-in (`/auth`, control's OIDC provider and the sign-in screens' API) takes cookies and answers with redirects. */
+const AUTH_REQUEST = ["content-type", "accept", "accept-language", "cookie", "user-agent", "origin", "authorization", "dpop"];
+const AUTH_RESPONSE = [...FORWARD_RESPONSE, "location", "pragma", "www-authenticate", "dpop-nonce", "access-control-allow-origin", "vary"];
+const AUTH_BODY_BYTES = 64 * 1024;
 
 /** A 403 that tells the user who they are signed in as and which claims arrived, so a misconfigured account is easy to fix. */
 class AccessDeniedError extends HTTPException {
@@ -64,16 +68,21 @@ const describeUser = (user: Identity) => ({
 
 const plainUser = (u: Identity): InternalUser => ({ sub: u.sub, name: u.name, email: u.email, phone: u.phone, picture: u.picture });
 
+/** The browser's address: the first of X-Forwarded-For, which Traefik sets. */
+const clientIp = (c: Context) => c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+
 /**
- * The only entry point from the internet for osiris.k6labs.cz. Verifies the PocketID token, works out the user's
- * tenants from their claims, and passes each call on with a short internal token: account, administration, schedules
- * and sites to control; the rest to the active tenant's runtime, which is woken up first if it sleeps. Services
- * behind it never see a PocketID token, and network policies let only the gateway reach them.
+ * The only entry point from the internet for osiris.k6labs.cz. Passes sign-in (`/auth`) to control, which is the
+ * OpenID Connect provider. For the API it has control identify the access token, works out the user's tenants from
+ * their claims, and passes each call on with a short internal token: account, administration, schedules and sites to
+ * control; the rest to the active tenant's runtime, which is woken up first if it sleeps. Services behind it never see
+ * an access token, and network policies let only the gateway reach them.
  */
 export function createGatewayApp(deps: GatewayDeps) {
   const { verifier, signer, control, runtimes, web } = deps;
   const fetchFn = deps.fetchFn ?? fetch;
   const requests = new RateLimiter(deps.limits.requestsPerMinute);
+  const signIns = new RateLimiter(deps.limits.requestsPerMinute);
   const runs = new RateLimiter(deps.limits.runsPerMinute);
 
   const authenticate = createMiddleware<Env>(async (c, next) => {
@@ -82,7 +91,9 @@ export function createGatewayApp(deps: GatewayDeps) {
     let user: Identity;
     try {
       user = await verifier.identify(token);
-    } catch {
+    } catch (err) {
+      // Control down is not a bad token: the browser must not start signing in again.
+      if (isUnreachable(err) || (err instanceof ServiceError && err.status >= 500)) throw err;
       throw new HTTPException(401, { message: "Invalid token" });
     }
     const deny = (message: string) => {
@@ -90,7 +101,7 @@ export function createGatewayApp(deps: GatewayDeps) {
       console.warn(`Access denied: ${message}`, details);
       return new AccessDeniedError(message, details);
     };
-    if (!isAuthorized(user.access)) throw deny("User has no Osiris role (claim role=osiris-user or osiris-admin)");
+    if (!isAuthorized(user.access)) throw deny("Účet zatím nemá přístup do Osirisu (chybí role osiris-user). Požádej správce.");
     const systemAdmin = isSystemAdmin(user.access);
     // Claims may name tenants that were removed; only active ones count. A tenant just created may be missing from
     // the cached list, so an unknown one triggers a reload.
@@ -99,7 +110,7 @@ export function createGatewayApp(deps: GatewayDeps) {
       active = (await control.list({ refresh: true })).map((t) => t.id);
     }
     const memberships = accessibleTenants(user.access, active).filter((m) => active.includes(m.tenantId));
-    if (!memberships.length && !systemAdmin) throw deny("User is not assigned to any tenant (claim tenant or tenant-admin)");
+    if (!memberships.length && !systemAdmin) throw deny("Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.");
     if (!requests.take(user.sub)) throw new HTTPException(429, { message: "Příliš mnoho požadavků, zkus to za chvíli" });
     c.set("auth", { user, memberships, systemAdmin });
     await next();
@@ -165,6 +176,36 @@ export function createGatewayApp(deps: GatewayDeps) {
     return relay(res);
   };
 
+  /** Sign-in goes to control as it came, cookies and all; redirects go back to the browser. */
+  const toAuth = async (c: Context) => {
+    const url = new URL(c.req.url);
+    if (!signIns.take(clientIp(c))) throw new HTTPException(429, { message: "Příliš mnoho požadavků, zkus to za chvíli" });
+    const headers: Record<string, string> = {
+      // Control builds its URLs and cookie flags from these (the gateway sits behind Traefik, which sets them).
+      "x-forwarded-proto": c.req.header("x-forwarded-proto") ?? url.protocol.slice(0, -1),
+      "x-forwarded-host": c.req.header("x-forwarded-host") ?? url.host,
+      "x-forwarded-for": clientIp(c),
+    };
+    for (const h of AUTH_REQUEST) {
+      const v = c.req.header(h);
+      if (v) headers[h] = v;
+    }
+    const res = await fetchFn(`${deps.controlUrl}${url.pathname}${url.search}`, {
+      method: c.req.method,
+      headers,
+      body: await body(c),
+      redirect: "manual",
+      signal: c.req.raw.signal,
+    });
+    const out = new Headers();
+    for (const h of AUTH_RESPONSE) {
+      const v = res.headers.get(h);
+      if (v) out.set(h, v);
+    }
+    for (const cookie of res.headers.getSetCookie()) out.append("set-cookie", cookie);
+    return new Response(res.body, { status: res.status, headers: out });
+  };
+
   const api = new Hono<Env>()
     .use(bodyLimit({ maxSize: deps.maxBodyBytes, onError: (c) => c.json({ error: "Požadavek je příliš velký" }, 413) }))
     .use(authenticate)
@@ -177,17 +218,17 @@ export function createGatewayApp(deps: GatewayDeps) {
       c.header("referrer-policy", "strict-origin-when-cross-origin");
       c.header("x-frame-options", "DENY");
       c.header("strict-transport-security", "max-age=31536000");
-      // The SPA itself: own scripts only; PocketID for login, silent renew and avatars.
+      // The SPA and the sign-in pages: own scripts only; sign-in is on this origin too (/auth).
       if (!c.res.headers.has("content-security-policy") && (c.res.headers.get("content-type") ?? "").includes("text/html")) {
-        const idp = web?.oidcAuthority ? new URL(web.oidcAuthority).origin : "";
         c.header(
           "content-security-policy",
-          `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: ${idp}; connect-src 'self' ${idp}; frame-src ${idp || "'none'"}; frame-ancestors 'none'; base-uri 'none'; form-action 'self' ${idp}`,
+          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
         );
       }
     })
     .use("/api/*", cors({ origin: deps.corsOrigin, allowHeaders: ["authorization", "content-type", "x-tenant-id"] }))
     .get("/health", (c) => c.json({ ok: true }))
+    .all("/auth/*", bodyLimit({ maxSize: AUTH_BODY_BYTES, onError: (c) => c.json({ error: "Požadavek je příliš velký" }, 413) }), toAuth)
     .route("/api", api)
     // Meta's webhook goes to control as it came; control checks Meta's signature.
     .all("/webhooks/whatsapp", bodyLimit({ maxSize: 1024 * 1024 }), async (c) => {
@@ -206,12 +247,6 @@ export function createGatewayApp(deps: GatewayDeps) {
         throw err;
       });
       return new Response(res.body, { status: res.status, headers: { "content-type": res.headers.get("content-type") ?? "text/plain" } });
-    })
-    // Runtime config for the web client, so one image works with any PocketID client. Loaded before the app bundle.
-    .get("/config.js", (c) => {
-      const config = { oidcAuthority: web?.oidcAuthority, oidcClientId: web?.oidcClientId };
-      c.header("cache-control", "no-cache");
-      return c.body(`window.__OSIRIS_CONFIG__ = ${JSON.stringify(config)};\n`, 200, { "content-type": "text/javascript" });
     });
 
   if (web) {

@@ -1,6 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { serve } from "@hono/node-server";
+import { createServer } from "node:http";
 import { InternalSigner, InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
 import { FsObjectStore, S3ObjectStore, type ObjectStore } from "@osiris/platform/objects.ts";
 import { LocalDb, migrate, RqliteDb, type Db } from "@osiris/platform/rqlite.ts";
@@ -8,17 +8,18 @@ import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";
 import { startLoop } from "@osiris/platform/worker.ts";
 import { createControlApp } from "./app.ts";
+import { createAuth } from "./auth/index.ts";
 import { Backups } from "./backups.ts";
 import { loadConfig } from "./config.ts";
 import { KubernetesOrchestrator } from "./orchestrator/kubernetes.ts";
 import { LocalOrchestrator } from "./orchestrator/local.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";
-import { PocketIdClient } from "./pocketid.ts";
 import { ScheduleStore, SchedulerWorker } from "./scheduler.ts";
+import { controlListener } from "./server.ts";
 import { DomainStore, publicDns } from "./sites/domains.ts";
 import { SitePublisher } from "./sites/publisher.ts";
 import { TenantDirectory, TenantStore } from "./tenants.ts";
-import { memoryUsers, pocketIdUsers } from "./users.ts";
+import { dbUsers } from "./users.ts";
 import { WhatsAppClient } from "./whatsapp/cloud-api.ts";
 import { Inbox } from "./whatsapp/inbox.ts";
 import { PhoneVerification } from "./whatsapp/phones.ts";
@@ -61,9 +62,8 @@ const orchestrator: Orchestrator =
       });
 const runtimes = new RuntimeClient({ endpoint: async (t) => orchestrator.endpoint(t), wake: (t) => orchestrator.wake(t) });
 
-const pocketId = config.POCKETID_API_KEY ? new PocketIdClient(config.OIDC_ISSUER!, config.POCKETID_API_KEY) : undefined;
-if (!pocketId) console.warn("POCKETID_API_KEY not set: users are kept in memory (development only).");
-const users = pocketId ? pocketIdUsers(pocketId, config.OIDC_ISSUER!) : memoryUsers();
+const users = dbUsers(db, { objects, publicUrl: config.PUBLIC_URL });
+const auth = await createAuth(config, db, users);
 
 const store = new TenantStore(db);
 const directory = new TenantDirectory(store, users, orchestrator);
@@ -103,6 +103,7 @@ const app = createControlApp({
   backups,
   phones,
   snapshot,
+  auth,
   whatsapp: whatsappClient
     ? { inbox, verifyToken: config.WHATSAPP_VERIFY_TOKEN!, appSecret: config.WHATSAPP_APP_SECRET!, displayNumber: config.WHATSAPP_DISPLAY_NUMBER }
     : undefined,
@@ -127,6 +128,7 @@ const loops = [
   startLoop("Cleanup", 6 * 60 * 60_000, async () => {
     await backups.prune();
     await inbox.cleanup();
+    await auth.credentials.cleanup();
     return false;
   }),
 ];
@@ -134,7 +136,9 @@ const loops = [
 // Tenants created before the operator existed (or whose resource was lost) get their resource back.
 for (const t of await store.list({ archived: true })) await directory.sync(t.id).catch((err) => console.error(`Sync of ${t.id} failed`, err));
 
-const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) => console.log(`Control listening on http://localhost:${port}`));
+const server = createServer(controlListener(app, auth.provider)).listen(config.PORT, () =>
+  console.log(`Control listening on http://localhost:${config.PORT} (sign-in at ${config.PUBLIC_URL}/auth)`),
+);
 const shutdown = async () => {
   server.close();
   await Promise.all(loops.map((l) => l.stop()));

@@ -1,41 +1,41 @@
 import { UserManager, WebStorageStateStore } from "oidc-client-ts";
 
 const devUser = (import.meta.env.VITE_DEV_USER as string | undefined) || undefined;
-declare global {
-  interface Window {
-    /** Set by `/config.js`, which the API serves in production. */
-    __OSIRIS_CONFIG__?: { oidcAuthority?: string; oidcClientId?: string };
-  }
-}
-const runtime = window.__OSIRIS_CONFIG__;
-const authority = runtime?.oidcAuthority || (import.meta.env.VITE_OIDC_AUTHORITY as string | undefined);
-const clientId = runtime?.oidcClientId || (import.meta.env.VITE_OIDC_CLIENT_ID as string | undefined);
 
-/** Set when neither dev login nor PocketID is configured, so the UI can say what's missing. */
-export const configError =
-  devUser || (authority && clientId)
-    ? undefined
-    : "Chybí nastavení přihlášení: v apps/web/.env vyplň VITE_OIDC_AUTHORITY a VITE_OIDC_CLIENT_ID, nebo pro vývoj VITE_DEV_USER.";
+const manager = devUser
+  ? undefined
+  : new UserManager({
+      // Control's OpenID Connect provider, on this origin behind the gateway.
+      authority: `${location.origin}/auth`,
+      client_id: "osiris-web",
+      redirect_uri: `${location.origin}/callback`,
+      post_logout_redirect_uri: location.origin,
+      // profile carries the claims role, tenant, tenant-admin and phone_number.
+      scope: "openid profile email",
+      userStore: new WebStorageStateStore({ store: localStorage }),
+      // Renews with the refresh token, which lives as long as the sign-in session.
+      automaticSilentRenew: true,
+    });
 
-const manager =
-  devUser || configError
-    ? undefined
-    : new UserManager({
-        authority: authority!,
-        client_id: clientId!,
-        redirect_uri: `${location.origin}/callback`,
-        post_logout_redirect_uri: location.origin,
-        // profile carries the custom claims: role, tenant, tenant-admin and phone_number.
-        scope: "openid profile email",
-        userStore: new WebStorageStateStore({ store: localStorage }),
-        automaticSilentRenew: true,
-      });
+/** Where to go after signing in, carried through the redirect as OIDC state. */
+type ReturnState = { path?: string };
 
-/** Completes the redirect from PocketID if we're on /callback. */
+/**
+ * Completes the redirect back from sign-in if we're on /callback, and starts a fresh sign-in when a one-time link
+ * sent us here (`/?signin=link`; the link was remembered by the server, the sign-in uses it up).
+ */
 export async function handleCallback(): Promise<void> {
-  if (manager && location.pathname === "/callback") {
-    await manager.signinRedirectCallback();
-    history.replaceState(null, "", "/");
+  if (!manager) return;
+  if (location.pathname === "/callback") {
+    const user = await manager.signinRedirectCallback();
+    history.replaceState(null, "", (user.state as ReturnState | undefined)?.path ?? "/");
+    return;
+  }
+  const params = new URLSearchParams(location.search);
+  if (params.get("signin") === "link") {
+    await manager.removeUser();
+    // prompt=login: sign in as the link's user even if this browser is signed in as someone else.
+    await manager.signinRedirect({ prompt: "login", state: { path: "/?profile=security" } satisfies ReturnState });
   }
 }
 
@@ -48,7 +48,7 @@ export async function getAccessToken(): Promise<string | undefined> {
 }
 
 export const login = async () => {
-  if (!manager) throw new Error(configError);
-  await manager.signinRedirect();
+  if (!manager) throw new Error("Přihlášení není k dispozici");
+  await manager.signinRedirect({ state: { path: `${location.pathname}${location.search}` } satisfies ReturnState });
 };
 export const logout = () => manager?.signoutRedirect();

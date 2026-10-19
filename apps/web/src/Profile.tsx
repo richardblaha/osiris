@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { logout } from "./auth.ts";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { Security } from "./Security.tsx";
 
 const initials = (name: string) =>
   name
@@ -12,7 +13,7 @@ const initials = (name: string) =>
     .map((w) => w[0]!.toUpperCase())
     .join("");
 
-/** The PocketID profile picture (claim `picture`), or the user's initials when there is none or it fails to load. */
+/** The profile picture (claim `picture`), or the user's initials when there is none or it fails to load. */
 export function Avatar({ user, size = 32 }: { user: MeResponse["user"]; size?: number }) {
   const [failed, setFailed] = useState(false);
   const label = user.name ?? user.email ?? "?";
@@ -27,7 +28,7 @@ export function Avatar({ user, size = 32 }: { user: MeResponse["user"]; size?: n
   );
 }
 
-export function Profile({ me }: { me: MeResponse }) {
+export function Profile({ me, notice }: { me: MeResponse; notice?: { linked?: string; error?: string } }) {
   const [settings, setSettings] = useState<UserSettings>();
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -69,6 +70,7 @@ export function Profile({ me }: { me: MeResponse }) {
       </div>
 
       <Account />
+      <Security notice={notice} />
 
       <h2 className="section-header mt-8">Asistent</h2>
       {settings && (
@@ -126,7 +128,7 @@ export function Profile({ me }: { me: MeResponse }) {
   );
 }
 
-/** Name, email, picture and phone, kept in PocketID and edited from here. */
+/** Name, email, picture and phone of the Osiris account. */
 function Account() {
   const [profile, setProfile] = useState<UserProfile>();
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "" });
@@ -159,7 +161,7 @@ function Account() {
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          void act(async () => show(await api.saveProfile(form)), "Uloženo. Nové jméno se projeví po dalším přihlášení.");
+          void act(async () => show(await api.saveProfile(form)), "Uloženo. Nové jméno se projeví do minuty.");
         }}
         className="space-y-3"
       >

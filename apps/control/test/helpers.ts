@@ -1,3 +1,4 @@
+import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,7 +15,10 @@ import { ScheduleStore } from "../src/scheduler.ts";
 import { DomainStore, type DnsLookup } from "../src/sites/domains.ts";
 import { SitePublisher } from "../src/sites/publisher.ts";
 import { TenantDirectory, TenantStore } from "../src/tenants.ts";
-import { memoryUsers, type UserRecord } from "../src/users.ts";
+import { createAuthDeps } from "../src/auth/index.ts";
+import type { Mailer } from "../src/auth/mail.ts";
+import type { SocialClient, SocialProviderId } from "../src/auth/social.ts";
+import { dbUsers, type UserRecord } from "../src/users.ts";
 import { WhatsAppClient } from "../src/whatsapp/cloud-api.ts";
 import { Inbox } from "../src/whatsapp/inbox.ts";
 import { PhoneVerification } from "../src/whatsapp/phones.ts";
@@ -22,6 +26,8 @@ import { PhoneVerification } from "../src/whatsapp/phones.ts";
 export const tempDir = (prefix = "osiris-control-") => mkdtempSync(join(tmpdir(), prefix));
 export const keys = await generateInternalKeys();
 export const MIGRATIONS = join(import.meta.dirname, "../src/db/migrations");
+export const SIGNING_KEY = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ format: "pem", type: "pkcs8" }).toString();
+export const PUBLIC_URL = "http://osiris.test";
 
 export async function createTestDb() {
   const db = new LocalDb(join(tempDir(), "control.db"));
@@ -60,11 +66,33 @@ export type RuntimeHandler = (tenant: string, path: string, init: RequestInit) =
 
 /** All of control over a temp database and folder, with fakes for the cluster, runtimes, DNS and WhatsApp. */
 export async function createTestControl(
-  options: { users?: Partial<UserRecord>[]; dns?: DnsLookup; runtime?: RuntimeHandler } = {},
+  options: {
+    users?: Partial<UserRecord>[];
+    dns?: DnsLookup;
+    runtime?: RuntimeHandler;
+    social?: Partial<Record<SocialProviderId, SocialClient>>;
+    socialFetch?: typeof fetch;
+  } = {},
 ) {
   const db = await createTestDb();
   const orchestrator = new FakeOrchestrator();
-  const users = memoryUsers(options.users ?? []);
+  const objects = new FsObjectStore(tempDir("osiris-objects-"));
+  const users = dbUsers(db, { objects, publicUrl: PUBLIC_URL });
+  for (const u of options.users ?? []) {
+    await users.create({ id: u.id, email: u.email ?? null, firstName: u.firstName ?? u.name ?? "", lastName: u.lastName ?? "", claims: u.claims, disabled: u.disabled });
+  }
+  const mail: { to: string; subject: string; text: string }[] = [];
+  const mailer: Mailer = { send: async (m) => void mail.push(m) };
+  const auth = await createAuthDeps({
+    db,
+    users,
+    publicUrl: PUBLIC_URL,
+    secret: randomBytes(32).toString("base64"),
+    signingKeyPem: SIGNING_KEY,
+    socialClients: options.social,
+    fetchFn: options.socialFetch,
+    mailer,
+  });
   const store = new TenantStore(db);
   const directory = new TenantDirectory(store, users, orchestrator);
   const runtimeCalls: { tenant: string; path: string; init: RequestInit }[] = [];
@@ -77,7 +105,6 @@ export async function createTestControl(
     return runtime(tenant, u.pathname + u.search, init);
   }) as unknown as typeof fetch;
   const runtimes = new RuntimeClient({ endpoint: async (t) => orchestrator.endpoint(t), wake: (t) => orchestrator.wake(t) }, { fetchFn: runtimeFetch, wakeTimeoutMs: 2000 });
-  const objects = new FsObjectStore(tempDir("osiris-objects-"));
   const schedules = new ScheduleStore(db, "Europe/Prague");
   const domains = new DomainStore(db, options.dns ?? fakeDns({}), { ingressIps: ["203.0.113.10"], maxPerTenant: 3, reserved: ["k6labs.cz"] });
   const sites = new SitePublisher(db, objects);
@@ -106,6 +133,7 @@ export async function createTestControl(
     backups,
     phones,
     snapshot: async (t) => void snapshots.push(t),
+    auth,
     whatsapp: { inbox, verifyToken: "verify-me", appSecret: "app-secret", displayNumber: "+420 600 000 000" },
   });
 
@@ -152,5 +180,7 @@ export async function createTestControl(
     snapshots,
     asUser,
     asRuntime,
+    auth,
+    mail,
   };
 }

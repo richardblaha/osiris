@@ -1,10 +1,11 @@
 import { callJson } from "@osiris/platform/http.ts";
 import { CONTROL_AUDIENCE, type InternalSigner } from "@osiris/platform/internal-auth.ts";
 import type { RuntimeLocator } from "@osiris/platform/runtime-client.ts";
+import type { TokenOwner } from "./oidc.ts";
 
 const TENANTS_TTL_MS = 30_000;
 
-/** The gateway's own questions to control: which tenants exist, where a tenant's runtime is, and wake it up. */
+/** The gateway's own questions to control: whose a token is, which tenants exist, where a tenant's runtime is, and wake it up. */
 export class ControlDirectory implements RuntimeLocator {
   private tenants?: { at: number; list: Promise<{ id: string; name: string }[]> };
   private lastForced = 0;
@@ -16,7 +17,7 @@ export class ControlDirectory implements RuntimeLocator {
     private readonly fetchFn: typeof fetch = fetch,
   ) {}
 
-  private async call<T>(path: string, init: RequestInit = {}) {
+  private async call<T>(path: string, init: RequestInit & { timeoutMs?: number } = {}) {
     return callJson<T>(`${this.baseUrl}/internal/gateway${path}`, {
       ...init,
       headers: { authorization: await this.signer.header(CONTROL_AUDIENCE) },
@@ -40,6 +41,9 @@ export class ControlDirectory implements RuntimeLocator {
     }
     return this.tenants.list;
   }
+
+  /** The user an access token belongs to; `ServiceError` 401 for an unknown or expired token. */
+  identify = (token: string) => this.call<TokenOwner>("/identify", { method: "POST", body: JSON.stringify({ token }), timeoutMs: 10_000 });
 
   async endpoint(tenant: string) {
     let url = this.endpoints.get(tenant);

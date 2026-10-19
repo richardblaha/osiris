@@ -29,7 +29,7 @@ const MAX_ATTEMPTS = 3;
 const RUN_TIMEOUT_MS = 5 * 60_000;
 
 /**
- * Handles queued WhatsApp messages: finds the user by number (PocketID claim `phone_number`), the tenant from their
+ * Handles queued WhatsApp messages: finds the user by number (claim `phone_number`), the tenant from their
  * claims and their `/tenant` choice, and passes the text to that tenant's runtime, which runs the agent in the user's
  * WhatsApp thread and returns the reply. Runtimes have no WhatsApp token; only control sends.
  */

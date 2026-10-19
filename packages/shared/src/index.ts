@@ -209,6 +209,27 @@ export interface UserProfile {
   phoneChallenge?: { phone: string; code: string; whatsappNumber: string | null; expiresAt: string };
 }
 
+export const SOCIAL_PROVIDERS = ["google", "facebook", "microsoft", "seznam"] as const;
+export type SocialProvider = (typeof SOCIAL_PROVIDERS)[number];
+
+/** How the user signs in (`/api/me/security`); secrets never leave the server. */
+export interface SecurityOverview {
+  password: boolean;
+  /** An authenticator app (TOTP) is the second factor after a password or social sign-in. */
+  totp: boolean;
+  recoveryCodes: number;
+  passkeys: { id: string; name: string; createdAt: string; lastUsedAt: string | null }[];
+  social: { provider: SocialProvider; email: string | null; linkedAt: string }[];
+  /** Social sign-ins this deployment offers. */
+  providers: SocialProvider[];
+}
+
+/** One step of signing in (`/auth/interaction/:uid/state`), for the sign-in screen. */
+export interface SignInState {
+  step: "login" | "second-factor";
+  methods: { passkey: boolean; emailLink: boolean; social: SocialProvider[] };
+}
+
 /** Result of adding someone to a tenant by email (`POST /api/members`). */
 export interface InviteResult {
   userId: string;

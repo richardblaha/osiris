@@ -41,7 +41,7 @@ const toTenant = (r: Row): TenantRow => ({
   createdAt: Number(r.created_at),
 });
 
-/** Tenants in the central database. Members are not stored: they are the users whose PocketID claims name the tenant. */
+/** Tenants in the central database. Members are not stored here: they are the users whose claims name the tenant. */
 export class TenantStore {
   constructor(private readonly db: Db) {}
 
@@ -214,32 +214,24 @@ export class TenantDirectory {
   }
 
   /**
-   * Adds a person by email: an existing PocketID user joins the tenant, otherwise a new user is created. New users
-   * get a one-time sign-in link, as they have no passkey yet.
+   * Adds a person by email: an existing user joins the tenant, otherwise a new user is created. New users get a
+   * one-time sign-in link, as they have no way to sign in yet (they set one up in their profile, or use a Google or
+   * Facebook account with the same address).
    */
   async invite(id: string, person: { email: string; firstName: string; lastName: string }, role: Role) {
     await this.store.active(id);
-    const email = person.email.trim().toLowerCase();
-    const existing = (await this.users.list()).find((u) => u.email?.toLowerCase() === email);
+    const existing = await this.users.findByEmail(person.email);
     if (existing) {
       await this.setRole(id, existing.id, role);
       return { userId: existing.id, created: false as const };
     }
-    const user = await this.users.create({ username: await this.freeUsername(email), email, firstName: person.firstName, lastName: person.lastName });
+    const user = await this.users.create({ email: person.email, firstName: person.firstName, lastName: person.lastName });
     await this.setRole(id, user.id, role);
-    return { userId: user.id, created: true as const, loginLink: await this.users.loginLink(user.id, 72) };
+    return { userId: user.id, created: true as const, loginLink: await this.users.loginLink(user.id, 72, "invite") };
   }
 
   /** Users a system admin can add to a tenant. */
   async allUsers(): Promise<DirectoryUser[]> {
     return (await this.activeUsers()).map((u) => ({ id: u.id, name: u.name, email: u.email })).sort(byName);
-  }
-
-  /** PocketID usernames: lowercase letters, digits and `_.-@`; the email's local part, numbered if taken. */
-  private async freeUsername(email: string) {
-    const base = (email.split("@")[0] ?? "user").toLowerCase().replace(/[^a-z0-9_.-]/g, "").slice(0, 40) || "user";
-    const taken = new Set((await this.users.list()).map((u) => u.username));
-    if (!taken.has(base)) return base;
-    for (let i = 2; ; i++) if (!taken.has(`${base}${i}`)) return `${base}${i}`;
   }
 }

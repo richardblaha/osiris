@@ -5,7 +5,7 @@ namespace; each tenant gets its own namespace `osiris-t-<slug>`, created by the 
 
 ```
 Internet ─ Traefik ─┬─ osiris.k6labs.cz ──▶ gateway ──┬─▶ control ──▶ rqlite (3 nodes) ─▶ S3 (rqlite backups)
-                    │                                 │      │  └──▶ PocketID admin API, WhatsApp, S3 (sites, backups)
+                    │                                 │      │  └──▶ WhatsApp, S3, SMTP, Google/Facebook/Microsoft/Seznam (sign-in)
                     │                                 │      └──▶ Tenant objects ◀── operator ──▶ tenant namespaces
                     │                                 └─▶ runtime (osiris-t-<slug>, 0–1 pod, own volume) ─▶ gotenberg
                     └─ tenant domains ──▶ sites ──▶ rqlite (read-only user), S3
@@ -19,21 +19,62 @@ Internet ─ Traefik ─┬─ osiris.k6labs.cz ──▶ gateway ──┬─�
 - **Data:** tenant database and files on the tenant's volume (`civo-volume`), snapshots in S3 (before every sleep and
   daily); the central database in rqlite with automatic backups to S3.
 - **TLS:** cert-manager (`letsencrypt` ClusterIssuer); tenant domains get their certificates through HTTP-01.
+- **Sign-in:** control is the OpenID Connect provider at `https://osiris.k6labs.cz/auth` (the gateway passes `/auth` to
+  it). PocketID at auth.k6labs.cz stays for other services; Osiris no longer uses it.
 
 Commands below use `KUBECONFIG=.kubeconfig` and read keys from the gitignored root `.env`.
 
-## PocketID (auth.k6labs.cz)
+## Sign-in
 
-1. Create an OIDC client named `Osiris`: **public client** (PKCE), callback URL `https://osiris.k6labs.cz/callback`,
-   logout callback URL `https://osiris.k6labs.cz`. Put its client ID in `.env` as `OSIRIS_OIDC_CLIENT_ID`.
-2. Give yourself the custom claim `role` = `osiris-admin`. System admins create tenants and add people in the web app
-   (Tenanti); tenant admins add people to their own tenant (tenant info → Lidé v tenantovi). New people are created in
-   PocketID and get a one-time sign-in link. Membership is stored as custom claims: `tenant` / `tenant-admin` = `<slug>`
-   (comma-separated for several) plus `role` = `osiris-user`.
-3. Create an API key (Settings → API keys) and put it in `.env` as `POCKETID_API_KEY`. Only control holds it.
+Users sign in on `https://osiris.k6labs.cz/login` with a passkey, email and password, Google, Facebook, Microsoft or Seznam,
+or a one-time link; an authenticator app (TOTP) is an optional second factor after a password or social sign-in.
+Users, credentials and the provider's sessions and tokens live in rqlite (tables `users`, `passkeys`,
+`user_identities`, `recovery_codes`, `login_links`, `auth_challenges`, `oidc_store`).
+
+- **Keys:** `gen-keys` (below) prints `AUTH_SIGNING_KEY` (signs ID tokens; changing it signs everyone out) and
+  `AUTH_SECRET` (signs the provider's cookies and seals TOTP secrets; changing it signs everyone out and turns off
+  everyone's authenticator app). Keep both in `.env` as `OSIRIS_AUTH_SIGNING_KEY` and `OSIRIS_AUTH_SECRET`.
+- **Email** (sign-in links, "forgot password"; without it the login screen doesn't offer them): `OSIRIS_SMTP_URL` = `smtps://user:password@smtp.example.cz:465` (or
+  `smtp://…:587`), sender `MAIL_FROM` in `control.yaml` (the SMTP account's own address: Seznam refuses other senders). Production uses the account PocketID sends from (`auth@k6labs.cz` at smtp.seznam.cz).
+- **Social sign-in** (each optional, on when its ID and secret are set). Redirect URIs are
+  `https://osiris.k6labs.cz/auth/social/<google|facebook|microsoft|seznam>/callback`:
+  - Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application); consent screen with
+    scopes `openid email profile`. `.env`: `OSIRIS_GOOGLE_CLIENT_ID`, `OSIRIS_GOOGLE_CLIENT_SECRET`.
+  - Meta for Developers → app with Facebook Login, permissions `email`, `public_profile`; Valid OAuth Redirect URIs as
+    above. `.env`: `OSIRIS_FACEBOOK_CLIENT_ID` (App ID), `OSIRIS_FACEBOOK_CLIENT_SECRET` (App secret).
+  - Microsoft Entra → App registrations → New (accounts in any organizational directory and personal Microsoft
+    accounts), platform Web with the redirect URI, a client secret. `.env`: `OSIRIS_MICROSOFT_CLIENT_ID`,
+    `OSIRIS_MICROSOFT_CLIENT_SECRET`; `MICROSOFT_TENANT` (default `common`) limits it to one directory.
+  - Seznam (vyvojari.seznam.cz → OAuth → new service), scope `identity`, the redirect URI. `.env`:
+    `OSIRIS_SEZNAM_CLIENT_ID`, `OSIRIS_SEZNAM_CLIENT_SECRET`.
+
+  A Google or Facebook account whose verified email matches an Osiris user signs straight into that user (so invited
+  people can use it at once), as does a Seznam account with a Seznam mailbox (@seznam.cz, @email.cz, @post.cz, …).
+  Microsoft doesn't verify emails and a Seznam account can carry an outside address, so those must be linked in
+  Můj profil → Přihlášení a zabezpečení first.
+- **People:** the first system admin comes from the command line:
+  `kubectl -n osiris exec deploy/control -- node_modules/.bin/tsx src/auth/users-cli.ts add-admin you@example.cz Jméno Příjmení`
+  prints a one-time sign-in link. System admins create tenants and add people in the web app (Tenanti); tenant admins
+  add people to their own tenant (tenant info → Lidé v tenantovi). New people get a one-time sign-in link (3 days) and
+  set up a passkey or password in their profile. Membership is stored in the user's claims: `tenant` / `tenant-admin`
+  = `<slug>` (comma-separated for several) plus `role` = `osiris-user`.
+- **Lost second factor:** a system admin turns it off in the tenant detail (Vypnout 2FA next to the person).
 
 Users verify their phone number for WhatsApp themselves (Můj profil → Telefon): they send `OVERENI <code>` from the phone
 to the business number, which sets the claim `phone_number`.
+
+### From PocketID (one-off)
+
+1. Roll out the new images with the secrets below (`AUTH_*`, `SMTP_URL`, social keys).
+2. Copy the users, keeping their ids (tenant data is keyed by them), names, emails and claims:
+   ```bash
+   kubectl -n osiris exec deploy/control -- env POCKETID_URL=https://auth.k6labs.cz POCKETID_API_KEY="$POCKETID_API_KEY" \
+     node_modules/.bin/tsx src/auth/users-cli.ts import-pocketid --links
+   ```
+   Passkeys can't move (they belong to auth.k6labs.cz), so people sign in once with Google/Facebook, a link by email
+   ("Zapomněl(a) jsem heslo") or the printed 72-hour link, and add a new passkey in their profile. Running it again
+   skips users already imported.
+3. Remove the Osiris client and API key in PocketID.
 
 ## WhatsApp
 
@@ -61,8 +102,9 @@ Generate the internal keys once and keep them in `.env` (losing `SECRETS_MASTER_
 unreadable; changing the JWT keys only needs a restart of all services):
 
 ```bash
-pnpm --filter @osiris/platform gen-keys   # → OSIRIS_INTERNAL_JWT_PRIVATE_KEY, OSIRIS_INTERNAL_JWT_PUBLIC_KEY, OSIRIS_SECRETS_MASTER_KEY
-                                          #   (put the two PEM values in single quotes in .env: they contain spaces)
+pnpm --filter @osiris/platform gen-keys   # → OSIRIS_INTERNAL_JWT_PRIVATE_KEY, OSIRIS_INTERNAL_JWT_PUBLIC_KEY, OSIRIS_SECRETS_MASTER_KEY,
+                                          #   OSIRIS_AUTH_SIGNING_KEY, OSIRIS_AUTH_SECRET
+                                          #   (put the PEM values in single quotes in .env: they contain spaces)
 openssl rand -hex 24                      # → OSIRIS_RQLITE_CONTROL_PASSWORD, OSIRIS_RQLITE_SITES_PASSWORD, OSIRIS_RQLITE_NODE_PASSWORD
 ```
 
@@ -72,13 +114,17 @@ K="kubectl -n osiris"
 apply() { $K create secret generic "$@" --dry-run=client -o yaml | $K apply -f -; }
 key() { printf '%s' "$1" | sed 's/\\n/\n/g'; }   # .env keeps PEM keys on one line
 
-apply osiris-gateway --from-literal=OIDC_AUDIENCE="$OSIRIS_OIDC_CLIENT_ID" \
-  --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")"
+apply osiris-gateway --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")"
 
 apply osiris-control \
   --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")" \
   --from-literal=INTERNAL_JWT_PUBLIC_KEY="$(key "$OSIRIS_INTERNAL_JWT_PUBLIC_KEY")" \
-  --from-literal=POCKETID_API_KEY="$POCKETID_API_KEY" \
+  --from-literal=AUTH_SIGNING_KEY="$(key "$OSIRIS_AUTH_SIGNING_KEY")" --from-literal=AUTH_SECRET="$OSIRIS_AUTH_SECRET" \
+  --from-literal=SMTP_URL="$OSIRIS_SMTP_URL" \
+  --from-literal=GOOGLE_CLIENT_ID="$OSIRIS_GOOGLE_CLIENT_ID" --from-literal=GOOGLE_CLIENT_SECRET="$OSIRIS_GOOGLE_CLIENT_SECRET" \
+  --from-literal=FACEBOOK_CLIENT_ID="$OSIRIS_FACEBOOK_CLIENT_ID" --from-literal=FACEBOOK_CLIENT_SECRET="$OSIRIS_FACEBOOK_CLIENT_SECRET" \
+  --from-literal=MICROSOFT_CLIENT_ID="$OSIRIS_MICROSOFT_CLIENT_ID" --from-literal=MICROSOFT_CLIENT_SECRET="$OSIRIS_MICROSOFT_CLIENT_SECRET" \
+  --from-literal=SEZNAM_CLIENT_ID="$OSIRIS_SEZNAM_CLIENT_ID" --from-literal=SEZNAM_CLIENT_SECRET="$OSIRIS_SEZNAM_CLIENT_SECRET" \
   --from-literal=RQLITE_USERNAME=control --from-literal=RQLITE_PASSWORD="$OSIRIS_RQLITE_CONTROL_PASSWORD" \
   --from-literal=S3_ENDPOINT="$OSIRIS_S3_ENDPOINT" --from-literal=S3_REGION="$OSIRIS_S3_REGION" --from-literal=S3_BUCKET="$OSIRIS_S3_BUCKET" \
   --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY" \

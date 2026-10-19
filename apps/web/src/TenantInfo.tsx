@@ -7,7 +7,7 @@ import { FEATURE_LABELS } from "./Tenants.tsx";
 
 export const roleLabel = (role: Tenant["role"]) => (role === "admin" ? "správce" : "uživatel");
 
-/** The active tenant as the user's PocketID claims describe it, and the other tenants they can switch to. */
+/** The active tenant as the user's claims describe it, and the other tenants they can switch to. */
 export function TenantInfo({ me, tenant, onSelect }: { me: MeResponse; tenant?: Tenant; onSelect: (id: string) => void }) {
   return (
     <div className="detail">
@@ -124,7 +124,7 @@ export function LoginLink({ who, url }: { who: string; url: string }) {
   return (
     <div className="notice mt-3 space-y-1 px-3 py-2 text-sm">
       <p>
-        Jednorázový přihlašovací odkaz pro <strong>{who}</strong> (platí 3 dny). Pošli ho dotyčnému, po přihlášení si nastaví přístupový klíč.
+        Jednorázový přihlašovací odkaz pro <strong>{who}</strong> (platí 3 dny). Pošli ho dotyčnému, po přihlášení si nastaví klíč (passkey), heslo nebo propojí účet Google či Microsoft.
       </p>
       <div className="flex gap-2">
         <input readOnly value={url} className="field min-w-0 flex-1 text-xs" onFocus={(e) => e.target.select()} />

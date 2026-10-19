@@ -9,7 +9,7 @@ export default defineConfig({
     host: true,
     port: 5173,
     strictPort: true,
-    // Same-origin API in development; production sets VITE_API_URL.
-    proxy: { "/api": "http://localhost:3001", "/config.js": "http://localhost:3001" },
+    // Same origin as in production: the API and sign-in (control's OIDC provider) through the gateway.
+    proxy: { "/api": "http://localhost:3001", "/auth": "http://localhost:3001" },
   },
 });

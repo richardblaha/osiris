@@ -1,23 +1,31 @@
 import { randomUUID } from "node:crypto";
-import { displayName, PocketIdError, type PocketIdClient, type PocketIdUser } from "./pocketid.ts";
+import type { ObjectStore } from "@osiris/platform/objects.ts";
+import { DbError, run, type Db } from "@osiris/platform/rqlite.ts";
+import { newToken, sha256 } from "./auth/secrets.ts";
 
-/** A PocketID user with their custom claims (`phone_number`, `role`, `tenant`, `tenant-admin`, ...). */
+/** A user with their claims (`phone_number`, `role`, `tenant`, `tenant-admin`, ...). */
 export interface UserRecord {
   id: string;
-  username: string;
   name: string | null;
   firstName: string;
   lastName: string;
   email: string | null;
+  emailVerified: boolean;
   disabled: boolean;
   claims: Record<string, string>;
+  /** Public URL of the profile picture, or null. */
+  picture: string | null;
 }
 
 export interface NewUser {
-  username: string;
-  email: string;
+  email: string | null;
   firstName: string;
   lastName: string;
+  /** Kept when importing from PocketID, so the user's data in the tenants stays theirs; new users get a UUID. */
+  id?: string;
+  emailVerified?: boolean;
+  disabled?: boolean;
+  claims?: Record<string, string>;
 }
 
 export interface ProfileChanges {
@@ -26,38 +34,45 @@ export interface ProfileChanges {
   email?: string;
 }
 
+/** What a one-time sign-in link is for; shown nowhere, kept for the audit trail. */
+export type LinkPurpose = "invite" | "admin" | "email";
+
 /** The users behind the tokens: tenant members, roles, profiles and lookup by phone. Only control has it. */
 export interface UserDirectory {
-  /** Every user. Cached briefly; writes refresh it. */
   list(): Promise<UserRecord[]>;
-  /** One user, read fresh. */
   get(userId: string): Promise<UserRecord>;
-  /** Sets (string) or removes (null) custom claims of a user; other claims are kept. */
+  findByEmail(email: string): Promise<UserRecord | null>;
+  /** Sets (string) or removes (null) claims of a user; other claims are kept. */
   setClaims(userId: string, changes: Record<string, string | null>): Promise<void>;
   create(user: NewUser): Promise<UserRecord>;
   updateProfile(userId: string, changes: ProfileChanges): Promise<UserRecord>;
   setPicture(userId: string, image: Uint8Array, mime: string): Promise<void>;
-  /** A one-time sign-in link for the user (new users have no passkey yet). */
-  loginLink(userId: string, ttlHours: number): Promise<string>;
+  /** The stored picture of a user, if `version` is the current one. */
+  picture(userId: string, version: string): ReturnType<ObjectStore["get"]>;
+  markEmailVerified(userId: string): Promise<void>;
+  /** A one-time sign-in link for the user, e.g. for a new user who has no way to sign in yet. */
+  loginLink(userId: string, ttlHours: number, purpose?: LinkPurpose): Promise<string>;
 }
 
 export class UserNotFoundError extends Error {}
-/** PocketID refused the data, e.g. the username or email is taken; the message can be shown. */
+/** The data was refused, e.g. the email is taken; the message can be shown. */
 export class UserInputError extends Error {}
 
-/** How long the user list is reused, so new users, numbers and claim changes apply within this time. */
-const LIST_TTL_MS = 60_000;
+interface Row {
+  id: string;
+  email: string | null;
+  email_verified: number;
+  first_name: string;
+  last_name: string;
+  claims: string;
+  claims_version: number;
+  disabled: number;
+  picture: string | null;
+}
 
-const record = (u: PocketIdUser): UserRecord => ({
-  id: u.id,
-  username: u.username ?? "",
-  name: displayName(u),
-  firstName: u.firstName ?? "",
-  lastName: u.lastName ?? "",
-  email: u.email || null,
-  disabled: !!u.disabled,
-  claims: Object.fromEntries((u.customClaims ?? []).map((c) => [c.key, c.value])),
-});
+const COLUMNS = "id, email, email_verified, first_name, last_name, claims, claims_version, disabled, picture";
+
+export const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
 const apply = (claims: Record<string, string>, changes: Record<string, string | null>) => {
   const next = { ...claims };
@@ -68,160 +83,153 @@ const apply = (claims: Record<string, string>, changes: Record<string, string | 
   return next;
 };
 
-/** Users from the PocketID admin API; claims are written with `PUT /api/custom-claims/user/:id`. */
-export function pocketIdUsers(pocketId: PocketIdClient, issuer: string): UserDirectory {
-  let cache: { at: number; users: Promise<UserRecord[]> } | undefined;
-  const fetchUser = (userId: string) =>
-    pocketId.get<PocketIdUser>(`api/users/${encodeURIComponent(userId)}`).catch((err) => {
-      if (err instanceof PocketIdError && err.status === 404) throw new UserNotFoundError(`User ${userId} not found`);
-      throw err;
-    });
-  const inputErrors = async <T>(action: () => Promise<T>) => {
+/** Object keys take a limited alphabet; user ids may be anything (`dev:alice`, UUIDs from PocketID). */
+const pictureKey = (userId: string, version: string) => `pictures/${Buffer.from(userId).toString("base64url")}/${version}`;
+
+const isUniqueViolation = (err: unknown) => err instanceof DbError && /UNIQUE constraint failed: users\.email/i.test(err.message);
+
+/**
+ * Users in the central database. `publicUrl` is where the browser reaches Osiris (picture and sign-in link URLs);
+ * pictures live in object storage.
+ */
+export function dbUsers(db: Db, options: { objects: ObjectStore; publicUrl: string }): UserDirectory {
+  const base = options.publicUrl.replace(/\/$/, "");
+  const record = (r: Row): UserRecord => {
+    const firstName = r.first_name ?? "";
+    const lastName = r.last_name ?? "";
+    return {
+      id: r.id,
+      name: `${firstName} ${lastName}`.trim() || null,
+      firstName,
+      lastName,
+      email: r.email,
+      emailVerified: !!r.email_verified,
+      disabled: !!r.disabled,
+      claims: JSON.parse(r.claims) as Record<string, string>,
+      picture: r.picture ? `${base}/auth/pictures/${encodeURIComponent(r.id)}/${r.picture}` : null,
+    };
+  };
+  const row = async (userId: string) => {
+    const [r] = await db.query<Row>(`SELECT ${COLUMNS} FROM users WHERE id = ?`, [userId], { fresh: true });
+    if (!r) throw new UserNotFoundError(`User ${userId} not found`);
+    return r;
+  };
+  const write = async (statement: ReturnType<typeof run>) => {
     try {
-      return await action();
+      return (await db.execute([statement]))[0]!.rowsAffected;
     } catch (err) {
-      if (err instanceof PocketIdError && err.status >= 400 && err.status < 500 && err.status !== 401 && err.status !== 403) {
-        throw new UserInputError(err.detail ?? "PocketID odmítl údaje uživatele");
-      }
+      if (isUniqueViolation(err)) throw new UserInputError("Uživatel s tímto e-mailem už existuje");
       throw err;
-    } finally {
-      cache = undefined;
     }
   };
 
-  return {
-    list() {
-      if (!cache || Date.now() - cache.at > LIST_TTL_MS) {
-        const loading = pocketId.all<PocketIdUser>("api/users").then((users) => users.map(record));
-        // Don't cache failures; the next call retries.
-        loading.catch(() => {
-          if (cache?.users === loading) cache = undefined;
-        });
-        cache = { at: Date.now(), users: loading };
-      }
-      return cache.users;
+  const directory: UserDirectory = {
+    async list() {
+      return (await db.query<Row>(`SELECT ${COLUMNS} FROM users ORDER BY created_at`)).map(record);
     },
 
     async get(userId) {
-      return record(await fetchUser(userId));
+      return record(await row(userId));
+    },
+
+    async findByEmail(email) {
+      const [r] = await db.query<Row>(`SELECT ${COLUMNS} FROM users WHERE email = ?`, [normalizeEmail(email)], { fresh: true });
+      return r ? record(r) : null;
     },
 
     async setClaims(userId, changes) {
-      // The PUT replaces all of the user's claims, so start from their current ones rather than the cached list.
-      const claims = apply(record(await fetchUser(userId)).claims, changes);
-      try {
-        await pocketId.request("PUT", `api/custom-claims/user/${encodeURIComponent(userId)}`, Object.entries(claims).map(([key, value]) => ({ key, value })));
-      } finally {
-        cache = undefined;
+      // Compare and swap on the version, so a concurrent change (another replica, another admin) isn't lost.
+      for (let attempt = 0; ; attempt++) {
+        const current = await row(userId);
+        const claims = apply(JSON.parse(current.claims) as Record<string, string>, changes);
+        const updated = await write(
+          run(
+            "UPDATE users SET claims = ?, claims_version = claims_version + 1, updated_at = ? WHERE id = ? AND claims_version = ?",
+            JSON.stringify(claims),
+            Date.now(),
+            userId,
+            current.claims_version,
+          ),
+        );
+        if (updated) return;
+        if (attempt >= 5) throw new Error(`Claims of ${userId} keep changing`);
       }
     },
 
-    create(user) {
-      return inputErrors(async () =>
-        record(
-          await pocketId.request<PocketIdUser>("POST", "api/users", {
-            username: user.username,
-            email: user.email,
-            firstName: user.firstName,
-            lastName: user.lastName,
-            displayName: `${user.firstName} ${user.lastName}`.trim(),
-            isAdmin: false,
-            disabled: false,
-          }),
+    async create(user) {
+      const id = user.id ?? randomUUID();
+      const now = Date.now();
+      await write(
+        run(
+          `INSERT INTO users (id, email, email_verified, first_name, last_name, claims, disabled, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          id,
+          user.email ? normalizeEmail(user.email) : null,
+          user.emailVerified ? 1 : 0,
+          user.firstName.trim(),
+          user.lastName.trim(),
+          JSON.stringify(user.claims ?? {}),
+          user.disabled ? 1 : 0,
+          now,
+          now,
+        ),
+      ).catch((err) => {
+        if (err instanceof DbError && /UNIQUE constraint failed: users\.id/i.test(err.message)) throw new UserInputError("Uživatel už existuje");
+        throw err;
+      });
+      return directory.get(id);
+    },
+
+    async updateProfile(userId, changes) {
+      const current = await row(userId);
+      const email = changes.email !== undefined ? normalizeEmail(changes.email) : current.email;
+      await write(
+        run(
+          "UPDATE users SET first_name = ?, last_name = ?, email = ?, email_verified = ?, updated_at = ? WHERE id = ?",
+          (changes.firstName ?? current.first_name).trim(),
+          (changes.lastName ?? current.last_name).trim(),
+          email,
+          // A new address isn't verified until the user proves it (an emailed link, a social account).
+          email === current.email ? current.email_verified : 0,
+          Date.now(),
+          userId,
         ),
       );
+      return directory.get(userId);
     },
 
-    updateProfile(userId, changes) {
-      return inputErrors(async () => {
-        // The PUT takes the whole user, so unchanged fields are sent back as they are.
-        const u = await fetchUser(userId);
-        const firstName = changes.firstName ?? u.firstName ?? "";
-        const lastName = changes.lastName ?? u.lastName ?? "";
-        const emailChanged = changes.email !== undefined && changes.email !== u.email;
-        return record(
-          await pocketId.request<PocketIdUser>("PUT", `api/users/${encodeURIComponent(userId)}`, {
-            username: u.username,
-            email: changes.email ?? u.email,
-            emailVerified: emailChanged ? false : !!u.emailVerified,
-            firstName,
-            lastName,
-            displayName: `${firstName} ${lastName}`.trim() || u.displayName,
-            isAdmin: !!u.isAdmin,
-            locale: u.locale ?? null,
-            disabled: !!u.disabled,
-          }),
-        );
-      });
+    async setPicture(userId, image, mime) {
+      const current = await row(userId);
+      const version = newToken().slice(0, 16);
+      await options.objects.put(pictureKey(userId, version), image, mime);
+      await write(run("UPDATE users SET picture = ?, updated_at = ? WHERE id = ?", version, Date.now(), userId));
+      if (current.picture) await options.objects.delete([pictureKey(userId, current.picture)]).catch(() => {});
     },
 
-    setPicture(userId, image, mime) {
-      return inputErrors(async () => {
-        const form = new FormData();
-        form.append("file", new Blob([new Uint8Array(image)], { type: mime }), mime === "image/png" ? "picture.png" : "picture.jpg");
-        await pocketId.request("PUT", `api/users/${encodeURIComponent(userId)}/profile-picture`, form);
-      });
+    async picture(userId, version) {
+      const [r] = await db.query<{ picture: string | null }>("SELECT picture FROM users WHERE id = ?", [userId]);
+      if (!r?.picture || r.picture !== version) return null;
+      return options.objects.get(pictureKey(userId, version));
     },
 
-    async loginLink(userId, ttlHours) {
-      const { token } = await pocketId.request<{ token: string }>("POST", `api/users/${encodeURIComponent(userId)}/one-time-access-token`, {
-        ttl: `${ttlHours}h`,
-      });
-      return new URL(`lc/${encodeURIComponent(token)}`, issuer.endsWith("/") ? issuer : `${issuer}/`).toString();
+    async markEmailVerified(userId) {
+      await write(run("UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ? AND email_verified = 0", Date.now(), userId));
+    },
+
+    async loginLink(userId, ttlHours, purpose = "admin") {
+      await row(userId);
+      const token = newToken();
+      await db.execute([
+        run(
+          "INSERT INTO login_links (token_hash, user_id, purpose, expires_at) VALUES (?, ?, ?, ?)",
+          sha256(token),
+          userId,
+          purpose,
+          Date.now() + ttlHours * 3_600_000,
+        ),
+      ]);
+      return `${base}/auth/link/${token}`;
     },
   };
-}
-
-/** Users kept in memory, for development without a PocketID API key and for tests. Lost on restart. */
-export function memoryUsers(initial: Partial<UserRecord>[] = []): UserDirectory & { users: UserRecord[] } {
-  const full = (u: Partial<UserRecord>): UserRecord => ({
-    id: u.id ?? randomUUID(),
-    username: u.username ?? u.id ?? "",
-    name: u.name ?? null,
-    firstName: u.firstName ?? "",
-    lastName: u.lastName ?? "",
-    email: u.email ?? null,
-    disabled: u.disabled ?? false,
-    claims: { ...u.claims },
-  });
-  const users = initial.map(full);
-  const find = (userId: string) => {
-    const user = users.find((u) => u.id === userId);
-    if (!user) throw new UserNotFoundError(`User ${userId} not found`);
-    return user;
-  };
-  return {
-    users,
-    async list() {
-      return users;
-    },
-    async get(userId) {
-      return find(userId);
-    },
-    async setClaims(userId, changes) {
-      const user = find(userId);
-      user.claims = apply(user.claims, changes);
-    },
-    async create(user) {
-      if (users.some((u) => u.username === user.username || (u.email && u.email === user.email))) {
-        throw new UserInputError("Uživatel s tímto jménem nebo e-mailem už existuje");
-      }
-      const created = full({ ...user, name: `${user.firstName} ${user.lastName}`.trim() });
-      users.push(created);
-      return created;
-    },
-    async updateProfile(userId, changes) {
-      const user = find(userId);
-      Object.assign(user, Object.fromEntries(Object.entries(changes).filter(([, v]) => v !== undefined)));
-      user.name = `${user.firstName} ${user.lastName}`.trim() || user.name;
-      return user;
-    },
-    async setPicture(userId) {
-      find(userId);
-    },
-    async loginLink(userId) {
-      find(userId);
-      return `http://localhost/lc/dev-${userId}`;
-    },
-  };
+  return directory;
 }

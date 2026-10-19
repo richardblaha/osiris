@@ -8,14 +8,14 @@ import { CONTROL_AUDIENCE, generateInternalKeys, InternalSigner, InternalVerifie
 import { RuntimeClient, SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import { createGatewayApp } from "../src/app.ts";
 import { ControlDirectory } from "../src/control.ts";
-import { createDevVerifier, toIdentity } from "../src/oidc.ts";
+import { createControlVerifier, createDevVerifier } from "../src/oidc.ts";
 import { RateLimiter } from "../src/rate-limit.ts";
 
 const keys = await generateInternalKeys();
 const verifier = new InternalVerifier(keys.publicKey);
 
 /** The gateway in front of a fake control and fake runtimes that echo what they were sent. */
-function setup(options: { runsPerMinute?: number; web?: { dir: string; oidcAuthority?: string; oidcClientId?: string } } = {}) {
+function setup(options: { runsPerMinute?: number; web?: { dir: string } } = {}) {
   const calls: { service: string; path: string; method: string; auth: string | null; tenantHeader: string | null; body?: string }[] = [];
   const asleep = new Set<string>(["beta"]);
   const woken: string[] = [];
@@ -32,6 +32,13 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; oidcAutho
       }
       const endpoint = /^\/internal\/gateway\/tenants\/([^/]+)\/endpoint$/.exec(u.pathname);
       if (endpoint) return Response.json({ url: `http://runtime-${endpoint[1]}` });
+      if (u.pathname.startsWith("/auth/")) {
+        calls.push({ service: "auth", path: u.pathname + u.search, method: init.method ?? "GET", auth: headers.get("cookie"), tenantHeader: headers.get("x-forwarded-host") });
+        const res = new Response(null, { status: 303, headers: { location: "/login?uid=1", "x-internal": "secret" } });
+        res.headers.append("set-cookie", "a=1; path=/auth/interaction/1; httponly");
+        res.headers.append("set-cookie", "b=2; path=/; httponly");
+        return res;
+      }
     }
     const service = u.host === "control" ? "control" : u.host.replace("runtime-", "");
     if (asleep.has(service)) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
@@ -65,7 +72,7 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; oidcAutho
   return { app, as, calls, woken };
 }
 
-describe("access from PocketID claims", () => {
+describe("access from claims", () => {
   it("maps tenant to member and tenant-admin to admin, from single values or comma-separated lists", () => {
     const access = accessFromClaims((key) => ({ role: "osiris-user", tenant: "acme, novak-stavby,Bad", "tenant-admin": ["acme", "beta"] })[key]);
     expect(isAuthorized(access)).toBe(true);
@@ -85,16 +92,32 @@ describe("access from PocketID claims", () => {
     expect(accessibleTenants(admin, ["x"])).toEqual([{ tenantId: "x", role: "admin" }]);
   });
 
-  it("reads profile, phone and access claims from userinfo", () => {
-    expect(toIdentity({ sub: "s", email: "a@b.cz", name: "A", phone_number: "+420777123456", role: "osiris-user", tenant: "a", groups: ["x"] })).toEqual({
+  it("asks control whose a token is and reuses the answer for a minute", async () => {
+    const asked: string[] = [];
+    const verifier = createControlVerifier(async (token) => {
+      asked.push(token);
+      return {
+        sub: "s",
+        email: "a@b.cz",
+        name: "A",
+        phone: "+420777123456",
+        picture: null,
+        claims: { role: "osiris-user", tenant: "a", "tenant-admin": undefined },
+        expiresAt: Date.now() + 3_600_000,
+      };
+    });
+    const identity = await verifier.identify("t1");
+    expect(identity).toEqual({
       sub: "s",
       email: "a@b.cz",
       name: "A",
       phone: "+420777123456",
       picture: null,
       access: { roles: ["osiris-user"], tenants: ["a"], adminTenants: [] },
-      claimKeys: ["email", "groups", "name", "phone_number", "role", "sub", "tenant"],
+      claimKeys: ["role", "tenant"],
     });
+    await verifier.identify("t1");
+    expect(asked).toEqual(["t1"]);
   });
 
   it("dev verifier gives a user their own tenant unless claims are given", async () => {
@@ -112,7 +135,7 @@ describe("gateway", () => {
     const refused = await as("alice:tenant-admin=&role=osiris-user")("/me");
     expect(refused.status).toBe(403);
     expect(await refused.json()).toEqual({
-      error: "User is not assigned to any tenant (claim tenant or tenant-admin)",
+      error: "Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.",
       user: { sub: "dev:alice", name: "alice", email: "alice@dev.local", role: ["osiris-user"], tenant: [], "tenant-admin": [] },
     });
     expect((await as("alice:tenant=acme&role=")("/me")).status).toBe(403);
@@ -176,15 +199,26 @@ describe("gateway", () => {
     expect(calls[0]).toMatchObject({ service: "control", path: "/webhooks/whatsapp", body, auth: null });
   });
 
-  it("serves the web app with its runtime config, a strict CSP and an SPA fallback", async () => {
+  it("passes sign-in to control with its cookies and hands back redirects and cookies", async () => {
+    const { app, calls } = setup();
+    const res = await app.request("https://osiris.example.cz/auth/authorize?client_id=osiris-web", {
+      headers: { cookie: "osiris_session=x", authorization: "Bearer should-pass", "x-forwarded-for": "198.51.100.7, 10.0.0.1" },
+    });
+    expect([res.status, res.headers.get("location"), res.headers.get("x-internal")]).toEqual([303, "/login?uid=1", null]);
+    expect(res.headers.getSetCookie()).toEqual(["a=1; path=/auth/interaction/1; httponly", "b=2; path=/; httponly"]);
+    expect(calls).toEqual([
+      { service: "auth", path: "/auth/authorize?client_id=osiris-web", method: "GET", auth: "osiris_session=x", tenantHeader: "osiris.example.cz" },
+    ]);
+  });
+
+  it("serves the web app with a strict CSP and an SPA fallback", async () => {
     const dir = mkdtempSync(join(tmpdir(), "osiris-web-"));
     writeFileSync(join(dir, "index.html"), "<!doctype html>app");
-    const { app } = setup({ web: { dir, oidcAuthority: "https://auth.example.cz", oidcClientId: "client-1" } });
-    expect(await (await app.request("/config.js")).text()).toContain('"oidcClientId":"client-1"');
+    const { app } = setup({ web: { dir } });
     const page = await app.request("/callback?code=x");
     expect(await page.text()).toBe("<!doctype html>app");
     expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
-    expect(page.headers.get("content-security-policy")).toContain("connect-src 'self' https://auth.example.cz");
+    expect(page.headers.get("content-security-policy")).toContain("connect-src 'self';");
     expect(page.headers.get("x-frame-options")).toBe("DENY");
   });
 });

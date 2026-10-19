@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { PocketIdClient } from "../src/pocketid.ts";
-import { pocketIdUsers } from "../src/users.ts";
 import { createTestControl } from "./helpers.ts";
 
 const admin = { systemAdmin: true };
 
 describe("tenant directory", () => {
-  it("creates tenants, keeps members in PocketID claims and the cluster in step", async () => {
+  it("creates tenants, keeps members in the users' claims and the cluster in step", async () => {
     const { directory, users, orchestrator, store } = await createTestControl({
       users: [{ id: "bob", name: "Bob", claims: { phone_number: "+420777123456", tenant: "acme" } }],
     });
@@ -18,14 +16,14 @@ describe("tenant directory", () => {
 
     await directory.setRole("novak", "bob", "admin");
     // Membership is written to the user's claims, keeping the others; a new member also gets the Osiris role.
-    expect(users.users[0]!.claims).toEqual({ phone_number: "+420777123456", tenant: "acme", "tenant-admin": "novak", role: "osiris-user" });
+    expect((await users.get("bob")).claims).toEqual({ phone_number: "+420777123456", tenant: "acme", "tenant-admin": "novak", role: "osiris-user" });
     expect(await directory.list()).toEqual([
       { id: "acme", name: "ACME s.r.o.", members: 1 },
       { id: "novak", name: "Novák stavby", members: 1 },
     ]);
 
     await directory.remove("novak");
-    expect(users.users[0]!.claims).toEqual({ phone_number: "+420777123456", tenant: "acme", role: "osiris-user" });
+    expect((await users.get("bob")).claims).toEqual({ phone_number: "+420777123456", tenant: "acme", role: "osiris-user" });
     expect(orchestrator.applied.get("novak")!.suspended).toBe(true);
     expect((await directory.list()).map((t) => t.id)).toEqual(["acme"]);
     // An archived tenant can be created again under its id.
@@ -34,13 +32,12 @@ describe("tenant directory", () => {
   });
 
   it("invites existing users by email and creates new ones with a sign-in link", async () => {
-    const { directory, users } = await createTestControl({ users: [{ id: "eva", username: "eva", email: "eva@firma.cz", claims: {} }] });
+    const { directory, users } = await createTestControl({ users: [{ id: "eva", email: "eva@firma.cz", claims: {} }] });
     await directory.create("acme", "ACME");
     expect(await directory.invite("acme", { email: "EVA@firma.cz", firstName: "Eva", lastName: "" }, "member")).toEqual({ userId: "eva", created: false });
     const created = await directory.invite("acme", { email: "eva@jinde.cz", firstName: "Eva", lastName: "Nová" }, "admin");
-    expect(created).toMatchObject({ created: true, loginLink: expect.stringContaining("/lc/") });
-    // The username is the email's local part, numbered when taken.
-    expect(users.users.find((u) => u.id === created.userId)).toMatchObject({ username: "eva2", claims: { "tenant-admin": "acme", role: "osiris-user" } });
+    expect(created).toMatchObject({ created: true, loginLink: expect.stringMatching(/^http:\/\/osiris\.test\/auth\/link\/[\w-]{43}$/) });
+    expect(await users.get(created.userId)).toMatchObject({ email: "eva@jinde.cz", name: "Eva Nová", claims: { "tenant-admin": "acme", role: "osiris-user" } });
   });
 });
 
@@ -83,7 +80,7 @@ describe("control API", () => {
     expect(detail.features).toMatchObject({ knowledge: true, mcp: false, http: false });
     expect((await root("/admin/tenants/nope")).status).toBe(404);
     expect((await root("/admin/tenants/novak", { method: "DELETE" })).status).toBe(204);
-    expect(users.users[0]!.claims).toEqual({ tenant: "acme", role: "osiris-user" });
+    expect((await users.get("bob")).claims).toEqual({ tenant: "acme", role: "osiris-user" });
   });
 
   it("lets tenant admins manage their own members only", async () => {
@@ -107,18 +104,24 @@ describe("control API", () => {
     expect((await alice("/members/bob", { method: "DELETE" })).status).toBe(204);
   });
 
-  it("edits the user's PocketID profile and checks the picture type", async () => {
-    const { asUser, users } = await createTestControl({ users: [{ id: "alice", firstName: "Alice", lastName: "A", email: "a@x.cz", claims: {} }] });
+  it("edits the user's profile and checks the picture type", async () => {
+    const { app, asUser, users } = await createTestControl({ users: [{ id: "alice", firstName: "Alice", lastName: "A", email: "a@x.cz", claims: {} }] });
     const alice = asUser("alice");
     expect(await (await alice("/me/profile", { method: "PATCH", body: JSON.stringify({ lastName: "Nováková" }) })).json()).toMatchObject({
       firstName: "Alice",
       lastName: "Nováková",
     });
-    expect(users.users[0]!.name).toBe("Alice Nováková");
+    expect((await users.get("alice")).name).toBe("Alice Nováková");
     expect((await alice("/me/profile", { method: "PATCH", body: JSON.stringify({ email: "not-an-email" }) })).status).toBe(400);
     expect((await alice("/me/picture", { method: "PUT", body: "<svg/>", headers: { "content-type": "image/svg+xml" } })).status).toBe(415);
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0]);
     expect((await alice("/me/picture", { method: "PUT", body: png, headers: { "content-type": "image/png" } })).status).toBe(204);
+    // The picture is served at a URL that changes with every new one.
+    const picture = (await users.get("alice")).picture!;
+    expect(picture).toMatch(/^http:\/\/osiris\.test\/auth\/pictures\/alice\/[\w-]{16}$/);
+    const served = await app.request(new URL(picture).pathname);
+    expect([served.status, served.headers.get("content-type"), Buffer.from(await served.arrayBuffer())]).toEqual([200, "image/png", png]);
+    expect((await app.request("/auth/pictures/alice/old")).status).toBe(404);
   });
 
   it("serves runtimes their own tenant only, as their token says", async () => {
@@ -144,36 +147,17 @@ describe("control API", () => {
   });
 });
 
-describe("PocketID users", () => {
-  it("pages through users, writes claims without losing others and updates profiles with the whole user", async () => {
-    const pages: Record<string, object> = {
-      "1": { data: [{ id: "u1", username: "bob", firstName: "Bob", lastName: "Novák", customClaims: [{ key: "phone_number", value: "+420777123456" }] }], pagination: { totalPages: 2 } },
-      "2": { data: [{ id: "u5", displayName: "Eva", disabled: true }], pagination: { totalPages: 2 } },
-    };
-    const requests: string[] = [];
-    let claims = [{ key: "phone_number", value: "+420777123456" }, { key: "tenant", value: "acme" }];
-    let put: Record<string, unknown> | undefined;
-    const fetchFn = (async (url: URL, init: RequestInit = {}) => {
-      requests.push(`${init.method ?? "GET"} ${url.pathname}`);
-      if (url.pathname === "/api/users") return Response.json(pages[url.searchParams.get("pagination[page]")!]);
-      if (url.pathname === "/api/users/u1" && init.method === "PUT") return Response.json({ id: "u1", ...(put = JSON.parse(String(init.body))) });
-      if (url.pathname === "/api/users/u1") return Response.json({ id: "u1", username: "bob", firstName: "Bob", lastName: "Novák", email: "b@x.cz", emailVerified: true, customClaims: claims });
-      if (url.pathname === "/api/custom-claims/user/u1" && init.method === "PUT") return Response.json((claims = JSON.parse(String(init.body))));
-      if (url.pathname === "/api/users/u1/one-time-access-token") return Response.json({ token: "abc" }, { status: 201 });
-      return new Response(null, { status: 404 });
-    }) as unknown as typeof fetch;
-    const users = pocketIdUsers(new PocketIdClient("https://auth.example.cz", "key", fetchFn), "https://auth.example.cz");
+describe("users", () => {
+  it("keeps other claims, refuses taken emails and unverifies a changed one", async () => {
+    const { users } = await createTestControl({ users: [{ id: "bob", firstName: "Bob", lastName: "Novák", email: "b@x.cz", claims: { phone_number: "+420777123456", tenant: "acme" } }] });
+    await Promise.all([users.setClaims("bob", { "tenant-admin": "beta" }), users.setClaims("bob", { phone_number: null })]);
+    expect((await users.get("bob")).claims).toEqual({ tenant: "acme", "tenant-admin": "beta" });
+    await expect(users.create({ email: "B@X.cz", firstName: "Jiný", lastName: "" })).rejects.toThrow("e-mailem už existuje");
+    expect((await users.findByEmail(" B@x.CZ "))?.id).toBe("bob");
 
-    expect((await users.list()).map((u) => [u.id, u.name, u.disabled])).toEqual([
-      ["u1", "Bob Novák", false],
-      ["u5", "Eva", true],
-    ]);
-    await users.setClaims("u1", { "tenant-admin": "beta", phone_number: null });
-    expect(claims).toEqual([{ key: "tenant", value: "acme" }, { key: "tenant-admin", value: "beta" }]);
-    await users.updateProfile("u1", { email: "new@x.cz" });
-    // Unchanged fields go back as they were; a new email is no longer verified.
-    expect(put).toMatchObject({ username: "bob", firstName: "Bob", lastName: "Novák", email: "new@x.cz", emailVerified: false });
-    expect(await users.loginLink("u1", 72)).toBe("https://auth.example.cz/lc/abc");
+    await users.markEmailVerified("bob");
+    expect((await users.get("bob")).emailVerified).toBe(true);
+    expect(await users.updateProfile("bob", { email: "Nova@X.cz" })).toMatchObject({ email: "nova@x.cz", emailVerified: false, name: "Bob Novák" });
     await expect(users.setClaims("nobody", { tenant: "x" })).rejects.toThrow("not found");
   });
 });

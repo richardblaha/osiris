@@ -129,8 +129,8 @@ describe("WhatsApp router", () => {
     await send("420111222333", `OVERENI ${phoneChallenge.code}`);
     await send("420777999888", `ověření ${phoneChallenge.code}`);
     expect(replies()).toEqual([expect.stringContaining("nesedí"), "Číslo je ověřené. Teď mi můžeš psát."]);
-    expect(users.users.find((u) => u.id === "alice")!.claims.phone_number).toBe("+420777999888");
-    expect(users.users.find((u) => u.id === "old")!.claims.phone_number).toBeUndefined();
+    expect((await users.get("alice")).claims.phone_number).toBe("+420777999888");
+    expect((await users.get("old")).claims.phone_number).toBeUndefined();
     expect(await phones.confirm("420777999888", phoneChallenge.code)).toBeNull();
   });
 

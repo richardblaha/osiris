@@ -3,7 +3,7 @@ import { attempt, ErrorNotice } from "./Scope.tsx";
 
 type Invite = { email: string; firstName: string; lastName: string; role: "admin" | "member" };
 
-/** Adds a person by email: an existing PocketID user joins, a new one is created (and gets a sign-in link). */
+/** Adds a person by email: an existing user joins, a new one is created (and gets a sign-in link). */
 export function InviteForm({ onInvite }: { onInvite: (body: Invite) => Promise<void> }) {
   const [form, setForm] = useState<Invite>({ email: "", firstName: "", lastName: "", role: "member" });
   const [busy, setBusy] = useState(false);

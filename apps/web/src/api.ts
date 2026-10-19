@@ -17,6 +17,8 @@ import type {
   RunEvent,
   Scope,
   SecretSummary,
+  SecurityOverview,
+  SocialProvider,
   Skill,
   SkillSummary,
   TenantDetail,
@@ -27,7 +29,10 @@ import type {
   ThreadSummary,
   UserSettings,
 } from "@osiris/shared";
+import type { startRegistration } from "@simplewebauthn/browser";
 import { getAccessToken, login } from "./auth.ts";
+
+type PasskeyCreationOptions = Parameters<typeof startRegistration>[0]["optionsJSON"];
 
 const BASE = (import.meta.env.VITE_API_URL ?? "") + "/api";
 let tenantId: string | undefined;
@@ -54,7 +59,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
   if (res.status === 401) await login();
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string; user?: Record<string, unknown> } | null;
-    // A refused account comes with who is signed in and which claims arrived, to see what to fix in PocketID.
+    // A refused account comes with who is signed in and which claims they have, to see what to fix.
     const user = body?.user
       ? "\n\n" + Object.entries(body.user).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") || "—" : (v ?? "—")}`).join("\n")
       : "";
@@ -135,6 +140,25 @@ export const api = {
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
   removePhone: () => request("/me/phone", { method: "DELETE" }),
+  security: {
+    get: () => json<SecurityOverview>("/me/security"),
+    setPassword: (password: string, current?: string) =>
+      json<SecurityOverview>("/me/security/password", { method: "PUT", body: JSON.stringify({ password, current }) }),
+    removePassword: () => json<SecurityOverview>("/me/security/password", { method: "DELETE" }),
+    passkeyOptions: () => json<PasskeyCreationOptions>("/me/security/passkeys/options", { method: "POST" }),
+    addPasskey: (response: unknown, name: string) => json<SecurityOverview>("/me/security/passkeys", { method: "POST", body: JSON.stringify({ response, name }) }),
+    renamePasskey: (id: string, name: string) =>
+      json<SecurityOverview>(`/me/security/passkeys/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+    removePasskey: (id: string) => json<SecurityOverview>(`/me/security/passkeys/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    startTotp: () => json<{ secret: string; url: string }>("/me/security/totp", { method: "POST" }),
+    confirmTotp: (code: string) =>
+      json<{ recoveryCodes: string[]; security: SecurityOverview }>("/me/security/totp/confirm", { method: "POST", body: JSON.stringify({ code }) }),
+    disableTotp: (code: string) => json<SecurityOverview>("/me/security/totp", { method: "DELETE", body: JSON.stringify({ code }) }),
+    newRecoveryCodes: (code: string) =>
+      json<{ recoveryCodes: string[]; security: SecurityOverview }>("/me/security/recovery-codes", { method: "POST", body: JSON.stringify({ code }) }),
+    linkSocial: (provider: SocialProvider) => json<{ url: string }>(`/me/security/social/${provider}`, { method: "POST" }),
+    unlinkSocial: (provider: SocialProvider) => json<SecurityOverview>(`/me/security/social/${provider}`, { method: "DELETE" }),
+  },
 
   members: () => json<TenantMember[]>("/members"),
   invite: (body: { email: string; firstName: string; lastName: string; role: "admin" | "member" }) =>
@@ -175,6 +199,7 @@ export const api = {
     invite: (id: string, body: { email: string; firstName: string; lastName: string; role: "admin" | "member" }) =>
       json<InviteResult>(`/admin/tenants/${id}/members`, { method: "POST", body: JSON.stringify(body) }),
     backup: (id: string) => request(`/admin/tenants/${id}/backups`, { method: "POST" }),
+    resetSecondFactor: (userId: string) => request(`/admin/users/${encodeURIComponent(userId)}/second-factor`, { method: "DELETE" }),
   },
 
   /** Starts a run and yields its server-sent events. */

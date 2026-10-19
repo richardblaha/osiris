@@ -20,9 +20,13 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { TENANT_SLUG } from "@osiris/platform/claims.ts";
+import { CLAIMS, TENANT_SLUG } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, InternalAuthError, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
 import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
+import { CredentialError } from "./auth/credentials.ts";
+import { WEB_CLIENT_ID } from "./auth/oidc.ts";
+import { authRoutes, securityRoutes, type AuthDeps } from "./auth/routes.ts";
+import { SocialLoginError } from "./auth/social.ts";
 import type { Backups } from "./backups.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";
 import { ScheduleError, ScheduleNotFoundError, type ScheduleStore } from "./scheduler.ts";
@@ -47,6 +51,8 @@ export interface ControlDeps {
   whatsapp?: WhatsAppWebhookOptions & { displayNumber?: string };
   /** Asks a tenant's runtime for a snapshot now (admin "back up now"). */
   snapshot: (tenant: string) => Promise<void>;
+  /** Sign-in: the OIDC provider's state, credentials and the sign-in screens' API. */
+  auth: AuthDeps;
 }
 
 type Env = { Variables: { call: VerifiedCall & { user: NonNullable<VerifiedCall["user"]> }; tenant: TenantRow; role: Role; runtimeTenant: string } };
@@ -104,7 +110,14 @@ function errors(err: unknown): HTTPException | null {
   if (err instanceof TenantNotFoundError) return new HTTPException(404, { message: "Tenant not found" });
   if (err instanceof UserNotFoundError) return new HTTPException(404, { message: "User not found" });
   if (err instanceof ScheduleNotFoundError) return new HTTPException(404, { message: err.message });
-  if (err instanceof UserInputError || err instanceof ScheduleError || err instanceof DomainError || err instanceof PublishError) {
+  if (
+    err instanceof UserInputError ||
+    err instanceof ScheduleError ||
+    err instanceof DomainError ||
+    err instanceof PublishError ||
+    err instanceof CredentialError ||
+    err instanceof SocialLoginError
+  ) {
     return new HTTPException(400, { message: err.message });
   }
   if (err instanceof InternalAuthError || err instanceof RuntimeIdentityError) return new HTTPException(401, { message: "Unauthorized" });
@@ -114,9 +127,10 @@ function errors(err: unknown): HTTPException | null {
 const iso = (ms: number) => new Date(ms).toISOString();
 
 /**
- * Control: tenants, users and their access, schedules, domains and sites, backups, WhatsApp. It never sees a PocketID
- * token: user calls come from the gateway with an internal token naming the user and their memberships, runtimes
- * prove their tenant with their ServiceAccount token, and Meta signs the WhatsApp webhook.
+ * Control: sign-in (the OIDC provider's screens; the provider itself is mounted next to this app, see server.ts),
+ * tenants, users and their access, schedules, domains and sites, backups, WhatsApp. User calls come from the gateway
+ * with an internal token naming the user and their memberships, runtimes prove their tenant with their ServiceAccount
+ * token, and Meta signs the WhatsApp webhook.
  */
 export function createControlApp(deps: ControlDeps) {
   const { verifier, runtimeIdentity, directory, users, orchestrator, schedules, domains, sites, backups, phones } = deps;
@@ -207,7 +221,8 @@ export function createControlApp(deps: ControlDeps) {
     .delete("/phone", async (c) => {
       await phones.remove(c.get("call").user.sub);
       return c.body(null, 204);
-    });
+    })
+    .route("/security", securityRoutes(deps.auth, (c) => (c as Context<Env>).get("call").user.sub));
 
   // --- the active tenant --------------------------------------------------------------------------------------------
   const tenant = new Hono<Env>()
@@ -361,7 +376,13 @@ export function createControlApp(deps: ControlDeps) {
       await deps.snapshot(c.req.param("id"));
       return c.body(null, 202);
     })
-    .get("/users", async (c) => c.json<DirectoryUser[]>(await directory.allUsers()));
+    .get("/users", async (c) => c.json<DirectoryUser[]>(await directory.allUsers()))
+    // A user who lost both their authenticator and recovery codes gets in again with password or passkey alone.
+    .delete("/users/:id/second-factor", async (c) => {
+      await users.get(c.req.param("id"));
+      await deps.auth.credentials.disableTotp(c.req.param("id"));
+      return c.body(null, 204);
+    });
 
   // --- the gateway's own calls --------------------------------------------------------------------------------------
   const forGateway = new Hono()
@@ -371,6 +392,23 @@ export function createControlApp(deps: ControlDeps) {
       await next();
     })
     .get("/tenants", async (c) => c.json((await tenants.list()).map((t) => ({ id: t.id, name: t.name }))))
+    // Who an access token belongs to: the gateway asks for every token it hasn't seen in the last minute.
+    .post("/identify", async (c) => {
+      const { token } = parse(z.object({ token: z.string().min(1).max(4096) }), await json(c));
+      const access = await deps.auth.provider.AccessToken.find(token);
+      if (!access || access.isExpired || access.clientId !== WEB_CLIENT_ID || !access.accountId) throw new HTTPException(401, { message: "Invalid token" });
+      const user = await users.get(access.accountId).catch(() => null);
+      if (!user || user.disabled) throw new HTTPException(401, { message: "Invalid token" });
+      return c.json({
+        sub: user.id,
+        email: user.email,
+        name: user.name,
+        phone: user.claims[PHONE_CLAIM] ?? null,
+        picture: user.picture,
+        claims: { [CLAIMS.role]: user.claims[CLAIMS.role], [CLAIMS.tenant]: user.claims[CLAIMS.tenant], [CLAIMS.tenantAdmin]: user.claims[CLAIMS.tenantAdmin] },
+        expiresAt: (access.exp ?? 0) * 1000,
+      });
+    })
     .get("/tenants/:id/endpoint", async (c) => {
       await tenants.active(c.req.param("id"));
       return c.json({ url: orchestrator.endpoint(c.req.param("id")) });
@@ -439,6 +477,7 @@ export function createControlApp(deps: ControlDeps) {
 
   const app = new Hono()
     .get("/health", (c) => c.json({ ok: true }))
+    .route("/auth", authRoutes(deps.auth))
     .route("/internal/gateway", forGateway)
     .route("/internal/runtime", forRuntime)
     .route("/webhooks/whatsapp", deps.whatsapp ? whatsappWebhook(deps.whatsapp) : new Hono().all("/", (c) => c.text("WhatsApp is not configured", 404)))

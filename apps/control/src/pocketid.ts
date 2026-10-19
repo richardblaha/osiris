@@ -1,4 +1,4 @@
-/** PocketID admin API (`/api/...` with `X-API-KEY`): users, their claims and profiles, login links. Only control holds the key. */
+/** PocketID admin API (`/api/...` with `X-API-KEY`), used only to import its users once (`pnpm users import-pocketid`). */
 export class PocketIdClient {
   private readonly base: string;
 

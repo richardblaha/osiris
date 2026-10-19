@@ -13,7 +13,7 @@ import type {
 } from "@osiris/shared";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { api, setTenant } from "./api.ts";
-import { configError, getAccessToken, login, logout } from "./auth.ts";
+import { getAccessToken, login, logout } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
 import { Files } from "./Files.tsx";
 import { Schedules } from "./Schedules.tsx";
@@ -23,14 +23,21 @@ import { mcpKey, McpServerDetail, McpStatus } from "./McpServers.tsx";
 import { MemoryDetail, memoryKey } from "./Memories.tsx";
 import { Avatar, Profile } from "./Profile.tsx";
 import { ScopeBadge } from "./Scope.tsx";
+import { SignIn } from "./SignIn.tsx";
 import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
 import { roleLabel, TenantInfo } from "./TenantInfo.tsx";
 import { NewTenant, TenantPanel } from "./Tenants.tsx";
 
 export function App() {
+  // The sign-in screen, where the identity provider (/auth) sends the browser.
+  if (location.pathname === "/login") return <SignIn />;
+  return <Gate />;
+}
+
+function Gate() {
   const [loggedIn, setLoggedIn] = useState<boolean>();
-  const [loginError, setLoginError] = useState(configError);
+  const [loginError, setLoginError] = useState<string>();
   useEffect(() => void getAccessToken().then((t) => setLoggedIn(!!t)), []);
 
   if (loggedIn === undefined) return null;
@@ -41,7 +48,6 @@ export function App() {
         <h1 className="text-2xl font-semibold tracking-[0.2em]">OSIRIS</h1>
         <button
           onClick={() => login().catch((e: Error) => setLoginError(`Přihlášení selhalo: ${e.message}`))}
-          disabled={!!configError}
           className="btn-primary px-6 py-3"
         >
           Přihlásit se
@@ -153,7 +159,14 @@ function Workspace() {
   const [tenant, setTenantInfo] = useState<Tenant>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [lists, setLists] = useState<Lists>(EMPTY);
-  const [view, setView] = useState<View>({ kind: "chat", threadId: null, session: 0 });
+  // `?profile=security` comes back from linking a social account (or a first sign-in by link): open the profile.
+  const [notice] = useState(() => {
+    const params = new URLSearchParams(location.search);
+    if (!params.has("profile")) return undefined;
+    history.replaceState(null, "", "/");
+    return { linked: params.get("linked") ?? undefined, error: params.get("error") ?? undefined };
+  });
+  const [view, setView] = useState<View>(notice ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
   const [open, setOpen] = useState<Record<string, boolean>>(() => stored(OPEN_SECTIONS, { threads: true }));
   const [error, setError] = useState<string>();
 
@@ -180,7 +193,8 @@ function Workspace() {
     setTenantInfo(undefined);
     setLists((l) => ({ ...EMPTY, tenants: l.tenants }));
     void loadTenant();
-    setView((v) => ({ kind: "chat", threadId: null, session: (v.kind === "chat" ? v.session : 0) + 1 }));
+    // The profile stays open (it may have been opened from a link); everything else starts a new chat.
+    setView((v) => (v.kind === "profile" ? v : { kind: "chat", threadId: null, session: (v.kind === "chat" ? v.session : 0) + 1 }));
     void refreshThreads();
   };
 
@@ -339,7 +353,7 @@ function Workspace() {
         ) : view.kind === "tenant" ? (
           <TenantInfo me={me} tenant={tenant} onSelect={selectTenant} />
         ) : view.kind === "profile" ? (
-          <Profile key={tenant?.id} me={me} />
+          <Profile key={tenant?.id} me={me} notice={notice} />
         ) : !tenant ? null : view.kind === "files" ? (
           tenant.features.files ? <Files key={tenant.id} isAdmin={isAdmin} /> : null
         ) : view.kind === "schedules" ? (

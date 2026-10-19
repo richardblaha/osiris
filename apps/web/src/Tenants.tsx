@@ -39,7 +39,7 @@ export function NewTenant({ onCreated }: { onCreated: (id: string) => void }) {
     <div className="detail">
       <h1 className="text-lg font-semibold">Nový tenant</h1>
       <p className="mt-1 text-sm text-fg-secondary">
-        Každý tenant běží ve vlastním kontejneru s vlastní databází a soubory. Členství jsou claimy uživatelů v PocketID:{" "}
+        Každý tenant běží ve vlastním kontejneru s vlastní databází a soubory. Členství jsou claimy uživatelů:{" "}
         <code>tenant=&lt;zkratka&gt;</code> pro uživatele a <code>tenant-admin=&lt;zkratka&gt;</code> pro správce, oba potřebují{" "}
         <code>role=osiris-user</code>.
       </p>
@@ -205,6 +205,14 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
                   <option value="member">uživatel</option>
                   <option value="admin">správce</option>
                 </select>
+                <button
+                  disabled={busy}
+                  title="Pro uživatele, který ztratil telefon s ověřovací aplikací i záložní kódy"
+                  onClick={() => window.confirm(`Vypnout dvoufázové ověření pro ${m.name ?? m.email}?`) && void run(() => api.admin.resetSecondFactor(m.userId))}
+                  className="btn-link"
+                >
+                  Vypnout 2FA
+                </button>
                 <button disabled={busy} onClick={() => void run(() => api.admin.removeMember(id, m.userId))} className="btn-danger">
                   Odebrat
                 </button>
@@ -249,7 +257,7 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
             })
           }
         />
-        <p className="mt-1 text-xs text-fg-muted">Nový uživatel se založí v PocketID. Změny členství platí do minuty.</p>
+        <p className="mt-1 text-xs text-fg-muted">Nový uživatel dostane jednorázový přihlašovací odkaz. Změny členství platí do minuty.</p>
       </section>
 
       {error && <p className="notice notice-error px-3 py-2 text-sm">{error}</p>}

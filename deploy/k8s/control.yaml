@@ -1,6 +1,8 @@
-# Tenants, users (PocketID), schedules, WhatsApp, domains, site publishing and backups. Writes Tenant objects only.
-# Secret osiris-control: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, POCKETID_API_KEY, RQLITE_USERNAME,
-# RQLITE_PASSWORD, S3_*, WHATSAPP_*, SITES_INGRESS_IPS (see deploy/README.md).
+# Sign-in (the OpenID Connect provider at https://osiris.k6labs.cz/auth), users, tenants, schedules, WhatsApp, domains,
+# site publishing and backups. Writes Tenant objects only.
+# Secret osiris-control: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, AUTH_SIGNING_KEY, AUTH_SECRET, SMTP_URL,
+# GOOGLE_*/FACEBOOK_*/MICROSOFT_*/SEZNAM_* (optional), RQLITE_USERNAME, RQLITE_PASSWORD, S3_*, WHATSAPP_*, SITES_INGRESS_IPS
+# (see deploy/README.md).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -35,7 +37,8 @@ spec:
             - { name: ORCHESTRATOR, value: kubernetes }
             - { name: K8S_NAMESPACE, value: osiris }
             - { name: RQLITE_URL, value: http://rqlite.osiris.svc.cluster.local:4001 }
-            - { name: OIDC_ISSUER, value: https://auth.k6labs.cz }
+            - { name: PUBLIC_URL, value: https://osiris.k6labs.cz }
+            - { name: MAIL_FROM, value: "Osiris <auth@k6labs.cz>" }
             - { name: TIMEZONE, value: Europe/Prague }
             - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
           envFrom:

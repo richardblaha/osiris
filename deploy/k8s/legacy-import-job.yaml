@@ -32,7 +32,7 @@ spec:
             - { name: ORCHESTRATOR, value: kubernetes }
             - { name: K8S_NAMESPACE, value: osiris }
             - { name: RQLITE_URL, value: http://rqlite.osiris.svc.cluster.local:4001 }
-            - { name: OIDC_ISSUER, value: https://auth.k6labs.cz }
+            - { name: PUBLIC_URL, value: https://osiris.k6labs.cz }
             - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
             - { name: LEGACY_DATA_DIR, value: /legacy/tenants }
             - { name: LEGACY_FILES_DIR, value: /legacy/files }

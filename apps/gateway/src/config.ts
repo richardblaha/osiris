@@ -14,10 +14,7 @@ const schema = z
     // Built web app (apps/web/dist); unset in development, where Vite serves it.
     STATIC_DIR: z.string().optional(),
 
-    // PocketID: issuer URL and the OIDC client ID of the web app (checked as token audience).
-    OIDC_ISSUER: z.url().optional(),
-    OIDC_AUDIENCE: z.string().optional(),
-    // Development only: the bearer token itself is the user (see CLAUDE.md).
+    // Development only: the bearer token itself is the user (see CLAUDE.md). Otherwise control identifies tokens.
     AUTH_DEV_BYPASS: bool,
 
     CONTROL_URL: z.url().default("http://127.0.0.1:3002"),
@@ -33,9 +30,6 @@ const schema = z
   .superRefine((env, ctx) => {
     if (env.AUTH_DEV_BYPASS && env.NODE_ENV === "production") {
       ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
-    }
-    if (!env.AUTH_DEV_BYPASS && (!env.OIDC_ISSUER || !env.OIDC_AUDIENCE)) {
-      ctx.addIssue({ code: "custom", path: ["OIDC_ISSUER"], message: "OIDC_ISSUER and OIDC_AUDIENCE are required" });
     }
   });
 

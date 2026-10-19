@@ -1,18 +1,17 @@
-import { createRemoteJWKSet, jwtVerify } from "jose";
 import { accessFromClaims, type Access } from "@osiris/platform/claims.ts";
 
-/** Everything we know about a user; PocketID is the only source (standard and custom claims). */
+/** Everything we know about a user, as control (the identity provider) has it. */
 export interface Identity {
   sub: string;
   email: string | null;
   name: string | null;
-  /** PocketID custom claim `phone_number` (E.164), set on the user. */
+  /** Claim `phone_number` (E.164), verified over WhatsApp. */
   phone: string | null;
-  /** Profile picture URL (standard claim `picture`). */
+  /** Profile picture URL. */
   picture: string | null;
-  /** Custom claims `role`, `tenant` and `tenant-admin`: whether the user may use Osiris and in which tenants. */
+  /** Claims `role`, `tenant` and `tenant-admin`: whether the user may use Osiris and in which tenants. */
   access: Access;
-  /** Names of every claim userinfo returned, to tell a missing claim from a wrong value when access is refused. */
+  /** Names of the claims the user has, to tell a missing claim from a wrong value when access is refused. */
   claimKeys?: string[];
 }
 
@@ -21,74 +20,50 @@ export interface TokenVerifier {
   identify(token: string): Promise<Identity>;
 }
 
-interface Discovery {
-  issuer: string;
-  jwks_uri: string;
-  userinfo_endpoint: string;
+/** What control answers for a token: the user and the claims that grant access. */
+export interface TokenOwner {
+  sub: string;
+  email: string | null;
+  name: string | null;
+  phone: string | null;
+  picture: string | null;
+  claims: Record<string, unknown>;
+  /** When the token expires (epoch ms). */
+  expiresAt: number;
 }
 
-/** How long a token's userinfo is reused, so role and tenant changes in PocketID apply within this time. */
-const USERINFO_TTL_MS = 60_000;
-const USERINFO_CACHE_MAX = 1000;
+/** How long a token's owner is reused, so role and tenant changes apply within this time. */
+const IDENTITY_TTL_MS = 60_000;
+const IDENTITY_CACHE_MAX = 1000;
 
 /**
- * Verifies PocketID access tokens against the issuer's JWKS. PocketID access tokens carry only `sub`;
- * profile and custom claims come from the userinfo endpoint, cached briefly per token.
- * The web client must request the `profile email` scopes (custom claims come with `profile`).
+ * Access tokens are opaque and issued by control's OIDC provider; control says whose a token is (and whether it is
+ * still valid), and the answer is cached briefly per token. `identify` throws `ServiceError` 401 for a bad token.
  */
-export function createOidcVerifier(issuer: string, audience: string): TokenVerifier {
-  let discovery: Promise<{ doc: Discovery; jwks: ReturnType<typeof createRemoteJWKSet> }> | undefined;
+export function createControlVerifier(lookup: (token: string) => Promise<TokenOwner>): TokenVerifier {
   const cache = new Map<string, { identity: Identity; expires: number }>();
-
-  const discover = () =>
-    (discovery ??= (async () => {
-      const res = await fetch(new URL(".well-known/openid-configuration", issuer.endsWith("/") ? issuer : `${issuer}/`));
-      if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status}`);
-      const doc = (await res.json()) as Discovery;
-      return { doc, jwks: createRemoteJWKSet(new URL(doc.jwks_uri)) };
-    })().catch((err) => {
-      discovery = undefined;
-      throw err;
-    }));
-
   return {
     async identify(token) {
-      const { doc, jwks } = await discover();
-      const { payload } = await jwtVerify(token, jwks, { issuer: doc.issuer, audience });
-      if (!payload.sub) throw new Error("Token has no sub");
-
       const now = Date.now();
       const hit = cache.get(token);
       if (hit && hit.expires > now) return hit.identity;
-
-      const res = await fetch(doc.userinfo_endpoint, { headers: { authorization: `Bearer ${token}` } });
-      if (!res.ok) throw new Error(`userinfo failed: ${res.status}`);
-      const info = (await res.json()) as Record<string, unknown>;
-      if (info.sub !== payload.sub) throw new Error("userinfo sub does not match token");
-      const identity = toIdentity(info);
-
-      if (cache.size >= USERINFO_CACHE_MAX) {
+      const owner = await lookup(token);
+      const identity: Identity = {
+        sub: owner.sub,
+        email: owner.email,
+        name: owner.name,
+        phone: owner.phone,
+        picture: owner.picture,
+        access: accessFromClaims((key) => owner.claims[key]),
+        claimKeys: Object.keys(owner.claims).filter((k) => owner.claims[k] !== undefined && owner.claims[k] !== null).sort(),
+      };
+      if (cache.size >= IDENTITY_CACHE_MAX) {
         for (const [k, v] of cache) if (v.expires <= now) cache.delete(k);
-        if (cache.size >= USERINFO_CACHE_MAX) cache.delete(cache.keys().next().value!);
+        if (cache.size >= IDENTITY_CACHE_MAX) cache.delete(cache.keys().next().value!);
       }
-      const tokenExpires = payload.exp ? payload.exp * 1000 : Infinity;
-      cache.set(token, { identity, expires: Math.min(now + USERINFO_TTL_MS, tokenExpires) });
+      cache.set(token, { identity, expires: Math.min(now + IDENTITY_TTL_MS, owner.expiresAt) });
       return identity;
     },
-  };
-}
-
-const str = (v: unknown) => (typeof v === "string" && v ? v : null);
-
-export function toIdentity(info: Record<string, unknown>): Identity {
-  return {
-    sub: String(info.sub),
-    email: str(info.email),
-    name: str(info.name),
-    phone: str(info.phone_number),
-    picture: str(info.picture),
-    access: accessFromClaims((key) => info[key]),
-    claimKeys: Object.keys(info).sort(),
   };
 }
 
