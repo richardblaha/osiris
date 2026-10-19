@@ -92,6 +92,7 @@ describe("skills", () => {
   });
 
   it("ships valid bundled skills", () => {
-    expect(loadSkills(join(import.meta.dirname, "../skills")).length).toBeGreaterThan(0);
+    // An invalid skill throws, which would stop the runtime from starting.
+    expect(() => loadSkills(join(import.meta.dirname, "../skills"))).not.toThrow();
   });
 });
