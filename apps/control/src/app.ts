@@ -1,3 +1,4 @@
+import { readAll } from "@osiris/platform/objects.ts";
 import { Readable } from "node:stream";
 import {
   FEATURES,
@@ -175,6 +176,7 @@ export function createControlApp(deps: ControlDeps) {
     return {
       id: t.id,
       name: t.name,
+      logo: t.logo,
       members: memberList.length,
       features: t.features,
       memberList,
@@ -188,11 +190,14 @@ export function createControlApp(deps: ControlDeps) {
   const me = new Hono<Env>()
     .get("/", async (c) => {
       const { user, memberships = [], systemAdmin = false } = c.get("call");
-      const names = new Map((await tenants.list()).map((t) => [t.id, t.name]));
+      const active = new Map((await tenants.list()).map((t) => [t.id, t]));
       return c.json<MeResponse>({
         user: { id: user.sub, email: user.email, name: user.name, phone: user.phone, picture: user.picture },
         systemAdmin,
-        tenants: memberships.filter((m) => names.has(m.tenantId)).map((m) => ({ id: m.tenantId, name: names.get(m.tenantId)!, role: m.role })),
+        tenants: memberships.flatMap((m) => {
+          const t = active.get(m.tenantId);
+          return t ? [{ id: t.id, name: t.name, role: m.role, logo: t.logo }] : [];
+        }),
       });
     })
     .get("/profile", async (c) => c.json<UserProfile>(await profile(c.get("call").user.sub)))
@@ -229,7 +234,15 @@ export function createControlApp(deps: ControlDeps) {
     .use(inTenant)
     .get("/tenant", (c) => {
       const t = c.get("tenant");
-      return c.json<TenantInfo>({ id: t.id, name: t.name, role: c.get("role"), features: t.features });
+      return c.json<TenantInfo>({ id: t.id, name: t.name, role: c.get("role"), features: t.features, logo: t.logo });
+    })
+    .put("/tenant/logo", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ error: "Obrázek může mít nejvýš 2 MB" }, 413) }), async (c) => {
+      requireTenantAdmin(c);
+      const data = new Uint8Array(await c.req.arrayBuffer());
+      const mime = Object.entries(PICTURE_TYPES).find(([, sig]) => sig.every((b, i) => data[i] === b))?.[0];
+      if (!mime) throw new HTTPException(415, { message: "Logo musí být PNG nebo JPEG" });
+      await tenants.setLogo(c.get("tenant").id, data, mime);
+      return c.body(null, 204);
     })
 
     // Tenant admins manage their tenant's members; they invite by email and never see other tenants' users.
@@ -345,7 +358,7 @@ export function createControlApp(deps: ControlDeps) {
     .post("/tenants", async (c) => {
       const { id, name, features } = parse(createTenantBody, await json(c));
       const t = await directory.create(id, name, features);
-      return c.json<TenantSummary>({ id: t.id, name: t.name, members: 0 }, 201);
+      return c.json<TenantSummary>({ id: t.id, name: t.name, logo: t.logo, members: 0 }, 201);
     })
     .get("/tenants/:id", async (c) => c.json<TenantDetail>(await tenantDetail(await tenants.active(c.req.param("id")))))
     .patch("/tenants/:id", async (c) => {
@@ -477,6 +490,17 @@ export function createControlApp(deps: ControlDeps) {
 
   const app = new Hono()
     .get("/health", (c) => c.json({ ok: true }))
+    // Tenant logos, public like profile pictures (an <img> sends no token); the version in the URL is unguessable.
+    .get("/auth/tenant-logos/:id/:version", async (c) => {
+      const logo = await tenants.logo(c.req.param("id"), c.req.param("version"));
+      if (!logo) return c.body(null, 404);
+      const data = await readAll(logo.body);
+      return c.body(new Uint8Array(data), 200, {
+        "content-type": data[0] === 0x89 ? "image/png" : "image/jpeg",
+        "cache-control": "public, max-age=31536000, immutable",
+        "x-content-type-options": "nosniff",
+      });
+    })
     .route("/auth", authRoutes(deps.auth))
     .route("/internal/gateway", forGateway)
     .route("/internal/runtime", forRuntime)

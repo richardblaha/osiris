@@ -18,8 +18,8 @@ describe("tenant directory", () => {
     // Membership is written to the user's claims, keeping the others; a new member also gets the Osiris role.
     expect((await users.get("bob")).claims).toEqual({ phone_number: "+420777123456", tenant: "acme", "tenant-admin": "novak", role: "osiris-user" });
     expect(await directory.list()).toEqual([
-      { id: "acme", name: "ACME s.r.o.", members: 1 },
-      { id: "novak", name: "Novák stavby", members: 1 },
+      { id: "acme", name: "ACME s.r.o.", logo: null, members: 1 },
+      { id: "novak", name: "Novák stavby", logo: null, members: 1 },
     ]);
 
     await directory.remove("novak");
@@ -49,7 +49,7 @@ describe("control API", () => {
     expect(me).toEqual({
       user: { id: "alice", email: "alice@example.cz", name: "alice", phone: null, picture: null },
       systemAdmin: false,
-      tenants: [{ id: "acme", name: "ACME s.r.o.", role: "member" }],
+      tenants: [{ id: "acme", name: "ACME s.r.o.", role: "member", logo: null }],
     });
     expect(await (await asUser("alice", [{ tenantId: "acme", role: "member" }])("/tenant")).json()).toMatchObject({ id: "acme", role: "member" });
     // Only memberships the gateway vouched for.
@@ -102,6 +102,27 @@ describe("control API", () => {
     const invited = await alice("/members", { method: "POST", body: JSON.stringify({ email: "dan@acme.cz", firstName: "Dan", lastName: "D" }) });
     expect(await invited.json()).toMatchObject({ created: true, loginLink: expect.any(String) });
     expect((await alice("/members/bob", { method: "DELETE" })).status).toBe(204);
+  });
+
+  it("lets tenant admins set the tenant's logo, served at a URL that changes with it", async () => {
+    const { app, asUser, directory } = await createTestControl();
+    await directory.create("acme", "ACME");
+    const alice = asUser("alice", [{ tenantId: "acme", role: "admin" }]);
+    const bob = asUser("bob", [{ tenantId: "acme", role: "member" }]);
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0]);
+    const put = (who: typeof alice, body: Buffer | string) => who("/tenant/logo", { method: "PUT", body, headers: { "content-type": "image/png" } });
+    expect((await put(bob, png)).status).toBe(403);
+    expect((await put(alice, "<svg/>")).status).toBe(415);
+    expect((await put(alice, png)).status).toBe(204);
+
+    const logo = (await (await bob("/tenant")).json()).logo as string;
+    expect(logo).toMatch(/^http:\/\/osiris\.test\/auth\/tenant-logos\/acme\/[\w-]{36}$/);
+    expect((await (await bob("/me")).json()).tenants).toMatchObject([{ id: "acme", logo }]);
+    const served = await app.request(new URL(logo).pathname);
+    expect([served.status, served.headers.get("content-type"), Buffer.from(await served.arrayBuffer())]).toEqual([200, "image/png", png]);
+    // A new logo replaces the old one, whose URL stops working.
+    expect((await put(alice, png)).status).toBe(204);
+    expect((await app.request(new URL(logo).pathname)).status).toBe(404);
   });
 
   it("edits the user's profile and checks the picture type", async () => {

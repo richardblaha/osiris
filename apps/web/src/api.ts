@@ -138,6 +138,7 @@ export const api = {
   saveProfile: (changes: { firstName?: string; lastName?: string; email?: string }) =>
     json<UserProfile>("/me/profile", { method: "PATCH", body: JSON.stringify(changes) }),
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
+  saveTenantLogo: (image: Blob) => request("/tenant/logo", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
   removePhone: () => request("/me/phone", { method: "DELETE" }),
   security: {

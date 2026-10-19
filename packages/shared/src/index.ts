@@ -32,7 +32,7 @@ export interface MeResponse {
   user: { id: string; email: string | null; name: string | null; phone: string | null; picture: string | null };
   /** Claim `role=osiris-admin`: admin of every tenant, manages tenants. */
   systemAdmin: boolean;
-  tenants: { id: string; name: string; role: Role }[];
+  tenants: { id: string; name: string; role: Role; logo: string | null }[];
 }
 
 /** What a system admin can switch on or off per tenant. */
@@ -46,12 +46,15 @@ export interface TenantInfo {
   name: string;
   role: Role;
   features: TenantFeatures;
+  /** Public URL of the tenant's logo, or null. */
+  logo: string | null;
 }
 
 /** A tenant as system admins see it (`/api/admin/tenants`). */
 export interface TenantSummary {
   id: string;
   name: string;
+  logo: string | null;
   /** Users whose claim `tenant` or `tenant-admin` names the tenant. */
   members: number;
 }

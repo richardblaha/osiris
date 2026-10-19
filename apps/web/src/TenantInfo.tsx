@@ -3,17 +3,38 @@ import { useEffect, useState } from "react";
 import { api } from "./api.ts";
 import { InviteForm } from "./Invite.tsx";
 import { attempt, ErrorNotice } from "./Scope.tsx";
-import { FEATURE_LABELS } from "./Tenants.tsx";
+import { FEATURE_LABELS, TenantLogo } from "./Tenants.tsx";
 
 export const roleLabel = (role: Tenant["role"]) => (role === "admin" ? "správce" : "uživatel");
 
-/** The active tenant as the user's claims describe it (switching is in the sidebar's tenant menu). */
-export function TenantInfo({ me, tenant }: { me: MeResponse; tenant?: Tenant }) {
+/** The active tenant as the user's claims describe it (switching is in the sidebar's tenant menu); admins set its logo. */
+export function TenantInfo({ me, tenant, onChanged }: { me: MeResponse; tenant?: Tenant; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
   return (
     <div className="detail">
       {tenant ? (
         <>
-          <h1 className="text-lg font-semibold">{tenant.name}</h1>
+          <div className="flex items-center gap-3">
+            <TenantLogo tenant={tenant} size={48} />
+            <h1 className="min-w-0 flex-1 text-lg font-semibold break-words">{tenant.name}</h1>
+            {tenant.role === "admin" && (
+              <label className={`btn-secondary cursor-pointer ${busy ? "pointer-events-none opacity-60" : ""}`}>
+                Změnit logo
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg"
+                  hidden
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    e.target.value = "";
+                    if (file) void attempt(setBusy, setError, async () => (await api.saveTenantLogo(file), onChanged()));
+                  }}
+                />
+              </label>
+            )}
+          </div>
+          <ErrorNotice error={error} />
           <dl className="notice mt-6 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 px-3 py-2 text-sm">
             <dt className="text-fg-secondary">Zkratka</dt>
             <dd>{tenant.id}</dd>

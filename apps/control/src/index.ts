@@ -65,7 +65,7 @@ const runtimes = new RuntimeClient({ endpoint: async (t) => orchestrator.endpoin
 const users = dbUsers(db, { objects, publicUrl: config.PUBLIC_URL });
 const auth = await createAuth(config, db, users);
 
-const store = new TenantStore(db);
+const store = new TenantStore(db, { objects, publicUrl: config.PUBLIC_URL });
 const directory = new TenantDirectory(store, users, orchestrator);
 const schedules = new ScheduleStore(db, config.TIMEZONE);
 const domains = new DomainStore(db, publicDns(), {

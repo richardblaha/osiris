@@ -1,5 +1,7 @@
 import { FEATURES, type DirectoryUser, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
 import { CLAIMS, claimList, isAuthorized, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
+import { randomUUID } from "node:crypto";
+import type { ObjectStore } from "@osiris/platform/objects.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import type { Orchestrator, TenantSpec } from "./orchestrator/types.ts";
 import type { UserDirectory, UserRecord } from "./users.ts";
@@ -12,6 +14,8 @@ export interface TenantRow {
   idleMinutes: number;
   storageGb: number;
   createdAt: number;
+  /** Public URL of the tenant's logo, or null. */
+  logo: string | null;
 }
 
 export class TenantExistsError extends Error {}
@@ -29,9 +33,12 @@ interface Row {
   idle_minutes: number;
   storage_gb: number;
   created_at: number;
+  logo: string | null;
 }
 
-const toTenant = (r: Row): TenantRow => ({
+const logoKey = (id: string, version: string) => `tenant-logos/${id}/${version}`;
+
+const toTenant = (r: Row, publicUrl = ""): TenantRow => ({
   id: r.id,
   name: r.name,
   status: r.status === "archived" ? "archived" : "active",
@@ -39,20 +46,44 @@ const toTenant = (r: Row): TenantRow => ({
   idleMinutes: Number(r.idle_minutes),
   storageGb: Number(r.storage_gb),
   createdAt: Number(r.created_at),
+  logo: r.logo ? `${publicUrl}/auth/tenant-logos/${r.id}/${r.logo}` : null,
 });
 
 /** Tenants in the central database. Members are not stored here: they are the users whose claims name the tenant. */
 export class TenantStore {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    /** Where logos are kept and the browser reaches them; tools without it (the legacy import) don't touch logos. */
+    private readonly logos?: { objects: ObjectStore; publicUrl: string },
+  ) {}
+
+  private toTenant = (r: Row) => toTenant(r, this.logos?.publicUrl);
 
   async list({ archived = false } = {}): Promise<TenantRow[]> {
     const rows = await this.db.query<Row>(`SELECT * FROM tenants ${archived ? "" : "WHERE status = 'active'"} ORDER BY id`);
-    return rows.map(toTenant);
+    return rows.map(this.toTenant);
   }
 
   async get(id: string, { fresh = false } = {}): Promise<TenantRow | null> {
     const [row] = await this.db.query<Row>("SELECT * FROM tenants WHERE id = ?", [id], { fresh });
-    return row ? toTenant(row) : null;
+    return row ? this.toTenant(row) : null;
+  }
+
+  /** Replaces the tenant's logo; a new version gets a new URL, so browsers may cache each one for good. */
+  async setLogo(id: string, image: Uint8Array, mime: string) {
+    if (!this.logos) throw new Error("Logos are not configured");
+    const [current] = await this.db.query<{ logo: string | null }>("SELECT logo FROM tenants WHERE id = ?", [id]);
+    const version = randomUUID();
+    await this.logos.objects.put(logoKey(id, version), image, mime);
+    await this.db.execute([run("UPDATE tenants SET logo = ?, updated_at = ? WHERE id = ?", version, Date.now(), id)]);
+    if (current?.logo) await this.logos.objects.delete([logoKey(id, current.logo)]).catch(() => {});
+  }
+
+  /** The stored logo of a tenant, if `version` is the current one. */
+  async logo(id: string, version: string): ReturnType<ObjectStore["get"]> {
+    const [r] = await this.db.query<{ logo: string | null }>("SELECT logo FROM tenants WHERE id = ?", [id]);
+    if (!this.logos || !r?.logo || r.logo !== version) return null;
+    return this.logos.objects.get(logoKey(id, version));
   }
 
   async active(id: string): Promise<TenantRow> {
@@ -157,7 +188,7 @@ export class TenantDirectory {
 
   async list(): Promise<TenantSummary[]> {
     const all = await this.activeUsers();
-    return (await this.store.list()).map((t) => ({ id: t.id, name: t.name, members: all.filter((u) => roleIn(u, t.id)).length }));
+    return (await this.store.list()).map((t) => ({ id: t.id, name: t.name, logo: t.logo, members: all.filter((u) => roleIn(u, t.id)).length }));
   }
 
   async sync(id: string) {

@@ -27,7 +27,7 @@ import { SignIn } from "./SignIn.tsx";
 import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
 import { roleLabel, TenantInfo } from "./TenantInfo.tsx";
-import { TenantsDialog } from "./Tenants.tsx";
+import { TenantAdmin, TenantLogo } from "./Tenants.tsx";
 
 export function App() {
   // The sign-in screen, where the identity provider (/auth) sends the browser.
@@ -70,6 +70,8 @@ type View =
   | { kind: "item"; section: Section; id: string | null }
   | { kind: "profile" }
   | { kind: "tenant" }
+  /** The system admin's tenant administration, opening a tenant (or `null`: the form of a new one). */
+  | { kind: "tenants"; initial?: string | null }
   | { kind: "files" }
   | { kind: "schedules" }
   | { kind: "sites" };
@@ -155,9 +157,8 @@ function Workspace() {
   const [tenant, setTenantInfo] = useState<Tenant>();
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [lists, setLists] = useState<Lists>(EMPTY);
-  // The system admin's tenant administration: the tenants, and the modal when open (with the tenant to show first).
+  // The system admin's tenant administration.
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
-  const [manage, setManage] = useState<{ initial?: string | null }>();
   // `?profile=security` comes back from linking a social account (or a first sign-in by link): open the profile.
   const [notice] = useState(() => {
     const params = new URLSearchParams(location.search);
@@ -209,7 +210,7 @@ function Workspace() {
       if (!pick) {
         // A system admin with no tenant yet starts with creating one.
         setTenantInfo(undefined);
-        if (m.systemAdmin) setManage({ initial: null });
+        if (m.systemAdmin) setView({ kind: "tenants", initial: null });
       } else if (pick !== current) selectTenant(pick);
     }, (e: Error) => setError(e.message));
 
@@ -262,11 +263,6 @@ function Workspace() {
         <div className="flex items-center gap-2 px-3 pt-3">
           <img src="/logo.svg" alt="" className="h-8 w-8" />
           <span className="text-xl font-semibold tracking-[0.2em]">OSIRIS</span>
-          {me.systemAdmin && (
-            <button onClick={() => setManage({})} title="Spravovat tenanty" aria-label="Spravovat tenanty" className="list-row p-1 text-fg-secondary">
-              <Chevron direction="down" />
-            </button>
-          )}
         </div>
         {tenant && (
           <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
@@ -333,7 +329,14 @@ function Workspace() {
         </nav>
 
         <div className="border-t border-line p-2">
-          <TenantSwitcher me={me} tenant={tenant} active={view.kind === "tenant"} onOpen={() => setView({ kind: "tenant" })} onSelect={selectTenant} />
+          <TenantSwitcher
+            me={me}
+            tenant={tenant}
+            active={view.kind === "tenant" || view.kind === "tenants"}
+            onOpen={() => setView({ kind: "tenant" })}
+            onManage={() => setView({ kind: "tenants" })}
+            onSelect={selectTenant}
+          />
           <button onClick={() => setView({ kind: "profile" })} data-active={view.kind === "profile"} className="list-row flex w-full items-center gap-3 px-2 py-2 text-left">
             <Avatar user={me.user} />
             <span className="min-w-0 flex-1">
@@ -345,8 +348,27 @@ function Workspace() {
       </aside>
 
       <main className="h-full min-w-0 flex-1 bg-canvas">
-        {view.kind === "tenant" ? (
-          <TenantInfo me={me} tenant={tenant} />
+        {view.kind === "tenants" ? (
+          <TenantAdmin
+            tenants={tenants}
+            initial={view.initial}
+            onChanged={() => {
+              void refreshTenants();
+              void loadMe(tenant?.id);
+              // The current tenant's name, logo or features may have changed.
+              if (tenant) void loadTenant();
+            }}
+          />
+        ) : view.kind === "tenant" ? (
+          <TenantInfo
+            me={me}
+            tenant={tenant}
+            onChanged={() => {
+              void loadTenant();
+              void loadMe(tenant?.id);
+              if (me.systemAdmin) void refreshTenants();
+            }}
+          />
         ) : view.kind === "profile" ? (
           <Profile key={tenant?.id} me={me} notice={notice} />
         ) : !tenant ? null : view.kind === "files" ? (
@@ -394,43 +416,33 @@ function Workspace() {
           />
         )}
       </main>
-
-      {manage && (
-        <TenantsDialog
-          tenants={tenants}
-          initial={manage.initial}
-          onChanged={() => {
-            void refreshTenants();
-            void loadMe(tenant?.id);
-            // The current tenant's name or features may have changed.
-            if (tenant) void loadTenant();
-          }}
-          onClose={() => setManage(undefined)}
-        />
-      )}
     </div>
   );
 }
 
 /**
- * The active tenant at the bottom of the sidebar: its name opens the tenant's detail, the chevron a menu of the
- * user's tenants to switch to (closed by a click elsewhere or Esc).
+ * The active tenant at the bottom of the sidebar, with its logo. With more than one tenant (or tenant administration
+ * to reach) it opens a menu: the tenants to switch to, the tenant's detail and, for system admins, the administration
+ * (closed by a click elsewhere or Esc); otherwise it opens the tenant's detail.
  */
 function TenantSwitcher({
   me,
   tenant,
   active,
   onOpen,
+  onManage,
   onSelect,
 }: {
   me: MeResponse;
   tenant?: Tenant;
   active: boolean;
   onOpen: () => void;
+  onManage: () => void;
   onSelect: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menu = me.tenants.length > 1 || me.systemAdmin;
   useEffect(() => {
     if (!open) return;
     const outside = (e: PointerEvent) => !ref.current?.contains(e.target as Node) && setOpen(false);
@@ -442,56 +454,60 @@ function TenantSwitcher({
       document.removeEventListener("keydown", esc);
     };
   }, [open]);
+  const pick = (action: () => void) => () => {
+    setOpen(false);
+    action();
+  };
 
   return (
-    <div ref={ref} className="relative flex items-center gap-1">
-      <button onClick={onOpen} data-active={active} className="list-row min-w-0 flex-1 px-2 py-2 text-left">
-        <span className="block truncate text-base font-semibold">{tenant?.name ?? "Žádný tenant"}</span>
-        <span className="block truncate text-xs text-fg-muted">{tenant ? roleLabel(tenant.role) : "vyber nebo založ tenanta"}</span>
+    <div ref={ref} className="relative">
+      <button
+        onClick={menu ? () => setOpen((o) => !o) : onOpen}
+        data-active={active || open}
+        aria-haspopup={menu ? "menu" : undefined}
+        aria-expanded={menu ? open : undefined}
+        className="list-row flex w-full items-center gap-3 px-2 py-2 text-left"
+      >
+        <TenantLogo tenant={tenant ?? { name: "?", logo: null }} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-base font-semibold">{tenant?.name ?? "Žádný tenant"}</span>
+          <span className="block truncate text-xs text-fg-muted">{tenant ? roleLabel(tenant.role) : "vyber nebo založ tenanta"}</span>
+        </span>
       </button>
-      {me.tenants.length > 1 && (
-        <button
-          onClick={() => setOpen((o) => !o)}
-          aria-expanded={open}
-          aria-haspopup="menu"
-          title="Přepnout tenanta"
-          aria-label="Přepnout tenanta"
-          className="list-row self-stretch px-2 text-fg-secondary"
-        >
-          <Chevron direction={open ? "down" : "up"} />
-        </button>
-      )}
       {open && (
-        <div role="menu" className="absolute inset-x-0 bottom-full z-10 mb-1 max-h-80 overflow-y-auto rounded-md border border-line bg-canvas p-1 shadow-[var(--shadow-popup)]">
+        <div role="menu" className="absolute inset-x-0 bottom-full z-10 mb-1 max-h-96 overflow-y-auto rounded-md border border-line bg-canvas p-1 shadow-[var(--shadow-popup)]">
           {me.tenants.map((t) => (
             <button
               key={t.id}
               role="menuitemradio"
               aria-checked={t.id === tenant?.id}
               data-active={t.id === tenant?.id}
-              onClick={() => {
-                setOpen(false);
-                if (t.id !== tenant?.id) onSelect(t.id);
-              }}
-              className="list-row block w-full px-2 py-1.5 text-left"
+              onClick={pick(() => t.id !== tenant?.id && onSelect(t.id))}
+              className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left"
             >
-              <span className="block truncate font-medium">{t.name}</span>
-              <span className="block truncate text-xs text-fg-muted">
-                {t.id} · {roleLabel(t.role)}
+              <TenantLogo tenant={t} size={24} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium">{t.name}</span>
+                <span className="block truncate text-xs text-fg-muted">
+                  {t.id} · {roleLabel(t.role)}
+                </span>
               </span>
             </button>
           ))}
+          <div className="my-1 border-t border-line" />
+          {tenant && (
+            <button role="menuitem" onClick={pick(onOpen)} className="list-row block w-full px-2 py-1.5 text-left">
+              O tenantovi
+            </button>
+          )}
+          {me.systemAdmin && (
+            <button role="menuitem" onClick={pick(onManage)} className="list-row block w-full px-2 py-1.5 text-left">
+              Správa tenantů
+            </button>
+          )}
         </div>
       )}
     </div>
-  );
-}
-
-function Chevron({ direction }: { direction: "up" | "down" }) {
-  return (
-    <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
-      <path d={direction === "down" ? "M4 6l4 4 4-4" : "M4 10l4-4 4 4"} fill="none" stroke="currentColor" strokeWidth="1.8" />
-    </svg>
   );
 }
 

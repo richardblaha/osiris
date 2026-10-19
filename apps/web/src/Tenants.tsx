@@ -1,5 +1,5 @@
 import { FEATURES, type DirectoryUser, type Feature, type Role, type TenantDetail, type TenantSummary } from "@osiris/shared";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { InviteForm } from "./Invite.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
@@ -289,76 +289,73 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
   );
 }
 
-/**
- * The system admin's tenant administration in a modal (native `<dialog>`: Esc and the backdrop close it): the tenants
- * on the left, the chosen one's `TenantPanel` or the form for a new one on the right.
- */
-export function TenantsDialog({
+/** The system admin's tenant administration: the tenants on the left, the chosen one's `TenantPanel` or the form for a new one on the right. */
+export function TenantAdmin({
   tenants,
   initial,
   onChanged,
-  onClose,
 }: {
   tenants: TenantSummary[];
   /** The tenant to open, or `null` for the form of a new one. */
   initial?: string | null;
   /** A tenant was created, changed or deleted. */
   onChanged: () => void;
-  onClose: () => void;
 }) {
-  const ref = useRef<HTMLDialogElement>(null);
   const [selected, setSelected] = useState<string | null>(initial !== undefined ? initial : (tenants[0]?.id ?? null));
-  useEffect(() => ref.current?.showModal(), []);
 
   return (
-    <dialog
-      ref={ref}
-      onClose={onClose}
-      onClick={(e) => e.target === ref.current && ref.current.close()}
-      aria-label="Tenanti"
-      className="m-auto h-[min(44rem,calc(100dvh-2rem))] w-[min(72rem,calc(100vw-2rem))] max-w-none overflow-hidden rounded-md border border-line bg-canvas p-0 text-fg shadow-[var(--shadow-popup)] backdrop:bg-black/50"
-    >
-      <div className="flex h-full">
-        <nav className="flex w-60 shrink-0 flex-col border-r border-line bg-sidebar p-2 text-sm">
-          <div className="flex items-center justify-between px-2 py-1">
-            <h2 className="section-header">Tenanti</h2>
-            <button onClick={() => ref.current?.close()} aria-label="Zavřít" className="list-row px-2 text-base leading-6 text-fg-secondary">
-              ×
-            </button>
-          </div>
-          <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
-            + Založit tenanta
-          </button>
-          <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
-            {tenants.map((t) => (
-              <button key={t.id} onClick={() => setSelected(t.id)} data-active={selected === t.id} className="list-row block w-full truncate px-2 py-1.5 text-left">
+    <div className="flex h-full">
+      <nav className="flex w-60 shrink-0 flex-col border-r border-line p-2 text-sm">
+        <h2 className="section-header px-2 py-1">Správa tenantů</h2>
+        <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
+          + Založit tenanta
+        </button>
+        <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
+          {tenants.map((t) => (
+            <button key={t.id} onClick={() => setSelected(t.id)} data-active={selected === t.id} className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left">
+              <TenantLogo tenant={t} size={20} />
+              <span className="min-w-0 flex-1 truncate">
                 {t.name} <span className="text-xs text-fg-muted">· {t.id}</span>
-              </button>
-            ))}
-            {!tenants.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádní.</p>}
-          </div>
-        </nav>
-        <div className="min-w-0 flex-1">
-          {selected ? (
-            <TenantPanel
-              key={selected}
-              id={selected}
-              onChanged={onChanged}
-              onDeleted={() => {
-                setSelected(null);
-                onChanged();
-              }}
-            />
-          ) : (
-            <NewTenant
-              onCreated={(id) => {
-                setSelected(id);
-                onChanged();
-              }}
-            />
-          )}
+              </span>
+            </button>
+          ))}
+          {!tenants.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádní.</p>}
         </div>
+      </nav>
+      <div className="min-w-0 flex-1">
+        {selected ? (
+          <TenantPanel
+            key={selected}
+            id={selected}
+            onChanged={onChanged}
+            onDeleted={() => {
+              setSelected(null);
+              onChanged();
+            }}
+          />
+        ) : (
+          <NewTenant
+            onCreated={(id) => {
+              setSelected(id);
+              onChanged();
+            }}
+          />
+        )}
       </div>
-    </dialog>
+    </div>
+  );
+}
+
+/** The tenant's logo, or its initial when there is none or it fails to load. */
+export function TenantLogo({ tenant, size = 32 }: { tenant: { name: string; logo: string | null }; size?: number }) {
+  const [failed, setFailed] = useState(false);
+  const style = { width: size, height: size, fontSize: size * 0.45 };
+  if (tenant.logo && !failed) {
+    return <img src={tenant.logo} alt="" style={style} onError={() => setFailed(true)} className="shrink-0 rounded-sm object-contain" />;
+  }
+  return (
+    <span style={style} className="flex shrink-0 items-center justify-center rounded-sm bg-secondary-soft font-semibold text-secondary">
+      {tenant.name.slice(0, 1).toUpperCase()}
+    </span>
   );
 }

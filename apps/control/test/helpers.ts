@@ -93,7 +93,7 @@ export async function createTestControl(
     fetchFn: options.socialFetch,
     mailer,
   });
-  const store = new TenantStore(db);
+  const store = new TenantStore(db, { objects, publicUrl: PUBLIC_URL });
   const directory = new TenantDirectory(store, users, orchestrator);
   const runtimeCalls: { tenant: string; path: string; init: RequestInit }[] = [];
   let runtime: RuntimeHandler = options.runtime ?? (() => Response.json({}));
