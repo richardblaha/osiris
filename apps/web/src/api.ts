@@ -1,5 +1,7 @@
 import type {
   AdminUser,
+  AssistantProfile,
+  AssistantProfiles,
   BuiltinTool,
   DirectoryUser,
   DocumentSummary,
@@ -10,6 +12,7 @@ import type {
   McpServerStatus,
   Memory,
   MeResponse,
+  Persona,
   RunEvent,
   Schedule,
   ScheduleInput,
@@ -144,6 +147,11 @@ export const api = {
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   tools: () => json<BuiltinTool[]>("/tools"),
   usage: () => json<TenantUsage>("/usage"),
+  assistant: () => json<AssistantProfiles>("/assistant"),
+  saveAssistant: (scope: Scope, profile: AssistantProfile) =>
+    json<AssistantProfile>(`/assistant?scope=${scope}`, { method: "PUT", body: JSON.stringify(profile) }),
+  generatePersona: (character: string, source: string) =>
+    json<Persona>("/assistant/persona", { method: "POST", body: JSON.stringify({ character, source }) }),
   saveTenantLogo: (image: Blob) => request("/tenant/logo", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
   removePhone: () => request("/me/phone", { method: "DELETE" }),
@@ -205,6 +213,8 @@ export const api = {
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
     removeMember: (id: string, userId: string) =>
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+    guards: () => json<{ guards: string }>("/admin/guards"),
+    saveGuards: (guards: string) => request("/admin/guards", { method: "PUT", body: JSON.stringify({ guards }) }),
     users: () => json<AdminUser[]>("/admin/users"),
     createUser: (body: { email: string; firstName: string; lastName: string }) =>
       json<{ userId: string; loginLink: string }>("/admin/users", { method: "POST", body: JSON.stringify(body) }),

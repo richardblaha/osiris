@@ -50,6 +50,26 @@ export interface TenantInfo {
   logo: string | null;
 }
 
+/** How the assistant talks, written from a character of a book or film; the description is what goes to the prompt. */
+export interface Persona {
+  character: string;
+  source: string;
+  description: string;
+}
+
+/** The assistant's persona and rules ("guards", one per line) at one level: tenant-wide or a user's own. */
+export interface AssistantProfile {
+  persona: Persona | null;
+  guards: string;
+}
+
+/** Everything that shapes the assistant for the current user (`/api/assistant`); system rules are read-only here. */
+export interface AssistantProfiles {
+  system: { guards: string };
+  tenant: AssistantProfile;
+  personal: AssistantProfile;
+}
+
 /** Limits a system admin sets per tenant; null = no limit (storage: 80 % of the tenant's volume). */
 export interface TenantQuotas {
   /** Files, in MB. */

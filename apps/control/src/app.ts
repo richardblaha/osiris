@@ -90,6 +90,7 @@ const inviteBody = z.object({
   role: z.enum(["admin", "member"]).default("member"),
 });
 const profileBody = z.object({ firstName: personName.min(1).optional(), lastName: personName.optional(), email: z.email().max(200).optional() });
+const guardsBody = z.object({ guards: z.string().trim().max(4000) });
 const newUserBody = z.object({ email: z.email().max(200), firstName: personName.min(1), lastName: personName });
 const adminUserBody = profileBody.extend({ disabled: z.boolean().optional(), systemAdmin: z.boolean().optional() });
 const phoneBody = z.object({ phone: z.string().trim().min(8).max(20).regex(/^\+?[\d\s()-]+$/, "Zadej číslo s předvolbou, např. +420 777 123 456") });
@@ -404,6 +405,12 @@ export function createControlApp(deps: ControlDeps) {
       await deps.snapshot(c.req.param("id"));
       return c.body(null, 202);
     })
+    .get("/guards", async (c) => c.json({ guards: await tenants.systemGuards() }))
+    .put("/guards", async (c) => {
+      const { guards } = parse(guardsBody, await json(c));
+      await tenants.setSystemGuards(guards);
+      return c.body(null, 204);
+    })
     .get("/users", async (c) => c.json<AdminUser[]>(await directory.adminUsers()))
     // A new user gets in with a one-time link; access comes from tenants and the system admin switch afterwards.
     .post("/users", async (c) => {
@@ -498,6 +505,7 @@ export function createControlApp(deps: ControlDeps) {
         quotas: t.quotas,
         // What the runtime shows next to the quotas it doesn't count itself.
         counts: { members: await directory.memberCount(t.id), schedules: (await schedules.list(t.id)).length },
+        systemGuards: await tenants.systemGuards(),
       });
     })
     .put("/backups", async (c) => {

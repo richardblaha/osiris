@@ -51,6 +51,12 @@ export class StaticFeatures implements FeatureSource {
     return this.limits;
   }
 
+  guards = "";
+
+  async systemGuards() {
+    return this.guards;
+  }
+
   async set(changes: Partial<TenantFeatures>) {
     this.features = { ...this.features, ...changes };
     return this.features;

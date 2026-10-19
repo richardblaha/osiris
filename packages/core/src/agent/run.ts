@@ -3,20 +3,35 @@ import type { MessagePart, RunEvent, ThreadMessage } from "@osiris/shared";
 import type { RunContext } from "./context.ts";
 import type { AgentGraph } from "./graph.ts";
 
-/** Runs one user turn and yields UI events: streamed text tokens, then tool calls/results as each node finishes. */
+/**
+ * Runs one user turn and yields UI events: streamed text tokens, then tool calls/results as each node finishes.
+ * `guarded` (rules apply to the run): the answer is only sent once the output check passed (or replaced it), so no
+ * part of an answer breaking the rules ever reaches the user.
+ */
 export async function* streamRun(
   graph: AgentGraph,
   ctx: RunContext,
   text: string,
   signal?: AbortSignal,
+  { guarded = false } = {},
 ): AsyncGenerator<RunEvent> {
   const stream = await graph.stream(
     { messages: [new HumanMessage(text)] },
     { configurable: { ...ctx }, streamMode: ["messages", "updates"], signal },
   );
 
+  let held = "";
   for await (const [mode, data] of stream) {
+    if (guarded && mode === "updates") {
+      for (const [node, message] of nodeMessages(data)) {
+        if (!AIMessage.isInstance(message) || message.tool_calls?.length) continue;
+        // The agent's answer waits for guard_out, which may replace it; guard_in's refusal goes out at once.
+        if (node === "agent" || node === "guard_out") held = message.text;
+        else if (node === "guard_in") yield { type: "text-delta", delta: message.text };
+      }
+    }
     if (mode === "messages") {
+      if (guarded) continue;
       const [chunk, meta] = data;
       // Streaming models emit AIMessageChunks; non-streaming ones emit the whole AIMessage once.
       const isAi = AIMessageChunk.isInstance(chunk) || AIMessage.isInstance(chunk);
@@ -35,7 +50,17 @@ export async function* streamRun(
       }
     }
   }
+  if (held) yield { type: "text-delta", delta: held };
   yield { type: "done" };
+}
+
+function nodeMessages(update: unknown): [string, BaseMessage][] {
+  if (!update || typeof update !== "object") return [];
+  return Object.entries(update).flatMap(([node, nodeUpdate]) =>
+    nodeUpdate && typeof nodeUpdate === "object" && "messages" in nodeUpdate && Array.isArray(nodeUpdate.messages)
+      ? (nodeUpdate.messages as BaseMessage[]).map((m): [string, BaseMessage] => [node, m])
+      : [],
+  );
 }
 
 function updatedMessages(update: unknown): BaseMessage[] {

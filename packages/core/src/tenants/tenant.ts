@@ -22,6 +22,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { Feature } from "@osiris/shared";
 import type { FeatureSource } from "./features.ts";
 import { UsageStore } from "../agent/usage.ts";
+import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
 export interface Tenant {
@@ -40,6 +41,11 @@ export interface Tenant {
   /** The built-in tools, each with the feature it belongs to. */
   builtinTools: [Feature, StructuredToolInterface][];
   usage: UsageStore;
+  /** Persona and rules, tenant-wide (owner '') and per user. */
+  profiles: AssistantProfileStore;
+  /** The rules a user's runs keep to: system, tenant and the user's own. */
+  rules(userId: string): Promise<GuardRules>;
+  model: BaseChatModel;
   graph: AgentGraph;
 }
 
@@ -75,6 +81,11 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const settings = new UserSettingsStore(db);
   const features = deps.features;
   const usage = new UsageStore(db);
+  const profiles = new AssistantProfileStore(db);
+  const rules = async (userId: string): Promise<GuardRules> => {
+    const [system, tenant, user] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(userId)]);
+    return { system, tenant: tenant.guards, user: user.guards };
+  };
   const files = new FileStore(deps.files.dir, {
     ...deps.files,
     quota: async () => {
@@ -104,6 +115,8 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     },
     features,
     usage,
+    rules: (ctx) => rules(ctx.user_id),
+    persona: async (ctx) => (await profiles.get(ctx.user_id)).persona ?? (await profiles.get("")).persona,
     checkpointer,
     timezone: deps.timezone,
     skills,
@@ -111,5 +124,5 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     settings,
     secrets,
   });
-  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, files, builtinTools: builtins, usage, graph };
+  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, files, builtinTools: builtins, usage, profiles, rules, model: deps.model, graph };
 }

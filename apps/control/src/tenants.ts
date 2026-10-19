@@ -78,6 +78,22 @@ export class TenantStore {
     return row ? this.toTenant(row) : null;
   }
 
+  /** Rules every tenant's assistant keeps to, above the tenant's and the users' own. */
+  async systemGuards(): Promise<string> {
+    const [r] = await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'guards'");
+    return r?.value ?? "";
+  }
+
+  async setSystemGuards(guards: string) {
+    await this.db.execute([
+      run(
+        "INSERT INTO system_settings (key, value, updated_at) VALUES ('guards', ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        guards,
+        Date.now(),
+      ),
+    ]);
+  }
+
   /** Replaces the tenant's logo; a new version gets a new URL, so browsers may cache each one for good. */
   async setLogo(id: string, image: Uint8Array, mime: string) {
     if (!this.logos) throw new Error("Logos are not configured");

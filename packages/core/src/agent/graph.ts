@@ -1,9 +1,11 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { AIMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { END, MessagesAnnotation, START, StateGraph, type BaseCheckpointSaver } from "@langchain/langgraph";
-import { ToolNode, toolsCondition } from "@langchain/langgraph/prebuilt";
+import { ToolNode } from "@langchain/langgraph/prebuilt";
+import type { Persona } from "@osiris/shared";
+import { breaksRules, GUARD_REFUSAL, hasRules, type GuardRules } from "./assistant.ts";
 import { getRunContext, type RunContext } from "./context.ts";
 import type { MemoryStore } from "./memory.ts";
 import { buildSystemPrompt } from "./prompt.ts";
@@ -36,22 +38,57 @@ export interface AgentDeps {
   features?: FeatureSource;
   /** Counts the model's tokens per month; with a quota set, the agent stops answering once it's used up. */
   usage?: UsageStore;
+  /** The rules (system, tenant, user) for a run: in the prompt, and every message and answer is checked against them. */
+  rules?: (ctx: RunContext) => Promise<GuardRules>;
+  /** The persona for a run: the user's own, or the tenant's. */
+  persona?: (ctx: RunContext) => Promise<Persona | null>;
 }
 
 export const TOKENS_EXHAUSTED = "Měsíční limit využití asistenta pro tuto firmu je vyčerpaný. Obrať se na správce.";
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
 export function createAgentGraph(deps: AgentDeps) {
-  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage } = deps;
+  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage, rules, persona } = deps;
   if (!model.bindTools) throw new Error("Chat model does not support tool calling");
   const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
+
+  const exhausted = async () => {
+    const limit = (await features?.quotas())?.tokensPerMonth ?? null;
+    return !!usage && limit !== null && (await usage.tokens()) >= limit;
+  };
+  const noRules: GuardRules = { system: "", tenant: "", user: "" };
+
+  /** Checks a message against the rules; null when there are none to check (or the quota is used up). */
+  const check = async (config: RunnableConfig, kind: "input" | "output", text: string) => {
+    const r = (await rules?.(getRunContext(config))) ?? noRules;
+    if (!hasRules(r) || !text.trim() || (await exhausted())) return null;
+    const result = await breaksRules(model, r, kind, text).catch((err) => {
+      console.error("Guard check failed", err);
+      return { breaks: false, tokens: 0 };
+    });
+    await usage?.add(result.tokens);
+    return result.breaks;
+  };
+
+  /** The user's message breaking the rules gets a refusal, and the agent doesn't see it. */
+  const guardInput = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
+    const last = state.messages.at(-1);
+    if (!HumanMessage.isInstance(last) || !(await check(config, "input", last.text))) return {};
+    return { messages: [new AIMessage(GUARD_REFUSAL)] };
+  };
+
+  /** A final answer breaking the rules is replaced (same id) by a refusal, in the history too. */
+  const guardOutput = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
+    const last = state.messages.at(-1);
+    if (!AIMessage.isInstance(last) || last.text === TOKENS_EXHAUSTED || !(await check(config, "output", last.text))) return {};
+    return { messages: [new AIMessage({ id: last.id, content: GUARD_REFUSAL })] };
+  };
 
   const callModel = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const ctx = getRunContext(config);
     if (ctx.tenant_id !== tenantId) throw new Error(`Run for tenant ${ctx.tenant_id} sent to graph of ${tenantId}`);
     const on = (await features?.get()) ?? DEFAULT_FEATURES;
-    const limit = (await features?.quotas())?.tokensPerMonth ?? null;
-    if (usage && limit !== null && (await usage.tokens()) >= limit) return { messages: [new AIMessage(TOKENS_EXHAUSTED)] };
+    if (await exhausted()) return { messages: [new AIMessage(TOKENS_EXHAUSTED)] };
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.
     const system = new SystemMessage(
       buildSystemPrompt({
@@ -64,6 +101,8 @@ export function createAgentGraph(deps: AgentDeps) {
         userName: ctx.user_name,
         settings: await settings?.get(ctx.user_id),
         secrets: on.http || on.mcp ? await secrets?.list(ctx.user_id) : undefined,
+        rules: await rules?.(ctx),
+        persona: await persona?.(ctx),
       }),
     );
     const response = await model.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);
@@ -71,14 +110,20 @@ export function createAgentGraph(deps: AgentDeps) {
     return { messages: [response] };
   };
 
+  const lastIsAi = (state: typeof MessagesAnnotation.State) => AIMessage.isInstance(state.messages.at(-1));
   return new StateGraph(MessagesAnnotation)
+    .addNode("guard_in", guardInput)
     .addNode("agent", callModel)
     .addNode("tools", async (state: typeof MessagesAnnotation.State, config: RunnableConfig) =>
       new ToolNode(await allTools(getRunContext(config))).invoke(state, config),
     )
-    .addEdge(START, "agent")
-    .addConditionalEdges("agent", toolsCondition, ["tools", END])
+    .addNode("guard_out", guardOutput)
+    .addEdge(START, "guard_in")
+    // A refused message ends the turn; otherwise the agent answers.
+    .addConditionalEdges("guard_in", (state) => (lastIsAi(state) ? END : "agent"), ["agent", END])
+    .addConditionalEdges("agent", (state) => ((state.messages.at(-1) as AIMessage).tool_calls?.length ? "tools" : "guard_out"), ["tools", "guard_out"])
     .addEdge("tools", "agent")
+    .addEdge("guard_out", END)
     .compile({ checkpointer });
 }
 

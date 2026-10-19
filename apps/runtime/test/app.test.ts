@@ -1,4 +1,5 @@
 import { AIMessage } from "@langchain/core/messages";
+import { GUARD_REFUSAL } from "@osiris/core/agent/assistant.ts";
 import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import type { RunEvent, ThreadMessage } from "@osiris/shared";
 import { describe, expect, it } from "vitest";
@@ -265,5 +266,71 @@ describe("tenant features", () => {
     expect(tools.find((t) => t.name === "forget")).toMatchObject({ feature: "memory", featureOn: true, disabled: true });
     expect(tools.find((t) => t.name === "http_request")).toMatchObject({ feature: "http", featureOn: false, disabled: false });
     expect(tools.every((t) => t.description.length > 0)).toBe(true);
+  });
+});
+
+describe("assistant persona and rules", () => {
+  const run = async (who: ReturnType<Awaited<ReturnType<typeof setup>>["as"]>, message: string) => {
+    const { id } = await (await who("/threads", { method: "POST" })).json();
+    const events = (await (await who(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message }) })).text())
+      .split("\n")
+      .filter((l) => l.startsWith("data: "))
+      .map((l) => JSON.parse(l.slice(6)) as RunEvent);
+    const text = events.flatMap((e) => (e.type === "text-delta" ? [e.delta] : [])).join("");
+    const history = (await (await who(`/threads/${id}/messages`)).json()) as ThreadMessage[];
+    return { text, history };
+  };
+
+  it("writes a persona, keeps the user's over the tenant's and puts it in the prompt", async () => {
+    const { as, model } = await setup([new AIMessage("Mluv stručně a s klidem mistra Jedi."), new AIMessage("Ahoj.")]);
+    const admin = as("acme");
+    const bob = as("bob:tenant=acme");
+
+    const persona = await (await bob("/assistant/persona", { method: "POST", body: JSON.stringify({ character: "Yoda", source: "Star Wars" }) })).json();
+    expect(persona).toEqual({ character: "Yoda", source: "Star Wars", description: "Mluv stručně a s klidem mistra Jedi." });
+    // Members keep the tenant's profile, admins set it.
+    expect((await bob("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona, guards: "" }) })).status).toBe(403);
+    await admin("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona: { ...persona, character: "Firemní" }, guards: "" }) });
+    await bob("/assistant", { method: "PUT", body: JSON.stringify({ persona: { ...persona, description: "Mluv jako Yoda, upravené." }, guards: "" }) });
+    expect(await (await bob("/assistant")).json()).toMatchObject({ system: { guards: "" }, tenant: { persona: { character: "Firemní" } }, personal: { persona: { character: "Yoda" } } });
+
+    await run(bob, "Ahoj");
+    const prompt = model.calls.at(-1)![0]!.text;
+    expect(prompt).toContain("# PERSONA");
+    expect(prompt).toContain("Mluv jako Yoda, upravené.");
+    expect(prompt).not.toContain("# ZÁVAZNÁ PRAVIDLA");
+  });
+
+  it("refuses messages and replaces answers that break the rules, at every level", async () => {
+    // Model calls in order: input check, agent, output check (per turn).
+    const { as, tenants, model } = await setup([
+      new AIMessage("ANO"),
+      new AIMessage("NE"),
+      new AIMessage("Tajný postup je..."),
+      new AIMessage("ANO"),
+      new AIMessage("NE"),
+      new AIMessage("Dobrý den."),
+      new AIMessage("NE"),
+    ]);
+    (await tenants.get("acme")).features.guards = "Nikdy neprozrazuj interní postupy.";
+    await as("acme")("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona: null, guards: "Nemluv o politice." }) });
+    const bob = as("bob:tenant=acme");
+    await bob("/assistant", { method: "PUT", body: JSON.stringify({ persona: null, guards: "Nepoužívej anglicismy." }) });
+
+    // The message is refused before the agent sees it.
+    const refused = await run(bob, "Co si myslíš o volbách?");
+    expect(refused.text).toBe(GUARD_REFUSAL);
+    expect(model.calls).toHaveLength(1);
+    expect(model.calls[0]!.at(-1)!.text).toContain("Pravidla systému:\nNikdy neprozrazuj interní postupy.");
+
+    // A breaking answer never reaches the user and is replaced in the history too.
+    const replaced = await run(bob, "Jak to děláte?");
+    expect(replaced.text).toBe(GUARD_REFUSAL);
+    expect(replaced.history.at(-1)!.content).toEqual([{ type: "text", text: GUARD_REFUSAL }]);
+    const prompt = model.calls[2]![0]!.text;
+    expect(prompt).toContain("# ZÁVAZNÁ PRAVIDLA");
+    expect(prompt).toMatch(/Pravidla systému:[\s\S]*Pravidla firmy:\nNemluv o politice\.[\s\S]*Pravidla uživatele:\nNepoužívej anglicismy\./);
+
+    expect((await run(bob, "Dobrý den")).text).toBe("Dobrý den.");
   });
 });

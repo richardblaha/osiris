@@ -37,6 +37,7 @@ export class ControlClient {
       disabledTools: string[];
       quotas: TenantQuotas;
       counts: { members: number; schedules: number };
+      systemGuards: string;
     }>("/tenant");
   }
 
@@ -114,6 +115,7 @@ export class RemoteFeatures implements FeatureSource {
             disabledTools: t.disabledTools ?? [],
             quotas: { ...NO_QUOTAS, ...t.quotas },
             counts: t.counts ?? { members: 0, schedules: 0 },
+            systemGuards: t.systemGuards ?? "",
           }),
       )
       .catch((err) => {
@@ -140,6 +142,10 @@ export class RemoteFeatures implements FeatureSource {
     return (await this.load()).quotas;
   }
 
+  async systemGuards() {
+    return (await this.load()).systemGuards;
+  }
+
   /** Members and scheduled tasks, counted by control (as of the last fetch). */
   async counts() {
     return (await this.load()).counts;
@@ -151,4 +157,5 @@ interface TenantPolicy {
   disabledTools: string[];
   quotas: TenantQuotas;
   counts: { members: number; schedules: number };
+  systemGuards: string;
 }

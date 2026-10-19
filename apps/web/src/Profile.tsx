@@ -1,5 +1,6 @@
 import type { MeResponse, UserProfile, UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
+import { AssistantSettings } from "./Assistant.tsx";
 import { api } from "./api.ts";
 import { logout } from "./auth.ts";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
@@ -124,6 +125,9 @@ export function Profile({ me, notice }: { me: MeResponse; notice?: { linked?: st
         </form>
       )}
       {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
+
+      <h2 className="section-header mt-8">Persona a pravidla asistenta</h2>
+      <AssistantSettings scope="personal" editable />
     </div>
   );
 }

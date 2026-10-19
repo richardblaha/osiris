@@ -1,6 +1,7 @@
 import { FEATURES, type DirectoryUser, type Feature, type Role, type TenantDetail, type TenantSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
+import { SystemGuards } from "./Assistant.tsx";
 import { InviteForm } from "./Invite.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 import { LoginLink } from "./TenantInfo.tsx";
@@ -293,6 +294,9 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
   );
 }
 
+/** Not a tenant id (those are slugs without spaces). */
+const GUARDS = " guards";
+
 /** The system admin's tenant administration: the tenants on the left, the chosen one's `TenantPanel` or the form for a new one on the right. */
 export function TenantAdmin({
   tenants,
@@ -305,13 +309,17 @@ export function TenantAdmin({
   /** A tenant was created, changed or deleted. */
   onChanged: () => void;
 }) {
+  // A tenant's id, `null` for a new one, or "guards" for the system rules.
   const [selected, setSelected] = useState<string | null>(initial !== undefined ? initial : (tenants[0]?.id ?? null));
 
   return (
     <div className="flex h-full">
       <nav className="flex w-60 shrink-0 flex-col border-r border-line p-2 text-sm">
         <h2 className="section-header px-2 py-1">Správa tenantů</h2>
-        <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
+        <button onClick={() => setSelected(GUARDS)} data-active={selected === GUARDS} className="list-row mt-1 w-full px-2 py-1.5 text-left">
+          Pravidla systému
+        </button>
+        <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row w-full px-2 py-1.5 text-left text-primary">
           + Založit tenanta
         </button>
         <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
@@ -327,7 +335,9 @@ export function TenantAdmin({
         </div>
       </nav>
       <div className="min-w-0 flex-1">
-        {selected ? (
+        {selected === GUARDS ? (
+          <SystemGuards />
+        ) : selected ? (
           <TenantPanel
             key={selected}
             id={selected}

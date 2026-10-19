@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { BuiltinTool, Feature, TenantUsage, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
+import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, Persona, TenantUsage, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
+import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import { SKILL_NAME } from "@osiris/core/agent/skills.ts";
 import { FileError, type FileErrorCode, type FileLocation } from "@osiris/core/files/store.ts";
 import { streamRun, toThreadMessages } from "@osiris/core/agent/run.ts";
@@ -48,6 +50,11 @@ const settingsBody = z.object({
   language: z.enum(["auto", "cs", "sk"]),
   signature: z.string().trim().max(1000),
   instructions: z.string().trim().max(4000),
+});
+const personaBody = z.object({ character: z.string().trim().min(1).max(100), source: z.string().trim().max(150) });
+const profileBody = z.object({
+  persona: personaBody.extend({ description: z.string().trim().min(1).max(2000) }).nullable(),
+  guards: z.string().trim().max(4000),
 });
 const memoryBody = z.object({ content: z.string().trim().min(1).max(500), scope });
 const secretBody = z.object({
@@ -231,7 +238,8 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
             channel: "web" as const,
             user_name: user.name ?? undefined,
           };
-          for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal)) {
+          const guarded = hasRules(await tenant.rules(user.sub));
+          for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal, { guarded })) {
             await sse.writeSSE({ data: JSON.stringify(event) });
           }
         } catch (err) {
@@ -359,6 +367,31 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
     .get("/settings", async (c) => {
       const { tenant, user } = c.get("ctx");
       return c.json<UserSettings>(await tenant.settings.get(user.sub));
+    })
+
+    // The assistant's persona and rules: the system's (read-only here), the tenant's and the user's own.
+    .get("/assistant", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      const [system, tenantProfile, personal] = await Promise.all([tenant.features.systemGuards(), tenant.profiles.get(""), tenant.profiles.get(user.sub)]);
+      return c.json<AssistantProfiles>({ system: { guards: system }, tenant: tenantProfile, personal });
+    })
+    .put("/assistant", async (c) => {
+      const ctx = c.get("ctx");
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      const profile = parse(profileBody, await c.req.json());
+      await ctx.tenant.profiles.put(scope === "tenant" ? "" : ctx.user.sub, profile);
+      return c.json<AssistantProfile>(profile);
+    })
+    // Writes a persona's description from a character; nothing is saved until the (edited) profile is put.
+    .post("/assistant/persona", async (c) => {
+      const { tenant } = c.get("ctx");
+      const { character, source } = parse(personaBody, await c.req.json());
+      const limit = (await tenant.features.quotas()).tokensPerMonth;
+      if (limit !== null && (await tenant.usage.tokens()) >= limit) throw new HTTPException(429, { message: TOKENS_EXHAUSTED });
+      const { description, tokens } = await describePersona(tenant.model, character, source);
+      await tenant.usage.add(tokens);
+      return c.json<Persona>({ character, source, description });
     })
 
     // How much of its quotas the tenant uses, for the meters above the tenant in the sidebar.

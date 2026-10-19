@@ -12,6 +12,8 @@ export interface FeatureSource {
   disabledTools(): Promise<string[]>;
   /** The tenant's limits (storage, tokens per month, ...). */
   quotas(): Promise<TenantQuotas>;
+  /** Rules for every tenant, set by system admins; they come before the tenant's and the user's. */
+  systemGuards(): Promise<string>;
 }
 
 /**
@@ -41,6 +43,10 @@ export class TenantFeatureStore implements FeatureSource {
 
   async quotas(): Promise<TenantQuotas> {
     return NO_QUOTAS;
+  }
+
+  async systemGuards(): Promise<string> {
+    return "";
   }
 
   async set(changes: Partial<TenantFeatures>): Promise<TenantFeatures> {
