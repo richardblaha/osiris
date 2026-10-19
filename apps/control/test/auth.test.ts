@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { CONTROL_AUDIENCE, InternalSigner } from "@osiris/platform/internal-auth.ts";
+import { emailitMailer } from "../src/auth/mail.ts";
 import { matchTotp, totpCode, totpStep } from "../src/auth/secrets.ts";
 import { controlListener } from "../src/server.ts";
 import { createTestControl, keys, PUBLIC_URL } from "./helpers.ts";
@@ -290,5 +291,31 @@ describe("sign-in", () => {
     expect(await control.auth.credentials.checkPassword("alice@firma.cz", "nové-heslo-22")).toBe("alice");
     const removed = await me("/me/security/password", { method: "DELETE" });
     expect([removed.status, (await removed.json()).error]).toEqual([400, expect.stringContaining("jediný způsob")]);
+  });
+});
+
+describe("emailitMailer", () => {
+  it("sends through Emailit's API without tracking, which would rewrite the sign-in links", async () => {
+    const sent: { url: string; init: RequestInit }[] = [];
+    let status = 200;
+    const fetchFn = (async (url: string, init: RequestInit) => {
+      sent.push({ url, init });
+      return Response.json(status === 200 ? { id: "em_1", status: "accepted" } : { error: "Insufficient credits" }, { status });
+    }) as unknown as typeof fetch;
+    const mailer = emailitMailer("key", "Osiris <auth@k6labs.cz>", fetchFn);
+
+    await mailer.send({ to: "alice@firma.cz", subject: "Přihlášení", text: "https://osiris.test/auth/link/x" });
+    expect(sent[0]!.url).toBe("https://api.emailit.com/v2/emails");
+    expect(new Headers(sent[0]!.init.headers).get("authorization")).toBe("Bearer key");
+    expect(JSON.parse(String(sent[0]!.init.body))).toEqual({
+      from: "Osiris <auth@k6labs.cz>",
+      to: "alice@firma.cz",
+      subject: "Přihlášení",
+      text: "https://osiris.test/auth/link/x",
+      tracking: false,
+    });
+
+    status = 402;
+    await expect(mailer.send({ to: "alice@firma.cz", subject: "x", text: "y" })).rejects.toThrow("402");
   });
 });

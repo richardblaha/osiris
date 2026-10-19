@@ -49,6 +49,8 @@ const schema = z
     SEZNAM_CLIENT_SECRET: z.string().optional(),
     // Email (sign-in links): smtp(s)://user:pass@host:port. Without it there are no links by email (development prints them).
     SMTP_URL: z.string().optional(),
+    // Or Emailit's HTTP API (https://emailit.com), which wins over SMTP_URL: the cluster's provider blocks outgoing SMTP.
+    EMAILIT_API_KEY: z.string().optional(),
     MAIL_FROM: z.string().default("Osiris <auth@k6labs.cz>"),
 
     // PocketID admin API, only for the one-off import of its users (`pnpm users import-pocketid`).

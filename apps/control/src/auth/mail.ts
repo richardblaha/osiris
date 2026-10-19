@@ -14,6 +14,24 @@ export function smtpMailer(url: string, from: string): Mailer {
   };
 }
 
+/**
+ * Email through Emailit's HTTP API (https://emailit.com), for clusters that block outgoing SMTP. Tracking is off: it
+ * would rewrite the sign-in links.
+ */
+export function emailitMailer(apiKey: string, from: string, fetchFn: typeof fetch = fetch): Mailer {
+  return {
+    async send({ to, subject, text }) {
+      const res = await fetchFn("https://api.emailit.com/v2/emails", {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify({ from, to, subject, text, tracking: false }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!res.ok) throw new Error(`Emailit refused the email: ${res.status} ${await res.text().catch(() => "")}`);
+    },
+  };
+}
+
 /** Development: prints the message instead of sending it. */
 export const consoleMailer: Mailer = {
   async send({ to, subject, text }) {

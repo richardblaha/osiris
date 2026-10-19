@@ -9,7 +9,7 @@ import type { Config } from "../config.ts";
 import type { UserDirectory } from "../users.ts";
 import { Credentials } from "./credentials.ts";
 import { AttemptLimiter } from "./limiter.ts";
-import { consoleMailer, smtpMailer, type Mailer } from "./mail.ts";
+import { consoleMailer, emailitMailer, smtpMailer, type Mailer } from "./mail.ts";
 import { createOidcProvider } from "./oidc.ts";
 import { Passkeys } from "./passkeys.ts";
 import type { AuthDeps } from "./routes.ts";
@@ -77,7 +77,7 @@ export async function createAuthDeps(o: AuthOptions): Promise<AuthDeps> {
 /** Sign-in from the configuration; development falls back to local keys and prints emails. */
 export async function createAuth(config: Config, db: Db, users: UserDirectory): Promise<AuthDeps> {
   if (!config.AUTH_SECRET || !config.AUTH_SIGNING_KEY) console.warn("AUTH_SECRET or AUTH_SIGNING_KEY not set: using development keys.");
-  if (!config.SMTP_URL) console.warn(`SMTP_URL not set: no sign-in links by email${config.NODE_ENV === "production" ? "" : " (printed to the log instead)"}.`);
+  if (!config.EMAILIT_API_KEY && !config.SMTP_URL) console.warn(`EMAILIT_API_KEY or SMTP_URL not set: no sign-in links by email${config.NODE_ENV === "production" ? "" : " (printed to the log instead)"}.`);
   const socialClients: Partial<Record<SocialProviderId, SocialClient>> = {};
   if (config.GOOGLE_CLIENT_ID) socialClients.google = { clientId: config.GOOGLE_CLIENT_ID, clientSecret: config.GOOGLE_CLIENT_SECRET! };
   if (config.FACEBOOK_CLIENT_ID) socialClients.facebook = { clientId: config.FACEBOOK_CLIENT_ID, clientSecret: config.FACEBOOK_CLIENT_SECRET! };
@@ -93,6 +93,12 @@ export async function createAuth(config: Config, db: Db, users: UserDirectory): 
     secret: config.AUTH_SECRET ?? createHash("sha256").update("osiris-dev-auth").digest("base64"),
     signingKeyPem: config.AUTH_SIGNING_KEY ?? devSigningKey(dirname(config.LOCAL_DB_PATH)),
     socialClients,
-    mailer: config.SMTP_URL ? smtpMailer(config.SMTP_URL, config.MAIL_FROM) : config.NODE_ENV === "production" ? undefined : consoleMailer,
+    mailer: config.EMAILIT_API_KEY
+      ? emailitMailer(config.EMAILIT_API_KEY, config.MAIL_FROM)
+      : config.SMTP_URL
+        ? smtpMailer(config.SMTP_URL, config.MAIL_FROM)
+        : config.NODE_ENV === "production"
+          ? undefined
+          : consoleMailer,
   });
 }

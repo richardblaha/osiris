@@ -5,7 +5,7 @@ namespace; each tenant gets its own namespace `osiris-t-<slug>`, created by the 
 
 ```
 Internet ─ Traefik ─┬─ osiris.k6labs.cz ──▶ gateway ──┬─▶ control ──▶ rqlite (3 nodes) ─▶ S3 (rqlite backups)
-                    │                                 │      │  └──▶ WhatsApp, S3, SMTP, Google/Facebook/Microsoft/Seznam (sign-in)
+                    │                                 │      │  └──▶ WhatsApp, S3, Emailit, Google/Facebook/Microsoft/Seznam (sign-in)
                     │                                 │      └──▶ Tenant objects ◀── operator ──▶ tenant namespaces
                     │                                 └─▶ runtime (osiris-t-<slug>, 0–1 pod, own volume) ─▶ gotenberg
                     └─ tenant domains ──▶ sites ──▶ rqlite (read-only user), S3
@@ -34,8 +34,10 @@ Users, credentials and the provider's sessions and tokens live in rqlite (tables
 - **Keys:** `gen-keys` (below) prints `AUTH_SIGNING_KEY` (signs ID tokens; changing it signs everyone out) and
   `AUTH_SECRET` (signs the provider's cookies and seals TOTP secrets; changing it signs everyone out and turns off
   everyone's authenticator app). Keep both in `.env` as `OSIRIS_AUTH_SIGNING_KEY` and `OSIRIS_AUTH_SECRET`.
-- **Email** (sign-in links, "forgot password"; without it the login screen doesn't offer them): `OSIRIS_SMTP_URL` = `smtps://user:password@smtp.example.cz:465` (or
-  `smtp://…:587`), sender `MAIL_FROM` in `control.yaml` (the SMTP account's own address: Seznam refuses other senders). Production uses the account PocketID sends from (`auth@k6labs.cz` at smtp.seznam.cz).
+- **Email** (sign-in links, "forgot password"; without it the login screen doesn't offer them): Civo blocks outgoing
+  SMTP (ports 25, 465 and 587 time out from the cluster), so production sends through Emailit's HTTP API: `.env`
+  `EMAILIT_API_KEY` (a sending key), with `k6labs.cz` verified at Emailit (SPF, DKIM, DMARC) and the sender `MAIL_FROM`
+  in `control.yaml`. `SMTP_URL` (`smtps://user:password@host:465`) still works where SMTP isn't blocked.
 - **Social sign-in** (each optional, on when its ID and secret are set). Redirect URIs are
   `https://osiris.k6labs.cz/auth/social/<google|facebook|microsoft|seznam>/callback`:
   - Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application); consent screen with
@@ -65,7 +67,7 @@ to the business number, which sets the claim `phone_number`.
 
 ### From PocketID (one-off)
 
-1. Roll out the new images with the secrets below (`AUTH_*`, `SMTP_URL`, social keys).
+1. Roll out the new images with the secrets below (`AUTH_*`, `EMAILIT_API_KEY`, social keys).
 2. Copy the users, keeping their ids (tenant data is keyed by them), names, emails and claims:
    ```bash
    kubectl -n osiris exec deploy/control -- env POCKETID_URL=https://auth.k6labs.cz POCKETID_API_KEY="$POCKETID_API_KEY" \
@@ -120,7 +122,7 @@ apply osiris-control \
   --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")" \
   --from-literal=INTERNAL_JWT_PUBLIC_KEY="$(key "$OSIRIS_INTERNAL_JWT_PUBLIC_KEY")" \
   --from-literal=AUTH_SIGNING_KEY="$(key "$OSIRIS_AUTH_SIGNING_KEY")" --from-literal=AUTH_SECRET="$OSIRIS_AUTH_SECRET" \
-  --from-literal=SMTP_URL="$OSIRIS_SMTP_URL" \
+  --from-literal=EMAILIT_API_KEY="$EMAILIT_API_KEY" \
   --from-literal=GOOGLE_CLIENT_ID="$OSIRIS_GOOGLE_CLIENT_ID" --from-literal=GOOGLE_CLIENT_SECRET="$OSIRIS_GOOGLE_CLIENT_SECRET" \
   --from-literal=FACEBOOK_CLIENT_ID="$OSIRIS_FACEBOOK_CLIENT_ID" --from-literal=FACEBOOK_CLIENT_SECRET="$OSIRIS_FACEBOOK_CLIENT_SECRET" \
   --from-literal=MICROSOFT_CLIENT_ID="$OSIRIS_MICROSOFT_CLIENT_ID" --from-literal=MICROSOFT_CLIENT_SECRET="$OSIRIS_MICROSOFT_CLIENT_SECRET" \
