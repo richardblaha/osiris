@@ -41,7 +41,8 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string } } = {}) 
       }
     }
     const service = u.host === "control" ? "control" : u.host.replace("runtime-", "");
-    if (asleep.has(service)) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNREFUSED" } });
+    // What Cilium answers for a Service without endpoints.
+    if (asleep.has(service)) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "EPERM" } });
     if (u.pathname === "/health") return Response.json({ ok: true });
     calls.push({
       service,

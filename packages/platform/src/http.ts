@@ -26,13 +26,16 @@ export async function callJson<T>(
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
-/** Whether an error means the other side isn't there (connection refused, DNS, timeout), as opposed to an answer. */
+/**
+ * Whether an error means the other side isn't there (connection refused, DNS, timeout), as opposed to an answer.
+ * EPERM: Cilium's socket load balancing refuses `connect()` to a Service without endpoints (a sleeping runtime) so.
+ */
 export function isUnreachable(err: unknown): boolean {
   const e = err as { name?: string; code?: string; cause?: { code?: string } };
   const code = e?.cause?.code ?? e?.code;
   return (
     e?.name === "TimeoutError" ||
-    ["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "ECONNRESET", "EHOSTUNREACH", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET"].includes(code ?? "")
+    ["ECONNREFUSED", "EPERM", "ENOTFOUND", "EAI_AGAIN", "ECONNRESET", "EHOSTUNREACH", "UND_ERR_CONNECT_TIMEOUT", "UND_ERR_SOCKET"].includes(code ?? "")
   );
 }
 
