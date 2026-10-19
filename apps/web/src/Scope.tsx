@@ -3,11 +3,13 @@ import type { ReactNode } from "react";
 
 /**
  * What every detail form gets. Settings records are personal (the user's own) or tenant-wide (managed by admins);
- * the sidebar lists both, and a new record is personal unless an admin picks the tenant.
+ * the sidebar's tabs ("Pro tenanta", "Pro mě") pick which ones are listed and where a new record goes.
  */
 export interface DetailProps<T> {
   /** The record shown, or undefined for a new one. */
   item?: T;
+  /** The sidebar's tab: a new record goes there (the tenant tab offers new records to tenant admins only). */
+  scope: Scope;
   isAdmin: boolean;
   /** After a save: the list is reloaded and the saved record (by its sidebar key) selected. */
   onSaved: (key: string) => void;
@@ -34,20 +36,6 @@ export function DetailHeader({ title, scope, canEdit, children }: { title: strin
         </p>
       )}
     </>
-  );
-}
-
-/** For a new record: tenant admins choose who it is for, everyone else creates personal records only. */
-export function ScopePicker({ value, onChange, isAdmin }: { value: Scope; onChange: (s: Scope) => void; isAdmin: boolean }) {
-  if (!isAdmin) return null;
-  return (
-    <label className="block space-y-1">
-      <span className="section-header block">Pro koho</span>
-      <select value={value} onChange={(e) => onChange(e.target.value as Scope)} className="field w-auto">
-        <option value="personal">jen pro mě</option>
-        <option value="tenant">pro celý tenant</option>
-      </select>
-    </label>
   );
 }
 

@@ -64,6 +64,8 @@ type Section = "knowledge" | "skills" | "memory" | "mcp" | "secrets";
 
 type View =
   | { kind: "chat"; threadId: string | null; session: number }
+  /** A section's records in the sidebar tab's scope. */
+  | { kind: "list"; section: Section }
   /** A record of a section by its key, or `null` for the form of a new one. */
   | { kind: "item"; section: Section; id: string | null }
   | { kind: "profile" }
@@ -90,47 +92,46 @@ const LOADERS: { [S in Section]: () => Promise<Lists[S]> } = {
   secrets: api.secrets,
 };
 
-const SECTIONS: { id: Section; label: string; add: string; enabled: (f: TenantFeatures) => boolean }[] = [
-  { id: "knowledge", label: "Znalostní báze", add: "Přidat dokument", enabled: (f) => f.knowledge },
-  { id: "skills", label: "Dovednosti", add: "Přidat dovednost", enabled: (f) => f.skills },
-  { id: "memory", label: "Paměť", add: "Přidat záznam", enabled: (f) => f.memory },
-  { id: "mcp", label: "Nástroje (MCP)", add: "Přidat server", enabled: (f) => f.mcp },
-  { id: "secrets", label: "Klíče a hesla", add: "Přidat klíč", enabled: (f) => f.http || f.mcp },
+const SECTIONS: { id: Section; label: string; add: string; icon: string; enabled: (f: TenantFeatures) => boolean }[] = [
+  { id: "knowledge", label: "Znalostní báze", add: "Přidat dokument", icon: "M2 3h5l1 1 1-1h5v10H9l-1 1-1-1H2zM8 4v9", enabled: (f) => f.knowledge },
+  { id: "skills", label: "Dovednosti", add: "Přidat dovednost", icon: "M3 4h10M3 8h10M3 12h6", enabled: (f) => f.skills },
+  { id: "memory", label: "Paměť", add: "Přidat záznam", icon: "M8 2a4 4 0 0 0-2 7.5V11h4V9.5A4 4 0 0 0 8 2zM6.5 13.5h3", enabled: (f) => f.memory },
+  { id: "mcp", label: "Nástroje (MCP)", add: "Přidat server", icon: "M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2", enabled: (f) => f.mcp },
+  { id: "secrets", label: "Klíče a hesla", add: "Přidat klíč", icon: "M10 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM7 9l-5 5M4 12l1.5 1.5", enabled: (f) => f.http || f.mcp },
 ];
 
 interface Row {
   key: string;
   label: string;
+  /** Which tab lists it: bundled skills belong with the tenant's. */
+  scope: Scope;
   badge?: ReactNode;
 }
 
-/** Personal records are the default, so only tenant-wide and bundled ones get a badge in the sidebar. */
-const scopeBadge = (scope: Scope | "bundled") => (scope === "personal" ? undefined : <ScopeBadge scope={scope} />);
+const tabOf = (scope: Scope | "bundled"): Scope => (scope === "personal" ? "personal" : "tenant");
 
 function rows(section: Section, lists: Lists): Row[] {
   switch (section) {
     case "knowledge":
-      return lists.knowledge.map((d) => ({ key: documentKey(d), label: d.title, badge: scopeBadge(d.scope) }));
+      return lists.knowledge.map((d) => ({ key: documentKey(d), label: d.title, scope: d.scope }));
     case "skills":
-      return lists.skills.map((s) => ({ key: skillKey(s), label: s.name, badge: scopeBadge(s.source) }));
-    case "memory":
-      return lists.memory.map((m) => ({ key: memoryKey(m), label: m.content, badge: scopeBadge(m.scope) }));
-    case "mcp":
-      return lists.mcp.map((s) => ({
-        key: mcpKey(s),
+      return lists.skills.map((s) => ({
+        key: skillKey(s),
         label: s.name,
-        badge: (
-          <>
-            {scopeBadge(s.scope)} <McpStatus server={s} />
-          </>
-        ),
+        scope: tabOf(s.source),
+        badge: s.source === "bundled" ? <ScopeBadge scope="bundled" /> : undefined,
       }));
+    case "memory":
+      return lists.memory.map((m) => ({ key: memoryKey(m), label: m.content, scope: m.scope }));
+    case "mcp":
+      return lists.mcp.map((s) => ({ key: mcpKey(s), label: s.name, scope: s.scope, badge: <McpStatus server={s} /> }));
     case "secrets":
-      return lists.secrets.map((s) => ({ key: secretKey(s), label: s.name, badge: scopeBadge(s.scope) }));
+      return lists.secrets.map((s) => ({ key: secretKey(s), label: s.name, scope: s.scope }));
   }
 }
 
 const LAST_TENANT = "osiris.tenant";
+const SCOPE_TAB = "osiris.scope";
 const OPEN_SECTIONS = "osiris.sections";
 
 /** Per-browser conveniences only; the app works the same when storage is unavailable. */
@@ -167,16 +168,24 @@ function Workspace() {
   });
   const [view, setView] = useState<View>(notice ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
   const [open, setOpen] = useState<Record<string, boolean>>(() => stored(OPEN_SECTIONS, { threads: true }));
+  // The sidebar's tab: tenant-wide or the user's own records, files and settings.
+  const [scope, setScope] = useState<Scope>(() => (stored<string>(SCOPE_TAB, "personal") === "tenant" ? "tenant" : "personal"));
   const [error, setError] = useState<string>();
 
   const refreshThreads = useCallback(() => api.threads().then(setThreads, (e: Error) => setError(e.message)), []);
   const refresh = (section: Section) =>
-    LOADERS[section]().then((items) => setLists((l) => ({ ...l, [section]: items })), (e: Error) => setError(e.message));
+    LOADERS[section]().then(
+      (items) => {
+        setLists((l) => ({ ...l, [section]: items }));
+        return items;
+      },
+      (e: Error) => setError(e.message),
+    );
   const refreshTenants = () => api.admin.tenants().then(setTenants, (e: Error) => setError(e.message));
 
-  const toggle = (section: string, value?: boolean) =>
+  const toggle = (section: string) =>
     setOpen((o) => {
-      const next = { ...o, [section]: value ?? !o[section] };
+      const next = { ...o, [section]: !o[section] };
       store(OPEN_SECTIONS, next);
       return next;
     });
@@ -236,27 +245,24 @@ function Workspace() {
   if (!me) return null;
   const isAdmin = tenant?.role === "admin";
   const sections = tenant ? SECTIONS.filter((s) => s.enabled(tenant.features)) : [];
-  const select = (section: Section, id: string | null) => {
-    if (id === null) toggle(section, true);
-    setView({ kind: "item", section, id });
+  const scoped = (section: Section) => rows(section, lists).filter((r) => r.scope === scope);
+  const switchScope = (next: Scope) => {
+    setScope(next);
+    store(SCOPE_TAB, next);
+    // A record belongs to one tab; its section's list in the other tab takes its place.
+    setView((v) => (v.kind === "item" ? { kind: "list", section: v.section } : v));
   };
-
-  const sectionNav = (section: Section, label: string, add: string, empty: string) => (
-    <SidebarSection key={section} title={label} count={lists[section].length} open={!!open[section]} onToggle={() => toggle(section)} onAdd={() => select(section, null)} addLabel={add}>
-      {rows(section, lists).map((r) => (
-        <button
-          key={r.key}
-          onClick={() => select(section, r.key)}
-          data-active={view.kind === "item" && view.section === section && view.id === r.key}
-          className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left"
-        >
-          <span className="min-w-0 flex-1 truncate">{r.label}</span>
-          {r.badge && <span className="flex shrink-0 gap-1">{r.badge}</span>}
-        </button>
-      ))}
-      {!lists[section].length && <p className="px-2 py-1.5 text-fg-muted">{empty}</p>}
-    </SidebarSection>
-  );
+  /** After a save the record is shown, in its own tab (a member's copy of a tenant skill is personal). */
+  const showSaved = (section: Section, key: string) =>
+    void refresh(section).then((items) => {
+      const saved = items && rows(section, { ...lists, [section]: items }).find((r) => r.key === key);
+      if (saved && saved.scope !== scope) {
+        setScope(saved.scope);
+        store(SCOPE_TAB, saved.scope);
+      }
+      setView({ kind: "item", section, id: key });
+    });
+  const hasScoped = !!tenant && (tenant.features.files || sections.length > 0);
 
   return (
     <div className="flex h-full">
@@ -292,16 +298,43 @@ function Workspace() {
               {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
             </SidebarSection>
           )}
-          {tenant?.features.files && (
-            <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />
+          {hasScoped && (
+            <>
+              <div role="tablist" aria-label="Pro koho" className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-hover p-0.5">
+                {(["tenant", "personal"] as const).map((t) => (
+                  <button
+                    key={t}
+                    role="tab"
+                    aria-selected={scope === t}
+                    onClick={() => switchScope(t)}
+                    className={`rounded-sm px-2 py-1 font-medium ${scope === t ? "bg-canvas text-fg shadow-sm" : "text-fg-secondary hover:text-fg"}`}
+                  >
+                    {t === "tenant" ? "Pro tenanta" : "Pro mě"}
+                  </button>
+                ))}
+              </div>
+              {tenant?.features.files && (
+                <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />
+              )}
+              {sections.map((s) => (
+                <NavLink
+                  key={s.id}
+                  active={(view.kind === "list" || view.kind === "item") && view.section === s.id}
+                  onClick={() => setView({ kind: "list", section: s.id })}
+                  label={s.label}
+                  icon={s.icon}
+                  count={scoped(s.id).length}
+                />
+              ))}
+            </>
           )}
+          {(tenant?.features.scheduler || tenant?.features.sites) && <div className="mt-3 border-t border-line" />}
           {tenant?.features.scheduler && (
             <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
           )}
           {tenant?.features.sites && (
             <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Web" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
           )}
-          {sections.map((s) => sectionNav(s.id, s.label, s.add, "Zatím nic."))}
         </nav>
 
         <div className="border-t border-line p-2">
@@ -322,21 +355,41 @@ function Workspace() {
         ) : view.kind === "profile" ? (
           <Profile key={tenant?.id} me={me} notice={notice} />
         ) : !tenant ? null : view.kind === "files" ? (
-          tenant.features.files ? <Files key={tenant.id} isAdmin={isAdmin} /> : null
+          tenant.features.files ? <Files key={`${tenant.id}:${scope}`} scope={scope} isAdmin={isAdmin} /> : null
         ) : view.kind === "schedules" ? (
           tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
         ) : view.kind === "sites" ? (
           tenant.features.sites ? <Sites key={tenant.id} isAdmin={isAdmin} /> : null
-        ) : view.kind === "item" ? (
-          <Detail
-            key={`${tenant.id}:${view.section}:${view.id ?? "new"}`}
-            section={view.section}
-            id={view.id}
-            lists={lists}
-            isAdmin={isAdmin}
-            onSaved={(key) => void refresh(view.section).then(() => setView({ kind: "item", section: view.section, id: key }))}
-            onDeleted={() => void refresh(view.section).then(() => setView({ kind: "item", section: view.section, id: null }))}
+        ) : view.kind === "list" ? (
+          <SectionList
+            title={SECTIONS.find((s) => s.id === view.section)!.label}
+            add={SECTIONS.find((s) => s.id === view.section)!.add}
+            scope={scope}
+            canAdd={scope === "personal" || isAdmin}
+            rows={scoped(view.section)}
+            onOpen={(id) => setView({ kind: "item", section: view.section, id })}
           />
+        ) : view.kind === "item" ? (
+          <div className="flex h-full flex-col">
+            <button
+              onClick={() => setView({ kind: "list", section: view.section })}
+              className="mx-auto w-full max-w-3xl px-6 pt-4 text-left text-sm text-fg-secondary hover:text-primary"
+            >
+              ← {SECTIONS.find((s) => s.id === view.section)!.label}
+            </button>
+            <div className="min-h-0 flex-1">
+              <Detail
+                key={`${tenant.id}:${view.section}:${view.id ?? "new"}`}
+                section={view.section}
+                id={view.id}
+                lists={lists}
+                scope={scope}
+                isAdmin={isAdmin}
+                onSaved={(key) => showSaved(view.section, key)}
+                onDeleted={() => void refresh(view.section).then(() => setView({ kind: "list", section: view.section }))}
+              />
+            </div>
+          </div>
         ) : (
           <ChatPane
             key={`${tenant.id}:${view.session}`}
@@ -447,26 +500,51 @@ function Chevron({ direction }: { direction: "up" | "down" }) {
   );
 }
 
-function NavLink({ active, onClick, label, icon }: { active: boolean; onClick: () => void; label: string; icon: string }) {
+function NavLink({ active, onClick, label, icon, count }: { active: boolean; onClick: () => void; label: string; icon: string; count?: number }) {
   return (
     <button onClick={onClick} data-active={active} className="section-header list-row mt-2 flex w-full items-center gap-1 px-2 py-1 text-left">
       <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden="true">
         <path d={icon} fill="none" stroke="currentColor" strokeWidth="1.4" />
       </svg>
       {label}
+      {!!count && <span className="font-normal text-fg-muted">{count}</span>}
     </button>
   );
 }
 
-function SidebarSection(props: {
-  title: string;
-  count: number;
-  open: boolean;
-  onToggle: () => void;
-  onAdd?: () => void;
-  addLabel?: string;
-  children: ReactNode;
-}) {
+/** A section's records in the sidebar tab's scope; a record opens its detail form. */
+function SectionList(props: { title: string; add: string; scope: Scope; canAdd: boolean; rows: Row[]; onOpen: (id: string | null) => void }) {
+  return (
+    <div className="detail">
+      <div className="flex items-center gap-3">
+        <h1 className="min-w-0 flex-1 text-lg font-semibold">
+          {props.title} <ScopeBadge scope={props.scope} />
+        </h1>
+        {props.canAdd && (
+          <button onClick={() => props.onOpen(null)} className="btn-primary">
+            + {props.add}
+          </button>
+        )}
+      </div>
+      <p className="mt-1 text-xs text-fg-muted">
+        {props.scope === "personal" ? "Platí jen pro tebe." : props.canAdd ? "Platí pro všechny v tenantovi." : "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."}
+      </p>
+      <ul className="mt-4 text-sm">
+        {props.rows.map((r) => (
+          <li key={r.key}>
+            <button onClick={() => props.onOpen(r.key)} className="list-row flex w-full items-center gap-2 px-2 py-2 text-left">
+              <span className="min-w-0 flex-1 truncate">{r.label}</span>
+              {r.badge && <span className="flex shrink-0 gap-1">{r.badge}</span>}
+            </button>
+          </li>
+        ))}
+      </ul>
+      {!props.rows.length && <p className="px-2 py-2 text-sm text-fg-muted">Zatím nic.</p>}
+    </div>
+  );
+}
+
+function SidebarSection(props: { title: string; count: number; open: boolean; onToggle: () => void; children: ReactNode }) {
   return (
     <section className="mt-2 first:mt-0">
       <div className="flex items-center">
@@ -477,11 +555,6 @@ function SidebarSection(props: {
           {props.title}
           {props.count > 0 && <span className="font-normal text-fg-muted">{props.count}</span>}
         </button>
-        {props.onAdd && (
-          <button onClick={props.onAdd} title={props.addLabel} aria-label={props.addLabel} className="list-row px-2 text-base leading-6 text-fg-secondary hover:text-primary">
-            +
-          </button>
-        )}
       </div>
       {props.open && <div className="mt-0.5">{props.children}</div>}
     </section>
@@ -497,6 +570,7 @@ function Detail({
   section: Section;
   id: string | null;
   lists: Lists;
+  scope: Scope;
   isAdmin: boolean;
   onSaved: (key: string) => void;
   onDeleted: () => void;

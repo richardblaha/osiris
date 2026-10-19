@@ -1,7 +1,7 @@
 import type { McpServer, McpServerStatus, Scope } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, ScopePicker, type DetailProps } from "./Scope.tsx";
+import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -32,13 +32,13 @@ export function McpStatus({ server }: { server: McpServer }) {
   );
 }
 
-export function McpServerDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<McpServer>) {
+export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<McpServer>) {
   const [name, setName] = useState(item?.name ?? "");
   const [url, setUrl] = useState(item?.url ?? "");
   const [headers, setHeaders] = useState("");
   const [clearHeaders, setClearHeaders] = useState(false);
   const [enabled, setEnabled] = useState(item?.enabled ?? true);
-  const [scope, setScope] = useState<Scope>(item?.scope ?? "personal");
+  const scope = item?.scope ?? tab;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [tested, setTested] = useState<McpServerStatus>();
@@ -61,7 +61,7 @@ export function McpServerDetail({ item, isAdmin, onSaved, onDeleted }: DetailPro
 
   return (
     <div className="detail">
-      <DetailHeader title={item?.name ?? "Nový MCP server"} scope={item?.scope} canEdit={editable}>
+      <DetailHeader title={item?.name ?? "Nový MCP server"} scope={scope} canEdit={editable}>
         Externí služba, jejíž nástroje může asistent používat (např. CRM, kalendář, účetnictví). Připojuje se přes Model
         Context Protocol, jen vzdáleně přes https.
       </DetailHeader>
@@ -80,7 +80,6 @@ export function McpServerDetail({ item, isAdmin, onSaved, onDeleted }: DetailPro
 
       {editable ? (
         <form onSubmit={submit} className="mt-6 space-y-4">
-          {!item && <ScopePicker value={scope} onChange={setScope} isAdmin={isAdmin} />}
           <Field label="Název">
             <input
               value={name}

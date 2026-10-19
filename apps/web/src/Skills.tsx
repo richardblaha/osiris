@@ -1,7 +1,7 @@
 import type { Scope, SkillSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, ScopePicker, type DetailProps } from "./Scope.tsx";
+import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -19,13 +19,14 @@ export async function loadSkills(): Promise<SkillSummary[]> {
 const INTRO =
   "Postupy, podle kterých asistent pracuje (např. jak sestavit nabídku). Osobní dovednost má přednost před dovedností tenanta a ta před výchozí se stejným názvem.";
 
-export function SkillDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<SkillSummary>) {
+export function SkillDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<SkillSummary>) {
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
   const [instructions, setInstructions] = useState("");
   /** A bundled skill, or a tenant one for a member, is changed by saving a copy at a scope the user may write. */
   const own = item && item.source !== "bundled" && canEdit(item.source, isAdmin);
-  const [scope, setScope] = useState<Scope>(own ? (item.source as Scope) : "personal");
+  // A copy goes to the tab's scope when the user may write there, otherwise to their own skills.
+  const scope: Scope = own ? (item.source as Scope) : tab === "tenant" && isAdmin ? "tenant" : "personal";
   const [loaded, setLoaded] = useState(!item);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -48,12 +49,11 @@ export function SkillDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<S
 
   return (
     <div className="detail">
-      <DetailHeader title={item?.name ?? "Nová dovednost"} scope={item?.source === "bundled" ? undefined : item?.source} canEdit={!!own}>
+      <DetailHeader title={item?.name ?? "Nová dovednost"} scope={item ? (item.source === "bundled" ? undefined : item.source) : scope} canEdit={!!own}>
         {item?.source === "bundled" ? "Výchozí dovednost, která je součástí aplikace. Změníš ji uložením kopie se stejným názvem." : INTRO}
       </DetailHeader>
       {loaded && (
         <form onSubmit={submit} className="mt-6 space-y-4">
-          {!own && <ScopePicker value={scope} onChange={setScope} isAdmin={isAdmin} />}
           <Field label="Název">
             <input
               value={name}

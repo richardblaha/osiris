@@ -1,16 +1,15 @@
 import type { DocumentSummary, Scope } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, ScopePicker, type DetailProps } from "./Scope.tsx";
+import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 export const documentKey = (d: DocumentSummary) => d.id;
 
 const INTRO = "Poznámky ke klientům, ceníky a postupy, ve kterých asistent vyhledává.";
 
-export function KnowledgeDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<DocumentSummary>) {
+export function KnowledgeDetail({ item, scope, isAdmin, onSaved, onDeleted }: DetailProps<DocumentSummary>) {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [scope, setScope] = useState<Scope>("personal");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -49,11 +48,10 @@ export function KnowledgeDetail({ item, isAdmin, onSaved, onDeleted }: DetailPro
 
   return (
     <div className="detail">
-      <DetailHeader title="Nový dokument" canEdit>
+      <DetailHeader title="Nový dokument" scope={scope} canEdit>
         {INTRO}
       </DetailHeader>
       <form onSubmit={submit} className="mt-6 space-y-4">
-        <ScopePicker value={scope} onChange={setScope} isAdmin={isAdmin} />
         <Field label="Název">
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="např. Ceník 2026" required className="field" />
         </Field>

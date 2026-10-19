@@ -1,19 +1,19 @@
 import type { Scope, SecretSummary } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, ScopePicker, type DetailProps } from "./Scope.tsx";
+import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 const NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 const parseHosts = (text: string) => text.split(/[\s,]+/).map((h) => h.trim().toLowerCase()).filter(Boolean);
 
 export const secretKey = (s: Pick<SecretSummary, "scope" | "name">) => `${s.scope}:${s.name}`;
 
-export function SecretDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<SecretSummary>) {
+export function SecretDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<SecretSummary>) {
   const [name, setName] = useState(item?.name ?? "");
   const [value, setValue] = useState("");
   const [hosts, setHosts] = useState(item?.allowedHosts.join(", ") ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
-  const [scope, setScope] = useState<Scope>(item?.scope ?? "personal");
+  const scope = item?.scope ?? tab;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const editable = !item || canEdit(item.scope, isAdmin);
@@ -29,13 +29,12 @@ export function SecretDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<
 
   return (
     <div className="detail">
-      <DetailHeader title={item?.name ?? "Nový klíč"} scope={item?.scope} canEdit={editable}>
+      <DetailHeader title={item?.name ?? "Nový klíč"} scope={scope} canEdit={editable}>
         API klíč nebo token pro MCP servery a webová API. Ukládá se šifrovaně a po uložení už ho nikdo neuvidí, ani ty.
         Používá se jako <code className="text-fg">{`{{secret:${name || "NÁZEV"}}}`}</code> a odešle se jen na povolené domény.
       </DetailHeader>
 
       <form onSubmit={submit} className="mt-6 space-y-4" autoComplete="off">
-        {!item && <ScopePicker value={scope} onChange={setScope} isAdmin={isAdmin} />}
         <Field label="Název">
           <input
             value={name}

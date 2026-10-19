@@ -1,9 +1,8 @@
-import type { FileEntry } from "@osiris/shared";
+import type { FileEntry, Scope } from "@osiris/shared";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, saveBlob } from "./api.ts";
 import { attempt, ErrorNotice } from "./Scope.tsx";
 
-type Tab = "personal" | "tenant";
 type Editing = { kind: "mkdir" } | { kind: "rename"; entry: FileEntry };
 
 const IMAGE = /^image\/(png|jpeg|gif|webp)$/;
@@ -13,9 +12,8 @@ export const fileSize = (n: number) =>
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
-/** The user's own files and the tenant's shared ones (members read, admins write), folder by folder. */
-export function Files({ isAdmin }: { isAdmin: boolean }) {
-  const [tab, setTab] = useState<Tab>("personal");
+/** The user's own files or the tenant's shared ones (members read, admins write), by the sidebar's tab, folder by folder. */
+export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean }) {
   const [dir, setDir] = useState("");
   const [entries, setEntries] = useState<FileEntry[]>();
   const [editing, setEditing] = useState<Editing>();
@@ -91,18 +89,6 @@ export function Files({ isAdmin }: { isAdmin: boolean }) {
         Šablony, obrázky a dokumenty, se kterými asistent pracuje. Šablony dokumentů patří do složky <code>sablony</code>.
       </p>
 
-      <div className="mt-4 flex gap-1 border-b border-line">
-        {(["personal", "tenant"] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => (setTab(t), setDir(""), setPreview(undefined))}
-            data-active={tab === t}
-            className="list-row rounded-b-none px-3 py-1.5 text-sm"
-          >
-            {t === "personal" ? "Moje soubory" : "Firemní"}
-          </button>
-        ))}
-      </div>
       {tab === "tenant" && !isAdmin && <p className="mt-2 text-xs text-fg-muted">Firemní soubory může měnit jen správce tenanta.</p>}
 
       <div className="mt-3 flex flex-wrap items-center gap-2">

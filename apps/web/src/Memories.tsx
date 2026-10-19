@@ -1,15 +1,14 @@
 import type { Memory, Scope } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, ScopePicker, type DetailProps } from "./Scope.tsx";
+import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 export const memoryKey = (m: Memory) => m.id;
 
 const INTRO = "Fakta, která si asistent pamatuje mezi konverzacemi. Ukládá si je i sám, když mu něco řekneš.";
 
-export function MemoryDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<Memory>) {
+export function MemoryDetail({ item, scope, isAdmin, onSaved, onDeleted }: DetailProps<Memory>) {
   const [content, setContent] = useState("");
-  const [scope, setScope] = useState<Scope>("personal");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
@@ -43,11 +42,10 @@ export function MemoryDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<
 
   return (
     <div className="detail">
-      <DetailHeader title="Nový záznam v paměti" canEdit>
+      <DetailHeader title="Nový záznam v paměti" scope={scope} canEdit>
         {INTRO}
       </DetailHeader>
       <form onSubmit={submit} className="mt-6 space-y-4">
-        <ScopePicker value={scope} onChange={setScope} isAdmin={isAdmin} />
         <Field label="Co si má pamatovat">
           <textarea
             value={content}
