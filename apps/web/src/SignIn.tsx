@@ -87,7 +87,7 @@ export function SignIn() {
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-3">
           <img src="/logo.svg" alt="" className="h-20 w-20" />
-          <h1 className="text-xl font-semibold tracking-[0.2em]">OSIRIS</h1>
+          <h1 className="text-3xl font-semibold tracking-[0.2em]">OSIRIS</h1>
         </div>
 
         {state.step === "second-factor" ? (

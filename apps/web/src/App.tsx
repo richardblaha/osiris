@@ -45,7 +45,7 @@ function Gate() {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-canvas px-4">
         <img src="/logo.svg" alt="" className="h-28 w-28" />
-        <h1 className="text-2xl font-semibold tracking-[0.2em]">OSIRIS</h1>
+        <h1 className="text-4xl font-semibold tracking-[0.2em]">OSIRIS</h1>
         <button
           onClick={() => login().catch((e: Error) => setLoginError(`Přihlášení selhalo: ${e.message}`))}
           className="btn-primary px-6 py-3"
@@ -263,7 +263,7 @@ function Workspace() {
       <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-sidebar text-sm">
         <div className="flex items-center gap-2 px-3 pt-3">
           <img src="/logo.svg" alt="" className="h-8 w-8" />
-          <span className="font-semibold tracking-[0.2em]">OSIRIS</span>
+          <span className="text-xl font-semibold tracking-[0.2em]">OSIRIS</span>
         </div>
         {tenant && (
           <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
