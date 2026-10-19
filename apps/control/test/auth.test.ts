@@ -71,7 +71,8 @@ async function browser(control: Awaited<ReturnType<typeof createTestControl>>) {
   const token = async (params: Record<string, string>) => {
     const res = await request("/auth/token", {
       method: "POST",
-      headers: { "content-type": "application/x-www-form-urlencoded" },
+      // As the browser sends it: the token endpoint must accept the web app's own origin.
+      headers: { "content-type": "application/x-www-form-urlencoded", origin: PUBLIC_URL },
       body: new URLSearchParams({ client_id: "osiris-web", ...params }),
     });
     return { status: res.status, body: (await res.json()) as Record<string, string> };

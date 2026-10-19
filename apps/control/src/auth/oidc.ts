@@ -145,7 +145,8 @@ export function createOidcProvider(options: OidcOptions): Provider {
       revocation: "/revoke",
     },
     pkce: { required: () => true },
-    clientBasedCORS: () => false,
+    // Browsers send Origin with every POST, same-origin ones too, so the web app's token requests carry it.
+    clientBasedCORS: (_ctx, origin) => options.webOrigins.includes(origin),
     features: {
       devInteractions: { enabled: false },
       revocation: { enabled: true },
