@@ -15,7 +15,7 @@ const keys = await generateInternalKeys();
 const verifier = new InternalVerifier(keys.publicKey);
 
 /** The gateway in front of a fake control and fake runtimes that echo what they were sent. */
-function setup(options: { runsPerMinute?: number; web?: { dir: string } } = {}) {
+function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcounter?: string } } = {}) {
   const calls: { service: string; path: string; method: string; auth: string | null; tenantHeader: string | null; body?: string }[] = [];
   const asleep = new Set<string>(["beta"]);
   const woken: string[] = [];
@@ -221,5 +221,19 @@ describe("gateway", () => {
     expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
     expect(page.headers.get("content-security-policy")).toContain("connect-src 'self';");
     expect(page.headers.get("x-frame-options")).toBe("DENY");
+  });
+
+  it("adds GoatCounter's script to the page and its site to the CSP", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "osiris-web-"));
+    writeFileSync(join(dir, "index.html"), "<html><head><title>Osiris</title></head><body></body></html>");
+    const { app } = setup({ web: { dir, goatcounter: "https://osiris.stats.example.cz" } });
+    for (const path of ["/", "/callback?code=x"]) {
+      const page = await app.request(path);
+      expect(await page.text()).toContain('<script data-goatcounter="https://osiris.stats.example.cz/count" async src="https://osiris.stats.example.cz/count.js"></script>');
+      const csp = page.headers.get("content-security-policy")!;
+      expect(csp).toContain("script-src 'self' https://osiris.stats.example.cz;");
+      expect(csp).toContain("img-src 'self' data: blob: https://osiris.stats.example.cz;");
+      expect(csp).toContain("connect-src 'self' https://osiris.stats.example.cz;");
+    }
   });
 });

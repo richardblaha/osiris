@@ -34,6 +34,8 @@ spec:
             - { name: NODE_ENV, value: production }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
+            # The GoatCounter site the web app counts visits to (cookieless); unset = no counting.
+            # - { name: GOATCOUNTER_URL, value: https://osiris.stats.k6labs.cz }
             - { name: CORS_ORIGIN, value: https://osiris.k6labs.cz }
             - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
           envFrom:

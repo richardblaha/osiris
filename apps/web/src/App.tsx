@@ -227,6 +227,9 @@ function Workspace() {
     }, (e: Error) => setError(e.message));
 
   useEffect(() => void loadMe(), []);
+  // Visits per view for GoatCounter (when the gateway added its script): the view's kind and section, never ids.
+  const viewPath = view.kind === "list" || view.kind === "item" ? `/${view.section}` : `/${view.kind}`;
+  useEffect(() => window.goatcounter?.count?.({ path: viewPath }), [viewPath]);
 
   const openThread = (threadId: string | null) =>
     setView((v) => ({ kind: "chat", threadId, session: (v.kind === "chat" ? v.session : 0) + 1 }));
@@ -631,5 +634,12 @@ function Detail({
       const item = find(lists.secrets, secretKey);
       return missing(item) ? null : <SecretDetail item={item} {...props} />;
     }
+  }
+}
+
+declare global {
+  interface Window {
+    /** GoatCounter's count.js, when the gateway serves the page with it. */
+    goatcounter?: { count?: (vars: { path: string; title?: string }) => void };
   }
 }

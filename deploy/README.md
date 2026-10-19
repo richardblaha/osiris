@@ -113,6 +113,13 @@ pod logs are not collected a second time.
 3. Sign in at `https://observe.k6labs.cz` with that email and password: streams `default` (logs, traces, metrics).
    A changed collector config needs a bump of the `config/version` annotation to restart it.
 
+## Visits (GoatCounter)
+
+The web app counts visits with GoatCounter (cookieless, in namespace `goatcounter`): set `GOATCOUNTER_URL` in
+`gateway.yaml` to the Osiris site's URL (created in GoatCounter, e.g. `https://osiris.stats.k6labs.cz`). The gateway
+then adds its `count.js` to the page and the site to the CSP; the app counts each view as a path (`/chat`,
+`/skills`, …), never with ids or names.
+
 ## Object storage (Civo)
 
 Create an object store and a bucket (`osiris`), and credentials for it. Put into `.env`: `OSIRIS_S3_ENDPOINT`

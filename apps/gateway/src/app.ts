@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -22,8 +24,11 @@ export interface GatewayDeps {
   corsOrigin: string;
   maxBodyBytes: number;
   limits: { requestsPerMinute: number; runsPerMinute: number };
-  /** In production the gateway also serves the built web app from `dir`. */
-  web?: { dir: string };
+  /**
+   * In production the gateway also serves the built web app from `dir`. With `goatcounter` (a GoatCounter site's
+   * URL, e.g. https://osiris.stats.k6labs.cz) the page loads its count.js, allowed by the CSP.
+   */
+  web?: { dir: string; goatcounter?: string };
   fetchFn?: typeof fetch;
 }
 
@@ -81,6 +86,18 @@ const clientIp = (c: Context) => c.req.header("x-forwarded-for")?.split(",")[0]?
  */
 export function createGatewayApp(deps: GatewayDeps) {
   const { verifier, signer, control, runtimes, web } = deps;
+  const stats = web?.goatcounter ? new URL(web.goatcounter).origin : "";
+  const csp = [
+    "default-src 'self'",
+    `script-src 'self'${stats ? ` ${stats}` : ""}`,
+    "style-src 'self' 'unsafe-inline'",
+    `img-src 'self' data: blob:${stats ? ` ${stats}` : ""}`,
+    `connect-src 'self'${stats ? ` ${stats}` : ""}`,
+    "frame-src 'none'",
+    "frame-ancestors 'none'",
+    "base-uri 'none'",
+    "form-action 'self'",
+  ].join("; ");
   const fetchFn = deps.fetchFn ?? fetch;
   const requests = new RateLimiter(deps.limits.requestsPerMinute);
   const signIns = new RateLimiter(deps.limits.requestsPerMinute);
@@ -222,10 +239,7 @@ export function createGatewayApp(deps: GatewayDeps) {
       c.header("strict-transport-security", "max-age=31536000");
       // The SPA and the sign-in pages: own scripts only; sign-in is on this origin too (/auth).
       if (!c.res.headers.has("content-security-policy") && (c.res.headers.get("content-type") ?? "").includes("text/html")) {
-        c.header(
-          "content-security-policy",
-          "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-src 'none'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
-        );
+        c.header("content-security-policy", csp);
       }
     })
     .use("/api/*", cors({ origin: deps.corsOrigin, allowHeaders: ["authorization", "content-type", "x-tenant-id"] }))
@@ -252,15 +266,24 @@ export function createGatewayApp(deps: GatewayDeps) {
     });
 
   if (web) {
+    // The page with GoatCounter's script, when there's a site to count to (read once, the build doesn't change).
+    let page: Promise<string> | undefined;
+    const indexHtml = (c: Context) => {
+      page ??= readFile(join(web.dir, "index.html"), "utf8").then((html) =>
+        html.replace("</head>", `  <script data-goatcounter="${web.goatcounter}/count" async src="${web.goatcounter}/count.js"></script>\n  </head>`),
+      );
+      return page.then((html) => c.html(html, 200, { "cache-control": "no-cache" }));
+    };
+    app.use("/assets/*", async (c, next) => {
+      await next();
+      // Vite puts a content hash in asset file names.
+      if (c.res.ok) c.header("cache-control", "public, max-age=31536000, immutable");
+    });
+    if (web.goatcounter) app.get("/", indexHtml).get("/index.html", indexHtml);
     app
-      .use("/assets/*", async (c, next) => {
-        await next();
-        // Vite puts a content hash in asset file names.
-        if (c.res.ok) c.header("cache-control", "public, max-age=31536000, immutable");
-      })
       .use("*", serveStatic({ root: web.dir }))
       // SPA fallback: client-side routes such as /callback get index.html.
-      .get("*", serveStatic({ root: web.dir, path: "index.html" }));
+      .get("*", web.goatcounter ? indexHtml : serveStatic({ root: web.dir, path: "index.html" }));
   }
 
   return app.onError((err, c) => {
