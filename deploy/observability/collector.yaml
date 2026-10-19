@@ -1,0 +1,126 @@
+# The cluster's OpenTelemetry Collector: OTLP from applications (gRPC 4317, HTTP 4318), cluster metrics
+# (k8s_cluster) and Kubernetes events, enriched with pod metadata and sent to OpenObserve.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: otel-collector
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: otel-collector
+rules:
+  - apiGroups: [""]
+    resources: [pods, nodes, nodes/stats, nodes/proxy, namespaces, services, endpoints, events, resourcequotas, replicationcontrollers, persistentvolumeclaims, persistentvolumes]
+    verbs: [get, list, watch]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets, daemonsets, statefulsets]
+    verbs: [get, list, watch]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list, watch]
+  - apiGroups: [autoscaling]
+    resources: [horizontalpodautoscalers]
+    verbs: [get, list, watch]
+  - apiGroups: [events.k8s.io]
+    resources: [events]
+    verbs: [get, list, watch]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: otel-collector
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: otel-collector }
+subjects:
+  - { kind: ServiceAccount, name: otel-collector, namespace: observability }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector
+data:
+  config.yaml: |
+    receivers:
+      otlp:
+        protocols:
+          grpc: { endpoint: 0.0.0.0:4317 }
+          http: { endpoint: 0.0.0.0:4318 }
+      k8s_cluster:
+        collection_interval: 60s
+      k8sobjects:
+        objects:
+          - { name: events, mode: watch, group: events.k8s.io }
+    processors:
+      memory_limiter: { check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20 }
+      k8sattributes:
+        extract:
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.node.name, k8s.deployment.name, k8s.statefulset.name, k8s.container.name]
+        pod_association:
+          - sources: [{ from: resource_attribute, name: k8s.pod.ip }]
+          - sources: [{ from: connection }]
+      batch: {}
+    exporters:
+      otlphttp/openobserve:
+        endpoint: http://openobserve.observability.svc.cluster.local:5080/api/default
+        headers:
+          Authorization: Basic ${env:O2_AUTH}
+          stream-name: default
+    service:
+      telemetry:
+        logs: { level: warn }
+      pipelines:
+        traces: { receivers: [otlp], processors: [memory_limiter, k8sattributes, batch], exporters: [otlphttp/openobserve] }
+        metrics: { receivers: [otlp, k8s_cluster], processors: [memory_limiter, k8sattributes, batch], exporters: [otlphttp/openobserve] }
+        logs: { receivers: [otlp, k8sobjects], processors: [memory_limiter, k8sattributes, batch], exporters: [otlphttp/openobserve] }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: otel-collector
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: otel-collector }
+  template:
+    metadata:
+      labels: { app: otel-collector }
+      annotations:
+        # Restart when the configuration changes.
+        config/version: "1"
+    spec:
+      serviceAccountName: otel-collector
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.161.0
+          args: [--config=/conf/config.yaml]
+          ports:
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+          env:
+            - name: O2_AUTH
+              valueFrom: { secretKeyRef: { name: openobserve-root, key: O2_AUTH } }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: config, mountPath: /conf }
+      volumes:
+        - name: config
+          configMap: { name: otel-collector }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: otel-collector
+spec:
+  selector: { app: otel-collector }
+  ports:
+    - { name: otlp-grpc, port: 4317, targetPort: otlp-grpc }
+    - { name: otlp-http, port: 4318, targetPort: otlp-http }

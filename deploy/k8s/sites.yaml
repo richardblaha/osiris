@@ -31,6 +31,8 @@ spec:
             - { name: http, containerPort: 8080 }
           env:
             - { name: NODE_ENV, value: production }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
             - { name: RQLITE_URL, value: http://rqlite.osiris.svc.cluster.local:4001 }
           envFrom:
             - secretRef: { name: osiris-sites }

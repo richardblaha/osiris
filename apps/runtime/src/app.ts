@@ -22,6 +22,7 @@ import { SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import type { Activity } from "./activity.ts";
 import { userAuth, type AuthEnv, type RequestContext } from "./auth.ts";
 import { createInternalRoutes } from "./internal.ts";
+import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
 
 const runBody = z.object({ message: z.string().trim().min(1).max(20_000) });
@@ -563,6 +564,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
   const internal = createInternalRoutes({ tenant, verifier, activity, snapshot, activeRuns });
 
   return new Hono()
+    .use(telemetryMiddleware())
     .use(async (c, next) => {
       // Shutting down for sleep: the caller wakes the runtime again and retries.
       if (activity.sleeping && c.req.path !== "/health") return c.json({ error: "Runtime is going to sleep" }, 503, { [SLEEPING_HEADER]: "1" });

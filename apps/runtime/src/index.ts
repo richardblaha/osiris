@@ -16,8 +16,10 @@ import { loadConfig } from "./config.ts";
 import { ControlClient, RemoteFeatures } from "./control.ts";
 import { dbPath, filesDir, hasDatabase, restoreSnapshot, withSnapshot } from "./snapshot.ts";
 import { controlTools, publishFolder } from "./tools.ts";
+import { startTelemetry } from "@osiris/platform/telemetry.ts";
 
 const config = loadConfig();
+startTelemetry("osiris-runtime", { "osiris.tenant": config.TENANT_ID });
 const control = new ControlClient(
   config.CONTROL_URL,
   runtimeToken(config.DEV_RUNTIME_AUTH ? { devTenant: config.TENANT_ID } : { tokenPath: config.RUNTIME_TOKEN_PATH }),

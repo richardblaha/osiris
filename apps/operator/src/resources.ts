@@ -25,6 +25,9 @@ export interface TenantResource extends KubeObject {
 }
 
 /** What the operator puts into every tenant: images, where services live, shared settings and keys. */
+/** Where the OpenTelemetry collector runs (deploy/observability). */
+export const TELEMETRY_NAMESPACE = "observability";
+
 export interface OperatorSettings {
   /** Namespace of the shared services (gateway, control, operator, sites, gotenberg). */
   namespace: string;
@@ -189,6 +192,16 @@ export function tenantResources(t: TenantResource, s: OperatorSettings, replicas
                 podSelector: { matchExpressions: [{ key: "app", operator: "In", values: ["control", "gotenberg"] }] },
               },
             ],
+          },
+          // Telemetry (OTLP over HTTP) to the cluster's collector.
+          {
+            to: [
+              {
+                namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": TELEMETRY_NAMESPACE } },
+                podSelector: { matchLabels: { app: "otel-collector" } },
+              },
+            ],
+            ports: [{ port: 4318, protocol: "TCP" }],
           },
           // The internet (model APIs, MCP servers, http_request), but nothing inside the cluster or its network.
           { to: [{ ipBlock: { cidr: "0.0.0.0/0", except: PRIVATE } }] },

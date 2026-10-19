@@ -5,7 +5,9 @@ import { createGatewayApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { ControlDirectory } from "./control.ts";
 import { createControlVerifier, createDevVerifier } from "./oidc.ts";
+import { startTelemetry } from "@osiris/platform/telemetry.ts";
 
+startTelemetry("osiris-gateway");
 const config = loadConfig();
 const signer = new InternalSigner(config.INTERNAL_JWT_PRIVATE_KEY, "gateway");
 const control = new ControlDirectory(config.CONTROL_URL, signer);

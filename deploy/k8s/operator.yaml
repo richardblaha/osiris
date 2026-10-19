@@ -40,7 +40,12 @@ spec:
             - { name: GOTENBERG_URL, value: http://gotenberg.osiris.svc.cluster.local:3000 }
             - { name: CLUSTER_ISSUER, value: letsencrypt }
             - { name: SITES_MIDDLEWARE, value: osiris-redirect-https@kubernetescrd }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
             - { name: RUNTIME_ENV_TIMEZONE, value: Europe/Prague }
+            # Runtimes send their telemetry to the cluster's collector too (the operator's network policy lets them).
+            - { name: RUNTIME_ENV_OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
+            - { name: RUNTIME_ENV_OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
             - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
           envFrom:
             - secretRef: { name: osiris-operator }

@@ -5,6 +5,9 @@ import { deriveTenantKey } from "@osiris/platform/tenant-keys.ts";
 import { Kube } from "./kube.ts";
 import { httpRuntimeProbe, Reconciler, runtimeUrl } from "./reconciler.ts";
 import type { TenantResource } from "./resources.ts";
+import { startTelemetry } from "@osiris/platform/telemetry.ts";
+
+startTelemetry("osiris-operator");
 
 const pem = z.string().transform((v) => v.replace(/\\n/g, "\n"));
 const env = z

@@ -37,6 +37,7 @@ import { QuotaError, TenantExistsError, TenantNotFoundError, type TenantDirector
 import { UserInputError, UserNotFoundError, type UserDirectory } from "./users.ts";
 import { PHONE_CLAIM, type PhoneVerification } from "./whatsapp/phones.ts";
 import { whatsappWebhook, type WhatsAppWebhookOptions } from "./whatsapp/webhook.ts";
+import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
 export interface ControlDeps {
   verifier: InternalVerifier;
@@ -549,6 +550,7 @@ export function createControlApp(deps: ControlDeps) {
     );
 
   const app = new Hono()
+    .use(telemetryMiddleware())
     .get("/health", (c) => c.json({ ok: true }))
     // Tenant logos, public like profile pictures (an <img> sends no token); the version in the URL is unguessable.
     .get("/auth/tenant-logos/:id/:version", async (c) => {

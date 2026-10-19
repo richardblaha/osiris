@@ -3,6 +3,9 @@ import { z } from "zod";
 import { FsObjectStore, S3ObjectStore } from "@osiris/platform/objects.ts";
 import { LocalDb, RqliteDb } from "@osiris/platform/rqlite.ts";
 import { createSitesApp } from "./app.ts";
+import { startTelemetry } from "@osiris/platform/telemetry.ts";
+
+startTelemetry("osiris-sites");
 
 const env = z
   .object({

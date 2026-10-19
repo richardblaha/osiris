@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { fileType } from "@osiris/shared";
 import { readAll, type ObjectStore } from "@osiris/platform/objects.ts";
 import type { Db } from "@osiris/platform/rqlite.ts";
+import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
 const SITE_TTL_MS = 60_000;
 const CACHE_BYTES = 128 * 1024 * 1024;
@@ -105,6 +106,7 @@ export function createSitesApp({ db, objects }: { db: Db; objects: ObjectStore }
   };
 
   return new Hono()
+    .use(telemetryMiddleware())
     .get("/healthz", (c) => c.json({ ok: true }))
     .on(["GET", "HEAD"], "*", async (c) => {
       const host = (c.req.header("host") ?? "").toLowerCase().replace(/:\d+$/, "");

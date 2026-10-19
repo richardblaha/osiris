@@ -92,6 +92,27 @@ signature, stores the message and answers at once; a worker runs it in the sende
 Scheduled results go to WhatsApp only within 24 hours of the user's last message (Meta's rule for free-form messages);
 otherwise they stay in the web chat and the task shows a note.
 
+## Observability (OpenObserve, OTLP)
+
+`deploy/observability` (namespace `observability`, for the whole cluster) runs OpenObserve at
+`https://observe.k6labs.cz` and the OpenTelemetry Collector: `otel-collector` takes OTLP from applications
+(`otel-collector.observability.svc.cluster.local:4318`), cluster metrics and Kubernetes events; the `otel-agent`
+DaemonSet reads pod logs and kubelet metrics on every node. Osiris services and runtimes send traces, metrics and logs
+over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (`@osiris/platform/telemetry.ts`; the manifests set it), so their
+pod logs are not collected a second time.
+
+1. DNS: `observe.k6labs.cz` → the Traefik load balancer (as `osiris.k6labs.cz`).
+2. `.env`: `OSIRIS_O2_EMAIL`, `OSIRIS_O2_PASSWORD` (`openssl rand -base64 24`), then:
+   ```bash
+   kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
+   kubectl -n observability create secret generic openobserve-root --dry-run=client -o yaml \
+     --from-literal=ZO_ROOT_USER_EMAIL="$OSIRIS_O2_EMAIL" --from-literal=ZO_ROOT_USER_PASSWORD="$OSIRIS_O2_PASSWORD" \
+     --from-literal=O2_AUTH="$(printf '%s:%s' "$OSIRIS_O2_EMAIL" "$OSIRIS_O2_PASSWORD" | base64 -w0)" | kubectl apply -f -
+   kubectl apply -k deploy/observability
+   ```
+3. Sign in at `https://observe.k6labs.cz` with that email and password: streams `default` (logs, traces, metrics).
+   A changed collector config needs a bump of the `config/version` annotation to restart it.
+
 ## Object storage (Civo)
 
 Create an object store and a bucket (`osiris`), and credentials for it. Put into `.env`: `OSIRIS_S3_ENDPOINT`

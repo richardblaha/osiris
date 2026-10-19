@@ -79,6 +79,8 @@ Packages: `packages/shared` (types and constants shared with the web client, fil
 
 **Web streaming.** `POST /api/threads/:id/runs` sends only the new user message, because the runtime holds history in the checkpointer. It streams `RunEvent`s as SSE through the gateway. `web/src/chat/adapter.ts` turns them into Assistant UI parts for `useLocalRuntime`. History is loaded once via `GET /threads/:id/messages`. `ChatPane` is remounted (`key`) to switch threads. A new thread is created lazily on first send.
 
+**Telemetry** (`@osiris/platform/telemetry.ts`): with `OTEL_EXPORTER_OTLP_ENDPOINT` set, every service sends traces, metrics and logs over OTLP (`startTelemetry` first in each `index.ts`): `console` output becomes log records tied to the active span (and still prints), outgoing `fetch` gets client spans and `traceparent` (undici instrumentation, no ESM hooks needed), and `telemetryMiddleware()` on each Hono root app makes server spans named by route plus a duration histogram. In the cluster they go to the OpenTelemetry Collector in namespace `observability` and on to OpenObserve (`deploy/observability`); runtimes get the endpoint through `RUNTIME_ENV_*` and an egress rule in the operator's network policy.
+
 ## Gotchas
 
 - Auth tests (`apps/control/test/auth.test.ts`) need a real HTTP server, as oidc-provider is a Node handler: `controlListener` on port 0 and a cookie jar that sends `x-forwarded-host`. Replaying an authorization code revokes the tokens it gave (OIDC), so don't redeem a code twice in a test that still uses its tokens.

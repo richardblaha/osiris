@@ -11,6 +11,7 @@ import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import type { ControlDirectory } from "./control.ts";
 import type { Identity, TokenVerifier } from "./oidc.ts";
 import { RateLimiter } from "./rate-limit.ts";
+import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
 export interface GatewayDeps {
   verifier: TokenVerifier;
@@ -212,6 +213,7 @@ export function createGatewayApp(deps: GatewayDeps) {
     .all("*", (c) => (CONTROL_PATHS.test(c.req.path) ? toControl(c) : toRuntime(c)));
 
   const app = new Hono()
+    .use(telemetryMiddleware())
     .use(async (c, next) => {
       await next();
       c.header("x-content-type-options", "nosniff");

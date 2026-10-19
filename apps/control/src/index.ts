@@ -24,7 +24,9 @@ import { WhatsAppClient } from "./whatsapp/cloud-api.ts";
 import { Inbox } from "./whatsapp/inbox.ts";
 import { PhoneVerification } from "./whatsapp/phones.ts";
 import { WhatsAppRouter } from "./whatsapp/router.ts";
+import { startTelemetry } from "@osiris/platform/telemetry.ts";
 
+startTelemetry("osiris-control");
 const config = loadConfig();
 
 let db: Db;
