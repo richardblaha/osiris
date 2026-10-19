@@ -50,6 +50,33 @@ export interface TenantInfo {
   logo: string | null;
 }
 
+/** Limits a system admin sets per tenant; null = no limit (storage: 80 % of the tenant's volume). */
+export interface TenantQuotas {
+  /** Files, in MB. */
+  storageMb: number | null;
+  /** Tokens of the language model per calendar month. */
+  tokensPerMonth: number | null;
+  members: number | null;
+  /** Scheduled tasks in the tenant. */
+  schedules: number | null;
+}
+
+export const NO_QUOTAS: TenantQuotas = { storageMb: null, tokensPerMonth: null, members: null, schedules: null };
+
+/** One quota's use; `limit` null = no limit. */
+export interface Meter {
+  used: number;
+  limit: number | null;
+}
+
+/** How much of its quotas the tenant uses (`/api/usage`); storage in bytes, tokens this calendar month. */
+export interface TenantUsage {
+  storage: Meter;
+  tokens: Meter;
+  members: Meter;
+  schedules: Meter;
+}
+
 /** A built-in tool of the assistant (`/api/tools`); a system admin can switch each one off per tenant. */
 export interface BuiltinTool {
   name: string;
@@ -86,6 +113,7 @@ export interface TenantDetail extends TenantSummary {
   storageGb: number;
   /** Built-in tools switched off for the tenant, by name. */
   disabledTools: string[];
+  quotas: TenantQuotas;
   backups: { key: string; bytes: number; reason: string; createdAt: string }[];
 }
 

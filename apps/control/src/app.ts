@@ -33,7 +33,7 @@ import type { Orchestrator } from "./orchestrator/types.ts";
 import { ScheduleError, ScheduleNotFoundError, type ScheduleStore } from "./scheduler.ts";
 import { DomainError, type DomainStore } from "./sites/domains.ts";
 import { PublishError, SITE_LIMITS, type SitePublisher } from "./sites/publisher.ts";
-import { TenantExistsError, TenantNotFoundError, type TenantDirectory, type TenantRow } from "./tenants.ts";
+import { QuotaError, TenantExistsError, TenantNotFoundError, type TenantDirectory, type TenantRow } from "./tenants.ts";
 import { UserInputError, UserNotFoundError, type UserDirectory } from "./users.ts";
 import { PHONE_CLAIM, type PhoneVerification } from "./whatsapp/phones.ts";
 import { whatsappWebhook, type WhatsAppWebhookOptions } from "./whatsapp/webhook.ts";
@@ -71,6 +71,15 @@ const updateTenantBody = z.object({
   idleMinutes: z.number().int().min(0).max(24 * 60).optional(),
   storageGb: z.number().int().min(1).max(500).optional(),
   disabledTools: z.array(z.string().regex(/^[a-z0-9_]{1,64}$/)).max(200).optional(),
+  quotas: z
+    .object({
+      storageMb: z.number().int().min(1).max(500 * 1024).nullable(),
+      tokensPerMonth: z.number().int().min(0).max(1e12).nullable(),
+      members: z.number().int().min(1).max(100_000).nullable(),
+      schedules: z.number().int().min(0).max(100_000).nullable(),
+    })
+    .partial()
+    .optional(),
 });
 const roleBody = z.object({ role: z.enum(["admin", "member"]) });
 const personName = z.string().trim().max(50);
@@ -112,6 +121,7 @@ function errors(err: unknown): HTTPException | null {
   if (err instanceof HTTPException) return err;
   if (err instanceof TenantExistsError) return new HTTPException(409, { message: "Tenant s touto zkratkou už existuje" });
   if (err instanceof TenantNotFoundError) return new HTTPException(404, { message: "Tenant not found" });
+  if (err instanceof QuotaError) return new HTTPException(400, { message: err.message });
   if (err instanceof UserNotFoundError) return new HTTPException(404, { message: "User not found" });
   if (err instanceof ScheduleNotFoundError) return new HTTPException(404, { message: err.message });
   if (
@@ -186,6 +196,7 @@ export function createControlApp(deps: ControlDeps) {
       idleMinutes: t.idleMinutes,
       storageGb: t.storageGb,
       disabledTools: t.disabledTools,
+      quotas: t.quotas,
       backups: (await backups.list(t.id)).slice(0, 10).map((b) => ({ key: b.key, bytes: b.bytes, reason: b.reason, createdAt: iso(b.createdAt) })),
     };
   };
@@ -476,9 +487,18 @@ export function createControlApp(deps: ControlDeps) {
       c.set("tenant", row);
       await next();
     })
-    .get("/tenant", (c) => {
+    .get("/tenant", async (c) => {
       const t = c.get("tenant");
-      return c.json({ id: t.id, name: t.name, status: t.status, features: t.features, disabledTools: t.disabledTools });
+      return c.json({
+        id: t.id,
+        name: t.name,
+        status: t.status,
+        features: t.features,
+        disabledTools: t.disabledTools,
+        quotas: t.quotas,
+        // What the runtime shows next to the quotas it doesn't count itself.
+        counts: { members: await directory.memberCount(t.id), schedules: (await schedules.list(t.id)).length },
+      });
     })
     .put("/backups", async (c) => {
       const body = c.req.raw.body;

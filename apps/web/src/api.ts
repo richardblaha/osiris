@@ -25,7 +25,9 @@ import type {
   TenantFeatures,
   TenantInfo,
   TenantMember,
+  TenantQuotas,
   TenantSummary,
+  TenantUsage,
   ThreadMessage,
   ThreadSummary,
   UserProfile,
@@ -141,6 +143,7 @@ export const api = {
     json<UserProfile>("/me/profile", { method: "PATCH", body: JSON.stringify(changes) }),
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   tools: () => json<BuiltinTool[]>("/tools"),
+  usage: () => json<TenantUsage>("/usage"),
   saveTenantLogo: (image: Blob) => request("/tenant/logo", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
   removePhone: () => request("/me/phone", { method: "DELETE" }),
@@ -192,7 +195,10 @@ export const api = {
     tenant: (id: string) => json<TenantDetail>(`/admin/tenants/${id}`),
     createTenant: (id: string, name: string) =>
       json<TenantSummary>("/admin/tenants", { method: "POST", body: JSON.stringify({ id, name }) }),
-    updateTenant: (id: string, body: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[] }) =>
+    updateTenant: (
+      id: string,
+      body: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[]; quotas?: Partial<TenantQuotas> },
+    ) =>
       request(`/admin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteTenant: (id: string) => request(`/admin/tenants/${id}`, { method: "DELETE" }),
     setMember: (id: string, userId: string, role: "admin" | "member") =>

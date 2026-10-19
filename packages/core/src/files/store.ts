@@ -23,8 +23,10 @@ export class FileError extends Error {
 export interface FileStoreOptions {
   /** Largest single file. */
   maxFileBytes?: number;
-  /** All of the tenant's files together. */
+  /** All of the tenant's files together: the volume's ceiling. */
   quotaBytes?: number;
+  /** The tenant's own, lower limit when one is set (a system admin's quota), read on every write. */
+  quota?: () => Promise<number | null>;
   /** Temporary files of a thread are removed this long after its last change. */
   tempTtlMs?: number;
 }
@@ -66,6 +68,7 @@ const isMissing = (err: unknown) => (err as NodeJS.ErrnoException)?.code === "EN
 export class FileStore {
   private readonly maxFileBytes: number;
   private readonly quotaBytes: number;
+  private readonly quota?: () => Promise<number | null>;
   private readonly tempTtlMs: number;
   private used?: Promise<number>;
   private lastSweep = 0;
@@ -76,11 +79,18 @@ export class FileStore {
   ) {
     this.maxFileBytes = options.maxFileBytes ?? 25 * 1024 * 1024;
     this.quotaBytes = options.quotaBytes ?? 1024 * 1024 * 1024;
+    this.quota = options.quota;
     this.tempTtlMs = options.tempTtlMs ?? 24 * 60 * 60_000;
   }
 
   get limits() {
     return { maxFileBytes: this.maxFileBytes, quotaBytes: this.quotaBytes };
+  }
+
+  /** The limit in force: the tenant's quota, never above the volume's ceiling. */
+  async quotaInForce(): Promise<number> {
+    const own = await this.quota?.();
+    return own == null ? this.quotaBytes : Math.min(own, this.quotaBytes);
   }
 
   async list(loc: FileLocation, dir = ""): Promise<FileEntry[]> {
@@ -142,7 +152,7 @@ export class FileStore {
     if (existing?.isDirectory()) throw new FileError(`${path} je složka`, "exists");
     if (existing && !overwrite) throw new FileError(`Soubor ${path} už existuje`, "exists");
     const used = await this.usage();
-    if (used - (existing?.size ?? 0) + data.length > this.quotaBytes) {
+    if (used - (existing?.size ?? 0) + data.length > (await this.quotaInForce())) {
       throw new FileError("Úložiště firmy je plné. Smaž nepotřebné soubory.", "quota");
     }
 

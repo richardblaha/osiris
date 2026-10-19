@@ -122,6 +122,33 @@ describe("control API", () => {
     expect((await root("/admin/users/nobody", { method: "PATCH", ...json({ disabled: true }) })).status).toBe(404);
   });
 
+  it("keeps to the tenant's member and task quotas and tells the runtime", async () => {
+    const { asUser, asRuntime, directory, schedules } = await createTestControl({
+      users: [
+        { id: "bob", email: "bob@acme.cz", claims: { tenant: "acme", role: "osiris-user" } },
+        { id: "eva", email: "eva@acme.cz", claims: { role: "osiris-user" } },
+      ],
+    });
+    await directory.create("acme", "ACME");
+    const root = asUser("root", [], admin);
+    const json = (body: object) => ({ body: JSON.stringify(body) });
+    expect((await root("/admin/tenants/acme", { method: "PATCH", ...json({ quotas: { members: 0 } }) })).status).toBe(400);
+    expect((await root("/admin/tenants/acme", { method: "PATCH", ...json({ quotas: { members: 1, schedules: 1, tokensPerMonth: 5000 } }) })).status).toBe(204);
+    expect((await (await root("/admin/tenants/acme")).json()).quotas).toEqual({ storageMb: null, tokensPerMonth: 5000, members: 1, schedules: 1 });
+
+    // The tenant is full: nobody new joins, but the member's role still changes.
+    expect((await root("/admin/tenants/acme/members/eva", { method: "PUT", ...json({ role: "member" }) })).status).toBe(400);
+    expect((await root("/admin/tenants/acme/members/bob", { method: "PUT", ...json({ role: "admin" }) })).status).toBe(204);
+
+    const task = { title: "A", prompt: "p", runAt: new Date(Date.now() + 3_600_000).toISOString() };
+    await schedules.create("acme", { id: "bob", name: "Bob" }, task);
+    await expect(schedules.create("acme", { id: "bob", name: "Bob" }, task)).rejects.toThrow("nejvýš 1");
+    expect(await (await asRuntime("acme")("/tenant")).json()).toMatchObject({
+      quotas: { tokensPerMonth: 5000, members: 1, schedules: 1 },
+      counts: { members: 1, schedules: 1 },
+    });
+  });
+
   it("lets tenant admins manage their own members only", async () => {
     const { asUser, directory } = await createTestControl({
       users: [

@@ -5,6 +5,7 @@ import { InviteForm } from "./Invite.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 import { LoginLink } from "./TenantInfo.tsx";
 import { fileSize } from "./Files.tsx";
+import { QuotaForm } from "./Quotas.tsx";
 
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -170,6 +171,9 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
             Uložit
           </button>
         </form>
+        <h3 className="section-header mt-4">Kvóty</h3>
+        <p className="mt-1 text-xs text-fg-muted">Prázdné pole = bez limitu (úložiště: 80 % disku). Plnění vidí členové nad tenantem v panelu.</p>
+        <QuotaForm key={JSON.stringify(tenant.quotas)} quotas={tenant.quotas} busy={busy} onSave={(quotas) => void run(() => api.admin.updateTenant(id, { quotas }))} />
         <div className="mt-4 flex items-center gap-3">
           <h3 className="section-header flex-1">Zálohy</h3>
           <button disabled={busy} onClick={() => void run(() => api.admin.backup(id))} className="btn-link text-sm">

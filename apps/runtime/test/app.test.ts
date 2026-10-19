@@ -1,4 +1,5 @@
 import { AIMessage } from "@langchain/core/messages";
+import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import type { RunEvent, ThreadMessage } from "@osiris/shared";
 import { describe, expect, it } from "vitest";
 import { createTestApp, createTestTenants } from "./helpers.ts";
@@ -216,6 +217,35 @@ describe("tenant features", () => {
     await (await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
     expect(bound[0]).toEqual(["search_knowledge", "remember", "forget"]);
     expect(model.calls[0]?.[0]?.text).not.toContain("# DOVEDNOSTI");
+  });
+
+  it("keeps to the tenant's quotas and reports their use", async () => {
+    const { as, tenants, model } = await setup([new AIMessage({ content: "Ahoj.", usage_metadata: { input_tokens: 90, output_tokens: 10, total_tokens: 100 } })]);
+    const acme = await tenants.get("acme");
+    const bob = as("bob:tenant=acme");
+    const chat = async () => {
+      const { id } = await (await bob("/threads", { method: "POST" })).json();
+      return (await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
+    };
+
+    // The model's tokens are counted per month; once the quota is used up the model isn't called any more.
+    acme.features.limits = { storageMb: 1, tokensPerMonth: 100, members: 5, schedules: null };
+    expect(await chat()).toContain("Ahoj.");
+    expect(await chat()).toContain(TOKENS_EXHAUSTED);
+    expect(model.calls).toHaveLength(1);
+
+    // Files can't go past the storage quota.
+    const big = "x".repeat(700 * 1024);
+    expect((await as("acme")("/files/content?scope=tenant&path=a.txt", { method: "PUT", body: big })).status).toBe(201);
+    const full = await as("acme")("/files/content?scope=tenant&path=b.txt", { method: "PUT", body: big });
+    expect(full.status).toBe(507);
+
+    expect(await (await bob("/usage")).json()).toEqual({
+      storage: { used: 700 * 1024, limit: 1024 * 1024 },
+      tokens: { used: 100, limit: 100 },
+      members: { used: 0, limit: 5 },
+      schedules: { used: 0, limit: null },
+    });
   });
 
   it("drops built-in tools a system admin switched off and lists them all with their state", async () => {

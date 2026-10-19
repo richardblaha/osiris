@@ -1,4 +1,4 @@
-import { FEATURES, type AdminUser, type DirectoryUser, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type AdminUser, type DirectoryUser, type TenantQuotas, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
 import { CLAIMS, claimList, isAuthorized, SYSTEM_ADMIN_ROLE, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
 import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
@@ -18,9 +18,12 @@ export interface TenantRow {
   logo: string | null;
   /** Built-in tools switched off for the tenant, by name. */
   disabledTools: string[];
+  quotas: TenantQuotas;
 }
 
 export class TenantExistsError extends Error {}
+/** A quota is full; the message can be shown. */
+export class QuotaError extends Error {}
 export class TenantNotFoundError extends Error {}
 
 /** Everything is on until a system admin switches it off, so features added later reach existing tenants. */
@@ -37,6 +40,7 @@ interface Row {
   created_at: number;
   logo: string | null;
   disabled_tools: string;
+  quotas: string;
 }
 
 const logoKey = (id: string, version: string) => `tenant-logos/${id}/${version}`;
@@ -51,6 +55,7 @@ const toTenant = (r: Row, publicUrl = ""): TenantRow => ({
   createdAt: Number(r.created_at),
   logo: r.logo ? `${publicUrl}/auth/tenant-logos/${r.id}/${r.logo}` : null,
   disabledTools: JSON.parse(r.disabled_tools ?? "[]") as string[],
+  quotas: { ...NO_QUOTAS, ...(JSON.parse(r.quotas ?? "{}") as Partial<TenantQuotas>) },
 });
 
 /** Tenants in the central database. Members are not stored here: they are the users whose claims name the tenant. */
@@ -117,15 +122,23 @@ export class TenantStore {
 
   async update(
     id: string,
-    changes: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[] },
+    changes: {
+      name?: string;
+      features?: Partial<TenantFeatures>;
+      idleMinutes?: number;
+      storageGb?: number;
+      disabledTools?: string[];
+      quotas?: Partial<TenantQuotas>;
+    },
   ) {
     const tenant = await this.active(id);
     const features = changes.features ? { ...tenant.features, ...changes.features } : tenant.features;
     await this.db.execute([
       run(
-        "UPDATE tenants SET name = ?, features = ?, disabled_tools = ?, idle_minutes = ?, storage_gb = ?, updated_at = ? WHERE id = ?",
+        "UPDATE tenants SET name = ?, features = ?, quotas = ?, disabled_tools = ?, idle_minutes = ?, storage_gb = ?, updated_at = ? WHERE id = ?",
         changes.name ?? tenant.name,
         JSON.stringify(features),
+        JSON.stringify({ ...tenant.quotas, ...changes.quotas }),
         JSON.stringify([...new Set(changes.disabledTools ?? tenant.disabledTools)].sort()),
         changes.idleMinutes ?? tenant.idleMinutes,
         // A volume can grow but not shrink.
@@ -241,8 +254,12 @@ export class TenantDirectory {
 
   /** Makes the user a member or admin of the tenant, or removes them (`null`). */
   async setRole(id: string, userId: string, role: Role | null) {
-    await this.store.active(id);
+    const tenant = await this.store.active(id);
     const user = await this.users.get(userId);
+    // A new member needs room; changing a member's role or removing them always works.
+    if (role && !roleIn(user, id) && tenant.quotas.members !== null && (await this.memberCount(id)) >= tenant.quotas.members) {
+      throw new QuotaError(`Tenant může mít nejvýš ${tenant.quotas.members} uživatelů`);
+    }
     await this.users.setClaims(userId, {
       // A user is in one of the two claims only.
       [CLAIMS.tenant]: withTenant(user.claims[CLAIMS.tenant], id, role === "member"),
@@ -270,6 +287,11 @@ export class TenantDirectory {
   }
 
   /** Users a system admin can add to a tenant. */
+  /** Active users whose claims name the tenant. */
+  async memberCount(id: string): Promise<number> {
+    return (await this.activeUsers()).filter((u) => roleIn(u, id)).length;
+  }
+
   /** Every user with their access, for system admins; disabled ones too. */
   async adminUsers(): Promise<AdminUser[]> {
     const [all, active] = await Promise.all([this.users.list(), this.store.list()]);

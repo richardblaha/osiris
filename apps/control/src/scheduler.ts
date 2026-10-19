@@ -129,13 +129,16 @@ export class ScheduleStore {
   async create(tenantId: string, owner: { id: string; name: string | null }, input: ScheduleInput, now = Date.now()): Promise<Schedule> {
     const timezone = input.timezone ?? this.defaultTimezone;
     const t = this.timing({ ...input, timezone }, now);
-    const [counts] = await this.db.query<{ mine: number; total: number }>(
-      "SELECT SUM(owner_id = ?) AS mine, COUNT(*) AS total FROM schedules WHERE tenant_id = ?",
-      [owner.id, tenantId],
+    const [counts] = await this.db.query<{ mine: number; total: number; quotas: string | null }>(
+      `SELECT SUM(owner_id = ?) AS mine, COUNT(*) AS total, (SELECT quotas FROM tenants WHERE id = ?) AS quotas
+       FROM schedules WHERE tenant_id = ?`,
+      [owner.id, tenantId, tenantId],
       { fresh: true },
     );
+    // The tenant's quota (set by a system admin) or the built-in ceiling.
+    const max = (JSON.parse(counts?.quotas ?? "{}") as { schedules?: number | null }).schedules ?? MAX_PER_TENANT;
     if (Number(counts?.mine ?? 0) >= MAX_PER_USER) throw new ScheduleError(`Můžeš mít nejvýš ${MAX_PER_USER} plánovaných úloh`);
-    if (Number(counts?.total ?? 0) >= MAX_PER_TENANT) throw new ScheduleError(`Tenant může mít nejvýš ${MAX_PER_TENANT} plánovaných úloh`);
+    if (Number(counts?.total ?? 0) >= max) throw new ScheduleError(`Tenant může mít nejvýš ${max} plánovaných úloh`);
     const id = randomUUID();
     await this.db.execute([
       run(

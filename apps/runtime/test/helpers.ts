@@ -13,7 +13,7 @@ import type { McpConnector } from "@osiris/core/mcp/toolset.ts";
 import { openTenant, type Tenant, type TenantDeps } from "@osiris/core/tenants/tenant.ts";
 import type { FeatureSource } from "@osiris/core/tenants/features.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
-import { FEATURES, type Feature, type TenantFeatures } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type Feature, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
 import { accessFromClaims, membershipsFromClaims, isAuthorized } from "@osiris/platform/claims.ts";
 import { generateInternalKeys, InternalSigner, InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
 import { Activity } from "../src/activity.ts";
@@ -41,9 +41,14 @@ export class StaticFeatures implements FeatureSource {
   }
 
   disabled: string[] = [];
+  limits: TenantQuotas = { ...NO_QUOTAS };
 
   async disabledTools() {
     return this.disabled;
+  }
+
+  async quotas() {
+    return this.limits;
   }
 
   async set(changes: Partial<TenantFeatures>) {

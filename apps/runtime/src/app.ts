@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { BuiltinTool, Feature, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
+import type { BuiltinTool, Feature, TenantUsage, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
@@ -92,6 +92,8 @@ export interface RuntimeAppDeps {
   snapshot: (reason: string) => Promise<{ key: string; bytes: number }>;
   /** Publishes a folder of the tenant's files as a site (through control). */
   publishSite?: (loc: FileLocation, dir: string, domain: string, userId: string) => Promise<SiteRelease>;
+  /** Members and scheduled tasks, which control counts, for the quota meters. */
+  counts?: () => Promise<{ members: number; schedules: number }>;
 }
 
 /**
@@ -99,7 +101,7 @@ export interface RuntimeAppDeps {
  * the PocketID token and the membership), scheduled runs and WhatsApp messages from control, activity checks and
  * snapshots from the operator. The tenant is fixed: this process serves one tenant and refuses tokens for another.
  */
-export function createRuntimeApp({ tenant, verifier, activity, snapshot, publishSite }: RuntimeAppDeps) {
+export function createRuntimeApp({ tenant, verifier, activity, snapshot, publishSite, counts }: RuntimeAppDeps) {
   // One run per thread at a time. In-process is enough: a tenant has exactly one runtime.
   const activeRuns = new Set<string>();
 
@@ -357,6 +359,24 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
     .get("/settings", async (c) => {
       const { tenant, user } = c.get("ctx");
       return c.json<UserSettings>(await tenant.settings.get(user.sub));
+    })
+
+    // How much of its quotas the tenant uses, for the meters above the tenant in the sidebar.
+    .get("/usage", async (c) => {
+      const { tenant } = c.get("ctx");
+      const [quotas, storage, storageLimit, tokens, counted] = await Promise.all([
+        tenant.features.quotas(),
+        tenant.files.usage(),
+        tenant.files.quotaInForce(),
+        tenant.usage.tokens(),
+        counts?.() ?? { members: 0, schedules: 0 },
+      ]);
+      return c.json<TenantUsage>({
+        storage: { used: storage, limit: storageLimit },
+        tokens: { used: tokens, limit: quotas.tokensPerMonth },
+        members: { used: counted.members, limit: quotas.members },
+        schedules: { used: counted.schedules, limit: quotas.schedules },
+      });
     })
 
     // The assistant's built-in tools and whether each is available (its feature on, not switched off).

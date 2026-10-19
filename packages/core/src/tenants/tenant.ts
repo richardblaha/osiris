@@ -21,6 +21,7 @@ import { FileStore, type FileStoreOptions } from "../files/store.ts";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { Feature } from "@osiris/shared";
 import type { FeatureSource } from "./features.ts";
+import { UsageStore } from "../agent/usage.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
 export interface Tenant {
@@ -38,6 +39,7 @@ export interface Tenant {
   files: FileStore;
   /** The built-in tools, each with the feature it belongs to. */
   builtinTools: [Feature, StructuredToolInterface][];
+  usage: UsageStore;
   graph: AgentGraph;
 }
 
@@ -72,7 +74,14 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const mcp = new McpToolset(mcpServers, secrets, deps.mcp);
   const settings = new UserSettingsStore(db);
   const features = deps.features;
-  const files = new FileStore(deps.files.dir, deps.files);
+  const usage = new UsageStore(db);
+  const files = new FileStore(deps.files.dir, {
+    ...deps.files,
+    quota: async () => {
+      const mb = (await features.quotas()).storageMb;
+      return mb === null ? null : mb * 1024 * 1024;
+    },
+  });
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
   const builtins: [Feature, StructuredToolInterface][] = [
@@ -94,6 +103,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
       return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id))] : tools;
     },
     features,
+    usage,
     checkpointer,
     timezone: deps.timezone,
     skills,
@@ -101,5 +111,5 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     settings,
     secrets,
   });
-  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, files, builtinTools: builtins, graph };
+  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, files, builtinTools: builtins, usage, graph };
 }

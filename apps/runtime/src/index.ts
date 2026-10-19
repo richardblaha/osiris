@@ -40,6 +40,7 @@ if (!config.TENANT_SECRETS_KEY) console.warn("TENANT_SECRETS_KEY not set: secret
 const files = { dir: filesDir(config.DATA_DIR), maxFileBytes: config.FILES_MAX_FILE_MB * 1024 * 1024, quotaBytes: config.FILES_QUOTA_MB * 1024 * 1024 };
 const bundledSkills = loadSkills(config.SKILLS_DIR);
 
+const features = new RemoteFeatures(control);
 const tenant = openTenant(config.TENANT_ID, db, {
   model: await createChatModel(config.LLM_MODEL),
   embeddings: createEmbeddings(config.EMBEDDING_MODEL),
@@ -50,7 +51,7 @@ const tenant = openTenant(config.TENANT_ID, db, {
   mcp: { allowPrivate: config.MCP_ALLOW_PRIVATE },
   files,
   gotenbergUrl: config.GOTENBERG_URL,
-  features: new RemoteFeatures(control),
+  features,
   extraTools: (store) => controlTools(control, store, config.TIMEZONE),
 });
 
@@ -63,6 +64,7 @@ const app = createRuntimeApp({
   activity,
   snapshot,
   publishSite: (loc, dir, domain, userId) => publishFolder(control, tenant.files, loc, dir, domain, userId),
+  counts: () => features.counts(),
 });
 const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) =>
   console.log(`Runtime of ${config.TENANT_ID} listening on http://localhost:${port}`),

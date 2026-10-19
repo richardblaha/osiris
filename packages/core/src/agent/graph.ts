@@ -1,5 +1,5 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { SystemMessage } from "@langchain/core/messages";
+import { AIMessage, SystemMessage } from "@langchain/core/messages";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { END, MessagesAnnotation, START, StateGraph, type BaseCheckpointSaver } from "@langchain/langgraph";
@@ -9,6 +9,7 @@ import type { MemoryStore } from "./memory.ts";
 import { buildSystemPrompt } from "./prompt.ts";
 import type { UserSettingsStore } from "./settings.ts";
 import type { SkillStore } from "./skills.ts";
+import type { UsageStore } from "./usage.ts";
 import type { SecretVault } from "../vault/vault.ts";
 import type { FeatureSource } from "../tenants/features.ts";
 import { DEFAULT_FEATURES } from "../tenants/features.ts";
@@ -33,11 +34,15 @@ export interface AgentDeps {
   secrets?: SecretVault;
   /** Switched-off features drop out of the prompt too (skills, memory, secrets, knowledge rule). */
   features?: FeatureSource;
+  /** Counts the model's tokens per month; with a quota set, the agent stops answering once it's used up. */
+  usage?: UsageStore;
 }
+
+export const TOKENS_EXHAUSTED = "Měsíční limit využití asistenta pro tuto firmu je vyčerpaný. Obrať se na správce.";
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
 export function createAgentGraph(deps: AgentDeps) {
-  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features } = deps;
+  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage } = deps;
   if (!model.bindTools) throw new Error("Chat model does not support tool calling");
   const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
 
@@ -45,6 +50,8 @@ export function createAgentGraph(deps: AgentDeps) {
     const ctx = getRunContext(config);
     if (ctx.tenant_id !== tenantId) throw new Error(`Run for tenant ${ctx.tenant_id} sent to graph of ${tenantId}`);
     const on = (await features?.get()) ?? DEFAULT_FEATURES;
+    const limit = (await features?.quotas())?.tokensPerMonth ?? null;
+    if (usage && limit !== null && (await usage.tokens()) >= limit) return { messages: [new AIMessage(TOKENS_EXHAUSTED)] };
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.
     const system = new SystemMessage(
       buildSystemPrompt({
@@ -60,6 +67,7 @@ export function createAgentGraph(deps: AgentDeps) {
       }),
     );
     const response = await model.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);
+    await usage?.add(response.usage_metadata?.total_tokens ?? 0);
     return { messages: [response] };
   };
 

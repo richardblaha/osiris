@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import type { Feature, Schedule, ScheduleInput, SiteDomain, SiteRelease, TenantFeatures } from "@osiris/shared";
+import { NO_QUOTAS, type Feature, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
 import type { FeatureSource } from "@osiris/core/tenants/features.ts";
 import { callJson, ServiceError } from "@osiris/platform/http.ts";
 
@@ -29,7 +29,15 @@ export class ControlClient {
   }
 
   tenant() {
-    return this.json<{ id: string; name: string; status: string; features: TenantFeatures; disabledTools: string[] }>("/tenant");
+    return this.json<{
+      id: string;
+      name: string;
+      status: string;
+      features: TenantFeatures;
+      disabledTools: string[];
+      quotas: TenantQuotas;
+      counts: { members: number; schedules: number };
+    }>("/tenant");
   }
 
   /** Streams a snapshot to object storage through control. */
@@ -89,8 +97,8 @@ export class ControlClient {
 
 /** Features and switched-off tools from control, cached briefly; if control is unreachable, the last known ones stay in force. */
 export class RemoteFeatures implements FeatureSource {
-  private cached?: { at: number; features: TenantFeatures; disabledTools: string[] };
-  private loading?: Promise<{ features: TenantFeatures; disabledTools: string[] }>;
+  private cached?: TenantPolicy & { at: number };
+  private loading?: Promise<TenantPolicy>;
 
   constructor(private readonly control: ControlClient) {}
 
@@ -98,7 +106,16 @@ export class RemoteFeatures implements FeatureSource {
     if (this.cached && Date.now() - this.cached.at < FEATURES_TTL_MS) return this.cached;
     this.loading ??= this.control
       .tenant()
-      .then((t) => (this.cached = { at: Date.now(), features: t.features, disabledTools: t.disabledTools ?? [] }))
+      .then(
+        (t) =>
+          (this.cached = {
+            at: Date.now(),
+            features: t.features,
+            disabledTools: t.disabledTools ?? [],
+            quotas: { ...NO_QUOTAS, ...t.quotas },
+            counts: t.counts ?? { members: 0, schedules: 0 },
+          }),
+      )
       .catch((err) => {
         if (this.cached) return this.cached;
         throw err;
@@ -118,4 +135,20 @@ export class RemoteFeatures implements FeatureSource {
   async disabledTools() {
     return (await this.load()).disabledTools;
   }
+
+  async quotas() {
+    return (await this.load()).quotas;
+  }
+
+  /** Members and scheduled tasks, counted by control (as of the last fetch). */
+  async counts() {
+    return (await this.load()).counts;
+  }
+}
+
+interface TenantPolicy {
+  features: TenantFeatures;
+  disabledTools: string[];
+  quotas: TenantQuotas;
+  counts: { members: number; schedules: number };
 }

@@ -9,6 +9,7 @@ import type {
   TenantFeatures,
   TenantInfo as Tenant,
   TenantSummary,
+  TenantUsage,
   ThreadSummary,
 } from "@osiris/shared";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
@@ -28,6 +29,7 @@ import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
 import { roleLabel, TenantInfo } from "./TenantInfo.tsx";
 import { TenantAdmin, TenantLogo } from "./Tenants.tsx";
+import { QuotaMeters } from "./Quotas.tsx";
 import { BuiltinTools } from "./Tools.tsx";
 import { UserAdmin } from "./Users.tsx";
 
@@ -163,6 +165,10 @@ function Workspace() {
   const [lists, setLists] = useState<Lists>(EMPTY);
   // The system admin's tenant administration.
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
+  // The active tenant's quotas and their use, shown above it in the sidebar.
+  const [usage, setUsage] = useState<TenantUsage>();
+  // Not fatal: the meters just stay out.
+  const refreshUsage = () => api.usage().then(setUsage, () => setUsage(undefined));
   // `?profile=security` comes back from linking a social account (or a first sign-in by link): open the profile.
   const [notice] = useState(() => {
     const params = new URLSearchParams(location.search);
@@ -198,7 +204,9 @@ function Workspace() {
     store(LAST_TENANT, id);
     setTenantInfo(undefined);
     setLists(EMPTY);
+    setUsage(undefined);
     void loadTenant();
+    void refreshUsage();
     // The profile stays open (it may have been opened from a link); everything else starts a new chat.
     setView((v) => (v.kind === "profile" ? v : { kind: "chat", threadId: null, session: (v.kind === "chat" ? v.session : 0) + 1 }));
     void refreshThreads();
@@ -333,6 +341,7 @@ function Workspace() {
         </nav>
 
         <div className="border-t border-line p-2">
+          {tenant && usage && <QuotaMeters usage={usage} />}
           <TenantSwitcher
             me={me}
             tenant={tenant}
@@ -422,7 +431,7 @@ function Workspace() {
             key={`${tenant.id}:${view.session}`}
             threadId={view.threadId}
             onThreadCreated={(id) => setView((v) => (v.kind === "chat" ? { ...v, threadId: id } : v))}
-            onRunFinished={refreshThreads}
+            onRunFinished={() => (void refreshThreads(), void refreshUsage())}
           />
         )}
       </main>
