@@ -132,7 +132,6 @@ function rows(section: Section, lists: Lists): Row[] {
 
 const LAST_TENANT = "osiris.tenant";
 const SCOPE_TAB = "osiris.scope";
-const OPEN_SECTIONS = "osiris.sections";
 
 /** Per-browser conveniences only; the app works the same when storage is unavailable. */
 const stored = <T,>(key: string, fallback: T): T => {
@@ -167,7 +166,6 @@ function Workspace() {
     return { linked: params.get("linked") ?? undefined, error: params.get("error") ?? undefined };
   });
   const [view, setView] = useState<View>(notice ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
-  const [open, setOpen] = useState<Record<string, boolean>>(() => stored(OPEN_SECTIONS, { threads: true }));
   // The sidebar's tab: tenant-wide or the user's own records, files and settings.
   const [scope, setScope] = useState<Scope>(() => (stored<string>(SCOPE_TAB, "personal") === "tenant" ? "tenant" : "personal"));
   const [error, setError] = useState<string>();
@@ -183,12 +181,6 @@ function Workspace() {
     );
   const refreshTenants = () => api.admin.tenants().then(setTenants, (e: Error) => setError(e.message));
 
-  const toggle = (section: string) =>
-    setOpen((o) => {
-      const next = { ...o, [section]: !o[section] };
-      store(OPEN_SECTIONS, next);
-      return next;
-    });
 
   const loadTenant = () =>
     api.tenant().then((t) => {
@@ -283,7 +275,10 @@ function Workspace() {
         )}
         <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
           {tenant && (
-            <SidebarSection title="Konverzace" count={threads.length} open={!!open.threads} onToggle={() => toggle("threads")}>
+            <section>
+              <h2 className="section-header flex items-center gap-1 px-2 py-1">
+                Konverzace {threads.length > 0 && <span className="font-normal text-fg-muted">{threads.length}</span>}
+              </h2>
               {threads.map((t) => (
                 <div key={t.id} data-active={view.kind === "chat" && view.threadId === t.id} className="list-row group flex items-center px-2">
                   <button onClick={() => openThread(t.id)} className="flex-1 truncate py-1.5 text-left">
@@ -296,7 +291,7 @@ function Workspace() {
                 </div>
               ))}
               {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
-            </SidebarSection>
+            </section>
           )}
           {hasScoped && (
             <>
@@ -541,23 +536,6 @@ function SectionList(props: { title: string; add: string; scope: Scope; canAdd: 
       </ul>
       {!props.rows.length && <p className="px-2 py-2 text-sm text-fg-muted">Zatím nic.</p>}
     </div>
-  );
-}
-
-function SidebarSection(props: { title: string; count: number; open: boolean; onToggle: () => void; children: ReactNode }) {
-  return (
-    <section className="mt-2 first:mt-0">
-      <div className="flex items-center">
-        <button onClick={props.onToggle} aria-expanded={props.open} className="section-header flex flex-1 items-center gap-1 px-2 py-1 text-left">
-          <svg viewBox="0 0 16 16" className={`h-3 w-3 transition-transform ${props.open ? "rotate-90" : ""}`} aria-hidden="true">
-            <path d="M6 4l4 4-4 4" fill="none" stroke="currentColor" strokeWidth="1.8" />
-          </svg>
-          {props.title}
-          {props.count > 0 && <span className="font-normal text-fg-muted">{props.count}</span>}
-        </button>
-      </div>
-      {props.open && <div className="mt-0.5">{props.children}</div>}
-    </section>
   );
 }
 
