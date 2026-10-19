@@ -7,8 +7,8 @@ import { FEATURE_LABELS } from "./Tenants.tsx";
 
 export const roleLabel = (role: Tenant["role"]) => (role === "admin" ? "správce" : "uživatel");
 
-/** The active tenant as the user's claims describe it, and the other tenants they can switch to. */
-export function TenantInfo({ me, tenant, onSelect }: { me: MeResponse; tenant?: Tenant; onSelect: (id: string) => void }) {
+/** The active tenant as the user's claims describe it (switching is in the sidebar's tenant menu). */
+export function TenantInfo({ me, tenant }: { me: MeResponse; tenant?: Tenant }) {
   return (
     <div className="detail">
       {tenant ? (
@@ -41,21 +41,6 @@ export function TenantInfo({ me, tenant, onSelect }: { me: MeResponse; tenant?: 
         </>
       ) : (
         <h1 className="text-lg font-semibold">Žádný tenant</h1>
-      )}
-
-      {me.tenants.length > 1 && (
-        <>
-          <h2 className="section-header mt-8">Přepnout tenanta</h2>
-          <ul className="mt-2">
-            {me.tenants.map((t) => (
-              <li key={t.id}>
-                <button onClick={() => onSelect(t.id)} data-active={t.id === tenant?.id} className="list-row block w-full px-2 py-1.5 text-left">
-                  {t.name} <span className="text-xs text-fg-muted">· {t.id} · {roleLabel(t.role)}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-        </>
       )}
     </div>
   );
