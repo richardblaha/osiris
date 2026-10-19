@@ -1,9 +1,9 @@
 import { join } from "node:path";
-import { SYSTEM_ADMIN_ROLE, CLAIMS } from "@osiris/platform/claims.ts";
+import { SYSTEM_ADMIN_ROLE, CLAIMS, claimList } from "@osiris/platform/claims.ts";
 import { FsObjectStore, S3ObjectStore } from "@osiris/platform/objects.ts";
 import { LocalDb, migrate, RqliteDb } from "@osiris/platform/rqlite.ts";
 import { loadConfig } from "../config.ts";
-import { PocketIdClient, type PocketIdUser } from "../pocketid.ts";
+import { PocketIdClient, type PocketIdGroup, type PocketIdUser } from "../pocketid.ts";
 import { dbUsers } from "../users.ts";
 
 // User administration from the command line (`pnpm --filter @osiris/control users <command>`):
@@ -21,17 +21,32 @@ const objects = config.S3_BUCKET
   : new FsObjectStore(config.LOCAL_OBJECTS_DIR);
 const users = dbUsers(db, { objects, publicUrl: config.PUBLIC_URL });
 
+/** Claims named more than once (the user's own and their groups') become one comma-separated list. */
+const mergeClaims = (claims: { key: string; value: string }[]) => {
+  const values = new Map<string, string[]>();
+  for (const { key, value } of claims) values.set(key, [...(values.get(key) ?? []), ...claimList(value)]);
+  return Object.fromEntries([...values].map(([key, list]) => [key, claimList(list).join(",")]));
+};
+
 if (command === "import-pocketid") {
   if (!config.POCKETID_URL || !config.POCKETID_API_KEY) throw new Error("POCKETID_URL and POCKETID_API_KEY are required");
   const pocketId = new PocketIdClient(config.POCKETID_URL, config.POCKETID_API_KEY);
-  const existing = new Set((await users.list()).map((u) => u.id));
+  const existing = new Map((await users.list()).map((u) => [u.id, u]));
+  // PocketID puts its groups' claims into the token next to the user's own, so access often lives on groups.
+  const groupClaims = new Map((await pocketId.all<PocketIdGroup>("api/user-groups")).map((g) => [g.id, g.customClaims ?? []]));
   let imported = 0;
-  for (const u of await pocketId.all<PocketIdUser>("api/users")) {
-    if (existing.has(u.id)) {
-      console.log(`skip ${u.id} (${u.email ?? u.username}): already here`);
+  for (const listed of await pocketId.all<PocketIdUser>("api/users")) {
+    const u = await pocketId.get<PocketIdUser>(`api/users/${encodeURIComponent(listed.id)}`);
+    const claims = mergeClaims([...(u.customClaims ?? []), ...(u.userGroups ?? []).flatMap((g) => groupClaims.get(g.id) ?? [])]);
+    const known = existing.get(u.id);
+    if (known) {
+      // Running again fills in claims (e.g. from groups) without dropping what was granted in Osiris since.
+      const missing = Object.entries(mergeClaims([...Object.entries(known.claims), ...Object.entries(claims)].map(([key, value]) => ({ key, value }))))
+        .filter(([key, value]) => known.claims[key] !== value);
+      if (missing.length) await users.setClaims(u.id, Object.fromEntries(missing));
+      console.log(`${missing.length ? "updated" : "skip"} ${u.id} (${u.email ?? u.username}): already here${missing.length ? `, claims ${JSON.stringify(Object.fromEntries(missing))}` : ""}`);
       continue;
     }
-    const claims = Object.fromEntries((u.customClaims ?? []).map((c) => [c.key, c.value]));
     const [first = "", ...rest] = (u.displayName ?? "").split(" ");
     const user = await users.create({
       // The same id: tenant data (memories, files, schedules) is keyed by it.

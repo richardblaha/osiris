@@ -64,6 +64,14 @@ export interface PocketIdUser {
   displayName?: string;
   disabled?: boolean;
   customClaims?: { key: string; value: string }[];
+  /** Only on a single user (`api/users/:id`), without the groups' claims. */
+  userGroups?: { id: string; name?: string }[];
+}
+
+export interface PocketIdGroup {
+  id: string;
+  name?: string;
+  customClaims?: { key: string; value: string }[];
 }
 
 export const displayName = (u: PocketIdUser) =>
