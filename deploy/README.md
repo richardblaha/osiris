@@ -70,7 +70,7 @@ to the business number, which sets the claim `phone_number`.
 1. Roll out the new images with the secrets below (`AUTH_*`, `EMAILIT_API_KEY`, social keys).
 2. Copy the users, keeping their ids (tenant data is keyed by them), names, emails and claims:
    ```bash
-   kubectl -n osiris exec deploy/control -- env POCKETID_URL=https://auth.k6labs.cz POCKETID_API_KEY="$POCKETID_API_KEY" \
+   kubectl -n osiris exec deploy/control -- env POCKETID_URL=http://pocket-id.pocket-id.svc.cluster.local:1411 POCKETID_API_KEY="$POCKETID_API_KEY" \
      node_modules/.bin/tsx src/auth/users-cli.ts import-pocketid --links
    ```
    Passkeys can't move (they belong to auth.k6labs.cz), so people sign in once with Google/Facebook, a link by email
