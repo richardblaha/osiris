@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { Feature, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
+import type { BuiltinTool, Feature, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
@@ -357,6 +357,15 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
     .get("/settings", async (c) => {
       const { tenant, user } = c.get("ctx");
       return c.json<UserSettings>(await tenant.settings.get(user.sub));
+    })
+
+    // The assistant's built-in tools and whether each is available (its feature on, not switched off).
+    .get("/tools", async (c) => {
+      const { tenant } = c.get("ctx");
+      const [on, off] = await Promise.all([tenant.features.get(), tenant.features.disabledTools()]);
+      return c.json<BuiltinTool[]>(
+        tenant.builtinTools.map(([feature, t]) => ({ name: t.name, description: t.description, feature, featureOn: on[feature], disabled: off.includes(t.name) })),
+      );
     })
 
     .put("/settings", async (c) => {

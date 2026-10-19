@@ -12,7 +12,7 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   knowledge: { label: "Znalostní báze", hint: "dokumenty, ve kterých asistent vyhledává" },
   skills: { label: "Dovednosti", hint: "postupy, podle kterých asistent pracuje" },
   memory: { label: "Paměť", hint: "fakta, která si asistent pamatuje mezi konverzacemi" },
-  mcp: { label: "Nástroje (MCP)", hint: "externí služby připojené přes MCP servery" },
+  mcp: { label: "MCP servery", hint: "externí služby a nástroje připojené přes MCP" },
   http: { label: "Webová API", hint: "nástroj http_request pro volání API z dovedností" },
   whatsapp: { label: "WhatsApp", hint: "asistent odpovídá i ve WhatsAppu" },
   files: { label: "Soubory", hint: "úložiště šablon, obrázků a dokumentů, se kterými asistent pracuje" },

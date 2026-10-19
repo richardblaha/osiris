@@ -8,6 +8,8 @@ export const DEFAULT_FEATURES: TenantFeatures = Object.fromEntries(FEATURES.map(
 export interface FeatureSource {
   get(): Promise<TenantFeatures>;
   enabled(feature: Feature): Promise<boolean>;
+  /** Built-in tools a system admin switched off for the tenant, by name. */
+  disabledTools(): Promise<string[]>;
 }
 
 /**
@@ -28,6 +30,11 @@ export class TenantFeatureStore implements FeatureSource {
 
   async enabled(feature: Feature): Promise<boolean> {
     return (await this.get())[feature];
+  }
+
+  /** The monolith had no per-tool switches. */
+  async disabledTools(): Promise<string[]> {
+    return [];
   }
 
   async set(changes: Partial<TenantFeatures>): Promise<TenantFeatures> {

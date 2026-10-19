@@ -50,6 +50,8 @@ export interface UserDirectory {
   /** The stored picture of a user, if `version` is the current one. */
   picture(userId: string, version: string): ReturnType<ObjectStore["get"]>;
   markEmailVerified(userId: string): Promise<void>;
+  /** A disabled user can't sign in, and the gateway refuses their tokens. */
+  setDisabled(userId: string, disabled: boolean): Promise<void>;
   /** A one-time sign-in link for the user, e.g. for a new user who has no way to sign in yet. */
   loginLink(userId: string, ttlHours: number, purpose?: LinkPurpose): Promise<string>;
 }
@@ -210,6 +212,11 @@ export function dbUsers(db: Db, options: { objects: ObjectStore; publicUrl: stri
       const [r] = await db.query<{ picture: string | null }>("SELECT picture FROM users WHERE id = ?", [userId]);
       if (!r?.picture || r.picture !== version) return null;
       return options.objects.get(pictureKey(userId, version));
+    },
+
+    async setDisabled(userId, disabled) {
+      await row(userId);
+      await write(run("UPDATE users SET disabled = ?, updated_at = ? WHERE id = ?", disabled ? 1 : 0, Date.now(), userId));
     },
 
     async markEmailVerified(userId) {

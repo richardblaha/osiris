@@ -40,6 +40,12 @@ export class StaticFeatures implements FeatureSource {
     return this.features[feature];
   }
 
+  disabled: string[] = [];
+
+  async disabledTools() {
+    return this.disabled;
+  }
+
   async set(changes: Partial<TenantFeatures>) {
     this.features = { ...this.features, ...changes };
     return this.features;

@@ -217,4 +217,23 @@ describe("tenant features", () => {
     expect(bound[0]).toEqual(["search_knowledge", "remember", "forget"]);
     expect(model.calls[0]?.[0]?.text).not.toContain("# DOVEDNOSTI");
   });
+
+  it("drops built-in tools a system admin switched off and lists them all with their state", async () => {
+    const { as, tenants, model } = await setup([new AIMessage("Ahoj.")]);
+    const acme = await tenants.get("acme");
+    await acme.features.set({ mcp: false, http: false, files: false, scheduler: false, sites: false });
+    acme.features.disabled = ["forget"];
+    const bob = as("bob:tenant=acme");
+
+    const bound: string[][] = [];
+    model.bindTools = ((tools: { name: string }[]) => (bound.push(tools.map((t) => t.name)), model)) as never;
+    const { id } = await (await bob("/threads", { method: "POST" })).json();
+    await (await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
+    expect(bound[0]).toEqual(["search_knowledge", "load_skill", "remember"]);
+
+    const tools = (await (await bob("/tools")).json()) as { name: string; feature: string; featureOn: boolean; disabled: boolean; description: string }[];
+    expect(tools.find((t) => t.name === "forget")).toMatchObject({ feature: "memory", featureOn: true, disabled: true });
+    expect(tools.find((t) => t.name === "http_request")).toMatchObject({ feature: "http", featureOn: false, disabled: false });
+    expect(tools.every((t) => t.description.length > 0)).toBe(true);
+  });
 });

@@ -65,7 +65,7 @@ describe("control API", () => {
   });
 
   it("lets only system admins manage tenants", async () => {
-    const { asUser, users } = await createTestControl({ users: [{ id: "bob", name: "Bob", claims: { tenant: "acme" } }] });
+    const { asUser, asRuntime, users } = await createTestControl({ users: [{ id: "bob", name: "Bob", claims: { tenant: "acme" } }] });
     const root = asUser("root", [], admin);
     const json = (body: object) => ({ body: JSON.stringify(body) });
     expect((await asUser("alice", [{ tenantId: "acme", role: "admin" }])("/admin/tenants")).status).toBe(403);
@@ -78,9 +78,48 @@ describe("control API", () => {
     const detail = await (await root("/admin/tenants/novak")).json();
     expect(detail).toMatchObject({ id: "novak", name: "Novák a syn", idleMinutes: 0, memberList: [{ userId: "bob", role: "admin" }], backups: [] });
     expect(detail.features).toMatchObject({ knowledge: true, mcp: false, http: false });
+    // Built-in tools are switched off by name; the runtime learns it with its features.
+    expect((await root("/admin/tenants/novak", { method: "PATCH", ...json({ disabledTools: ["Bad name"] }) })).status).toBe(400);
+    expect((await root("/admin/tenants/novak", { method: "PATCH", ...json({ disabledTools: ["remember", "http_request", "remember"] }) })).status).toBe(204);
+    expect((await (await root("/admin/tenants/novak")).json()).disabledTools).toEqual(["http_request", "remember"]);
+    expect(await (await asRuntime("novak")("/tenant")).json()).toMatchObject({ disabledTools: ["http_request", "remember"] });
     expect((await root("/admin/tenants/nope")).status).toBe(404);
     expect((await root("/admin/tenants/novak", { method: "DELETE" })).status).toBe(204);
     expect((await users.get("bob")).claims).toEqual({ tenant: "acme", role: "osiris-user" });
+  });
+
+  it("lets system admins manage users: create, edit, block, promote, sign-in links", async () => {
+    const { asUser, directory, users } = await createTestControl({
+      users: [
+        { id: "root", email: "root@k6labs.cz", claims: { role: "osiris-admin" } },
+        { id: "bob", firstName: "Bob", lastName: "B", email: "bob@acme.cz", claims: { tenant: "acme", role: "osiris-user" } },
+      ],
+    });
+    await directory.create("acme", "ACME");
+    const root = asUser("root", [], admin);
+    const json = (body: object) => ({ body: JSON.stringify(body) });
+    expect((await asUser("bob", [{ tenantId: "acme", role: "admin" }])("/admin/users")).status).toBe(403);
+
+    const list = await (await root("/admin/users")).json();
+    expect(list.find((u: { id: string }) => u.id === "bob")).toMatchObject({ email: "bob@acme.cz", systemAdmin: false, disabled: false, tenants: [{ id: "acme", role: "member" }] });
+    expect(list.find((u: { id: string }) => u.id === "root")).toMatchObject({ systemAdmin: true, tenants: [] });
+
+    expect((await root("/admin/users", { method: "POST", ...json({ email: "BOB@acme.cz", firstName: "B", lastName: "" }) })).status).toBe(409);
+    const created = await root("/admin/users", { method: "POST", ...json({ email: "eva@firma.cz", firstName: "Eva", lastName: "Nová" }) });
+    const { userId, loginLink } = await created.json();
+    expect([created.status, loginLink]).toEqual([201, expect.stringMatching(/^http:\/\/osiris\.test\/auth\/link\//)]);
+    expect(await users.get(userId)).toMatchObject({ name: "Eva Nová", claims: { role: "osiris-user" } });
+
+    expect((await root("/admin/users/bob", { method: "PATCH", ...json({ lastName: "Novák", systemAdmin: true, disabled: true }) })).status).toBe(204);
+    expect(await users.get("bob")).toMatchObject({ name: "Bob Novák", disabled: true, claims: { tenant: "acme", role: "osiris-admin" } });
+    expect((await root("/admin/users/bob/login-link", { method: "POST" })).status).toBe(400);
+    expect((await root("/admin/users/bob", { method: "PATCH", ...json({ systemAdmin: false, disabled: false }) })).status).toBe(204);
+    expect((await users.get("bob")).claims.role).toBe("osiris-user");
+    expect((await (await root("/admin/users/bob/login-link", { method: "POST" })).json()).loginLink).toMatch(/\/auth\/link\//);
+    // A system admin can't lock themselves out.
+    expect((await root("/admin/users/root", { method: "PATCH", ...json({ systemAdmin: false }) })).status).toBe(400);
+    expect((await root("/admin/users/root", { method: "PATCH", ...json({ disabled: true }) })).status).toBe(400);
+    expect((await root("/admin/users/nobody", { method: "PATCH", ...json({ disabled: true }) })).status).toBe(404);
   });
 
   it("lets tenant admins manage their own members only", async () => {
@@ -109,8 +148,8 @@ describe("control API", () => {
     await directory.create("acme", "ACME");
     const alice = asUser("alice", [{ tenantId: "acme", role: "admin" }]);
     const bob = asUser("bob", [{ tenantId: "acme", role: "member" }]);
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0]);
-    const put = (who: typeof alice, body: Buffer | string) => who("/tenant/logo", { method: "PUT", body, headers: { "content-type": "image/png" } });
+    const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0]);
+    const put = (who: typeof alice, body: BodyInit) => who("/tenant/logo", { method: "PUT", body, headers: { "content-type": "image/png" } });
     expect((await put(bob, png)).status).toBe(403);
     expect((await put(alice, "<svg/>")).status).toBe(415);
     expect((await put(alice, png)).status).toBe(204);
@@ -119,7 +158,7 @@ describe("control API", () => {
     expect(logo).toMatch(/^http:\/\/osiris\.test\/auth\/tenant-logos\/acme\/[\w-]{36}$/);
     expect((await (await bob("/me")).json()).tenants).toMatchObject([{ id: "acme", logo }]);
     const served = await app.request(new URL(logo).pathname);
-    expect([served.status, served.headers.get("content-type"), Buffer.from(await served.arrayBuffer())]).toEqual([200, "image/png", png]);
+    expect([served.status, served.headers.get("content-type"), new Uint8Array(await served.arrayBuffer())]).toEqual([200, "image/png", png]);
     // A new logo replaces the old one, whose URL stops working.
     expect((await put(alice, png)).status).toBe(204);
     expect((await app.request(new URL(logo).pathname)).status).toBe(404);

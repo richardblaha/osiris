@@ -50,6 +50,17 @@ export interface TenantInfo {
   logo: string | null;
 }
 
+/** A built-in tool of the assistant (`/api/tools`); a system admin can switch each one off per tenant. */
+export interface BuiltinTool {
+  name: string;
+  description: string;
+  feature: Feature;
+  /** Its feature is on for the tenant. */
+  featureOn: boolean;
+  /** Switched off by a system admin. */
+  disabled: boolean;
+}
+
 /** A tenant as system admins see it (`/api/admin/tenants`). */
 export interface TenantSummary {
   id: string;
@@ -73,6 +84,8 @@ export interface TenantDetail extends TenantSummary {
   idleMinutes: number;
   /** Size of the tenant's volume (database and files). */
   storageGb: number;
+  /** Built-in tools switched off for the tenant, by name. */
+  disabledTools: string[];
   backups: { key: string; bytes: number; reason: string; createdAt: string }[];
 }
 
@@ -81,6 +94,19 @@ export interface DirectoryUser {
   id: string;
   name: string | null;
   email: string | null;
+}
+
+/** A user as system admins manage them (`/api/admin/users`). */
+export interface AdminUser extends DirectoryUser {
+  firstName: string;
+  lastName: string;
+  picture: string | null;
+  /** Can't sign in, and their tokens stop working. */
+  disabled: boolean;
+  /** Claim `role=osiris-admin`. */
+  systemAdmin: boolean;
+  /** Active tenants their claims name. */
+  tenants: { id: string; role: Role }[];
 }
 
 /** Who a setting applies to: the whole tenant (managed by admins) or only the current user. */

@@ -28,6 +28,8 @@ import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
 import { roleLabel, TenantInfo } from "./TenantInfo.tsx";
 import { TenantAdmin, TenantLogo } from "./Tenants.tsx";
+import { BuiltinTools } from "./Tools.tsx";
+import { UserAdmin } from "./Users.tsx";
 
 export function App() {
   // The sign-in screen, where the identity provider (/auth) sends the browser.
@@ -72,6 +74,8 @@ type View =
   | { kind: "tenant" }
   /** The system admin's tenant administration, opening a tenant (or `null`: the form of a new one). */
   | { kind: "tenants"; initial?: string | null }
+  /** The system admin's user administration. */
+  | { kind: "users" }
   | { kind: "files" }
   | { kind: "schedules" }
   | { kind: "sites" };
@@ -98,7 +102,7 @@ const SECTIONS: { id: Section; label: string; add: string; icon: string; enabled
   { id: "knowledge", label: "Znalostní báze", add: "Přidat dokument", icon: "M2 3h5l1 1 1-1h5v10H9l-1 1-1-1H2zM8 4v9", enabled: (f) => f.knowledge },
   { id: "skills", label: "Dovednosti", add: "Přidat dovednost", icon: "M3 4h10M3 8h10M3 12h6", enabled: (f) => f.skills },
   { id: "memory", label: "Paměť", add: "Přidat záznam", icon: "M8 2a4 4 0 0 0-2 7.5V11h4V9.5A4 4 0 0 0 8 2zM6.5 13.5h3", enabled: (f) => f.memory },
-  { id: "mcp", label: "Nástroje (MCP)", add: "Přidat server", icon: "M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2", enabled: (f) => f.mcp },
+  { id: "mcp", label: "Nástroje a MCP", add: "Přidat MCP server", icon: "M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2", enabled: (f) => f.mcp },
   { id: "secrets", label: "Klíče a hesla", add: "Přidat klíč", icon: "M10 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM7 9l-5 5M4 12l1.5 1.5", enabled: (f) => f.http || f.mcp },
 ];
 
@@ -332,9 +336,10 @@ function Workspace() {
           <TenantSwitcher
             me={me}
             tenant={tenant}
-            active={view.kind === "tenant" || view.kind === "tenants"}
+            active={view.kind === "tenant" || view.kind === "tenants" || view.kind === "users"}
             onOpen={() => setView({ kind: "tenant" })}
             onManage={() => setView({ kind: "tenants" })}
+            onManageUsers={() => (void refreshTenants(), setView({ kind: "users" }))}
             onSelect={selectTenant}
           />
           <button onClick={() => setView({ kind: "profile" })} data-active={view.kind === "profile"} className="list-row flex w-full items-center gap-3 px-2 py-2 text-left">
@@ -348,7 +353,9 @@ function Workspace() {
       </aside>
 
       <main className="h-full min-w-0 flex-1 bg-canvas">
-        {view.kind === "tenants" ? (
+        {view.kind === "users" ? (
+          <UserAdmin self={me.user.id} tenants={tenants} />
+        ) : view.kind === "tenants" ? (
           <TenantAdmin
             tenants={tenants}
             initial={view.initial}
@@ -385,6 +392,9 @@ function Workspace() {
             canAdd={scope === "personal" || isAdmin}
             rows={scoped(view.section)}
             onOpen={(id) => setView({ kind: "item", section: view.section, id })}
+            // Built-in tools are the tenant's, so they're listed in its tab, above the tenant's MCP servers.
+            before={view.section === "mcp" && scope === "tenant" ? <BuiltinTools key={tenant.id} tenantId={tenant.id} systemAdmin={me.systemAdmin} /> : undefined}
+            listTitle={view.section === "mcp" ? "MCP servery" : undefined}
           />
         ) : view.kind === "item" ? (
           <div className="flex h-full flex-col">
@@ -431,6 +441,7 @@ function TenantSwitcher({
   active,
   onOpen,
   onManage,
+  onManageUsers,
   onSelect,
 }: {
   me: MeResponse;
@@ -438,6 +449,7 @@ function TenantSwitcher({
   active: boolean;
   onOpen: () => void;
   onManage: () => void;
+  onManageUsers: () => void;
   onSelect: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -501,9 +513,14 @@ function TenantSwitcher({
             </button>
           )}
           {me.systemAdmin && (
-            <button role="menuitem" onClick={pick(onManage)} className="list-row block w-full px-2 py-1.5 text-left">
-              Správa tenantů
-            </button>
+            <>
+              <button role="menuitem" onClick={pick(onManage)} className="list-row block w-full px-2 py-1.5 text-left">
+                Správa tenantů
+              </button>
+              <button role="menuitem" onClick={pick(onManageUsers)} className="list-row block w-full px-2 py-1.5 text-left">
+                Správa uživatelů
+              </button>
+            </>
           )}
         </div>
       )}
@@ -524,7 +541,17 @@ function NavLink({ active, onClick, label, icon, count }: { active: boolean; onC
 }
 
 /** A section's records in the sidebar tab's scope; a record opens its detail form. */
-function SectionList(props: { title: string; add: string; scope: Scope; canAdd: boolean; rows: Row[]; onOpen: (id: string | null) => void }) {
+function SectionList(props: {
+  title: string;
+  add: string;
+  scope: Scope;
+  canAdd: boolean;
+  rows: Row[];
+  onOpen: (id: string | null) => void;
+  /** Shown above the records, e.g. the built-in tools above the MCP servers. */
+  before?: ReactNode;
+  listTitle?: string;
+}) {
   return (
     <div className="detail">
       <div className="flex items-center gap-3">
@@ -540,7 +567,9 @@ function SectionList(props: { title: string; add: string; scope: Scope; canAdd: 
       <p className="mt-1 text-xs text-fg-muted">
         {props.scope === "personal" ? "Platí jen pro tebe." : props.canAdd ? "Platí pro všechny v tenantovi." : "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."}
       </p>
-      <ul className="mt-4 text-sm">
+      {props.before}
+      {props.listTitle && <h2 className="section-header mt-6">{props.listTitle}</h2>}
+      <ul className={`${props.listTitle ? "mt-1" : "mt-4"} text-sm`}>
         {props.rows.map((r) => (
           <li key={r.key}>
             <button onClick={() => props.onOpen(r.key)} className="list-row flex w-full items-center gap-2 px-2 py-2 text-left">

@@ -36,6 +36,8 @@ export interface Tenant {
   secrets: SecretVault;
   features: FeatureSource;
   files: FileStore;
+  /** The built-in tools, each with the feature it belongs to. */
+  builtinTools: [Feature, StructuredToolInterface][];
   graph: AgentGraph;
 }
 
@@ -85,10 +87,10 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     tenantId: id,
     model: deps.model,
     tools: [],
-    // Resolved on every step, so switching a feature applies from the next step.
+    // Resolved on every step, so switching a feature or a tool applies from the next step.
     dynamicTools: async (ctx) => {
-      const on = await features.get();
-      const tools = builtins.filter(([f]) => on[f]).map(([, t]) => t);
+      const [on, off] = await Promise.all([features.get(), features.disabledTools()]);
+      const tools = builtins.filter(([f, t]) => on[f] && !off.includes(t.name)).map(([, t]) => t);
       return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id))] : tools;
     },
     features,
@@ -99,5 +101,5 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     settings,
     secrets,
   });
-  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, files, graph };
+  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, files, builtinTools: builtins, graph };
 }

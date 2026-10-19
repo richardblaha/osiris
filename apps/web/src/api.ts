@@ -1,32 +1,34 @@
 import type {
+  AdminUser,
+  BuiltinTool,
   DirectoryUser,
   DocumentSummary,
   FileEntry,
   FileScope,
   InviteResult,
-  Schedule,
-  ScheduleInput,
-  SiteDomain,
-  SiteRelease,
-  TenantMember,
-  UserProfile,
   McpServer,
   McpServerStatus,
   Memory,
   MeResponse,
   RunEvent,
+  Schedule,
+  ScheduleInput,
   Scope,
   SecretSummary,
   SecurityOverview,
-  SocialProvider,
+  SiteDomain,
+  SiteRelease,
   Skill,
   SkillSummary,
+  SocialProvider,
   TenantDetail,
   TenantFeatures,
   TenantInfo,
+  TenantMember,
   TenantSummary,
   ThreadMessage,
   ThreadSummary,
+  UserProfile,
   UserSettings,
 } from "@osiris/shared";
 import type { startRegistration } from "@simplewebauthn/browser";
@@ -138,6 +140,7 @@ export const api = {
   saveProfile: (changes: { firstName?: string; lastName?: string; email?: string }) =>
     json<UserProfile>("/me/profile", { method: "PATCH", body: JSON.stringify(changes) }),
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
+  tools: () => json<BuiltinTool[]>("/tools"),
   saveTenantLogo: (image: Blob) => request("/tenant/logo", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
   removePhone: () => request("/me/phone", { method: "DELETE" }),
@@ -189,14 +192,19 @@ export const api = {
     tenant: (id: string) => json<TenantDetail>(`/admin/tenants/${id}`),
     createTenant: (id: string, name: string) =>
       json<TenantSummary>("/admin/tenants", { method: "POST", body: JSON.stringify({ id, name }) }),
-    updateTenant: (id: string, body: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number }) =>
+    updateTenant: (id: string, body: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[] }) =>
       request(`/admin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteTenant: (id: string) => request(`/admin/tenants/${id}`, { method: "DELETE" }),
     setMember: (id: string, userId: string, role: "admin" | "member") =>
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
     removeMember: (id: string, userId: string) =>
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
-    users: () => json<DirectoryUser[]>("/admin/users"),
+    users: () => json<AdminUser[]>("/admin/users"),
+    createUser: (body: { email: string; firstName: string; lastName: string }) =>
+      json<{ userId: string; loginLink: string }>("/admin/users", { method: "POST", body: JSON.stringify(body) }),
+    updateUser: (id: string, body: { firstName?: string; lastName?: string; email?: string; disabled?: boolean; systemAdmin?: boolean }) =>
+      request(`/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
+    loginLink: (id: string) => json<{ loginLink: string }>(`/admin/users/${encodeURIComponent(id)}/login-link`, { method: "POST" }),
     invite: (id: string, body: { email: string; firstName: string; lastName: string; role: "admin" | "member" }) =>
       json<InviteResult>(`/admin/tenants/${id}/members`, { method: "POST", body: JSON.stringify(body) }),
     backup: (id: string) => request(`/admin/tenants/${id}/backups`, { method: "POST" }),

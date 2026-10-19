@@ -29,7 +29,7 @@ export class ControlClient {
   }
 
   tenant() {
-    return this.json<{ id: string; name: string; status: string; features: TenantFeatures }>("/tenant");
+    return this.json<{ id: string; name: string; status: string; features: TenantFeatures; disabledTools: string[] }>("/tenant");
   }
 
   /** Streams a snapshot to object storage through control. */
@@ -87,30 +87,35 @@ export class ControlClient {
   }
 }
 
-/** Features from control, cached briefly; if control is unreachable, the last known ones stay in force. */
+/** Features and switched-off tools from control, cached briefly; if control is unreachable, the last known ones stay in force. */
 export class RemoteFeatures implements FeatureSource {
-  private cached?: { at: number; features: TenantFeatures };
-  private loading?: Promise<TenantFeatures>;
+  private cached?: { at: number; features: TenantFeatures; disabledTools: string[] };
+  private loading?: Promise<{ features: TenantFeatures; disabledTools: string[] }>;
 
   constructor(private readonly control: ControlClient) {}
 
-  async get(): Promise<TenantFeatures> {
-    if (this.cached && Date.now() - this.cached.at < FEATURES_TTL_MS) return this.cached.features;
+  private async load() {
+    if (this.cached && Date.now() - this.cached.at < FEATURES_TTL_MS) return this.cached;
     this.loading ??= this.control
       .tenant()
-      .then((t) => {
-        this.cached = { at: Date.now(), features: t.features };
-        return t.features;
-      })
+      .then((t) => (this.cached = { at: Date.now(), features: t.features, disabledTools: t.disabledTools ?? [] }))
       .catch((err) => {
-        if (this.cached) return this.cached.features;
+        if (this.cached) return this.cached;
         throw err;
       })
       .finally(() => (this.loading = undefined));
     return this.loading;
   }
 
+  async get(): Promise<TenantFeatures> {
+    return (await this.load()).features;
+  }
+
   async enabled(feature: Feature) {
     return (await this.get())[feature];
+  }
+
+  async disabledTools() {
+    return (await this.load()).disabledTools;
   }
 }

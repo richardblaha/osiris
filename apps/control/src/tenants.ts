@@ -1,5 +1,5 @@
-import { FEATURES, type DirectoryUser, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
-import { CLAIMS, claimList, isAuthorized, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
+import { FEATURES, type AdminUser, type DirectoryUser, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
+import { CLAIMS, claimList, isAuthorized, SYSTEM_ADMIN_ROLE, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
 import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
@@ -16,6 +16,8 @@ export interface TenantRow {
   createdAt: number;
   /** Public URL of the tenant's logo, or null. */
   logo: string | null;
+  /** Built-in tools switched off for the tenant, by name. */
+  disabledTools: string[];
 }
 
 export class TenantExistsError extends Error {}
@@ -34,6 +36,7 @@ interface Row {
   storage_gb: number;
   created_at: number;
   logo: string | null;
+  disabled_tools: string;
 }
 
 const logoKey = (id: string, version: string) => `tenant-logos/${id}/${version}`;
@@ -47,6 +50,7 @@ const toTenant = (r: Row, publicUrl = ""): TenantRow => ({
   storageGb: Number(r.storage_gb),
   createdAt: Number(r.created_at),
   logo: r.logo ? `${publicUrl}/auth/tenant-logos/${r.id}/${r.logo}` : null,
+  disabledTools: JSON.parse(r.disabled_tools ?? "[]") as string[],
 });
 
 /** Tenants in the central database. Members are not stored here: they are the users whose claims name the tenant. */
@@ -111,14 +115,18 @@ export class TenantStore {
     return (await this.get(id, { fresh: true }))!;
   }
 
-  async update(id: string, changes: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number }) {
+  async update(
+    id: string,
+    changes: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[] },
+  ) {
     const tenant = await this.active(id);
     const features = changes.features ? { ...tenant.features, ...changes.features } : tenant.features;
     await this.db.execute([
       run(
-        "UPDATE tenants SET name = ?, features = ?, idle_minutes = ?, storage_gb = ?, updated_at = ? WHERE id = ?",
+        "UPDATE tenants SET name = ?, features = ?, disabled_tools = ?, idle_minutes = ?, storage_gb = ?, updated_at = ? WHERE id = ?",
         changes.name ?? tenant.name,
         JSON.stringify(features),
+        JSON.stringify([...new Set(changes.disabledTools ?? tenant.disabledTools)].sort()),
         changes.idleMinutes ?? tenant.idleMinutes,
         // A volume can grow but not shrink.
         Math.max(tenant.storageGb, changes.storageGb ?? tenant.storageGb),
@@ -262,6 +270,27 @@ export class TenantDirectory {
   }
 
   /** Users a system admin can add to a tenant. */
+  /** Every user with their access, for system admins; disabled ones too. */
+  async adminUsers(): Promise<AdminUser[]> {
+    const [all, active] = await Promise.all([this.users.list(), this.store.list()]);
+    return all
+      .map((u) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        picture: u.picture,
+        disabled: u.disabled,
+        systemAdmin: claimList(u.claims[CLAIMS.role]).includes(SYSTEM_ADMIN_ROLE),
+        tenants: active.flatMap((t) => {
+          const role = roleIn(u, t.id);
+          return role ? [{ id: t.id, role }] : [];
+        }),
+      }))
+      .sort(byName);
+  }
+
   async allUsers(): Promise<DirectoryUser[]> {
     return (await this.activeUsers()).map((u) => ({ id: u.id, name: u.name, email: u.email })).sort(byName);
   }

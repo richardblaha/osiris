@@ -2,7 +2,7 @@ import { readAll } from "@osiris/platform/objects.ts";
 import { Readable } from "node:stream";
 import {
   FEATURES,
-  type DirectoryUser,
+  type AdminUser,
   type InviteResult,
   type MeResponse,
   type Role,
@@ -21,7 +21,7 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { CLAIMS, TENANT_SLUG } from "@osiris/platform/claims.ts";
+import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, TENANT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, InternalAuthError, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
 import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
 import { CredentialError } from "./auth/credentials.ts";
@@ -70,6 +70,7 @@ const updateTenantBody = z.object({
   features: featuresBody.optional(),
   idleMinutes: z.number().int().min(0).max(24 * 60).optional(),
   storageGb: z.number().int().min(1).max(500).optional(),
+  disabledTools: z.array(z.string().regex(/^[a-z0-9_]{1,64}$/)).max(200).optional(),
 });
 const roleBody = z.object({ role: z.enum(["admin", "member"]) });
 const personName = z.string().trim().max(50);
@@ -80,6 +81,8 @@ const inviteBody = z.object({
   role: z.enum(["admin", "member"]).default("member"),
 });
 const profileBody = z.object({ firstName: personName.min(1).optional(), lastName: personName.optional(), email: z.email().max(200).optional() });
+const newUserBody = z.object({ email: z.email().max(200), firstName: personName.min(1), lastName: personName });
+const adminUserBody = profileBody.extend({ disabled: z.boolean().optional(), systemAdmin: z.boolean().optional() });
 const phoneBody = z.object({ phone: z.string().trim().min(8).max(20).regex(/^\+?[\d\s()-]+$/, "Zadej číslo s předvolbou, např. +420 777 123 456") });
 const scheduleBody = z.object({
   title: z.string().trim().min(1).max(100),
@@ -182,6 +185,7 @@ export function createControlApp(deps: ControlDeps) {
       memberList,
       idleMinutes: t.idleMinutes,
       storageGb: t.storageGb,
+      disabledTools: t.disabledTools,
       backups: (await backups.list(t.id)).slice(0, 10).map((b) => ({ key: b.key, bytes: b.bytes, reason: b.reason, createdAt: iso(b.createdAt) })),
     };
   };
@@ -389,7 +393,35 @@ export function createControlApp(deps: ControlDeps) {
       await deps.snapshot(c.req.param("id"));
       return c.body(null, 202);
     })
-    .get("/users", async (c) => c.json<DirectoryUser[]>(await directory.allUsers()))
+    .get("/users", async (c) => c.json<AdminUser[]>(await directory.adminUsers()))
+    // A new user gets in with a one-time link; access comes from tenants and the system admin switch afterwards.
+    .post("/users", async (c) => {
+      const person = parse(newUserBody, await json(c));
+      if (await users.findByEmail(person.email)) throw new HTTPException(409, { message: "Uživatel s tímto e-mailem už existuje" });
+      const user = await users.create({ ...person, claims: { [CLAIMS.role]: USER_ROLE } });
+      return c.json({ userId: user.id, loginLink: await users.loginLink(user.id, 72, "invite") }, 201);
+    })
+    .patch("/users/:id", async (c) => {
+      const id = c.req.param("id");
+      const { disabled, systemAdmin, ...profile } = parse(adminUserBody, await json(c));
+      // Nobody locks themselves out of the administration.
+      if (id === c.get("call").user.sub && (disabled === true || systemAdmin === false)) {
+        throw new HTTPException(400, { message: "Sám sobě účet nezablokuješ ani neodebereš správu systému" });
+      }
+      const user = await users.get(id);
+      if (Object.keys(profile).length) await users.updateProfile(id, profile);
+      if (disabled !== undefined) await users.setDisabled(id, disabled);
+      if (systemAdmin !== undefined) {
+        const roles = claimList(user.claims[CLAIMS.role]).filter((r) => r !== SYSTEM_ADMIN_ROLE && r !== USER_ROLE);
+        await users.setClaims(id, { [CLAIMS.role]: [...roles, systemAdmin ? SYSTEM_ADMIN_ROLE : USER_ROLE].join(",") });
+      }
+      return c.body(null, 204);
+    })
+    .post("/users/:id/login-link", async (c) => {
+      const user = await users.get(c.req.param("id"));
+      if (user.disabled) throw new HTTPException(400, { message: "Účet je zablokovaný" });
+      return c.json({ loginLink: await users.loginLink(user.id, 72, "admin") });
+    })
     // A user who lost both their authenticator and recovery codes gets in again with password or passkey alone.
     .delete("/users/:id/second-factor", async (c) => {
       await users.get(c.req.param("id"));
@@ -446,7 +478,7 @@ export function createControlApp(deps: ControlDeps) {
     })
     .get("/tenant", (c) => {
       const t = c.get("tenant");
-      return c.json({ id: t.id, name: t.name, status: t.status, features: t.features });
+      return c.json({ id: t.id, name: t.name, status: t.status, features: t.features, disabledTools: t.disabledTools });
     })
     .put("/backups", async (c) => {
       const body = c.req.raw.body;
