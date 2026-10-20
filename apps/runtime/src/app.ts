@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, Persona, TenantUsage, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
+import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileSearchHit, Persona, TenantUsage, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
+import { slug } from "@osiris/core/files/sync.ts";
+import { KNOWLEDGE_DIR } from "@osiris/core/rag/store.ts";
 import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import { SKILL_NAME } from "@osiris/core/agent/skills.ts";
 import { FileError, type FileErrorCode, type FileLocation } from "@osiris/core/files/store.ts";
@@ -263,20 +265,26 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
       return c.json(await tenant.knowledge.listDocuments(user.sub));
     })
 
+    // A document is a file in knowledge/; it's indexed as it's written. Its content is edited through /files.
     .post("/knowledge/documents", async (c) => {
       const ctx = c.get("ctx");
       const { title, content, scope } = parse(documentBody, await c.req.json());
       requireScope(ctx, scope);
-      return c.json(await ctx.tenant.knowledge.addDocument(title, content, scope, ctx.user.sub), 201);
+      const loc: FileLocation = scope === "tenant" ? { scope: "tenant" } : { scope: "personal", userId: ctx.user.sub };
+      const id = `${slug(title)}.md`;
+      // The title goes in as the leading heading, which the list shows (a file without one shows its name).
+      const text = /^#\s/.test(content.trimStart()) ? content : `# ${title}\n\n${content}`;
+      await fileErrors(() => ctx.tenant.files.write(loc, `${KNOWLEDGE_DIR}/${id}`, Buffer.from(text), { overwrite: false }));
+      const doc = (await ctx.tenant.knowledge.listDocuments(ctx.user.sub)).find((d) => d.id === id && d.scope === scope);
+      return c.json(doc, 201);
     })
 
     .delete("/knowledge/documents/:id", async (c) => {
       const ctx = c.get("ctx");
       const scope = queryScope(c.req.query("scope"));
       requireScope(ctx, scope);
-      if (!(await ctx.tenant.knowledge.deleteDocument(c.req.param("id"), scope, ctx.user.sub))) {
-        throw new HTTPException(404, { message: "Document not found" });
-      }
+      const loc: FileLocation = scope === "tenant" ? { scope: "tenant" } : { scope: "personal", userId: ctx.user.sub };
+      await fileErrors(() => ctx.tenant.files.delete(loc, `${KNOWLEDGE_DIR}/${c.req.param("id")}`));
       return c.body(null, 204);
     })
 
@@ -299,7 +307,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
       const name = skillName(c.req.param("name"));
       const { scope, ...skill } = parse(skillBody, await c.req.json());
       requireScope(ctx, scope);
-      await ctx.tenant.skills.put({ name, ...skill }, scope, ctx.user.sub);
+      await fileErrors(() => ctx.tenant.skills.put({ name, ...skill }, scope, ctx.user.sub));
       return c.json<Skill>((await ctx.tenant.skills.get(name, ctx.user.sub))!);
     })
 
@@ -307,7 +315,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
       const ctx = c.get("ctx");
       const scope = queryScope(c.req.query("scope"));
       requireScope(ctx, scope);
-      if (!(await ctx.tenant.skills.delete(c.req.param("name"), scope, ctx.user.sub))) {
+      if (!(await fileErrors(() => ctx.tenant.skills.delete(c.req.param("name"), scope, ctx.user.sub)))) {
         throw new HTTPException(404, { message: "Skill not found" });
       }
       return c.body(null, 204);
@@ -449,6 +457,16 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
         throw new HTTPException(404, { message: "Memory not found" });
       }
       return c.body(null, 204);
+    })
+
+    // Full-text search in the tenant's text files and the caller's own (`scope` limits it to one of them).
+    .get("/files/search", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      const q = (c.req.query("q") ?? "").slice(0, 200);
+      const scope = c.req.query("scope");
+      const owners = scope === "tenant" ? [""] : scope === "personal" ? [user.sub] : ["", user.sub];
+      const hits = await tenant.fileIndex.search(q, owners, 50);
+      return c.json<FileSearchHit[]>(hits.map((h) => ({ scope: h.owner ? "personal" : "tenant", path: h.path, snippet: h.snippet })));
     })
 
     .get("/files", async (c) => {

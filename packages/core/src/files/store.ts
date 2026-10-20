@@ -8,6 +8,9 @@ import { contentMatches, extensionOf, fileType } from "@osiris/shared";
 /** Where a file lives: the tenant's shared files, a user's own files, or one thread's temporary files. */
 export type FileLocation = { scope: "tenant" } | { scope: "personal"; userId: string } | { scope: "temp"; threadId: string };
 
+/** A change the store made: a file written (or a folder moved in), or a file or folder removed (or moved away). */
+export type FileChange = { kind: "write" | "delete"; loc: FileLocation; path: string };
+
 export type FileErrorCode = "invalid" | "not_found" | "exists" | "too_large" | "quota" | "type";
 
 /** A refused file operation; the message is Czech and safe to show to the user and the model. */
@@ -27,6 +30,8 @@ export interface FileStoreOptions {
   quotaBytes?: number;
   /** The tenant's own, lower limit when one is set (a system admin's quota), read on every write. */
   quota?: () => Promise<number | null>;
+  /** Told about every change once it's on disk (indexes follow the files); its failure doesn't undo the change. */
+  onChange?: (change: FileChange) => Promise<void>;
   /** Temporary files of a thread are removed this long after its last change. */
   tempTtlMs?: number;
 }
@@ -69,6 +74,7 @@ export class FileStore {
   private readonly maxFileBytes: number;
   private readonly quotaBytes: number;
   private readonly quota?: () => Promise<number | null>;
+  private readonly onChange?: (change: FileChange) => Promise<void>;
   private readonly tempTtlMs: number;
   private used?: Promise<number>;
   private lastSweep = 0;
@@ -80,6 +86,7 @@ export class FileStore {
     this.maxFileBytes = options.maxFileBytes ?? 25 * 1024 * 1024;
     this.quotaBytes = options.quotaBytes ?? 1024 * 1024 * 1024;
     this.quota = options.quota;
+    this.onChange = options.onChange;
     this.tempTtlMs = options.tempTtlMs ?? 24 * 60 * 60_000;
   }
 
@@ -170,6 +177,7 @@ export class FileStore {
     await handle.close();
     await rename(tmp, abs);
     this.adjustUsage(data.length - (existing?.size ?? 0));
+    await this.changed({ kind: "write", loc, path: segments.join("/") });
     return this.entry(loc, segments.join("/"), false, data.length, new Date());
   }
 
@@ -190,6 +198,7 @@ export class FileStore {
     const size = s.isDirectory() ? await sizeOf(abs) : s.isFile() ? s.size : 0;
     await rm(abs, { recursive: true, force: true });
     this.adjustUsage(-size);
+    await this.changed({ kind: "delete", loc, path: segments.join("/") });
   }
 
   /** Moves or renames a file or folder, also between scopes. Never overwrites. */
@@ -212,7 +221,35 @@ export class FileStore {
     if (s.isDirectory() && dstAbs.startsWith(`${srcAbs}/`)) throw new FileError("Složku nelze přesunout do sebe sama", "invalid");
     await this.mkdirs(to, dst.slice(0, -1));
     await rename(srcAbs, dstAbs);
+    await this.changed({ kind: "delete", loc: from, path: src.join("/") });
+    await this.changed({ kind: "write", loc: to, path: dst.join("/") });
     return this.entry(to, dst.join("/"), s.isDirectory(), s.isFile() ? s.size : 0, new Date());
+  }
+
+  /** Every file under `dir` (a file path yields that file), depth first; hidden and in-progress files are skipped. */
+  async *walk(loc: FileLocation, dir = ""): AsyncGenerator<FileEntry> {
+    const abs = await this.resolve(loc, pathSegments(dir, { allowRoot: true }));
+    const s = await lstat(abs).catch(() => undefined);
+    if (s?.isFile()) {
+      yield this.entry(loc, dir, false, s.size, s.mtime);
+      return;
+    }
+    if (!s?.isDirectory()) return;
+    for (const e of await this.list(loc, dir)) {
+      if (e.type === "dir") yield* this.walk(loc, e.path);
+      else yield e;
+    }
+  }
+
+  /** Users who have personal files. */
+  async personalOwners(): Promise<string[]> {
+    const dirs = await readdir(join(this.root, "users"), { withFileTypes: true }).catch(() => []);
+    return dirs.filter((d) => d.isDirectory()).map((d) => Buffer.from(d.name, "base64url").toString());
+  }
+
+  private async changed(change: FileChange) {
+    if (change.loc.scope === "temp" || !this.onChange) return;
+    await this.onChange(change).catch((err) => console.error(`Indexing ${change.path} failed`, err));
   }
 
   /** Absolute path of an existing folder (for packing a site); the same checks as every other access. */

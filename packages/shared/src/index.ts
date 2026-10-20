@@ -318,6 +318,14 @@ export interface InviteResult {
 /** Tenant files (`/api/files`): shared by the tenant (admins write), the user's own, or one thread's temporary files. */
 export type FileScope = "tenant" | "personal" | "temp";
 
+/** A full-text match in the tenant's or the user's files (`/api/files/search`). */
+export interface FileSearchHit {
+  scope: "tenant" | "personal";
+  path: string;
+  /** The matching passage, matches marked with « and ». */
+  snippet: string;
+}
+
 export interface FileEntry {
   scope: FileScope;
   /** Relative to the scope root, `/`-separated. */

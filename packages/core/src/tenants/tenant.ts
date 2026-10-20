@@ -15,13 +15,15 @@ import { KnowledgeStore } from "../rag/store.ts";
 import type { SecretBox } from "../secrets.ts";
 import { SecretVault } from "../vault/vault.ts";
 import { httpRequestTool } from "../agent/tools/http.ts";
-import { fileTools } from "../agent/tools/files.ts";
+import { fileTools, searchFilesTool } from "../agent/tools/files.ts";
 import { GotenbergClient } from "../files/gotenberg.ts";
 import { FileStore, type FileStoreOptions } from "../files/store.ts";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { Feature } from "@osiris/shared";
 import type { FeatureSource } from "./features.ts";
 import { UsageStore } from "../agent/usage.ts";
+import { FileIndex } from "../files/index.ts";
+import { FileIndexer, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
@@ -38,6 +40,10 @@ export interface Tenant {
   secrets: SecretVault;
   features: FeatureSource;
   files: FileStore;
+  /** Full-text index of the tenant's and users' text files. */
+  fileIndex: FileIndex;
+  /** Run once before serving: moves old database content to files and brings the indexes up to date. */
+  init(): Promise<void>;
   /** The built-in tools, each with the feature it belongs to. */
   builtinTools: [Feature, StructuredToolInterface][];
   usage: UsageStore;
@@ -73,7 +79,6 @@ export interface TenantDeps {
 export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const checkpointer = new LibSQLSaver(db);
   const knowledge = new KnowledgeStore(db, deps.embeddings, deps.embeddingModel);
-  const skills = new SkillStore(db, deps.bundledSkills);
   const memory = new MemoryStore(db);
   const mcpServers = new McpServerStore(db, deps.secrets);
   const secrets = new SecretVault(db, deps.secrets);
@@ -86,13 +91,19 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     const [system, tenant, user] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(userId)]);
     return { system, tenant: tenant.guards, user: user.guards };
   };
+  const fileIndex = new FileIndex(db);
+  // The files are the truth for the knowledge base and skills; the indexes follow every change.
+  let indexer: FileIndexer | undefined;
   const files = new FileStore(deps.files.dir, {
     ...deps.files,
     quota: async () => {
       const mb = (await features.quotas()).storageMb;
       return mb === null ? null : mb * 1024 * 1024;
     },
+    onChange: (change) => indexer!.apply(change),
   });
+  indexer = new FileIndexer(files, fileIndex, knowledge);
+  const skills = new SkillStore(files, deps.bundledSkills);
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
   const builtins: [Feature, StructuredToolInterface][] = [
@@ -100,6 +111,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ["skills", loadSkillTool(skills)],
     ...memoryTools(memory).map((t): [Feature, StructuredToolInterface] => ["memory", t]),
     ...fileTools(files, gotenberg).map((t): [Feature, StructuredToolInterface] => ["files", t]),
+    ["files", searchFilesTool(fileIndex)],
     ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
     ...(deps.extraTools?.(files) ?? []),
   ];
@@ -124,5 +136,31 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     settings,
     secrets,
   });
-  return { id, db, checkpointer, knowledge, skills, memory, mcpServers, mcp, settings, secrets, features, files, builtinTools: builtins, usage, profiles, rules, model: deps.model, graph };
+  // Old tenants' documents and skills move to files once, then the indexes catch up with the files on disk.
+  const init = async () => {
+    await moveLegacyToFiles(db, files);
+    await indexer!.reconcile();
+  };
+  return {
+    id,
+    db,
+    checkpointer,
+    knowledge,
+    skills,
+    memory,
+    mcpServers,
+    mcp,
+    settings,
+    secrets,
+    features,
+    files,
+    fileIndex,
+    builtinTools: builtins,
+    usage,
+    profiles,
+    rules,
+    model: deps.model,
+    graph,
+    init,
+  };
 }

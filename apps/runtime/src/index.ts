@@ -68,6 +68,8 @@ const app = createRuntimeApp({
   publishSite: (loc, dir, domain, userId) => publishFolder(control, tenant.files, loc, dir, domain, userId),
   counts: () => features.counts(),
 });
+// Before serving: old database content moves to files, and the file indexes catch up with the files on disk.
+await tenant.init();
 const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) =>
   console.log(`Runtime of ${config.TENANT_ID} listening on http://localhost:${port}`),
 );

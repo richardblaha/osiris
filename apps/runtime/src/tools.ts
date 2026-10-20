@@ -94,7 +94,7 @@ export function controlTools(control: ControlClient, files: FileStore, timezone:
         "Zveřejní složku se statickým webem (musí obsahovat index.html) na ověřené doméně firmy. Jen na výslovný pokyn uživatele.",
       schema: z.object({
         scope: z.enum(["personal", "tenant", "temp"]).default("tenant"),
-        dir: z.string().max(512).describe("Složka s webem, např. web"),
+        dir: z.string().max(512).default("www").describe("Složka s webem, obvykle www"),
         domain: z.string().max(253).describe("Ověřená doména, např. www.mojefirma.cz"),
       }),
     },

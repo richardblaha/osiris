@@ -81,7 +81,9 @@ export class TestTenants {
         const db = createDb(`file:${join(this.dir, `${id}.db`)}`);
         await migrate(db);
         const features = new StaticFeatures();
-        return openTenant(id, db, { ...this.deps, features, files: { dir: join(this.dir, "files", id) } }) as TestTenant;
+        const tenant = openTenant(id, db, { ...this.deps, features, files: { dir: join(this.dir, "files", id) } }) as TestTenant;
+        await tenant.init();
+        return tenant;
       })();
       this.open.set(id, t);
     }

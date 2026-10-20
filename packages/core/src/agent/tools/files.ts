@@ -4,6 +4,7 @@ import Mustache from "mustache";
 import sharp from "sharp";
 import { z } from "zod";
 import type { GotenbergClient } from "../../files/gotenberg.ts";
+import type { FileIndex } from "../../files/index.ts";
 import { FileError, type FileLocation, type FileStore } from "../../files/store.ts";
 import { extensionOf, fileType } from "@osiris/shared";
 import { getRunContext, type RunContext } from "../context.ts";
@@ -234,4 +235,22 @@ async function siblingAssets(files: FileStore, loc: FileLocation, htmlPath: stri
     total += data.length;
   }
   return assets;
+}
+
+/** Full-text search in the tenant's files and the user's own (not in temp files). */
+export function searchFilesTool(index: FileIndex) {
+  return tool(
+    async ({ query }, config) => {
+      const { user_id } = getRunContext(config);
+      const hits = await index.search(query, ["", user_id], 10);
+      if (!hits.length) return "Nic nenalezeno.";
+      return hits.map((h) => `${h.owner ? "personal" : "tenant"}:${h.path}\n${h.snippet}`).join("\n\n");
+    },
+    {
+      name: "search_files",
+      description:
+        "Fulltextově vyhledá v textových souborech firmy a uživatele (šablony, poznámky, znalosti, web). Vrací cestu (rozsah:cesta) a úryvek; celý soubor přečti nástrojem read_file.",
+      schema: z.object({ query: z.string().min(1).max(200).describe("Slova, která mají soubory obsahovat") }),
+    },
+  );
 }

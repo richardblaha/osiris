@@ -197,6 +197,17 @@ describe("files API", () => {
     return { as, tenants };
   }
 
+  it("searches the tenant's text files and the caller's own by words", async () => {
+    const { as } = await setup();
+    await as("acme")("/files/content?scope=tenant&path=www/index.html", { method: "PUT", body: "<h1>Elektro Novák Brno</h1>" });
+    await as("bob:tenant=acme")("/files/content?scope=personal&path=poznamky.md", { method: "PUT", body: "Novák chce nabídku do pátku" });
+    await as("eva:tenant=acme")("/files/content?scope=personal&path=tajne.md", { method: "PUT", body: "Novák dluží" });
+    const bob = as("bob:tenant=acme");
+    const hits = (await (await bob("/files/search?q=novak")).json()) as { scope: string; path: string }[];
+    expect(hits.map((h) => `${h.scope}:${h.path}`).sort()).toEqual(["personal:poznamky.md", "tenant:www/index.html"]);
+    expect(await (await bob("/files/search?q=brno&scope=tenant")).json()).toEqual([{ scope: "tenant", path: "www/index.html", snippet: "<h1>Elektro Novák «Brno»</h1>" }]);
+  });
+
   it("uploads, lists, downloads and deletes", async () => {
     const { as } = await setup();
     const admin = as("acme");

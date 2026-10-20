@@ -53,7 +53,7 @@ export function Sites({ isAdmin }: { isAdmin: boolean }) {
 
 function Domain({ d, isAdmin, busy, act }: { d: SiteDomain; isAdmin: boolean; busy: boolean; act: (a: () => Promise<unknown>) => Promise<void> }) {
   const [releases, setReleases] = useState<SiteRelease[]>([]);
-  const [source, setSource] = useState<{ scope: FileScope; dir: string }>({ scope: "tenant", dir: "web" });
+  const [source, setSource] = useState<{ scope: FileScope; dir: string }>({ scope: "tenant", dir: "www" });
   const [error, setError] = useState<string>();
   const loadReleases = () => api.releases(d.domain).then(setReleases, (e: Error) => setError(e.message));
   useEffect(() => void loadReleases(), [d.releaseId]);
