@@ -45,6 +45,8 @@ function GroupSwitch({ group, disabled, onChange }: { group: Group; disabled: bo
     <input
       ref={ref}
       type="checkbox"
+      role="switch"
+      className="switch"
       checked={on === group.tools.length}
       disabled={disabled}
       onChange={() => onChange(on < group.tools.length)}
@@ -95,11 +97,12 @@ export function BuiltinTools({ tenantId, systemAdmin }: { tenantId: string; syst
                     {systemAdmin ? (
                       <input
                         type="checkbox"
+                        role="switch"
                         checked={!t.disabled}
                         disabled={busy || !t.featureOn}
                         onChange={() => void toggle([t.name], t.disabled)}
                         aria-label={`${t.name}: ${t.disabled ? "zapnout" : "vypnout"}`}
-                        className="mt-1"
+                        className="switch mt-0.5"
                       />
                     ) : (
                       <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${on ? "bg-success" : "bg-line-strong"}`} aria-label={on ? "zapnuto" : "vypnuto"} />
