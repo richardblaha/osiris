@@ -34,7 +34,8 @@ export function publishSiteTool(files: FileStore, targets: SiteTargetStore) {
   );
 }
 
-const SITE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** A site's name, its folder: kebab-case, dots allowed between parts (k6labs.cz). */
+const SITE_NAME = /^[a-z0-9]+([.-][a-z0-9]+)*$/;
 
 /**
  * Builds a VitePress site from the tenant's `vitepress/<site>/` (`_vitepress/` holds its config and theme, as
@@ -96,7 +97,7 @@ export function buildVitepressTool(files: FileStore, vitepress: VitepressClient)
       description:
         "Sestaví web z VitePress šablony ve firemních souborech vitepress/<site>/ (stránky v Markdownu, index.md povinný; konfigurace a téma " +
         "ve vitepress/<site>/_vitepress/, tj. config.js a theme/, místo .vitepress) a uloží hotový web do www/<site>/ (to, co tam bylo, nahradí).",
-      schema: z.object({ site: z.string().regex(SITE_NAME, "Název webu: malá písmena, číslice a pomlčky").max(60).describe("Název webu, složka ve vitepress/") }),
+      schema: z.object({ site: z.string().regex(SITE_NAME, "Název webu: malá písmena, číslice, pomlčky a tečky (např. firma.cz)").max(60).describe("Název webu, složka ve vitepress/") }),
     },
   );
 }
