@@ -8,7 +8,12 @@ type Part = ThreadAssistantMessagePart;
  * Bridges assistant-ui's local runtime to the API. The server keeps the conversation in its
  * checkpointer, so only the newest user message is sent; `getThreadId` creates the thread on first send.
  */
-export function createAdapter(getThreadId: () => Promise<string>, onDone: () => void): ChatModelAdapter {
+export function createAdapter(
+  getThreadId: () => Promise<string>,
+  onDone: () => void,
+  /** Where the run's events come from (the public chat has its own API); `showTools: false` hides tool calls. */
+  { stream = api.run, showTools = true }: { stream?: typeof api.run; showTools?: boolean } = {},
+): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }) {
       const last = messages.at(-1);
@@ -17,7 +22,7 @@ export function createAdapter(getThreadId: () => Promise<string>, onDone: () => 
 
       let parts: Part[] = [];
       try {
-        for await (const event of api.run(threadId, text, abortSignal)) {
+        for await (const event of stream(threadId, text, abortSignal)) {
           switch (event.type) {
             case "text-delta": {
               const tail = parts.at(-1);
@@ -28,6 +33,7 @@ export function createAdapter(getThreadId: () => Promise<string>, onDone: () => 
               break;
             }
             case "tool-call":
+              if (!showTools) break;
               parts = [
                 ...parts,
                 {

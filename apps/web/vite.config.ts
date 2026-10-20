@@ -10,6 +10,6 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     // Same origin as in production: the API and sign-in (control's OIDC provider) through the gateway.
-    proxy: { "/api": "http://localhost:3001", "/auth": "http://localhost:3001" },
+    proxy: { "/api": "http://localhost:3001", "/auth": "http://localhost:3001", "/public": "http://localhost:3001" },
   },
 });

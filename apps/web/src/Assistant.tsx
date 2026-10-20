@@ -7,12 +7,12 @@ import { attempt, ErrorNotice, Field } from "./Scope.tsx";
  * The assistant's persona and rules at one level (the tenant's or the user's own), with what applies from the levels
  * above. A persona is written by the model from a character and the work it comes from, then edited before saving.
  */
-export function AssistantSettings({ scope, editable }: { scope: Scope; editable: boolean }) {
+export function AssistantSettings({ scope, editable }: { scope: Scope | "public"; editable: boolean }) {
   const [all, setAll] = useState<AssistantProfiles>();
   const [error, setError] = useState<string>();
   useEffect(() => void api.assistant().then(setAll, (e: Error) => setError(e.message)), []);
   if (!all) return <ErrorNotice error={error} />;
-  const own = scope === "tenant" ? all.tenant : all.personal;
+  const own = (scope === "public" ? all.public : scope === "tenant" ? all.tenant : all.personal) ?? { persona: null, guards: "" };
   return (
     <ProfileForm
       key={scope}
@@ -32,7 +32,7 @@ function ProfileForm({
   inherited,
   onSaved,
 }: {
-  scope: Scope;
+  scope: Scope | "public";
   profile: AssistantProfile;
   editable: boolean;
   inherited: AssistantProfiles;
@@ -60,7 +60,7 @@ function ProfileForm({
 
   const above = [
     ["Pravidla systému", inherited.system.guards],
-    ...(scope === "personal" ? [["Pravidla firmy", inherited.tenant.guards]] : []),
+    ...(scope !== "tenant" ? [["Pravidla firmy", inherited.tenant.guards]] : []),
   ].filter(([, text]) => text!.trim());
   const tenantPersona = scope === "personal" ? inherited.tenant.persona : null;
 
@@ -72,6 +72,7 @@ function ProfileForm({
           Jak má asistent komunikovat. Zadej postavu a knihu nebo film, asistent z nich připraví popis, který můžeš upravit.
           {tenantPersona && ` Bez vlastní persony platí firemní: ${tenantPersona.character}.`}
           {scope === "tenant" && " Uživatelé si ji mohou přepsat vlastní."}
+          {scope === "public" && " Platí jen pro asistenta, se kterým mluví zákazníci."}
         </p>
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <Field label="Postava">

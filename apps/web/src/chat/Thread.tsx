@@ -96,7 +96,7 @@ function AssistantMessage() {
   );
 }
 
-export function Thread() {
+export function Thread({ greeting = "S čím ti můžu pomoct?", placeholder = "Napiš zprávu…" }: { greeting?: string; placeholder?: string } = {}) {
   return (
     <ThreadPrimitive.Root className="h-full">
       <ThreadPrimitive.Viewport className="flex h-full flex-col overflow-y-auto px-4">
@@ -104,7 +104,7 @@ export function Thread() {
           <ThreadPrimitive.Empty>
             <div className="mt-24 flex flex-col items-center gap-4 text-fg-secondary">
               <img src="/logo.svg" alt="" className="h-16 w-16 opacity-90" />
-              <p>S čím ti můžu pomoct?</p>
+              <p className="text-center whitespace-pre-wrap">{greeting}</p>
             </div>
           </ThreadPrimitive.Empty>
           <ThreadPrimitive.Messages>
@@ -116,7 +116,7 @@ export function Thread() {
           <ComposerPrimitive.Root className="composer relative rounded-md border border-line-strong bg-input shadow-lg">
             <ComposerPrimitive.Input
               autoFocus
-              placeholder="Napiš zprávu…"
+              placeholder={placeholder}
               minRows={3}
               maxRows={12}
               className="block w-full resize-none bg-transparent px-4 pt-3 pb-12 outline-none"

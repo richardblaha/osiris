@@ -8,6 +8,7 @@ import type {
   FileEntry,
   FileScope,
   FileSearchHit,
+  Inquiry,
   Integration,
   InviteResult,
   McpServer,
@@ -15,6 +16,7 @@ import type {
   Memory,
   MeResponse,
   Persona,
+  PublicAssistantSettings,
   PublishResult,
   RunEvent,
   Schedule,
@@ -155,6 +157,13 @@ export const api = {
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   tools: () => json<BuiltinTool[]>("/tools"),
   usage: () => json<TenantUsage>("/usage"),
+  publicAssistant: () => json<PublicAssistantSettings>("/public-assistant"),
+  savePublicAssistant: (settings: PublicAssistantSettings) =>
+    json<PublicAssistantSettings>("/public-assistant", { method: "PUT", body: JSON.stringify(settings) }),
+  inquiries: () => json<Inquiry[]>("/inquiries"),
+  setInquiryStatus: (id: string, status: Inquiry["status"]) =>
+    request(`/inquiries/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ status }) }),
+  inquiryMessages: (id: string) => json<ThreadMessage[]>(`/inquiries/${encodeURIComponent(id)}/messages`),
   integrations: () => json<Integration[]>("/integrations"),
   connectIntegration: (provider: Integration["provider"]) =>
     json<{ authorizationUrl: string }>(`/integrations/${provider}/connect`, { method: "POST" }),
@@ -162,7 +171,7 @@ export const api = {
   finishIntegration: (body: { state: string; code: string }) =>
     json<{ provider: Integration["provider"]; account: string | null }>("/integrations/callback", { method: "POST", body: JSON.stringify(body) }),
   assistant: () => json<AssistantProfiles>("/assistant"),
-  saveAssistant: (scope: Scope, profile: AssistantProfile) =>
+  saveAssistant: (scope: Scope | "public", profile: AssistantProfile) =>
     json<AssistantProfile>(`/assistant?scope=${scope}`, { method: "PUT", body: JSON.stringify(profile) }),
   generatePersona: (character: string, source: string) =>
     json<Persona>("/assistant/persona", { method: "POST", body: JSON.stringify({ character, source }) }),
@@ -244,23 +253,27 @@ export const api = {
 
   /** Starts a run and yields its server-sent events. */
   async *run(threadId: string, message: string, signal: AbortSignal): AsyncGenerator<RunEvent> {
-    const res = await request(`/threads/${threadId}/runs`, { method: "POST", body: JSON.stringify({ message }), signal });
-    const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
-    let buffer = "";
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) return;
-      buffer += value;
-      const events = buffer.split("\n\n");
-      buffer = events.pop()!;
-      for (const event of events) {
-        const data = event
-          .split("\n")
-          .filter((l) => l.startsWith("data:"))
-          .map((l) => l.slice(5).trimStart())
-          .join("\n");
-        if (data) yield JSON.parse(data) as RunEvent;
-      }
-    }
+    yield* readEvents(await request(`/threads/${threadId}/runs`, { method: "POST", body: JSON.stringify({ message }), signal }));
   },
 };
+
+/** The server-sent events of a run's response. */
+export async function* readEvents(res: Response): AsyncGenerator<RunEvent> {
+  const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += value;
+    const events = buffer.split("\n\n");
+    buffer = events.pop()!;
+    for (const event of events) {
+      const data = event
+        .split("\n")
+        .filter((l) => l.startsWith("data:"))
+        .map((l) => l.slice(5).trimStart())
+        .join("\n");
+      if (data) yield JSON.parse(data) as RunEvent;
+    }
+  }
+}

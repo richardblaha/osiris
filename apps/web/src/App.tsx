@@ -19,6 +19,8 @@ import { ChatPane } from "./chat/ChatPane.tsx";
 import { Files } from "./Files.tsx";
 import { Schedules } from "./Schedules.tsx";
 import { Sites } from "./Sites.tsx";
+import { PublicAssistant } from "./PublicAssistant.tsx";
+import { PublicChat } from "./PublicChat.tsx";
 import { documentKey, KnowledgeDetail } from "./Knowledge.tsx";
 import { MCP_SIGN_IN, mcpKey, McpServerDetail, McpStatus } from "./McpServers.tsx";
 import { INTEGRATION_RETURN } from "./Integrations.tsx";
@@ -37,6 +39,9 @@ import { UserAdmin } from "./Users.tsx";
 export function App() {
   // The sign-in screen, where the identity provider (/auth) sends the browser.
   if (location.pathname === "/login") return <SignIn />;
+  // A tenant's public assistant for its customers, without signing in (also inside widget.js).
+  const publicTenant = /^\/c\/([a-z0-9-]+)\/?$/.exec(location.pathname)?.[1];
+  if (publicTenant) return <PublicChat tenant={publicTenant} />;
   return <Gate />;
 }
 
@@ -81,7 +86,8 @@ type View =
   | { kind: "users" }
   | { kind: "files" }
   | { kind: "schedules" }
-  | { kind: "sites" };
+  | { kind: "sites" }
+  | { kind: "public" };
 
 interface Lists {
   knowledge: DocumentSummary[];
@@ -396,9 +402,12 @@ function Workspace() {
               ))}
             </>
           )}
-          {(tenant?.features.scheduler || tenant?.features.sites) && <div className="mt-3 border-t border-line" />}
+          {(tenant?.features.scheduler || tenant?.features.sites || tenant?.features.public) && <div className="mt-3 border-t border-line" />}
           {tenant?.features.scheduler && (
             <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
+          )}
+          {tenant?.features.public && (
+            <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Veřejný asistent" icon="M2 4h12v7H6l-3 3V4z" />
           )}
           {tenant?.features.sites && (
             <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Web" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
@@ -464,6 +473,8 @@ function Workspace() {
           tenant.features.files ? <Files key={`${tenant.id}:${scope}`} scope={scope} isAdmin={isAdmin} /> : null
         ) : view.kind === "schedules" ? (
           tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
+        ) : view.kind === "public" ? (
+          tenant.features.public ? <PublicAssistant key={tenant.id} tenantId={tenant.id} isAdmin={isAdmin} /> : null
         ) : view.kind === "sites" ? (
           tenant.features.sites ? <Sites key={tenant.id} isAdmin={isAdmin} /> : null
         ) : view.kind === "list" ? (
