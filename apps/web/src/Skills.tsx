@@ -1,6 +1,7 @@
 import type { Scope, SkillSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
+import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
 import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -17,7 +18,7 @@ export async function loadSkills(): Promise<SkillSummary[]> {
 }
 
 const INTRO =
-  "Postupy, podle kterých asistent pracuje (např. jak sestavit nabídku). Osobní dovednost má přednost před dovedností tenanta a ta před výchozí se stejným názvem.";
+  "Postupy, podle kterých asistent pracuje (např. jak sestavit nabídku). Jsou to soubory skills/<název>/SKILL.md. Osobní dovednost má přednost před dovedností tenanta a ta před výchozí se stejným názvem.";
 
 export function SkillDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<SkillSummary>) {
   const [name, setName] = useState(item?.name ?? "");
@@ -41,6 +42,7 @@ export function SkillDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: D
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    if (!instructions.trim()) return setError("Napiš postup dovednosti.");
     void attempt(setBusy, setError, async () => {
       await api.saveSkill(name, description, instructions, scope);
       onSaved(skillKey({ source: scope, name }));
@@ -68,9 +70,10 @@ export function SkillDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: D
           <Field label="Kdy ji použít">
             <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="jedna věta" required className="field" />
           </Field>
-          <Field label="Postup">
-            <textarea value={instructions} onChange={(e) => setInstructions(e.target.value)} placeholder="krok za krokem" required rows={16} className="field text-sm" />
-          </Field>
+          <div className="space-y-1">
+            <span className="section-header block">Postup (Markdown, uloží se jako skills/{name || "…"}/SKILL.md)</span>
+            <LazyCodeEditor path="SKILL.md" value={instructions} onChange={setInstructions} height="50vh" />
+          </div>
           <div className="flex items-center gap-4">
             <button disabled={busy} className="btn-primary">
               {busy ? "Ukládám…" : !item ? "Přidat" : own ? "Uložit" : "Uložit kopii"}

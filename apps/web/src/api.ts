@@ -7,6 +7,7 @@ import type {
   DocumentSummary,
   FileEntry,
   FileScope,
+  FileSearchHit,
   InviteResult,
   McpServer,
   McpServerStatus,
@@ -130,6 +131,7 @@ export const api = {
     request(`/secrets/${name}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteSecret: (name: string, scope: Scope) => request(`/secrets/${name}?scope=${scope}`, { method: "DELETE" }),
   files: (scope: FileScope, dir = "", thread?: string) => json<FileEntry[]>(`/files?${query({ scope, path: dir || undefined, thread })}`),
+  searchFiles: (q: string, scope?: FileScope) => json<FileSearchHit[]>(`/files/search?${query({ q, scope })}`),
   downloadFile: async ({ scope, path, thread }: FileRef) => (await request(`/files/content?${query({ scope, path, thread })}`)).blob(),
   uploadFile: ({ scope, path, thread }: FileRef, file: Blob, overwrite = false) =>
     json<FileEntry>(`/files/content?${query({ scope, path, thread, overwrite: overwrite ? "true" : undefined })}`, {

@@ -1,9 +1,12 @@
-import type { FileEntry, Scope } from "@osiris/shared";
+import { fileType, type FileEntry, type FileSearchHit, type Scope } from "@osiris/shared";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, saveBlob } from "./api.ts";
+import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
 import { attempt, ErrorNotice } from "./Scope.tsx";
 
-type Editing = { kind: "mkdir" } | { kind: "rename"; entry: FileEntry };
+type Editing = { kind: "mkdir" } | { kind: "newfile" } | { kind: "rename"; entry: FileEntry };
+/** A text file open in the editor; `saved` is what's on disk, so unsaved changes show. */
+type Doc = { path: string; text: string; saved: string; isNew: boolean };
 
 const IMAGE = /^image\/(png|jpeg|gif|webp)$/;
 
@@ -22,6 +25,9 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const upload = useRef<HTMLInputElement>(null);
+  const [doc, setDoc] = useState<Doc>();
+  const [search, setSearch] = useState("");
+  const [hits, setHits] = useState<FileSearchHit[]>();
   const editable = tab === "personal" || isAdmin;
 
   const load = () => api.files(tab, dir).then(setEntries, (e: Error) => setError(e.message));
@@ -32,13 +38,34 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
   }, [tab, dir]);
   useEffect(() => () => preview && URL.revokeObjectURL(preview.url), [preview]);
 
-  const open = (e: FileEntry) => {
-    if (e.type === "dir") return setDir(e.path);
-    void attempt(setBusy, setError, async () => {
-      const blob = await api.downloadFile({ scope: tab, path: e.path });
-      if (e.mime && IMAGE.test(e.mime)) setPreview({ path: e.path, url: URL.createObjectURL(blob) });
-      else saveBlob(blob, e.name);
+  /** Text files open in the editor, images in a preview, anything else downloads. */
+  const openPath = (path: string, name = path.split("/").at(-1) ?? path) =>
+    attempt(setBusy, setError, async () => {
+      const blob = await api.downloadFile({ scope: tab, path });
+      const type = fileType(path);
+      if (type?.text) {
+        const text = await blob.text();
+        setDoc({ path, text, saved: text, isNew: false });
+      } else if (IMAGE.test(type?.mime ?? "")) setPreview({ path, url: URL.createObjectURL(blob) });
+      else saveBlob(blob, name);
     });
+  const open = (e: FileEntry) => (e.type === "dir" ? setDir(e.path) : void openPath(e.path, e.name));
+
+  const saveDoc = () =>
+    attempt(setBusy, setError, async () => {
+      if (!doc) return;
+      await api.uploadFile({ scope: tab, path: doc.path }, new Blob([doc.text], { type: fileType(doc.path)?.mime ?? "text/plain" }), !doc.isNew);
+      setDoc({ ...doc, saved: doc.text, isNew: false });
+      await load();
+    });
+  const closeDoc = () => {
+    if (!doc || doc.text === doc.saved || window.confirm("Zavřít bez uložení změn?")) setDoc(undefined);
+  };
+
+  const runSearch = (ev: FormEvent) => {
+    ev.preventDefault();
+    if (!search.trim()) return setHits(undefined);
+    void attempt(setBusy, setError, async () => setHits(await api.searchFiles(search, tab)));
   };
 
   const uploadFiles = (files: FileList | null) => {
@@ -69,7 +96,11 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
     ev.preventDefault();
     if (!editing) return;
     void attempt(setBusy, setError, async () => {
-      if (editing.kind === "mkdir") await api.makeDir({ scope: tab, path: join(dir, name) });
+      if (editing.kind === "newfile") {
+        const path = join(dir, name.includes(".") ? name : `${name}.md`);
+        if (!fileType(path)?.text) throw new Error("Nový soubor musí být textový (např. .md, .txt, .html, .css, .json)");
+        setDoc({ path, text: "", saved: "", isNew: true });
+      } else if (editing.kind === "mkdir") await api.makeDir({ scope: tab, path: join(dir, name) });
       else await api.moveFile({ scope: tab, path: editing.entry.path }, { scope: tab, path: join(dir, name) });
       setEditing(undefined);
       await load();
@@ -107,6 +138,9 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
         </nav>
         {editable && (
           <>
+            <button onClick={() => startEdit({ kind: "newfile" })} disabled={busy} className="btn-secondary text-sm">
+              Nový soubor
+            </button>
             <button onClick={() => startEdit({ kind: "mkdir" })} disabled={busy} className="btn-secondary text-sm">
               Nová složka
             </button>
@@ -124,12 +158,12 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
             autoFocus
             value={name}
             onChange={(e) => setName(e.target.value)}
-            placeholder={editing.kind === "mkdir" ? "Název složky" : "Nový název"}
+            placeholder={editing.kind === "mkdir" ? "Název složky" : editing.kind === "newfile" ? "Název souboru, např. poznamky.md" : "Nový název"}
             required
             className="field"
           />
           <button disabled={busy} className="btn-primary text-sm">
-            {editing.kind === "mkdir" ? "Vytvořit" : "Přejmenovat"}
+            {editing.kind === "rename" ? "Přejmenovat" : "Vytvořit"}
           </button>
           <button type="button" onClick={() => setEditing(undefined)} className="btn-secondary text-sm">
             Zrušit
@@ -138,6 +172,53 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
       )}
 
       <ErrorNotice error={error} />
+
+      {doc && (
+        <section className="mt-4">
+          <div className="mb-2 flex items-center gap-2 text-sm">
+            <code className="min-w-0 flex-1 truncate">{doc.path}</code>
+            {doc.text !== doc.saved && <span className="text-xs text-warning">neuloženo</span>}
+            {editable && (
+              <button onClick={() => void saveDoc()} disabled={busy || (doc.text === doc.saved && !doc.isNew)} className="btn-primary text-sm">
+                Uložit
+              </button>
+            )}
+            <button onClick={closeDoc} className="btn-secondary text-sm">
+              Zavřít
+            </button>
+          </div>
+          <LazyCodeEditor key={doc.path} path={doc.path} value={doc.text} readOnly={!editable} onChange={(text) => setDoc({ ...doc, text })} />
+        </section>
+      )}
+
+      <form onSubmit={runSearch} className="mt-4 flex gap-2">
+        <input
+          type="search"
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            if (!e.target.value) setHits(undefined);
+          }}
+          placeholder={`Hledat v textu souborů (${tab === "personal" ? "moje" : "firemní"})`}
+          className="field"
+        />
+        <button disabled={busy} className="btn-secondary text-sm">
+          Hledat
+        </button>
+      </form>
+      {hits && (
+        <ul className="mt-2 text-sm">
+          {hits.map((h) => (
+            <li key={h.path}>
+              <button onClick={() => void openPath(h.path)} className="list-row block w-full px-2 py-1.5 text-left">
+                <code className="text-xs">{h.path}</code>
+                <span className="block truncate text-xs text-fg-secondary">{highlight(h.snippet)}</span>
+              </button>
+            </li>
+          ))}
+          {!hits.length && <li className="px-2 py-1.5 text-fg-muted">Nic nenalezeno.</li>}
+        </ul>
+      )}
 
       <div className="mt-3 overflow-x-auto">
         <table className="w-full text-sm">
@@ -195,4 +276,9 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
       )}
     </div>
   );
+}
+
+/** A search snippet with its matches (marked « and » by the index) in bold. */
+function highlight(snippet: string) {
+  return snippet.split(/(«[^»]*»)/).map((part, i) => (part.startsWith("«") ? <strong key={i}>{part.slice(1, -1)}</strong> : part));
 }
