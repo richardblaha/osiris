@@ -68,6 +68,7 @@ const users = dbUsers(db, { objects, publicUrl: config.PUBLIC_URL });
 const auth = await createAuth(config, db, users);
 
 const store = new TenantStore(db, { objects, publicUrl: config.PUBLIC_URL });
+await store.migrateSystemGuards();
 const directory = new TenantDirectory(store, users, orchestrator);
 const schedules = new ScheduleStore(db, config.TIMEZONE);
 const domains = new DomainStore(db, publicDns(), {

@@ -59,7 +59,7 @@ export function TenantInfo({ me, tenant, onChanged }: { me: MeResponse; tenant?:
             ))}
           </ul>
           <p className="mt-1 text-xs text-fg-muted">Funkce zapíná a vypíná správce systému.</p>
-          <h2 className="section-header mt-8">Persona a pravidla asistenta pro firmu</h2>
+          <h2 className="section-header mt-8">Persona asistenta pro firmu</h2>
           {tenant.role !== "admin" && <p className="mt-1 text-xs text-fg-muted">Nastavuje správce tenanta.</p>}
           <AssistantSettings key={tenant.id} scope="tenant" editable={tenant.role === "admin"} />
           {tenant.role === "admin" && <Members key={tenant.id} self={me.user.id} />}

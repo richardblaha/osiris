@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { NO_QUOTAS, type Feature, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
+import { NO_QUOTAS, type Feature, type Guard, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
 import type { FeatureSource } from "@osiris/core/tenants/features.ts";
 import { callJson, ServiceError } from "@osiris/platform/http.ts";
 
@@ -42,7 +42,8 @@ export class ControlClient {
       disabledTools: string[];
       quotas: TenantQuotas;
       counts: { members: number; schedules: number };
-      systemGuards: string;
+      /** A string from a control older than guard files. */
+      systemGuards: Guard[] | string;
     }>("/tenant");
   }
 
@@ -120,7 +121,7 @@ export class RemoteFeatures implements FeatureSource {
             disabledTools: t.disabledTools ?? [],
             quotas: { ...NO_QUOTAS, ...t.quotas },
             counts: t.counts ?? { members: 0, schedules: 0 },
-            systemGuards: t.systemGuards ?? "",
+            systemGuards: Array.isArray(t.systemGuards) ? t.systemGuards : t.systemGuards ? [{ name: "pravidla", description: "", rule: t.systemGuards }] : [],
           }),
       )
       .catch((err) => {
@@ -162,5 +163,5 @@ interface TenantPolicy {
   disabledTools: string[];
   quotas: TenantQuotas;
   counts: { members: number; schedules: number };
-  systemGuards: string;
+  systemGuards: Guard[];
 }

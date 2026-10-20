@@ -3,6 +3,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { fileSize } from "./Files.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { MasterDetail } from "./MasterDetail.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -12,13 +13,13 @@ const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
  */
 export function Sites({ isAdmin }: { isAdmin: boolean }) {
   const [targets, setTargets] = useState<SiteTarget[]>();
-  const [editing, setEditing] = useState<SiteTarget | "new">();
+  const [selected, setSelected] = useState<string | null>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [notice, setNotice] = useState<string>();
 
-  const load = () => api.siteTargets().then(setTargets, (e: Error) => setError(e.message));
-  useEffect(() => void (isAdmin ? load() : undefined), []);
+  const load = () => api.siteTargets().then((t) => (setTargets(t), t), (e: Error) => (setError(e.message), []));
+  useEffect(() => void (isAdmin ? load().then((t) => setSelected((s) => s ?? t[0]?.name)) : undefined), []);
   const act = (action: () => Promise<string | void>) =>
     attempt(setBusy, setError, async () => {
       setNotice(undefined);
@@ -35,89 +36,90 @@ export function Sites({ isAdmin }: { isAdmin: boolean }) {
       </div>
     );
   }
+  const t = targets?.find((x) => x.name === selected);
 
   return (
-    <div className="detail max-w-3xl">
-      <h1 className="text-lg font-semibold">Weby</h1>
-      <p className="mt-1 text-sm text-fg-secondary">
-        Web firmy jsou soubory ve složce <code>www</code> (firemní soubory, musí obsahovat <code>index.html</code>). Publikování je nahraje přes SFTP
-        na hosting, např. na VPS u vas-hosting.cz; nahrávají se jen změny a mažou jen soubory, které tam dřív nahrál Osiris. Doménu a DNS
-        nastavíš v portálu hostingu nebo přes asistenta s MCP serverem vas-hosting.
-      </p>
-      <ErrorNotice error={error} />
-      {notice && <p className="notice mt-3 px-3 py-2 text-sm">{notice}</p>}
-
-      <ul className="mt-4 space-y-3">
-        {targets?.map((t) => (
-          <li key={t.name} className="notice px-3 py-2 text-sm">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-medium">{t.name}</span>
-              <code className="text-xs text-fg-secondary">
-                {t.username}@{t.host}:{t.port}
-                {t.remoteDir}
-              </code>
-              <span className="flex-1" />
-              <button
-                disabled={busy}
-                onClick={() =>
-                  void act(async () => {
-                    const r = await api.publishSite(t.name);
-                    return `Publikováno: nahráno ${r.uploaded} (${fileSize(r.bytes)}), smazáno ${r.deleted}, beze změny ${r.unchanged}.`;
-                  })
-                }
-                className="btn-primary text-sm"
-              >
-                {busy ? "Pracuji…" : "Publikovat www/"}
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => void act(async () => `Připojeno. Ve složce: ${(await api.testSiteTarget(t.name)).entries.join(", ") || "nic"}.`)}
-                className="btn-secondary text-sm"
-              >
-                Vyzkoušet
-              </button>
-              <button disabled={busy} onClick={() => setEditing(t)} className="btn-link text-sm">
-                Upravit
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => window.confirm(`Odebrat cíl ${t.name}? Soubory na serveru zůstanou.`) && void act(async () => void (await api.deleteSiteTarget(t.name)))}
-                className="btn-danger text-sm"
-              >
-                Odebrat
-              </button>
-            </div>
-            <p className="mt-1 text-xs text-fg-muted">
-              {t.hostKey ? `Klíč serveru: ${t.hostKey}` : "Klíč serveru se uloží při prvním připojení."}
-              {t.lastPublish &&
-                ` · Naposledy ${new Date(t.lastPublish.at).toLocaleString("cs-CZ")}: ${
-                  t.lastPublish.ok ? `nahráno ${t.lastPublish.uploaded}, smazáno ${t.lastPublish.deleted}` : `chyba (${t.lastPublish.error})`
-                }`}
-            </p>
-          </li>
-        ))}
-      </ul>
-      {targets && !targets.length && !editing && <p className="mt-4 text-sm text-fg-muted">Zatím žádný cíl publikování.</p>}
-
-      {editing ? (
-        <TargetForm
-          key={editing === "new" ? "new" : editing.name}
-          target={editing === "new" ? undefined : editing}
-          onDone={() => {
-            setEditing(undefined);
-            void load();
-          }}
-        />
+    <MasterDetail
+      title="Weby"
+      top={
+        <p className="px-2 text-xs text-fg-muted">
+          Web jsou soubory ve složce <code>www</code> (s <code>index.html</code>), publikované přes SFTP na hosting. Doménu a DNS nastavíš u hostingu.
+        </p>
+      }
+      groups={[{ title: "Cíle publikování", items: (targets ?? []).map((x) => ({ key: x.name, label: x.name, hint: `${x.username}@${x.host}${x.remoteDir}` })), empty: "Zatím žádný." }]}
+      selected={selected}
+      onSelect={(name) => (setNotice(undefined), setSelected(name))}
+      add={{ label: "Přidat cíl publikování", onClick: () => setSelected(null) }}
+    >
+      {selected === null ? (
+        <div className="detail max-w-3xl">
+          <TargetForm key="new" onDone={(name) => void load().then(() => setSelected(name))} />
+        </div>
+      ) : t ? (
+        <div className="detail max-w-3xl">
+          <h1 className="text-lg font-semibold">{t.name}</h1>
+          <p className="mt-1 text-sm text-fg-secondary">
+            <code>
+              {t.username}@{t.host}:{t.port}
+              {t.remoteDir}
+            </code>
+          </p>
+          <p className="mt-1 text-xs text-fg-muted">
+            {t.hostKey ? `Klíč serveru: ${t.hostKey}` : "Klíč serveru se uloží při prvním připojení."}
+            {t.lastPublish &&
+              ` · Naposledy ${new Date(t.lastPublish.at).toLocaleString("cs-CZ")}: ${
+                t.lastPublish.ok ? `nahráno ${t.lastPublish.uploaded}, smazáno ${t.lastPublish.deleted}` : `chyba (${t.lastPublish.error})`
+              }`}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              disabled={busy}
+              onClick={() =>
+                void act(async () => {
+                  const r = await api.publishSite(t.name);
+                  return `Publikováno: nahráno ${r.uploaded} (${fileSize(r.bytes)}), smazáno ${r.deleted}, beze změny ${r.unchanged}.`;
+                })
+              }
+              className="btn-primary text-sm"
+            >
+              {busy ? "Pracuji…" : "Publikovat www/"}
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => void act(async () => `Připojeno. Ve složce: ${(await api.testSiteTarget(t.name)).entries.join(", ") || "nic"}.`)}
+              className="btn-secondary text-sm"
+            >
+              Vyzkoušet
+            </button>
+            <span className="flex-1" />
+            <button
+              disabled={busy}
+              onClick={() =>
+                window.confirm(`Odebrat cíl ${t.name}? Soubory na serveru zůstanou.`) &&
+                void act(async () => {
+                  await api.deleteSiteTarget(t.name);
+                  setSelected(undefined);
+                })
+              }
+              className="btn-danger text-sm"
+            >
+              Odebrat
+            </button>
+          </div>
+          <ErrorNotice error={error} />
+          {notice && <p className="notice mt-3 px-3 py-2 text-sm">{notice}</p>}
+          <TargetForm key={t.name} target={t} onDone={() => void load()} />
+        </div>
       ) : (
-        <button onClick={() => setEditing("new")} className="btn-secondary mt-4 text-sm">
-          + Přidat cíl publikování
-        </button>
+        <div className="detail">
+          <ErrorNotice error={error} />
+        </div>
       )}
-    </div>
+    </MasterDetail>
   );
 }
 
-function TargetForm({ target, onDone }: { target?: SiteTarget; onDone: () => void }) {
+function TargetForm({ target, onDone }: { target?: SiteTarget; onDone: (name: string) => void }) {
   const [name, setName] = useState(target?.name ?? "");
   const [host, setHost] = useState(target?.host ?? "");
   const [port, setPort] = useState(target?.port ?? 22);
@@ -132,13 +134,14 @@ function TargetForm({ target, onDone }: { target?: SiteTarget; onDone: () => voi
     e.preventDefault();
     void attempt(setBusy, setError, async () => {
       await api.saveSiteTarget(name, { host, port, username, remoteDir, auth, secret: secret || undefined });
-      onDone();
+      setSecret("");
+      onDone(name);
     });
   };
 
   return (
     <form onSubmit={submit} className="mt-6 space-y-4">
-      <h2 className="section-header">{target ? `Upravit ${target.name}` : "Nový cíl publikování"}</h2>
+      {target ? <h2 className="section-header">Nastavení</h2> : <h1 className="text-lg font-semibold">Nový cíl publikování</h1>}
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Název">
           <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} pattern={NAME.source} readOnly={!!target} required placeholder="např. firma-cz" className="field" />
@@ -189,9 +192,6 @@ function TargetForm({ target, onDone }: { target?: SiteTarget; onDone: () => voi
       <div className="flex gap-3">
         <button disabled={busy} className="btn-primary">
           {busy ? "Ukládám…" : "Uložit"}
-        </button>
-        <button type="button" onClick={onDone} className="btn-secondary">
-          Zrušit
         </button>
       </div>
     </form>

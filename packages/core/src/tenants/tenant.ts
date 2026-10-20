@@ -25,6 +25,7 @@ import { UsageStore } from "../agent/usage.ts";
 import { McpOAuthStore } from "../mcp/oauth.ts";
 import { FileIndex } from "../files/index.ts";
 import { SiteTargetStore } from "../sites/sftp.ts";
+import { GuardStore, guardsText } from "../agent/guards.ts";
 import { buildPublicPrompt, InquiryStore, PublicAssistantStore, publicProfile, publicTools } from "../public/assistant.ts";
 import { googleTools } from "../integrations/google.ts";
 import { microsoftTools } from "../integrations/microsoft.ts";
@@ -64,6 +65,7 @@ export interface Tenant {
   usage: UsageStore;
   /** Persona and rules, tenant-wide (owner '') and per user. */
   profiles: AssistantProfileStore;
+  guards: GuardStore;
   /** The rules a user's runs keep to: system, tenant and the user's own. */
   rules(userId: string): Promise<GuardRules>;
   model: BaseChatModel;
@@ -108,15 +110,21 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const features = deps.features;
   const usage = new UsageStore(db);
   const profiles = new AssistantProfileStore(db);
+  // Guards are files, so the store comes after the file store; rules() runs only in runs, long after.
+  let guards!: GuardStore;
   const rules = async (userId: string): Promise<GuardRules> => {
-    const [system, tenant, user] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(userId)]);
-    return { system, tenant: tenant.guards, user: user.guards };
+    const [system, tenant, user] = await Promise.all([features.systemGuards(), guards.list({ level: "tenant" }), guards.list({ level: "user", userId })]);
+    return { system: guardsText(system), tenant: guardsText(tenant), user: guardsText(user) };
   };
   // The public assistants (customers): each its own persona and rules after the system's and the tenant's.
   const publicAssistants = new PublicAssistantStore(db);
   const publicRules = async (name = ""): Promise<GuardRules> => {
-    const [system, tenant, open] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(publicProfile(name))]);
-    return { system, tenant: tenant.guards, user: open.guards };
+    const [system, tenant, open] = await Promise.all([
+      features.systemGuards(),
+      guards.list({ level: "tenant" }),
+      name ? guards.list({ level: "assistant", assistant: name }) : [],
+    ]);
+    return { system: guardsText(system), tenant: guardsText(tenant), user: guardsText(open) };
   };
   const inquiries = new InquiryStore(db);
   const fileIndex = new FileIndex(db);
@@ -132,6 +140,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   });
   indexer = new FileIndexer(files, fileIndex, knowledge);
   const skills = new SkillStore(files, deps.bundledSkills);
+  guards = new GuardStore(files);
   const siteTargets = new SiteTargetStore(db, deps.secrets);
   const integrations = new IntegrationAccounts(
     db,
@@ -220,6 +229,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     await moveLegacyToFiles(db, files);
     await mergePersonalIntoTenant(db, files);
     await publicAssistants.migrateLegacy(skills);
+    await guards.migrateProfiles(db);
     await indexer!.reconcile();
   };
   return {
@@ -243,6 +253,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     builtinTools: builtins,
     usage,
     profiles,
+    guards,
     rules,
     model: deps.model,
     graph,

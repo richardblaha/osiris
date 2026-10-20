@@ -1,5 +1,5 @@
 import type { Client } from "@libsql/client";
-import { FEATURES, NO_QUOTAS, type Feature, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type Feature, type Guard, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
 
 /** Everything is on until a system admin switches it off, so existing tenants keep working. */
 export const DEFAULT_FEATURES: TenantFeatures = Object.fromEntries(FEATURES.map((f) => [f, true])) as TenantFeatures;
@@ -13,7 +13,7 @@ export interface FeatureSource {
   /** The tenant's limits (storage, tokens per month, ...). */
   quotas(): Promise<TenantQuotas>;
   /** Rules for every tenant, set by system admins; they come before the tenant's and the user's. */
-  systemGuards(): Promise<string>;
+  systemGuards(): Promise<Guard[]>;
 }
 
 /**
@@ -45,8 +45,8 @@ export class TenantFeatureStore implements FeatureSource {
     return NO_QUOTAS;
   }
 
-  async systemGuards(): Promise<string> {
-    return "";
+  async systemGuards(): Promise<Guard[]> {
+    return [];
   }
 
   async set(changes: Partial<TenantFeatures>): Promise<TenantFeatures> {

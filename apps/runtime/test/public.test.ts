@@ -132,7 +132,7 @@ describe("public assistants", () => {
     expect(await (await admin("/public-assistants")).json()).toEqual([
       { name: "web", enabled: true, title: "Novák", greeting: "Ahoj", knowledge: ["public"], memories: [], skills: ["cenik"], tools: ["create_inquiry"], tokensPerMonth: 5 },
     ]);
-    expect((await (await admin("/assistant?assistant=web")).json()).public).toEqual({ persona: null, guards: "Vykej." });
+    expect((await (await admin("/guards")).json()).assistants).toEqual({ web: [{ name: "pravidlo-1", description: "Vykej.", rule: "Vykej." }] });
     expect(await acme.usage.tokens(Date.parse("2026-10-15"), { public: "web" })).toBe(7);
   });
 

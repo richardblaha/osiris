@@ -2,6 +2,7 @@ import type { Schedule, ScheduleInput } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { MasterDetail } from "./MasterDetail.tsx";
 
 const PRESETS: { label: string; cron: string }[] = [
   { label: "každý všední den v 7:00", cron: "0 7 * * 1-5" },
@@ -33,18 +34,72 @@ const toDraft = (s: Schedule): Draft => ({
 export function Schedules({ isAdmin, onOpenThread }: { isAdmin: boolean; onOpenThread: (id: string) => void }) {
   const [all, setAll] = useState(false);
   const [list, setList] = useState<Schedule[]>();
-  const [editing, setEditing] = useState<Schedule | "new" | null>(null);
-  const [draft, setDraft] = useState<Draft>(empty);
-  const [busy, setBusy] = useState(false);
+  // A task's id, or null for a new one.
+  const [selected, setSelected] = useState<string | null>();
   const [error, setError] = useState<string>();
-
   const load = () => api.schedules(all).then(setList, (e: Error) => setError(e.message));
   useEffect(() => void load(), [all]);
+  const open = list?.find((s) => s.id === selected);
 
-  const open = (s: Schedule | "new") => {
-    setEditing(s);
-    setDraft(s === "new" ? empty : toDraft(s));
-  };
+  return (
+    <MasterDetail
+      title="Plánované úlohy"
+      top={
+        isAdmin && (
+          <label className="flex items-center gap-2 px-2 py-1 text-xs">
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> všech uživatelů
+          </label>
+        )
+      }
+      groups={[
+        {
+          items: (list ?? []).map((s) => ({
+            key: s.id,
+            label: s.title,
+            hint: `${describe(s)}${all && s.ownerName ? ` · ${s.ownerName}` : ""}`,
+            muted: !s.enabled,
+            badge: s.lastStatus === "failed" ? <span className="text-xs text-error">selhalo</span> : undefined,
+          })),
+          empty: "Zatím žádné úlohy.",
+        },
+      ]}
+      selected={selected}
+      onSelect={setSelected}
+      add={{ label: "Nová úloha", onClick: () => setSelected(null) }}
+      placeholder="Asistent úlohu spustí sám v nastavený čas, s tvými oprávněními. Výsledek najdeš jako novou konverzaci, případně i ve WhatsAppu. Úlohu můžeš zadat i v chatu, např. „každé ráno v 7 mi shrň dnešní zakázky“."
+    >
+      {error ? (
+        <div className="detail">
+          <ErrorNotice error={error} />
+        </div>
+      ) : selected === null || open ? (
+        <ScheduleDetail
+          key={open?.id ?? "new"}
+          schedule={open}
+          onOpenThread={onOpenThread}
+          onSaved={(id) => void load().then(() => setSelected(id))}
+          onDeleted={() => void load().then(() => setSelected(undefined))}
+        />
+      ) : undefined}
+    </MasterDetail>
+  );
+}
+
+function ScheduleDetail({
+  schedule,
+  onOpenThread,
+  onSaved,
+  onDeleted,
+}: {
+  schedule?: Schedule;
+  onOpenThread: (id: string) => void;
+  onSaved: (id: string) => void;
+  onDeleted: () => void;
+}) {
+  const [draft, setDraft] = useState<Draft>(schedule ? toDraft(schedule) : empty);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -58,35 +113,52 @@ export function Schedules({ isAdmin, onOpenThread }: { isAdmin: boolean; onOpenT
       enabled: draft.enabled,
     };
     void attempt(setBusy, setError, async () => {
-      if (editing === "new") await api.createSchedule(input);
-      else if (editing) await api.updateSchedule(editing.id, input);
-      setEditing(null);
-      await load();
+      const saved = schedule ? await api.updateSchedule(schedule.id, input) : await api.createSchedule(input);
+      setNotice("Uloženo.");
+      onSaved(saved.id);
     });
   };
-
-  const act = (action: () => Promise<unknown>) => attempt(setBusy, setError, async () => (await action(), await load()));
+  const s = schedule;
 
   return (
-    <div className="detail max-w-4xl">
-      <div className="flex items-center gap-3">
-        <h1 className="flex-1 text-lg font-semibold">Plánované úlohy</h1>
-        {isAdmin && (
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> všech uživatelů
-          </label>
-        )}
-        <button onClick={() => open("new")} className="btn-primary text-sm">
-          Nová úloha
-        </button>
-      </div>
-      <p className="mt-1 text-sm text-fg-secondary">
-        Asistent úlohu spustí sám v nastavený čas, s tvými oprávněními. Výsledek najdeš jako novou konverzaci, případně i ve WhatsAppu.
-        Úlohu můžeš zadat i v chatu, např. „každé ráno v 7 mi shrň dnešní zakázky“.
-      </p>
-
-      {editing && (
-        <form onSubmit={submit} className="notice mt-4 space-y-3 p-3">
+    <div className="detail max-w-3xl space-y-4">
+      <h1 className="text-lg font-semibold">{s ? s.title : "Nová úloha"}</h1>
+      {s && (
+        <div className="text-sm">
+          <p className="text-fg-secondary">
+            {describe(s)}
+            {s.delivery === "whatsapp" && " · i na WhatsApp"}
+            {s.ownerName && ` · ${s.ownerName}`}
+          </p>
+          <p className="mt-0.5 text-xs text-fg-muted">
+            další spuštění {s.enabled ? when(s.nextRunAt) : "—"}
+            {s.lastRunAt && ` · naposledy ${when(s.lastRunAt)} (${s.lastStatus ? STATUS[s.lastStatus] : "?"})`}
+          </p>
+          {s.lastError && <p className="mt-0.5 text-xs text-error">{s.lastError}</p>}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {s.lastThreadId && (
+              <button onClick={() => onOpenThread(s.lastThreadId!)} className="btn-secondary text-sm">
+                Poslední výsledek
+              </button>
+            )}
+            <button
+              onClick={() => void attempt(setBusy, setError, async () => (await api.runSchedule(s.id), setNotice("Spuštěno, výsledek bude v nové konverzaci.")))}
+              disabled={busy}
+              className="btn-secondary text-sm"
+            >
+              Spustit teď
+            </button>
+            <span className="flex-1" />
+            <button
+              onClick={() => window.confirm(`Smazat úlohu „${s.title}“?`) && void attempt(setBusy, setError, async () => (await api.deleteSchedule(s.id), onDeleted()))}
+              className="btn-danger text-sm"
+            >
+              Smazat
+            </button>
+          </div>
+        </div>
+      )}
+      <form onSubmit={submit} className="space-y-3">
           <Field label="Název">
             <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} required maxLength={100} className="field" />
           </Field>
@@ -137,52 +209,14 @@ export function Schedules({ isAdmin, onOpenThread }: { isAdmin: boolean; onOpenT
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> zapnutá
           </label>
-          <div className="flex gap-2">
+          <ErrorNotice error={error} />
+          <div className="flex items-center gap-3">
             <button disabled={busy} className="btn-primary">
               {busy ? "Ukládám…" : "Uložit"}
             </button>
-            <button type="button" onClick={() => setEditing(null)} className="btn-secondary">
-              Zrušit
-            </button>
+            {notice && <span className="text-sm text-success">{notice}</span>}
           </div>
-        </form>
-      )}
-      <ErrorNotice error={error} />
-
-      <ul className="mt-4 divide-y divide-line">
-        {list?.map((s) => (
-          <li key={s.id} className="py-3 text-sm">
-            <div className="flex flex-wrap items-baseline gap-x-3">
-              <span className={`font-medium ${s.enabled ? "" : "text-fg-muted line-through"}`}>{s.title}</span>
-              <span className="text-fg-secondary">{describe(s)}</span>
-              {s.delivery === "whatsapp" && <span className="badge">WhatsApp</span>}
-              {all && s.ownerName && <span className="badge">{s.ownerName}</span>}
-            </div>
-            <p className="mt-0.5 text-xs text-fg-muted">
-              další spuštění {s.enabled ? when(s.nextRunAt) : "—"}
-              {s.lastRunAt && ` · naposledy ${when(s.lastRunAt)} (${s.lastStatus ? STATUS[s.lastStatus] : "?"})`}
-            </p>
-            {s.lastError && <p className="mt-0.5 text-xs text-error">{s.lastError}</p>}
-            <div className="mt-1 flex gap-3">
-              {s.lastThreadId && (
-                <button onClick={() => onOpenThread(s.lastThreadId!)} className="btn-link">
-                  Poslední výsledek
-                </button>
-              )}
-              <button onClick={() => void act(() => api.runSchedule(s.id))} disabled={busy} className="btn-link">
-                Spustit teď
-              </button>
-              <button onClick={() => open(s)} className="btn-link">
-                Upravit
-              </button>
-              <button onClick={() => window.confirm(`Smazat úlohu „${s.title}“?`) && void act(() => api.deleteSchedule(s.id))} className="btn-danger">
-                Smazat
-              </button>
-            </div>
-          </li>
-        ))}
-        {list && !list.length && <li className="py-3 text-sm text-fg-muted">Zatím žádné úlohy.</li>}
-      </ul>
+      </form>
     </div>
   );
 }

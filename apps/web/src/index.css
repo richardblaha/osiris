@@ -27,6 +27,11 @@ body,
     padding: 0;
   }
 
+  /* The collapsed sidebar shows icons only. */
+  aside[data-collapsed="true"] .side-label {
+    display: none;
+  }
+
   /* An on/off switch: a native checkbox with role="switch"; indeterminate (partly on) puts the knob in the middle. */
   .switch {
     appearance: none;

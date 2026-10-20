@@ -58,20 +58,42 @@ export interface Persona {
   description: string;
 }
 
-/** The assistant's persona and rules ("guards", one per line) at one level: tenant-wide or a user's own. */
+/** The assistant's persona at one level: tenant-wide, a user's own or a public assistant's. */
 export interface AssistantProfile {
   persona: Persona | null;
-  guards: string;
 }
 
-/** Everything that shapes the assistant for the current user (`/api/assistant`); system rules are read-only here. */
+/** Everything that shapes the assistant's persona for the current user (`/api/assistant`). */
 export interface AssistantProfiles {
-  system: { guards: string };
   tenant: AssistantProfile;
   personal: AssistantProfile;
-  /** A public assistant's own persona and rules (customers; `?assistant=<name>`); for admins. */
+  /** A public assistant's own persona (customers; `?assistant=<name>`); for admins. */
   public?: AssistantProfile;
 }
+
+/**
+ * A rule the assistant keeps to: in the prompt, and every message and answer is checked against it. Stored as a
+ * Markdown file per guard (frontmatter name and description, the rule as the body): the system's in control, the
+ * tenant's in its files under `guards/`, a user's under `guards/users/<id>/`, a public assistant's under
+ * `guards/assistants/<name>/`.
+ */
+export interface Guard {
+  name: string;
+  description: string;
+  rule: string;
+}
+
+/** Guards by level (`/api/guards`): the system's read-only here; the assistants' for admins. */
+export interface Guards {
+  system: Guard[];
+  tenant: Guard[];
+  /** The caller's own. */
+  user: Guard[];
+  assistants?: Record<string, Guard[]>;
+}
+
+/** Guard names, also their file names: kebab-case. */
+export const GUARD_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 /** Limits a system admin sets per tenant; null = no limit (storage: 80 % of the tenant's volume). */
 export interface TenantQuotas {

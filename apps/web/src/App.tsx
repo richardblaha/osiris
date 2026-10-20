@@ -35,6 +35,8 @@ import { TenantAdmin, TenantLogo } from "./Tenants.tsx";
 import { QuotaMeters } from "./Quotas.tsx";
 import { BuiltinTools } from "./Tools.tsx";
 import { UserAdmin } from "./Users.tsx";
+import { MasterDetail } from "./MasterDetail.tsx";
+import { Guards } from "./Guards.tsx";
 
 export function App() {
   // The sign-in screen, where the identity provider (/auth) sends the browser.
@@ -87,6 +89,7 @@ type View =
   | { kind: "files" }
   | { kind: "schedules" }
   | { kind: "sites" }
+  | { kind: "guards" }
   | { kind: "public" };
 
 interface Lists {
@@ -144,6 +147,7 @@ function rows(section: Section, lists: Lists): Row[] {
 }
 
 const LAST_TENANT = "osiris.tenant";
+const SIDEBAR_COLLAPSED = "osiris.sidebarCollapsed";
 
 /** Per-browser conveniences only; the app works the same when storage is unavailable. */
 const stored = <T,>(key: string, fallback: T): T => {
@@ -210,6 +214,7 @@ function Workspace() {
     if (started.tenant) store(LAST_TENANT, started.tenant);
     return { ...started, code: params.get("code"), state: params.get("state"), error: params.get("error_description") ?? params.get("error") };
   });
+  const [collapsed, setCollapsed] = useState(() => stored(SIDEBAR_COLLAPSED, false));
   const [view, setView] = useState<View>(notice || integrationReturn ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
   const [error, setError] = useState<string>();
 
@@ -319,21 +324,38 @@ function Workspace() {
   /** After a save the record is shown. */
   const showSaved = (section: Section, key: string) => void refresh(section).then(() => setView({ kind: "item", section, id: key }));
   const hasSettings = !!tenant && (tenant.features.files || sections.length > 0);
+  const toggleSidebar = () => setCollapsed((c) => (store(SIDEBAR_COLLAPSED, !c), !c));
 
   return (
     <div className="flex h-full">
-      <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-sidebar text-sm">
-        <div className="flex items-center gap-2 px-3 pt-3">
+      {/* Collapsed: icons only; `side-label` parts hide. */}
+      <aside data-collapsed={collapsed} className={`group/side flex shrink-0 flex-col border-r border-line bg-sidebar text-sm ${collapsed ? "w-16" : "w-72"}`}>
+        <div className={`flex items-center gap-2 pt-3 ${collapsed ? "flex-col px-2" : "px-3"}`}>
           <img src="/logo.svg" alt="" className="h-8 w-8" />
-          <span className="text-xl font-semibold tracking-[0.2em]">OSIRIS</span>
-        </div>
-        {tenant && (
-          <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
-            + Nový chat
+          {!collapsed && <span className="flex-1 text-xl font-semibold tracking-[0.2em]">OSIRIS</span>}
+          <button onClick={toggleSidebar} className="list-row p-1.5 text-fg-secondary" aria-label={collapsed ? "Rozbalit panel" : "Sbalit panel"} title={collapsed ? "Rozbalit panel" : "Sbalit panel"}>
+            <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
+              <path d={collapsed ? "M2 3h12v10H2zM6 3v10M8.5 6.5 10 8l-1.5 1.5" : "M2 3h12v10H2zM6 3v10M11 6.5 9.5 8 11 9.5"} fill="none" stroke="currentColor" strokeWidth="1.3" />
+            </svg>
           </button>
-        )}
+        </div>
+        {tenant &&
+          (collapsed ? (
+            <button onClick={() => openThread(null)} className="btn-primary mx-auto mt-3 flex h-10 w-10 items-center justify-center p-0" aria-label="Nový chat" title="Nový chat">
+              <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
+                <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+            </button>
+          ) : (
+            <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
+              + Nový chat
+            </button>
+          ))}
         <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {tenant && (
+          {tenant && collapsed && (
+            <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label="Konverzace" icon="M2 4h12v7H9l-3 3v-3H2z" />
+          )}
+          {tenant && !collapsed && (
             <section>
               <h2 className="section-header flex items-center gap-1 px-2 py-1">
                 Konverzace {threads.length > 0 && <span className="font-normal text-fg-muted">{threads.length}</span>}
@@ -373,6 +395,7 @@ function Workspace() {
           {tenant?.features.scheduler && (
             <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
           )}
+          {tenant && <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label="Guardy" icon="M8 1.5 13.5 3.5v4c0 3.2-2.3 5.8-5.5 7-3.2-1.2-5.5-3.8-5.5-7v-4zM5.5 8l2 2 3-3.5" />}
           {tenant?.features.public && (
             <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Asistenti" icon="M2 4h12v7H6l-3 3V4z" />
           )}
@@ -398,11 +421,16 @@ function Workspace() {
         </nav>
 
         <div className="border-t border-line p-2">
-          {tenant && usage && <QuotaMeters usage={usage} />}
+          {tenant && usage && !collapsed && <QuotaMeters usage={usage} />}
           <TenantSwitcher me={me} tenant={tenant} active={view.kind === "tenant"} onOpen={() => setView({ kind: "tenant" })} onSelect={selectTenant} />
-          <button onClick={() => setView({ kind: "profile" })} data-active={view.kind === "profile"} className="list-row flex w-full items-center gap-3 px-2 py-2 text-left">
+          <button
+            onClick={() => setView({ kind: "profile" })}
+            data-active={view.kind === "profile"}
+            title={collapsed ? (me.user.name ?? me.user.email ?? undefined) : undefined}
+            className="list-row flex w-full items-center gap-3 px-2 py-2 text-left"
+          >
             <Avatar user={me.user} />
-            <span className="min-w-0 flex-1">
+            <span className="side-label min-w-0 flex-1">
               <span className="block truncate font-medium">{me.user.name ?? me.user.email}</span>
               {me.user.name && me.user.email && <span className="block truncate text-xs text-fg-muted">{me.user.email}</span>}
             </span>
@@ -450,27 +478,20 @@ function Workspace() {
           tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
         ) : view.kind === "public" ? (
           tenant.features.public ? <PublicAssistants key={tenant.id} tenantId={tenant.id} isAdmin={isAdmin} /> : null
+        ) : view.kind === "guards" ? (
+          <Guards key={tenant.id} isAdmin={isAdmin} systemAdmin={me.systemAdmin} />
         ) : view.kind === "sites" ? (
           tenant.features.sites ? <Sites key={tenant.id} isAdmin={isAdmin} /> : null
-        ) : view.kind === "list" ? (
-          <SectionList
-            title={SECTIONS.find((s) => s.id === view.section)!.label}
-            add={SECTIONS.find((s) => s.id === view.section)!.add}
+        ) : view.kind === "list" || view.kind === "item" ? (
+          <SectionPanel
+            key={`${tenant.id}:${view.section}`}
+            view={view}
+            lists={lists}
             canAdd={canAdd(view.section)}
-            rows={rows(view.section, lists)}
-            onOpen={(id) => setView({ kind: "item", section: view.section, id })}
-            before={view.section === "mcp" ? <BuiltinTools key={tenant.id} tenantId={tenant.id} systemAdmin={me.systemAdmin} /> : undefined}
-            listTitle={view.section === "mcp" ? "MCP servery" : undefined}
-          />
-        ) : view.kind === "item" ? (
-          <div className="flex h-full flex-col">
-            <button
-              onClick={() => setView({ kind: "list", section: view.section })}
-              className="mx-auto w-full max-w-3xl px-6 pt-4 text-left text-sm text-fg-secondary hover:text-primary"
-            >
-              ← {SECTIONS.find((s) => s.id === view.section)!.label}
-            </button>
-            <div className="min-h-0 flex-1">
+            setView={setView}
+            tools={view.section === "mcp" ? <BuiltinTools key={tenant.id} tenantId={tenant.id} systemAdmin={me.systemAdmin} /> : undefined}
+          >
+            {view.kind === "item" && (
               <Detail
                 key={`${tenant.id}:${view.section}:${view.id ?? "new"}`}
                 section={view.section}
@@ -481,8 +502,8 @@ function Workspace() {
                 onSaved={(key) => showSaved(view.section, key)}
                 onDeleted={() => void refresh(view.section).then(() => setView({ kind: "list", section: view.section }))}
               />
-            </div>
-          </div>
+            )}
+          </SectionPanel>
         ) : (
           <ChatPane
             key={`${tenant.id}:${view.session}`}
@@ -543,13 +564,13 @@ function TenantSwitcher({
         className="list-row flex w-full items-center gap-3 px-2 py-2 text-left"
       >
         <TenantLogo tenant={tenant ?? { name: "?", logo: null }} />
-        <span className="min-w-0 flex-1">
+        <span className="side-label min-w-0 flex-1">
           <span className="block truncate text-base font-semibold">{tenant?.name ?? "Žádný tenant"}</span>
           <span className="block truncate text-xs text-fg-muted">{tenant ? roleLabel(tenant.role) : "vyber nebo založ tenanta"}</span>
         </span>
       </button>
       {open && (
-        <div role="menu" className="absolute inset-x-0 bottom-full z-10 mb-1 max-h-96 overflow-y-auto rounded-md border border-line bg-canvas p-1 shadow-[var(--shadow-popup)]">
+        <div role="menu" className="absolute bottom-full left-0 w-64 z-10 mb-1 max-h-96 overflow-y-auto rounded-md border border-line bg-canvas p-1 shadow-[var(--shadow-popup)]">
           {me.tenants.map((t) => (
             <button
               key={t.id}
@@ -574,58 +595,57 @@ function TenantSwitcher({
   );
 }
 
+/** A sidebar link: an icon with its label, only the icon (and a tooltip) while the sidebar is collapsed. */
 function NavLink({ active, onClick, label, icon, count }: { active: boolean; onClick: () => void; label: string; icon: string; count?: number }) {
   return (
-    <button onClick={onClick} data-active={active} className="section-header list-row mt-2 flex w-full items-center gap-1 px-2 py-1 text-left">
-      <svg viewBox="0 0 16 16" className="h-3 w-3" aria-hidden="true">
-        <path d={icon} fill="none" stroke="currentColor" strokeWidth="1.4" />
+    <button
+      onClick={onClick}
+      data-active={active}
+      title={label}
+      aria-label={label}
+      className="section-header list-row mt-1 flex w-full items-center gap-2 px-2 py-1.5 text-left group-data-[collapsed=true]/side:justify-center"
+    >
+      <svg viewBox="0 0 16 16" className="h-5 w-5 shrink-0" aria-hidden="true">
+        <path d={icon} fill="none" stroke="currentColor" strokeWidth="1.3" />
       </svg>
-      {label}
-      {!!count && <span className="font-normal text-fg-muted">{count}</span>}
+      <span className="side-label truncate">{label}</span>
+      {!!count && <span className="side-label font-normal text-fg-muted">{count}</span>}
     </button>
   );
 }
 
-/** A section's records; a record opens its detail form. */
-function SectionList(props: {
-  title: string;
-  add: string;
+/** The tools' entry of the MCP section, above its servers. */
+const BUILTIN_TOOLS = " tools";
+
+/** A section's records in the secondary panel, the chosen record's detail (`children`) on the right. */
+function SectionPanel(props: {
+  view: Extract<View, { kind: "list" | "item" }>;
+  lists: Lists;
   canAdd: boolean;
-  rows: Row[];
-  onOpen: (id: string | null) => void;
-  /** Shown above the records, e.g. the built-in tools above the MCP servers. */
-  before?: ReactNode;
-  listTitle?: string;
+  setView: (v: View) => void;
+  /** The MCP section's built-in tools, shown when no server is chosen. */
+  tools?: ReactNode;
+  children?: ReactNode;
 }) {
+  const { view, setView } = props;
+  const section = SECTIONS.find((s) => s.id === view.section)!;
+  const items = rows(view.section, props.lists).map((r) => ({ key: r.key, label: r.label, badge: r.badge }));
+  const selected = view.kind === "item" ? view.id : props.tools ? BUILTIN_TOOLS : undefined;
   return (
-    <div className="detail">
-      <div className="flex items-center gap-3">
-        <h1 className="min-w-0 flex-1 text-lg font-semibold">
-          {props.title}
-        </h1>
-        {props.canAdd && (
-          <button onClick={() => props.onOpen(null)} className="btn-primary">
-            + {props.add}
-          </button>
-        )}
-      </div>
-      <p className="mt-1 text-xs text-fg-muted">
-        {props.canAdd ? "Platí pro všechny v tenantovi." : "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."}
-      </p>
-      {props.before}
-      {props.listTitle && <h2 className="section-header mt-6">{props.listTitle}</h2>}
-      <ul className={`${props.listTitle ? "mt-1" : "mt-4"} text-sm`}>
-        {props.rows.map((r) => (
-          <li key={r.key}>
-            <button onClick={() => props.onOpen(r.key)} className="list-row flex w-full items-center gap-2 px-2 py-2 text-left">
-              <span className="min-w-0 flex-1 truncate">{r.label}</span>
-              {r.badge && <span className="flex shrink-0 gap-1">{r.badge}</span>}
-            </button>
-          </li>
-        ))}
-      </ul>
-      {!props.rows.length && <p className="px-2 py-2 text-sm text-fg-muted">Zatím nic.</p>}
-    </div>
+    <MasterDetail
+      title={section.label}
+      top={<p className="px-2 text-xs text-fg-muted">{props.canAdd ? "Platí pro všechny v tenantovi." : "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."}</p>}
+      groups={
+        props.tools
+          ? [{ items: [{ key: BUILTIN_TOOLS, label: "Interní nástroje" }] }, { title: "MCP servery", items, empty: "Zatím žádné." }]
+          : [{ items, empty: "Zatím nic." }]
+      }
+      selected={selected}
+      onSelect={(id) => setView(id === BUILTIN_TOOLS ? { kind: "list", section: view.section } : { kind: "item", section: view.section, id })}
+      add={props.canAdd ? { label: section.add, onClick: () => setView({ kind: "item", section: view.section, id: null }) } : undefined}
+    >
+      {props.children || (props.tools && <div className="detail">{props.tools}</div>) || undefined}
+    </MasterDetail>
   );
 }
 

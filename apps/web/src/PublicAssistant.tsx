@@ -14,11 +14,14 @@ import { api } from "./api.ts";
 import { AssistantSettings } from "./Assistant.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 import { loadSkills } from "./Skills.tsx";
+import { MasterDetail } from "./MasterDetail.tsx";
 
 const TOOL_LABELS: Record<PublicTool, { label: string; hint: string }> = {
   estimate_price: { label: "Odhad ceny zakázky", hint: "spočítá orientační cenu z ceníku v jeho znalostech" },
   create_inquiry: { label: "Poptávka", hint: "převezme jméno, kontakt a popis zakázky a pošle vám e-mail" },
 };
+
+const INQUIRIES = " inquiries";
 
 const NEW: PublicAssistantSettings = {
   name: "",
@@ -39,55 +42,56 @@ const NEW: PublicAssistantSettings = {
  */
 export function PublicAssistants({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
   const [list, setList] = useState<PublicAssistantSettings[]>();
-  const [editing, setEditing] = useState<PublicAssistantSettings>();
+  // An assistant's name, INQUIRIES, or null for a new one.
+  const [selected, setSelected] = useState<string | null>(INQUIRIES);
   const [error, setError] = useState<string>();
   const load = () => api.publicAssistants().then(setList, (e: Error) => setError(e.message));
   useEffect(() => void (isAdmin ? load() : undefined), []);
+  const open = list?.find((a) => a.name === selected);
 
-  if (editing) {
-    return (
-      <Editor
-        key={editing.name || "new"}
-        tenantId={tenantId}
-        initial={editing}
-        onDone={() => (setEditing(undefined), void load())}
-      />
-    );
-  }
   return (
-    <div className="detail max-w-3xl space-y-10">
-      <div>
-        <div className="flex items-center gap-3">
-          <h1 className="min-w-0 flex-1 text-lg font-semibold">Asistenti</h1>
-          {isAdmin && (
-            <button onClick={() => setEditing(NEW)} className="btn-primary">
-              + Přidat asistenta
-            </button>
-          )}
+    <MasterDetail
+      title="Asistenti"
+      top={<p className="px-2 text-xs text-fg-muted">Asistenti pro zákazníky na webu, bez přihlášení. Každý ví jen to, co mu vyberete.</p>}
+      groups={[
+        { items: [{ key: INQUIRIES, label: "Poptávky" }] },
+        ...(isAdmin
+          ? [
+              {
+                title: "Asistenti",
+                items: (list ?? []).map((a) => ({
+                  key: a.name,
+                  label: a.title || a.name,
+                  hint: a.name,
+                  badge: <span className={`text-xs ${a.enabled ? "text-success" : "text-fg-muted"}`}>{a.enabled ? "zapnutý" : "vypnutý"}</span>,
+                })),
+                empty: "Zatím žádný.",
+              },
+            ]
+          : []),
+      ]}
+      selected={selected}
+      onSelect={setSelected}
+      add={isAdmin ? { label: "Přidat asistenta", onClick: () => setSelected(null) } : undefined}
+    >
+      {error ? (
+        <div className="detail">
+          <ErrorNotice error={error} />
         </div>
-        <p className="mt-1 text-sm text-fg-secondary">
-          Asistenti pro vaše zákazníky na webu, bez přihlášení. Každý ví jen to, co mu vyberete ze znalostní báze a paměti, a má jen vybrané
-          dovednosti a nástroje; nic jiného z Osirisu nevidí.
-        </p>
-        <ErrorNotice error={error} />
-        {isAdmin && (
-          <ul className="mt-4 text-sm">
-            {list?.map((a) => (
-              <li key={a.name}>
-                <button onClick={() => setEditing(a)} className="list-row flex w-full items-center gap-2 px-2 py-2 text-left">
-                  <span className="min-w-0 flex-1 truncate">
-                    <span className="font-medium">{a.title || a.name}</span> <code className="text-xs text-fg-muted">{a.name}</code>
-                  </span>
-                  <span className={`text-xs ${a.enabled ? "text-success" : "text-fg-muted"}`}>{a.enabled ? "zapnutý" : "vypnutý"}</span>
-                </button>
-              </li>
-            ))}
-            {list && !list.length && <p className="px-2 py-2 text-fg-muted">Zatím žádný.</p>}
-          </ul>
-        )}
-      </div>
-      <Inquiries />
-    </div>
+      ) : selected === INQUIRIES ? (
+        <div className="detail max-w-3xl">
+          <Inquiries />
+        </div>
+      ) : selected === null || open ? (
+        <Editor
+          key={open?.name ?? "new"}
+          tenantId={tenantId}
+          initial={open ?? NEW}
+          onSaved={(name) => void load().then(() => setSelected(name))}
+          onDeleted={() => void load().then(() => setSelected(INQUIRIES))}
+        />
+      ) : undefined}
+    </MasterDetail>
   );
 }
 
@@ -101,7 +105,17 @@ function knowledgeEntries(docs: DocumentSummary[]): { path: string; label: strin
   ];
 }
 
-function Editor({ tenantId, initial, onDone }: { tenantId: string; initial: PublicAssistantSettings; onDone: () => void }) {
+function Editor({
+  tenantId,
+  initial,
+  onSaved,
+  onDeleted,
+}: {
+  tenantId: string;
+  initial: PublicAssistantSettings;
+  onSaved: (name: string) => void;
+  onDeleted: () => void;
+}) {
   const isNew = !initial.name;
   const [settings, setSettings] = useState(initial);
   const [docs, setDocs] = useState<DocumentSummary[]>([]);
@@ -124,14 +138,14 @@ function Editor({ tenantId, initial, onDone }: { tenantId: string; initial: Publ
     e.preventDefault();
     void attempt(setBusy, setError, async () => {
       const next = await api.savePublicAssistant(settings);
-      if (isNew) return onDone();
       setSettings(next);
       setSaved(true);
+      onSaved(next.name);
     });
   };
   const remove = () =>
     window.confirm(`Smazat asistenta ${settings.title || settings.name}? Odkazy a widgety na webu přestanou fungovat.`) &&
-    void attempt(setBusy, setError, async () => (await api.deletePublicAssistant(settings.name), onDone()));
+    void attempt(setBusy, setError, async () => (await api.deletePublicAssistant(settings.name), onDeleted()));
   // Inside a picked folder everything is picked.
   const covered = (path: string) => settings.knowledge.some((k) => k !== path && path.startsWith(`${k}/`));
   const link = `${location.origin}/c/${tenantId}/${settings.name}`;
@@ -140,10 +154,7 @@ function Editor({ tenantId, initial, onDone }: { tenantId: string; initial: Publ
   return (
     <div className="detail max-w-3xl space-y-10">
       <div>
-        <button onClick={onDone} className="text-sm text-fg-secondary hover:text-primary">
-          ← Asistenti
-        </button>
-        <h1 className="mt-2 text-lg font-semibold">{isNew ? "Nový asistent" : settings.title || settings.name}</h1>
+        <h1 className="text-lg font-semibold">{isNew ? "Nový asistent" : settings.title || settings.name}</h1>
       </div>
       <form onSubmit={submit} className="space-y-6">
         <label className="flex items-center gap-2 text-sm font-medium">
@@ -249,7 +260,7 @@ function Editor({ tenantId, initial, onDone }: { tenantId: string; initial: Publ
           </section>
 
           <section>
-            <h2 className="section-header">Persona a pravidla pro zákazníky</h2>
+            <h2 className="section-header">Persona pro zákazníky</h2>
             <AssistantSettings scope="public" assistant={settings.name} editable />
           </section>
         </>

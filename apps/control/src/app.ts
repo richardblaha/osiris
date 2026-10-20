@@ -2,6 +2,8 @@ import { readAll } from "@osiris/platform/objects.ts";
 import { Readable } from "node:stream";
 import {
   FEATURES,
+  GUARD_NAME,
+  type Guard,
   type AdminUser,
   type InviteResult,
   type MeResponse,
@@ -91,7 +93,7 @@ const inviteBody = z.object({
   role: z.enum(["admin", "member"]).default("member"),
 });
 const profileBody = z.object({ firstName: personName.min(1).optional(), lastName: personName.optional(), email: z.email().max(200).optional() });
-const guardsBody = z.object({ guards: z.string().trim().max(4000) });
+const guardBody = z.object({ description: z.string().trim().max(300).default(""), rule: z.string().trim().min(1).max(4000) });
 const newUserBody = z.object({ email: z.email().max(200), firstName: personName.min(1), lastName: personName });
 const adminUserBody = profileBody.extend({ disabled: z.boolean().optional(), systemAdmin: z.boolean().optional() });
 const phoneBody = z.object({ phone: z.string().trim().min(8).max(20).regex(/^\+?[\d\s()-]+$/, "Zadej číslo s předvolbou, např. +420 777 123 456") });
@@ -406,10 +408,16 @@ export function createControlApp(deps: ControlDeps) {
       await deps.snapshot(c.req.param("id"));
       return c.body(null, 202);
     })
-    .get("/guards", async (c) => c.json({ guards: await tenants.systemGuards() }))
-    .put("/guards", async (c) => {
-      const { guards } = parse(guardsBody, await json(c));
-      await tenants.setSystemGuards(guards);
+    .get("/guards", async (c) => c.json<Guard[]>(await tenants.systemGuards()))
+    .put("/guards/:name", async (c) => {
+      const name = c.req.param("name");
+      if (!GUARD_NAME.test(name) || name.length > 60) throw new HTTPException(400, { message: "Název: malá písmena, číslice a pomlčky" });
+      const guard = { name, ...parse(guardBody, await json(c)) };
+      await tenants.putSystemGuard(guard);
+      return c.json<Guard>(guard);
+    })
+    .delete("/guards/:name", async (c) => {
+      if (!(await tenants.deleteSystemGuard(c.req.param("name")))) throw new HTTPException(404, { message: "Pravidlo neexistuje" });
       return c.body(null, 204);
     })
     .get("/users", async (c) => c.json<AdminUser[]>(await directory.adminUsers()))

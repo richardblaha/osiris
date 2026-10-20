@@ -1,4 +1,4 @@
-import { FEATURES, NO_QUOTAS, type AdminUser, type DirectoryUser, type TenantQuotas, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type AdminUser, type Guard, type DirectoryUser, type TenantQuotas, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
 import { CLAIMS, claimList, isAuthorized, SYSTEM_ADMIN_ROLE, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
 import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
@@ -78,19 +78,38 @@ export class TenantStore {
     return row ? this.toTenant(row) : null;
   }
 
-  /** Rules every tenant's assistant keeps to, above the tenant's and the users' own. */
-  async systemGuards(): Promise<string> {
-    const [r] = await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'guards'");
-    return r?.value ?? "";
+  /** Rules every tenant's assistant keeps to, above the tenant's, the users' and the public assistants' own. */
+  async systemGuards(): Promise<Guard[]> {
+    return this.db.query<Guard>("SELECT name, description, rule FROM system_guards ORDER BY name");
   }
 
-  async setSystemGuards(guards: string) {
+  async putSystemGuard(g: Guard) {
     await this.db.execute([
       run(
-        "INSERT INTO system_settings (key, value, updated_at) VALUES ('guards', ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
-        guards,
+        `INSERT INTO system_guards (name, description, rule, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT (name) DO UPDATE SET description = excluded.description, rule = excluded.rule, updated_at = excluded.updated_at`,
+        g.name,
+        g.description,
+        g.rule,
         Date.now(),
       ),
+    ]);
+  }
+
+  async deleteSystemGuard(name: string): Promise<boolean> {
+    const [r] = await this.db.execute([run("DELETE FROM system_guards WHERE name = ?", name)]);
+    return (r?.rowsAffected ?? 0) > 0;
+  }
+
+  /** The rules once kept as one text (one per line) become a guard each, once; replicas doing it at once agree. */
+  async migrateSystemGuards() {
+    const [old] = await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'guards'");
+    if (!old) return;
+    const now = Date.now();
+    const lines = old.value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    await this.db.execute([
+      ...lines.map((rule, i) => run("INSERT OR IGNORE INTO system_guards (name, description, rule, updated_at) VALUES (?, ?, ?, ?)", `pravidlo-${i + 1}`, rule.slice(0, 120), rule, now)),
+      run("DELETE FROM system_settings WHERE key = 'guards'"),
     ]);
   }
 

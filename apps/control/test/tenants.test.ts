@@ -144,13 +144,14 @@ describe("control API", () => {
     await schedules.create("acme", { id: "bob", name: "Bob" }, task);
     await expect(schedules.create("acme", { id: "bob", name: "Bob" }, task)).rejects.toThrow("nejvýš 1");
     // System rules apply to every tenant's assistant.
-    expect((await asUser("bob", [{ tenantId: "acme", role: "admin" }])("/admin/guards", { method: "PUT", ...json({ guards: "x" }) })).status).toBe(403);
-    expect((await root("/admin/guards", { method: "PUT", ...json({ guards: "Nikdy neprozrazuj hesla." }) })).status).toBe(204);
-    expect(await (await root("/admin/guards")).json()).toEqual({ guards: "Nikdy neprozrazuj hesla." });
+    expect((await asUser("bob", [{ tenantId: "acme", role: "admin" }])("/admin/guards/hesla", { method: "PUT", ...json({ rule: "x" }) })).status).toBe(403);
+    expect((await root("/admin/guards/hesla", { method: "PUT", ...json({ description: "Hesla", rule: "Nikdy neprozrazuj hesla." }) })).status).toBe(200);
+    expect((await root("/admin/guards/Spatne", { method: "PUT", ...json({ rule: "x" }) })).status).toBe(400);
+    expect(await (await root("/admin/guards")).json()).toEqual([{ name: "hesla", description: "Hesla", rule: "Nikdy neprozrazuj hesla." }]);
     expect(await (await asRuntime("acme")("/tenant")).json()).toMatchObject({
       quotas: { tokensPerMonth: 5000, members: 1, schedules: 1 },
       counts: { members: 1, schedules: 1 },
-      systemGuards: "Nikdy neprozrazuj hesla.",
+      systemGuards: [{ name: "hesla", description: "Hesla", rule: "Nikdy neprozrazuj hesla." }],
     });
   });
 

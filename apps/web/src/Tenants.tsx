@@ -1,7 +1,6 @@
 import { FEATURES, type DirectoryUser, type Feature, type Role, type TenantDetail, type TenantSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { SystemGuards } from "./Assistant.tsx";
 import { InviteForm } from "./Invite.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 import { LoginLink } from "./TenantInfo.tsx";
@@ -15,7 +14,7 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   skills: { label: "Dovednosti", hint: "postupy, podle kterých asistent pracuje" },
   memory: { label: "Paměť", hint: "fakta, která si asistent pamatuje mezi konverzacemi" },
   mcp: { label: "MCP servery", hint: "externí služby a nástroje připojené přes MCP" },
-  http: { label: "Webová API", hint: "nástroj http_request pro volání API z dovedností" },
+  http: { label: "HTTP klient", hint: "nástroj http_request pro volání API z dovedností" },
   whatsapp: { label: "WhatsApp", hint: "asistent odpovídá i ve WhatsAppu" },
   files: { label: "Soubory", hint: "úložiště šablon, obrázků a dokumentů, se kterými asistent pracuje" },
   scheduler: { label: "Plánované úlohy", hint: "asistent v nastavený čas sám spustí zadaný úkol" },
@@ -297,8 +296,6 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
 }
 
 /** Not a tenant id (those are slugs without spaces). */
-const GUARDS = " guards";
-
 /** The system admin's tenant administration: the tenants on the left, the chosen one's `TenantPanel` or the form for a new one on the right. */
 export function TenantAdmin({
   tenants,
@@ -311,17 +308,14 @@ export function TenantAdmin({
   /** A tenant was created, changed or deleted. */
   onChanged: () => void;
 }) {
-  // A tenant's id, `null` for a new one, or "guards" for the system rules.
+  // A tenant's id, or `null` for a new one.
   const [selected, setSelected] = useState<string | null>(initial !== undefined ? initial : (tenants[0]?.id ?? null));
 
   return (
     <div className="flex h-full">
       <nav className="flex w-60 shrink-0 flex-col border-r border-line p-2 text-sm">
         <h2 className="section-header px-2 py-1">Tenanti</h2>
-        <button onClick={() => setSelected(GUARDS)} data-active={selected === GUARDS} className="list-row mt-1 w-full px-2 py-1.5 text-left">
-          Pravidla systému
-        </button>
-        <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row w-full px-2 py-1.5 text-left text-primary">
+        <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
           + Založit tenanta
         </button>
         <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
@@ -337,9 +331,7 @@ export function TenantAdmin({
         </div>
       </nav>
       <div className="min-w-0 flex-1">
-        {selected === GUARDS ? (
-          <SystemGuards />
-        ) : selected ? (
+        {selected ? (
           <TenantPanel
             key={selected}
             id={selected}

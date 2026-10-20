@@ -3,24 +3,25 @@ import type { BaseChatModel } from "@langchain/core/language_models/chat_models"
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { AssistantProfile, Persona } from "@osiris/shared";
 
-export const EMPTY_PROFILE: AssistantProfile = { persona: null, guards: "" };
+export const EMPTY_PROFILE: AssistantProfile = { persona: null };
 
 /** The assistant's persona and rules, tenant-wide (owner `''`) or a user's own (owner = their sub). */
 export class AssistantProfileStore {
   constructor(private readonly db: Client) {}
 
   async get(owner: string): Promise<AssistantProfile> {
-    const { rows } = await this.db.execute({ sql: "SELECT persona, guards FROM assistant_profiles WHERE owner = ?", args: [owner] });
+    const { rows } = await this.db.execute({ sql: "SELECT persona FROM assistant_profiles WHERE owner = ?", args: [owner] });
     const r = rows[0];
     if (!r) return { ...EMPTY_PROFILE };
-    return { persona: r.persona ? (JSON.parse(String(r.persona)) as Persona) : null, guards: String(r.guards) };
+    return { persona: r.persona ? (JSON.parse(String(r.persona)) as Persona) : null };
   }
 
   async put(owner: string, profile: AssistantProfile): Promise<void> {
     await this.db.execute({
-      sql: `INSERT INTO assistant_profiles (owner, persona, guards) VALUES (?, ?, ?)
-            ON CONFLICT (owner) DO UPDATE SET persona = excluded.persona, guards = excluded.guards, updated_at = datetime('now')`,
-      args: [owner, profile.persona ? JSON.stringify(profile.persona) : null, profile.guards],
+      // The guards column is left from before guard files (GuardStore.migrateProfiles empties it).
+      sql: `INSERT INTO assistant_profiles (owner, persona, guards) VALUES (?, ?, '')
+            ON CONFLICT (owner) DO UPDATE SET persona = excluded.persona, updated_at = datetime('now')`,
+      args: [owner, profile.persona ? JSON.stringify(profile.persona) : null],
     });
   }
 }

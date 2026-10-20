@@ -16,6 +16,8 @@ import type {
   Memory,
   MeResponse,
   Persona,
+  Guard,
+  Guards,
   PublicAssistantSettings,
   PublishResult,
   RunEvent,
@@ -161,6 +163,12 @@ export const api = {
   savePublicAssistant: ({ name, ...settings }: PublicAssistantSettings) =>
     json<PublicAssistantSettings>(`/public-assistants/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(settings) }),
   deletePublicAssistant: (name: string) => request(`/public-assistants/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  guards: () => json<Guards>("/guards"),
+  /** `level` user (the caller's own), tenant or assistant (with `assistant`). */
+  saveGuard: (level: "user" | "tenant" | "assistant", { name, ...body }: Guard, assistant?: string) =>
+    json<Guard>(`/guards/${level}/${encodeURIComponent(name)}${assistant ? `?${query({ assistant })}` : ""}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteGuard: (level: "user" | "tenant" | "assistant", name: string, assistant?: string) =>
+    request(`/guards/${level}/${encodeURIComponent(name)}${assistant ? `?${query({ assistant })}` : ""}`, { method: "DELETE" }),
   inquiries: () => json<Inquiry[]>("/inquiries"),
   setInquiryStatus: (id: string, status: Inquiry["status"]) =>
     request(`/inquiries/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ status }) }),
@@ -239,8 +247,9 @@ export const api = {
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
     removeMember: (id: string, userId: string) =>
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
-    guards: () => json<{ guards: string }>("/admin/guards"),
-    saveGuards: (guards: string) => request("/admin/guards", { method: "PUT", body: JSON.stringify({ guards }) }),
+    guards: () => json<Guard[]>("/admin/guards"),
+    saveGuard: ({ name, ...body }: Guard) => json<Guard>(`/admin/guards/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(body) }),
+    deleteGuard: (name: string) => request(`/admin/guards/${encodeURIComponent(name)}`, { method: "DELETE" }),
     users: () => json<AdminUser[]>("/admin/users"),
     createUser: (body: { email: string; firstName: string; lastName: string }) =>
       json<{ userId: string; loginLink: string }>("/admin/users", { method: "POST", body: JSON.stringify(body) }),

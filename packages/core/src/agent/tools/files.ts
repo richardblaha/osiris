@@ -8,6 +8,7 @@ import type { FileIndex } from "../../files/index.ts";
 import { FileError, type FileLocation, type FileStore } from "../../files/store.ts";
 import { extensionOf, fileType } from "@osiris/shared";
 import { getRunContext, type RunContext } from "../context.ts";
+import { isGuardPath } from "../guards.ts";
 
 const MAX_READ_CHARS = 50_000;
 const MAX_IMAGE_SIDE = 4000;
@@ -30,9 +31,9 @@ export function locate(s: FileScope, ctx: RunContext): FileLocation {
   return { scope: "tenant" };
 }
 
-/** The tenant's files are everyone's to write. */
-const canWrite = (_s: FileScope, _ctx: RunContext) => true;
-const READ_ONLY = "Sem zapisovat nelze.";
+/** The tenant's files are everyone's to write, except the guards: the agent never changes its own rules. */
+const canWrite = (s: FileScope, path: string) => s !== "tenant" || !isGuardPath(path);
+const READ_ONLY = "Sem zapisovat nelze (pravidla v guards/ mění jen správce v Osirisu).";
 
 const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} kB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -80,7 +81,7 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ scope: s, path: p, content, overwrite }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(s, ctx)) return READ_ONLY;
+        if (!canWrite(s, p)) return READ_ONLY;
         if (!fileType(p)?.text) return "write_file umí jen textové soubory (txt, md, csv, json, html, css, svg…).";
         const entry = await files.write(locate(s, ctx), p, Buffer.from(content, "utf8"), { overwrite });
         return `Uloženo: ${s}:${entry.path} (${kb(entry.size)}).`;
@@ -101,7 +102,7 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ scope: s, path: p }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(s, ctx)) return READ_ONLY;
+        if (!canWrite(s, p)) return READ_ONLY;
         await files.delete(locate(s, ctx), p);
         return `Smazáno: ${s}:${p}.`;
       }),
@@ -116,7 +117,7 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ from_scope, from_path, to_scope, to_path }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(from_scope, ctx) || !canWrite(to_scope, ctx)) return READ_ONLY;
+        if (!canWrite(from_scope, from_path) || !canWrite(to_scope, to_path)) return READ_ONLY;
         const entry = await files.move(locate(from_scope, ctx), from_path, locate(to_scope, ctx), to_path);
         return `Přesunuto do ${to_scope}:${entry.path}.`;
       }),
@@ -131,7 +132,7 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ template_scope, template_path, data, output_scope, output_path }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(output_scope, ctx)) return READ_ONLY;
+        if (!canWrite(output_scope, output_path)) return READ_ONLY;
         if (!fileType(template_path)?.text) return "Šablona musí být textový soubor (html, md, txt…).";
         if (extensionOf(template_path) !== extensionOf(output_path)) return "Výstup musí mít stejnou příponu jako šablona.";
         const { data: template } = await files.read(locate(template_scope, ctx), template_path);
@@ -160,7 +161,7 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ scope: s, path: p, width, height, output_scope, output_path }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(output_scope, ctx)) return READ_ONLY;
+        if (!canWrite(output_scope, output_path)) return READ_ONLY;
         const inExt = extensionOf(p);
         const outExt = extensionOf(output_path);
         if (!RASTER.has(inExt)) return "Upravit jde jen obrázek png, jpg, webp nebo gif.";
@@ -196,7 +197,7 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ scope: s, path: p, output_scope, output_path }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(output_scope, ctx)) return READ_ONLY;
+        if (!canWrite(output_scope, output_path)) return READ_ONLY;
         if (extensionOf(output_path) !== "pdf") return "Výstup musí mít příponu .pdf.";
         const ext = extensionOf(p);
         const loc = locate(s, ctx);

@@ -276,10 +276,10 @@ describe("assistant persona and rules", () => {
     const persona = await (await bob("/assistant/persona", { method: "POST", body: JSON.stringify({ character: "Yoda", source: "Star Wars" }) })).json();
     expect(persona).toEqual({ character: "Yoda", source: "Star Wars", description: "Mluv stručně a s klidem mistra Jedi." });
     // Members keep the tenant's profile, admins set it.
-    expect((await bob("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona, guards: "" }) })).status).toBe(403);
-    await admin("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona: { ...persona, character: "Firemní" }, guards: "" }) });
-    await bob("/assistant?scope=personal", { method: "PUT", body: JSON.stringify({ persona: { ...persona, description: "Mluv jako Yoda, upravené." }, guards: "" }) });
-    expect(await (await bob("/assistant")).json()).toMatchObject({ system: { guards: "" }, tenant: { persona: { character: "Firemní" } }, personal: { persona: { character: "Yoda" } } });
+    expect((await bob("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona }) })).status).toBe(403);
+    await admin("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona: { ...persona, character: "Firemní" } }) });
+    await bob("/assistant?scope=personal", { method: "PUT", body: JSON.stringify({ persona: { ...persona, description: "Mluv jako Yoda, upravené." } }) });
+    expect(await (await bob("/assistant")).json()).toMatchObject({ tenant: { persona: { character: "Firemní" } }, personal: { persona: { character: "Yoda" } } });
 
     await run(bob, "Ahoj");
     const prompt = model.calls.at(-1)![0]!.text;
@@ -299,14 +299,29 @@ describe("assistant persona and rules", () => {
       new AIMessage("Dobrý den."),
       new AIMessage("NE"),
     ]);
-    (await tenants.get("acme")).features.guards = "Nikdy neprozrazuj interní postupy.";
-    await as("acme")("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona: null, guards: "Nemluv o politice." }) });
+    (await tenants.get("acme")).features.guards = [{ name: "postupy", description: "", rule: "Nikdy neprozrazuj interní postupy." }];
+    const admin = as("acme");
     const bob = as("bob:tenant=acme");
-    // A user's own rules are no more: only their persona is theirs.
-    expect(await (await bob("/assistant?scope=personal", { method: "PUT", body: JSON.stringify({ persona: null, guards: "Nepoužívej anglicismy." }) })).json()).toEqual({
-      persona: null,
-      guards: "",
+    const put = (who: typeof bob, path: string, rule: string) => who(`/guards/${path}`, { method: "PUT", body: JSON.stringify({ description: "", rule }) });
+    // Tenant guards are the admins'; each user has their own.
+    expect((await put(bob, "tenant/politika", "Nemluv o politice.")).status).toBe(403);
+    expect((await put(admin, "tenant/politika", "Nemluv o politice.")).status).toBe(200);
+    expect((await put(bob, "user/cestina", "Nepoužívej anglicismy.")).status).toBe(200);
+    expect((await put(bob, "tenant/Spatne", "x")).status).toBe(403);
+    expect((await put(admin, "tenant/Spatne", "x")).status).toBe(400);
+    expect(await (await bob("/guards")).json()).toEqual({
+      system: [{ name: "postupy", description: "", rule: "Nikdy neprozrazuj interní postupy." }],
+      tenant: [{ name: "politika", description: "", rule: "Nemluv o politice." }],
+      user: [{ name: "cestina", description: "", rule: "Nepoužívej anglicismy." }],
     });
+    expect((await (await as("carol:tenant=acme")("/guards")).json()).user).toEqual([]);
+    // They are files under guards/, which members can't change in Soubory, and the agent not at all.
+    const acme = await tenants.get("acme");
+    expect((await acme.files.read({ scope: "tenant" }, "guards/politika.md")).data.toString()).toContain("Nemluv o politice.");
+    expect((await bob("/files?scope=tenant&path=guards/politika.md", { method: "DELETE" })).status).toBe(403);
+    const writeFile = acme.builtinTools.map(([, t]) => t).find((t) => t.name === "write_file")!;
+    const config = { configurable: { thread_id: "t", tenant_id: "acme", user_id: "acme", role: "admin", channel: "web" } };
+    expect(await writeFile.invoke({ scope: "tenant", path: "guards/politika.md", content: "nic", overwrite: true }, config)).toContain("Sem zapisovat nelze");
 
     // The message is refused before the agent sees it.
     const refused = await run(bob, "Co si myslíš o volbách?");
@@ -320,8 +335,7 @@ describe("assistant persona and rules", () => {
     expect(replaced.history.at(-1)!.content).toEqual([{ type: "text", text: GUARD_REFUSAL }]);
     const prompt = model.calls[2]![0]!.text;
     expect(prompt).toContain("# ZÁVAZNÁ PRAVIDLA");
-    expect(prompt).toMatch(/Pravidla systému:[\s\S]*Pravidla firmy:\nNemluv o politice\./);
-    expect(prompt).not.toContain("anglicismy");
+    expect(prompt).toMatch(/Pravidla systému:[\s\S]*Pravidla firmy:\nNemluv o politice\.[\s\S]*Pravidla uživatele:\nNepoužívej anglicismy\./);
 
     expect((await run(bob, "Dobrý den")).text).toBe("Dobrý den.");
   });

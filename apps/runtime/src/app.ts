@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
-import { PUBLIC_ASSISTANT_NAME, PUBLIC_TOOLS } from "@osiris/shared";
+import type { AssistantProfile, AssistantProfiles, BuiltinTool, Guard, Guards, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
+import { GUARD_NAME, PUBLIC_ASSISTANT_NAME, PUBLIC_TOOLS } from "@osiris/shared";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
@@ -8,6 +8,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
 import { publicProfile } from "@osiris/core/public/assistant.ts";
+import { isGuardPath, type GuardOwner } from "@osiris/core/agent/guards.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
 import { KNOWLEDGE_DIR } from "@osiris/core/rag/store.ts";
@@ -62,8 +63,8 @@ const settingsBody = z.object({
 const personaBody = z.object({ character: z.string().trim().min(1).max(100), source: z.string().trim().max(150) });
 const profileBody = z.object({
   persona: personaBody.extend({ description: z.string().trim().min(1).max(2000) }).nullable(),
-  guards: z.string().trim().max(4000),
 });
+const guardBody = z.object({ description: z.string().trim().max(300).default(""), rule: z.string().trim().min(1).max(4000) });
 /** A knowledge base document or folder, relative to knowledge/: plain segments only. */
 const knowledgePath = z
   .string()
@@ -214,8 +215,10 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
   };
   const fileQuery = (c: { req: { query: (k: string) => string | undefined } }) =>
     parse(fileRef.partial({ path: true }), { scope: c.req.query("scope"), path: c.req.query("path"), thread: c.req.query("thread") });
-  /** The tenant's files are everyone's to write; temp files are checked to be the caller's own thread's. */
-  const requireFileWrite = (_ctx: RequestContext, _scope: FileScope) => {};
+  /** The tenant's files are everyone's to write, but guards/ only admins'; temp files are checked to be the caller's own thread's. */
+  const requireFileWrite = (ctx: RequestContext, scope: FileScope, path: string | undefined) => {
+    if (scope === "tenant" && isGuardPath(path ?? "") && ctx.role !== "admin") throw new HTTPException(403, { message: "Pravidla (guards/) mění jen správce" });
+  };
   const fileErrors = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
@@ -223,6 +226,19 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       if (err instanceof FileError) throw new HTTPException(FILE_ERROR_STATUS[err.code], { message: err.message });
       throw err;
     }
+  };
+
+  /** Whose guards a request names: the caller's own (anyone), the tenant's or a public assistant's (admins). */
+  const guardOwner = async (ctx: RequestContext, level: string, assistant: string | undefined): Promise<GuardOwner> => {
+    if (level === "user") return { level: "user", userId: ctx.user.sub };
+    requireAdmin(ctx);
+    if (level === "tenant") return { level: "tenant" };
+    if (level === "assistant") {
+      const a = await ctx.tenant.publicAssistants.get(assistant ?? "");
+      if (!a || a.name !== assistant) throw new HTTPException(404, { message: "Asistent neexistuje" });
+      return { level: "assistant", assistant: a.name };
+    }
+    throw new HTTPException(400, { message: "Úroveň: user, tenant nebo assistant" });
   };
 
   const skillName = (name: string) => {
@@ -471,28 +487,25 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       return c.json<UserSettings>(await tenant.settings.get(user.sub));
     })
 
-    // The assistant's persona and rules: the system's (read-only here), the tenant's and the user's own.
+    // The assistant's persona: the tenant's, the user's own and (admins) a public assistant's.
     .get("/assistant", async (c) => {
       const { tenant, user, role } = c.get("ctx");
       const assistant = c.req.query("assistant");
-      const [system, tenantProfile, personal, open] = await Promise.all([
-        tenant.features.systemGuards(),
+      const [tenantProfile, personal, open] = await Promise.all([
         tenant.profiles.get(""),
         tenant.profiles.get(user.sub),
         assistant && role === "admin" ? tenant.profiles.get(publicProfile(assistant)) : undefined,
       ]);
-      return c.json<AssistantProfiles>({ system: { guards: system }, tenant: tenantProfile, personal, ...(open ? { public: open } : {}) });
+      return c.json<AssistantProfiles>({ tenant: tenantProfile, personal, ...(open ? { public: open } : {}) });
     })
     // ?scope=tenant|personal, or public&assistant=<name> (a public assistant's, admins).
     .put("/assistant", async (c) => {
       const ctx = c.get("ctx");
       const which = c.req.query("scope");
       const profile = parse(profileBody, await c.req.json());
-      // A user's own is personalization only: their persona, no rules (rules are the tenant's and the system's).
       if (which === "personal") {
-        const own = { persona: profile.persona, guards: "" };
-        await ctx.tenant.profiles.put(ctx.user.sub, own);
-        return c.json<AssistantProfile>(own);
+        await ctx.tenant.profiles.put(ctx.user.sub, profile);
+        return c.json<AssistantProfile>(profile);
       }
       requireAdmin(ctx);
       let owner = "";
@@ -503,6 +516,33 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       }
       await ctx.tenant.profiles.put(owner, profile);
       return c.json<AssistantProfile>(profile);
+    })
+    // Guards: the system's (read-only here), the tenant's and the public assistants' (admins write), the caller's own.
+    .get("/guards", async (c) => {
+      const { tenant, user, role } = c.get("ctx");
+      const [system, own, mine] = await Promise.all([tenant.features.systemGuards(), tenant.guards.list({ level: "tenant" }), tenant.guards.list({ level: "user", userId: user.sub })]);
+      const assistants =
+        role === "admin" && (await tenant.features.get()).public
+          ? Object.fromEntries(
+              await Promise.all((await tenant.publicAssistants.list()).map(async (a) => [a.name, await tenant.guards.list({ level: "assistant", assistant: a.name })] as const)),
+            )
+          : undefined;
+      return c.json<Guards>({ system, tenant: own, user: mine, ...(assistants ? { assistants } : {}) });
+    })
+    .put("/guards/:level/:name", async (c) => {
+      const ctx = c.get("ctx");
+      const owner = await guardOwner(ctx, c.req.param("level"), c.req.query("assistant"));
+      const name = c.req.param("name");
+      if (!GUARD_NAME.test(name) || name.length > 60) throw new HTTPException(400, { message: "Název: malá písmena, číslice a pomlčky" });
+      const guard = { name, ...parse(guardBody, await c.req.json()) };
+      await fileErrors(() => ctx.tenant.guards.put(owner, guard));
+      return c.json<Guard>(guard);
+    })
+    .delete("/guards/:level/:name", async (c) => {
+      const ctx = c.get("ctx");
+      const owner = await guardOwner(ctx, c.req.param("level"), c.req.query("assistant"));
+      if (!(await ctx.tenant.guards.delete(owner, c.req.param("name")))) throw new HTTPException(404, { message: "Pravidlo neexistuje" });
+      return c.body(null, 204);
     })
     // Writes a persona's description from a character; nothing is saved until the (edited) profile is put.
     .post("/assistant/persona", async (c) => {
@@ -533,6 +573,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       requireAdmin(ctx);
       if (!(await ctx.tenant.publicAssistants.delete(c.req.param("name")))) throw new HTTPException(404, { message: "Asistent neexistuje" });
+      await ctx.tenant.guards.deleteAll({ level: "assistant", assistant: c.req.param("name") });
       return c.body(null, 204);
     })
     .get("/inquiries", async (c) => c.json<Inquiry[]>(await c.get("ctx").tenant.inquiries.list()))
@@ -670,7 +711,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       async (c) => {
         const ctx = c.get("ctx");
         const q = fileQuery(c);
-        requireFileWrite(ctx, q.scope);
+        requireFileWrite(ctx, q.scope, q.path);
         const loc = await fileLocation(ctx, q.scope, q.thread);
         const data = new Uint8Array(await c.req.arrayBuffer());
         const overwrite = c.req.query("overwrite") === "true";
@@ -681,7 +722,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .post("/files/dir", async (c) => {
       const ctx = c.get("ctx");
       const body = parse(fileRef, await c.req.json());
-      requireFileWrite(ctx, body.scope);
+      requireFileWrite(ctx, body.scope, body.path);
       const loc = await fileLocation(ctx, body.scope, body.thread);
       return c.json<FileEntry>(await fileErrors(() => ctx.tenant.files.mkdir(loc, body.path)), 201);
     })
@@ -689,8 +730,8 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .post("/files/move", async (c) => {
       const ctx = c.get("ctx");
       const { from, to } = parse(moveBody, await c.req.json());
-      requireFileWrite(ctx, from.scope);
-      requireFileWrite(ctx, to.scope);
+      requireFileWrite(ctx, from.scope, from.path);
+      requireFileWrite(ctx, to.scope, to.path);
       const [src, dst] = [await fileLocation(ctx, from.scope, from.thread), await fileLocation(ctx, to.scope, to.thread)];
       return c.json<FileEntry>(await fileErrors(() => ctx.tenant.files.move(src, from.path, dst, to.path)));
     })
@@ -698,7 +739,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .delete("/files", async (c) => {
       const ctx = c.get("ctx");
       const q = fileQuery(c);
-      requireFileWrite(ctx, q.scope);
+      requireFileWrite(ctx, q.scope, q.path);
       const loc = await fileLocation(ctx, q.scope, q.thread);
       await fileErrors(() => ctx.tenant.files.delete(loc, q.path ?? ""));
       return c.body(null, 204);
