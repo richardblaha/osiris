@@ -1,11 +1,13 @@
 import { randomUUID } from "node:crypto";
-import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileEntry, FileScope, FileSearchHit, Integration, McpServer, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
-import { Hono } from "hono";
+import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
+import { PUBLIC_TOOLS } from "@osiris/shared";
+import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
+import { PUBLIC_PROFILE } from "@osiris/core/public/assistant.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
 import { KNOWLEDGE_DIR } from "@osiris/core/rag/store.ts";
@@ -22,7 +24,7 @@ import type { Tenant } from "@osiris/core/tenants/tenant.ts";
 import type { InternalVerifier } from "@osiris/platform/internal-auth.ts";
 import { SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import type { Activity } from "./activity.ts";
-import { userAuth, type AuthEnv, type RequestContext } from "./auth.ts";
+import { publicAuth, userAuth, type AuthEnv, type RequestContext } from "./auth.ts";
 import { createInternalRoutes } from "./internal.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
@@ -61,6 +63,13 @@ const profileBody = z.object({
   persona: personaBody.extend({ description: z.string().trim().min(1).max(2000) }).nullable(),
   guards: z.string().trim().max(4000),
 });
+const publicSettingsBody = z.object({
+  enabled: z.boolean(),
+  title: z.string().trim().max(120),
+  greeting: z.string().trim().max(500),
+  tools: z.array(z.enum(PUBLIC_TOOLS)).max(PUBLIC_TOOLS.length),
+  tokensPerMonth: z.number().int().min(0).max(1e12).nullable(),
+});
 const siteTargetBody = z.object({
   host: z.string().trim().min(1).max(253).regex(/^[A-Za-z0-9.-]+$/, "Server: název nebo IP adresa"),
   port: z.number().int().min(1).max(65535).default(22),
@@ -91,6 +100,8 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/mcp-servers", ["mcp"]],
   ["/mcp-oauth", ["mcp"]],
   ["/integrations", ["integrations"]],
+  ["/public-assistant", ["public"]],
+  ["/inquiries", ["public"]],
   ["/secrets", ["http", "mcp"]],
   ["/files", ["files"]],
   ["/site-targets", ["sites", "files"]],
@@ -126,6 +137,38 @@ export interface RuntimeAppDeps {
 export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts }: RuntimeAppDeps) {
   // One run per thread at a time. In-process is enough: a tenant has exactly one runtime.
   const activeRuns = new Set<string>();
+
+  /** Runs the agent on one message of a thread and streams its events (web and public chats). */
+  const runThread = async (c: Context, ctx: RequestContext, id: string, message: string) => {
+    const { tenant, user, role, channel } = ctx;
+    const runKey = `${tenant.id}/${id}`;
+    if (activeRuns.has(runKey)) throw new HTTPException(409, { message: "A run is already in progress for this thread" });
+
+    activeRuns.add(runKey);
+    activity.activeRuns++;
+    await threads.touchThread(tenant.db, id, message);
+    const abort = new AbortController();
+    return streamSSE(c, async (sse) => {
+      sse.onAbort(() => abort.abort());
+      try {
+        const runCtx = { thread_id: id, tenant_id: tenant.id, user_id: user.sub, role, channel, user_name: user.name ?? undefined };
+        // With rules, the answer is sent only after the output check (the public assistant's rules too).
+        const guarded = channel === "public" ? true : hasRules(await tenant.rules(user.sub));
+        for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal, { guarded })) {
+          await sse.writeSSE({ data: JSON.stringify(event) });
+        }
+      } catch (err) {
+        if (!abort.signal.aborted) {
+          console.error("Run failed", { tenantId: tenant.id, threadId: id, err });
+          await sse.writeSSE({ data: JSON.stringify({ type: "error", message: "Agent run failed" }) });
+        }
+      } finally {
+        activeRuns.delete(runKey);
+        activity.activeRuns--;
+        activity.touch();
+      }
+    });
+  };
 
   const requireThread = async ({ tenant, user }: RequestContext, id: string) => {
     if (!(await threads.ownsThread(tenant.db, user.sub, id))) throw new HTTPException(404, { message: "Thread not found" });
@@ -183,6 +226,44 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     return name;
   };
 
+  /** The public assistant is on when the system admin allows the feature and the tenant admin switched it on. */
+  const publicOn = async () => (await tenant.features.get()).public && (await tenant.publicSettings.get()).enabled;
+  const requirePublic = async () => {
+    if (!(await publicOn())) throw new HTTPException(404, { message: "Asistent není dostupný" });
+  };
+
+  // The tenant's customers (anonymous): the public chat page and the website widget, through the gateway.
+  const pub = new Hono<AuthEnv>()
+    .use(publicAuth(verifier, tenant))
+    .use(async (_c, next) => {
+      activity.touch();
+      await next();
+    })
+    .get("/info", async (c) => {
+      const s = await tenant.publicSettings.get();
+      return c.json<PublicInfo>({ enabled: await publicOn(), title: s.title || tenant.id, greeting: s.greeting });
+    })
+    .post("/threads", async (c) => {
+      await requirePublic();
+      const { user } = c.get("ctx");
+      const id = randomUUID();
+      await threads.createThread(tenant.db, user.sub, id, "public");
+      return c.json({ id }, 201);
+    })
+    .get("/threads/:id/messages", async (c) => {
+      const ctx = c.get("ctx");
+      await requireThread(ctx, c.req.param("id"));
+      const state = await tenant.graph.getState({ configurable: { thread_id: c.req.param("id") } });
+      return c.json<ThreadMessage[]>(toThreadMessages(state.values.messages ?? []));
+    })
+    .post("/threads/:id/runs", async (c) => {
+      await requirePublic();
+      const ctx = c.get("ctx");
+      await requireThread(ctx, c.req.param("id"));
+      const { message } = parse(z.object({ message: z.string().trim().min(1).max(2000) }), await c.req.json());
+      return runThread(c, ctx, c.req.param("id"), message);
+    });
+
   const api = new Hono<AuthEnv>()
     .use(userAuth(verifier, tenant))
     .use(async (c, next) => {
@@ -231,43 +312,9 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     .post("/threads/:id/runs", async (c) => {
       const ctx = c.get("ctx");
-      const { tenant, user, role } = ctx;
-      const id = c.req.param("id");
-      await requireThread(ctx, id);
+      await requireThread(ctx, c.req.param("id"));
       const { message } = parse(runBody, await c.req.json());
-      const runKey = `${tenant.id}/${id}`;
-      if (activeRuns.has(runKey)) throw new HTTPException(409, { message: "A run is already in progress for this thread" });
-
-      activeRuns.add(runKey);
-      activity.activeRuns++;
-      await threads.touchThread(tenant.db, id, message);
-      const abort = new AbortController();
-      return streamSSE(c, async (sse) => {
-        sse.onAbort(() => abort.abort());
-        try {
-          const runCtx = {
-            thread_id: id,
-            tenant_id: tenant.id,
-            user_id: user.sub,
-            role,
-            channel: "web" as const,
-            user_name: user.name ?? undefined,
-          };
-          const guarded = hasRules(await tenant.rules(user.sub));
-          for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal, { guarded })) {
-            await sse.writeSSE({ data: JSON.stringify(event) });
-          }
-        } catch (err) {
-          if (!abort.signal.aborted) {
-            console.error("Run failed", { tenantId: tenant.id, threadId: id, err });
-            await sse.writeSSE({ data: JSON.stringify({ type: "error", message: "Agent run failed" }) });
-          }
-        } finally {
-          activeRuns.delete(runKey);
-          activity.activeRuns--;
-          activity.touch();
-        }
-      });
+      return runThread(c, ctx, c.req.param("id"), message);
     })
 
     // Settings come in two scopes: `tenant` (everyone in the tenant, admins only) and `personal` (the caller only).
@@ -424,16 +471,23 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     // The assistant's persona and rules: the system's (read-only here), the tenant's and the user's own.
     .get("/assistant", async (c) => {
-      const { tenant, user } = c.get("ctx");
-      const [system, tenantProfile, personal] = await Promise.all([tenant.features.systemGuards(), tenant.profiles.get(""), tenant.profiles.get(user.sub)]);
-      return c.json<AssistantProfiles>({ system: { guards: system }, tenant: tenantProfile, personal });
+      const { tenant, user, role } = c.get("ctx");
+      const [system, tenantProfile, personal, open] = await Promise.all([
+        tenant.features.systemGuards(),
+        tenant.profiles.get(""),
+        tenant.profiles.get(user.sub),
+        tenant.profiles.get(PUBLIC_PROFILE),
+      ]);
+      return c.json<AssistantProfiles>({ system: { guards: system }, tenant: tenantProfile, personal, ...(role === "admin" ? { public: open } : {}) });
     })
+    // ?scope=tenant|personal, or public (the public assistant's, admins).
     .put("/assistant", async (c) => {
       const ctx = c.get("ctx");
-      const scope = queryScope(c.req.query("scope"));
+      const open = c.req.query("scope") === "public";
+      const scope = open ? "tenant" : queryScope(c.req.query("scope"));
       requireScope(ctx, scope);
       const profile = parse(profileBody, await c.req.json());
-      await ctx.tenant.profiles.put(scope === "tenant" ? "" : ctx.user.sub, profile);
+      await ctx.tenant.profiles.put(open ? PUBLIC_PROFILE : scope === "tenant" ? "" : ctx.user.sub, profile);
       return c.json<AssistantProfile>(profile);
     })
     // Writes a persona's description from a character; nothing is saved until the (edited) profile is put.
@@ -445,6 +499,33 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const { description, tokens } = await describePersona(tenant.model, character, source);
       await tenant.usage.add(tokens);
       return c.json<Persona>({ character, source, description });
+    })
+
+    // The public assistant (the tenant's customers): its settings for admins, the inquiries it took for everyone.
+    .get("/public-assistant", async (c) => {
+      requireAdmin(c.get("ctx"));
+      return c.json<PublicAssistantSettings>(await c.get("ctx").tenant.publicSettings.get());
+    })
+    .put("/public-assistant", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const settings = parse(publicSettingsBody, await c.req.json());
+      await ctx.tenant.publicSettings.put(settings);
+      return c.json<PublicAssistantSettings>(settings);
+    })
+    .get("/inquiries", async (c) => c.json<Inquiry[]>(await c.get("ctx").tenant.inquiries.list()))
+    .patch("/inquiries/:id", async (c) => {
+      const { status } = parse(z.object({ status: z.enum(["new", "done"]) }), await c.req.json());
+      if (!(await c.get("ctx").tenant.inquiries.setStatus(c.req.param("id"), status))) throw new HTTPException(404, { message: "Poptávka neexistuje" });
+      return c.body(null, 204);
+    })
+    // The conversation an inquiry came from, for the tenant's people.
+    .get("/inquiries/:id/messages", async (c) => {
+      const { tenant } = c.get("ctx");
+      const inquiry = (await tenant.inquiries.list()).find((i) => i.id === c.req.param("id"));
+      if (!inquiry?.threadId) throw new HTTPException(404, { message: "Konverzace není" });
+      const state = await tenant.graph.getState({ configurable: { thread_id: inquiry.threadId } });
+      return c.json<ThreadMessage[]>(toThreadMessages(state.values.messages ?? []));
     })
 
     // The caller's Google and Microsoft accounts (personal: only they connect and use them).
@@ -692,6 +773,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     })
     .get("/health", (c) => c.json({ ok: true, tenant: tenant.id }))
     .route("/api", api)
+    .route("/public", pub)
     .route("/internal", internal)
     .onError((err, c) => {
       if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);

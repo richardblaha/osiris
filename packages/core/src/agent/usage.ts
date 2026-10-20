@@ -7,16 +7,16 @@ export const monthOf = (now = Date.now()) => new Date(now).toISOString().slice(0
 export class UsageStore {
   constructor(private readonly db: Client) {}
 
-  async add(tokens: number, now = Date.now()) {
+  /** Counts tokens for the tenant; `public` ones also for the public assistant's own quota (row `public:YYYY-MM`). */
+  async add(tokens: number, now = Date.now(), { public: open = false } = {}) {
     if (!(tokens > 0)) return;
-    await this.db.execute({
-      sql: "INSERT INTO usage_months (month, tokens) VALUES (?, ?) ON CONFLICT (month) DO UPDATE SET tokens = tokens + excluded.tokens",
-      args: [monthOf(now), Math.round(tokens)],
-    });
+    const sql = "INSERT INTO usage_months (month, tokens) VALUES (?, ?) ON CONFLICT (month) DO UPDATE SET tokens = tokens + excluded.tokens";
+    const n = Math.round(tokens);
+    await this.db.batch([{ sql, args: [monthOf(now), n] }, ...(open ? [{ sql, args: [`public:${monthOf(now)}`, n] }] : [])], "write");
   }
 
-  async tokens(now = Date.now()): Promise<number> {
-    const { rows } = await this.db.execute({ sql: "SELECT tokens FROM usage_months WHERE month = ?", args: [monthOf(now)] });
+  async tokens(now = Date.now(), { public: open = false } = {}): Promise<number> {
+    const { rows } = await this.db.execute({ sql: "SELECT tokens FROM usage_months WHERE month = ?", args: [`${open ? "public:" : ""}${monthOf(now)}`] });
     return Number(rows[0]?.tokens ?? 0);
   }
 }

@@ -223,6 +223,32 @@ describe("gateway", () => {
     expect(page.headers.get("x-frame-options")).toBe("DENY");
   });
 
+  it("passes customers to the public assistant with a visitor id and nothing else, and lets tenants embed the chat page", async () => {
+    const { app, calls } = setup();
+    const visitor = { "x-visitor-id": "anna-visitor-123456" };
+    const res = await app.request("/public/acme/threads", { method: "POST", headers: { ...visitor, authorization: "Bearer acme" } });
+    expect(res.status).toBe(200);
+    const call = calls.at(-1)!;
+    expect([call.service, call.path]).toEqual(["acme", "/public/threads"]);
+    const claims = await new InternalVerifier(keys.publicKey).verifyHeader(call.auth!, tenantAudience("acme"));
+    // The visitor's own bearer token is ignored: no user, no role, just the visitor.
+    expect(claims).toMatchObject({ tenant: "acme", visitor: "anna-visitor-123456", channel: "public" });
+    expect(claims.user).toBeUndefined();
+    expect(claims.role).toBeUndefined();
+
+    expect((await app.request("/public/acme/info")).status).toBe(400);
+    expect((await app.request("/public/nope/info", { headers: visitor })).status).toBe(404);
+    expect((await app.request("/public/Bad_Slug/info", { headers: visitor })).status).toBe(404);
+
+    const dir = mkdtempSync(join(tmpdir(), "osiris-web-"));
+    writeFileSync(join(dir, "index.html"), "<!doctype html>app");
+    const web = setup({ web: { dir } }).app;
+    const page = await web.request("/c/acme");
+    expect(page.headers.get("x-frame-options")).toBeNull();
+    expect(page.headers.get("content-security-policy")).toContain("frame-ancestors *");
+    expect((await web.request("/")).headers.get("x-frame-options")).toBe("DENY");
+  });
+
   it("adds GoatCounter's script to the page and its site to the CSP", async () => {
     const dir = mkdtempSync(join(tmpdir(), "osiris-web-"));
     writeFileSync(join(dir, "index.html"), "<html><head><title>Osiris</title></head><body></body></html>");

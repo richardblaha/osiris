@@ -36,3 +36,21 @@ export function userAuth(verifier: InternalVerifier, tenant: Tenant) {
     await next();
   });
 }
+
+/** The visitor id a public chat's browser makes up for itself. */
+export const VISITOR_ID = /^[A-Za-z0-9_-]{16,64}$/;
+
+/**
+ * Public calls: the tenant's customers on its chat page or widget, signed by the gateway with the visitor's id and no
+ * user or role. They act as `public:<visitor>` on the `public` channel, which only ever gets the public assistant.
+ */
+export function publicAuth(verifier: InternalVerifier, tenant: Tenant) {
+  return createMiddleware<AuthEnv>(async (c, next) => {
+    const call = await verifyCall(verifier, tenant, c.req.header("authorization"), ["gateway"]);
+    if (!call.visitor || !VISITOR_ID.test(call.visitor) || call.user || call.tenant !== tenant.id) throw new HTTPException(401, { message: "Unauthorized" });
+    c.set("call", call);
+    const user: InternalUser = { sub: `public:${call.visitor}`, name: null, email: null, phone: null, picture: null };
+    c.set("ctx", { tenant, user, role: "member", channel: "public" });
+    await next();
+  });
+}

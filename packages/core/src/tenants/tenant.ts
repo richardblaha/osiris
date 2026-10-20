@@ -19,12 +19,13 @@ import { fileTools, searchFilesTool } from "../agent/tools/files.ts";
 import { GotenbergClient } from "../files/gotenberg.ts";
 import { FileStore, type FileStoreOptions } from "../files/store.ts";
 import type { StructuredToolInterface } from "@langchain/core/tools";
-import type { Feature } from "@osiris/shared";
+import type { Feature, Inquiry } from "@osiris/shared";
 import type { FeatureSource } from "./features.ts";
 import { UsageStore } from "../agent/usage.ts";
 import { McpOAuthStore } from "../mcp/oauth.ts";
 import { FileIndex } from "../files/index.ts";
 import { SiteTargetStore } from "../sites/sftp.ts";
+import { buildPublicPrompt, InquiryStore, PUBLIC_PROFILE, PublicSettingsStore, publicTools } from "../public/assistant.ts";
 import { googleTools } from "../integrations/google.ts";
 import { microsoftTools } from "../integrations/microsoft.ts";
 import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
@@ -52,6 +53,9 @@ export interface Tenant {
   siteTargets: SiteTargetStore;
   /** Users' Google and Microsoft accounts. */
   integrations: IntegrationAccounts;
+  /** The assistant for the tenant's customers, and the inquiries it took. */
+  publicSettings: PublicSettingsStore;
+  inquiries: InquiryStore;
   /** Run once before serving: moves old database content to files and brings the indexes up to date. */
   init(): Promise<void>;
   /** The built-in tools, each with the feature it belongs to. */
@@ -80,6 +84,8 @@ export interface TenantDeps {
   features: FeatureSource;
   /** Tools beyond the built-in ones (the runtime's schedule and site tools), each tied to a feature. */
   extraTools?: (files: FileStore) => [Feature, StructuredToolInterface][];
+  /** Emails the tenant's admins (a new inquiry from the public assistant); through control. */
+  notifyAdmins?: (subject: string, text: string) => Promise<void>;
   /** Osiris's OAuth clients at Google and Microsoft, for users' mail, contacts and calendar (none: no such tools). */
   integrations?: { clients: Partial<Record<IntegrationProvider, IntegrationClient>>; redirectUrl: string; fetch?: typeof fetch };
   /** Gotenberg for converting files to PDF; without it there is no convert_to_pdf tool. */
@@ -103,6 +109,13 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     const [system, tenant, user] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(userId)]);
     return { system, tenant: tenant.guards, user: user.guards };
   };
+  // The public assistant (customers): its own persona and rules after the system's and the tenant's.
+  const publicSettings = new PublicSettingsStore(db);
+  const publicRules = async (): Promise<GuardRules> => {
+    const [system, tenant, open] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(PUBLIC_PROFILE)]);
+    return { system, tenant: tenant.guards, user: open.guards };
+  };
+  const inquiries = new InquiryStore(db);
   const fileIndex = new FileIndex(db);
   // The files are the truth for the knowledge base and skills; the indexes follow every change.
   let indexer: FileIndexer | undefined;
@@ -144,6 +157,17 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     tools: [],
     // Resolved on every step, so switching a feature or a tool applies from the next step.
     dynamicTools: async (ctx) => {
+      if (ctx.channel === "public") {
+        const settings = await publicSettings.get();
+        const notify = deps.notifyAdmins
+          ? (i: Inquiry) =>
+              deps.notifyAdmins!(
+                `Nová poptávka: ${i.name}`,
+                `Veřejný asistent přijal poptávku.\n\nJméno: ${i.name}\nKontakt: ${i.contact}\n${i.preferredTime ? `Termín: ${i.preferredTime}\n` : ""}\n${i.description}\n\nPoptávky najdete v Osirisu v části Veřejný asistent.`,
+              )
+          : undefined;
+        return publicTools({ knowledge, inquiries, skills, notify }, settings.tools);
+      }
       const [on, off] = await Promise.all([features.get(), features.disabledTools()]);
       // Google and Microsoft tools only for accounts the user connected.
       const connected = on.integrations ? await integrations.connected(ctx.user_id) : [];
@@ -153,8 +177,14 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     },
     features,
     usage,
-    rules: (ctx) => rules(ctx.user_id),
-    persona: async (ctx) => (await profiles.get(ctx.user_id)).persona ?? (await profiles.get("")).persona,
+    rules: (ctx) => (ctx.channel === "public" ? publicRules() : rules(ctx.user_id)),
+    persona: async (ctx) =>
+      ctx.channel === "public" ? (await profiles.get(PUBLIC_PROFILE)).persona : ((await profiles.get(ctx.user_id)).persona ?? (await profiles.get("")).persona),
+    publicPrompt: async () => {
+      const [settings, r, profile, open] = await Promise.all([publicSettings.get(), publicRules(), profiles.get(PUBLIC_PROFILE), skills.publicSkills()]);
+      return buildPublicPrompt({ title: settings.title || id, timezone: deps.timezone, rules: r, persona: profile.persona, skills: open, tools: settings.tools });
+    },
+    publicLimit: async () => (await publicSettings.get()).tokensPerMonth,
     checkpointer,
     timezone: deps.timezone,
     skills,
@@ -183,6 +213,8 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     fileIndex,
     siteTargets,
     integrations,
+    publicSettings,
+    inquiries,
     builtinTools: builtins,
     usage,
     profiles,

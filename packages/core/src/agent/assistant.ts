@@ -34,11 +34,11 @@ export interface GuardRules {
 
 export const hasRules = (r: GuardRules) => !!(r.system.trim() || r.tenant.trim() || r.user.trim());
 
-export const rulesText = (r: GuardRules) =>
+export const rulesText = (r: GuardRules, userLabel = "Pravidla uživatele") =>
   [
     ["Pravidla systému", r.system],
     ["Pravidla firmy", r.tenant],
-    ["Pravidla uživatele", r.user],
+    [userLabel, r.user],
   ]
     .filter(([, text]) => text!.trim())
     .map(([title, text]) => `${title}:\n${text!.trim()}`)

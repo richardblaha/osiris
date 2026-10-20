@@ -15,6 +15,8 @@ export interface Skill {
   name: string;
   description: string;
   instructions: string;
+  /** Frontmatter `public: true`: the public assistant (customers) may use it too. Tenant skills only. */
+  public?: boolean;
 }
 
 export const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -44,12 +46,12 @@ export function parseSkill(source: string, file = "SKILL.md"): Skill {
     if (kv) meta[kv[1]!] = kv[2]!.trim().replace(/^(["'])(.*)\1$/, "$2");
   }
 
-  const { name = "", description = "" } = meta;
+  const { name = "", description = "", public: open = "" } = meta;
   if (!SKILL_NAME.test(name)) throw new Error(`${file}: name must be lowercase-kebab-case, got "${name}"`);
   if (!description) throw new Error(`${file}: description is required`);
   const instructions = body.trim();
   if (!instructions) throw new Error(`${file}: instructions are empty`);
-  return { name, description, instructions };
+  return { name, description, instructions, ...(open === "true" ? { public: true } : {}) };
 }
 
 /** Where skills live in the tenant's and each user's files: `skills/<name>/SKILL.md`. */
@@ -59,7 +61,7 @@ const locationOf = (scope: Scope, userId: string): FileLocation => (scope === "t
 
 /** A skill as its SKILL.md: frontmatter with name and description, then the instructions. */
 export const formatSkill = (s: Skill) =>
-  `---\nname: ${s.name}\ndescription: ${s.description.replace(/\s+/g, " ").trim()}\n---\n\n${s.instructions.trim()}\n`;
+  `---\nname: ${s.name}\ndescription: ${s.description.replace(/\s+/g, " ").trim()}\n${s.public ? "public: true\n" : ""}---\n\n${s.instructions.trim()}\n`;
 
 /**
  * Bundled skills merged with the tenant's (`skills/` in the tenant's files) and the user's (`skills/` in theirs).
@@ -106,6 +108,11 @@ export class SkillStore {
     for (const s of tenant.values()) merged.set(s.name, { name: s.name, description: s.description, source: "tenant" });
     for (const s of personal.values()) merged.set(s.name, { name: s.name, description: s.description, source: "personal" });
     return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  /** The tenant's skills marked `public: true`, for the public assistant. */
+  async publicSkills(): Promise<Skill[]> {
+    return [...(await this.read("tenant", "")).values()].filter((s) => s.public);
   }
 
   /** The skill `userId` gets for `name`, following the precedence. */

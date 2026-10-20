@@ -6,7 +6,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { accessibleTenants, isAuthorized, isSystemAdmin, membershipsFromClaims, type Membership } from "@osiris/platform/claims.ts";
+import { accessibleTenants, isAuthorized, isSystemAdmin, membershipsFromClaims, TENANT_SLUG, type Membership } from "@osiris/platform/claims.ts";
 import { isUnreachable, retryUntil, ServiceError } from "@osiris/platform/http.ts";
 import { CONTROL_AUDIENCE, tenantAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
@@ -102,6 +102,9 @@ export function createGatewayApp(deps: GatewayDeps) {
   const requests = new RateLimiter(deps.limits.requestsPerMinute);
   const signIns = new RateLimiter(deps.limits.requestsPerMinute);
   const runs = new RateLimiter(deps.limits.runsPerMinute);
+  // The public chat (anonymous customers): per address, tighter for messages.
+  const publicRequests = new RateLimiter(60);
+  const publicRuns = new RateLimiter(10);
 
   const authenticate = createMiddleware<Env>(async (c, next) => {
     const token = c.req.header("authorization")?.match(/^Bearer (.+)$/i)?.[1];
@@ -235,15 +238,39 @@ export function createGatewayApp(deps: GatewayDeps) {
       await next();
       c.header("x-content-type-options", "nosniff");
       c.header("referrer-policy", "strict-origin-when-cross-origin");
-      c.header("x-frame-options", "DENY");
+      // The public chat page (/c/<tenant>) is embedded by tenants' websites (widget.js); it signs nobody in.
+      const embeddable = c.req.path.startsWith("/c/");
+      if (!embeddable) c.header("x-frame-options", "DENY");
       c.header("strict-transport-security", "max-age=31536000");
       // The SPA and the sign-in pages: own scripts only; sign-in is on this origin too (/auth).
       if (!c.res.headers.has("content-security-policy") && (c.res.headers.get("content-type") ?? "").includes("text/html")) {
-        c.header("content-security-policy", csp);
+        c.header("content-security-policy", embeddable ? csp.replace("frame-ancestors 'none'", "frame-ancestors *") : csp);
       }
     })
     .use("/api/*", cors({ origin: deps.corsOrigin, allowHeaders: ["authorization", "content-type", "x-tenant-id"] }))
     .get("/health", (c) => c.json({ ok: true }))
+    // A tenant's customers: no sign-in, a visitor id from their browser, the public assistant only.
+    .all("/public/:tenant/*", bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Zpráva je příliš dlouhá" }, 413) }), async (c) => {
+      const tenant = c.req.param("tenant");
+      const ip = clientIp(c);
+      if (!TENANT_SLUG.test(tenant)) throw new HTTPException(404, { message: "Not found" });
+      if (!publicRequests.take(ip)) throw new HTTPException(429, { message: "Příliš mnoho požadavků, zkuste to za chvíli" });
+      if (c.req.method === "POST" && c.req.path.endsWith("/runs") && !publicRuns.take(ip)) {
+        throw new HTTPException(429, { message: "Příliš mnoho zpráv za minutu, zkuste to za chvíli" });
+      }
+      const visitor = c.req.header("x-visitor-id") ?? "";
+      if (!/^[A-Za-z0-9_-]{16,64}$/.test(visitor)) throw new HTTPException(400, { message: "Chybí identifikace návštěvníka" });
+      if (!(await control.list()).some((t) => t.id === tenant)) throw new HTTPException(404, { message: "Not found" });
+      const authorization = await signer.header(tenantAudience(tenant), { tenant, visitor, channel: "public" });
+      const url = new URL(c.req.url);
+      const res = await runtimes.request(tenant, `${url.pathname.replace(`/public/${tenant}`, "/public")}${url.search}`, {
+        method: c.req.method,
+        headers: forwardHeaders(c, authorization),
+        body: await body(c),
+        signal: c.req.raw.signal,
+      });
+      return relay(res);
+    })
     .all("/auth/*", bodyLimit({ maxSize: AUTH_BODY_BYTES, onError: (c) => c.json({ error: "Požadavek je příliš velký" }, 413) }), toAuth)
     .route("/api", api)
     // Meta's webhook goes to control as it came; control checks Meta's signature.

@@ -495,6 +495,15 @@ export function createControlApp(deps: ControlDeps) {
       c.set("tenant", row);
       await next();
     })
+    // A runtime telling its tenant's admins something (a new inquiry from the public assistant), by email.
+    .post("/notify-admins", async (c) => {
+      const { subject, text } = parse(z.object({ subject: z.string().trim().min(1).max(200), text: z.string().max(10_000) }), await json(c));
+      const mailer = deps.auth.mailer;
+      if (!mailer) return c.json({ sent: 0 });
+      const admins = (await directory.members(c.get("runtimeTenant"))).filter((m) => m.role === "admin" && m.email);
+      await Promise.all(admins.map((m) => mailer.send({ to: m.email!, subject: `Osiris: ${subject}`, text })));
+      return c.json({ sent: admins.length });
+    })
     .get("/tenant", async (c) => {
       const t = c.get("tenant");
       return c.json({

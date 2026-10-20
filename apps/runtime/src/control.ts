@@ -28,6 +28,11 @@ export class ControlClient {
     });
   }
 
+  /** Emails the tenant's admins (e.g. a new inquiry from the public assistant). */
+  async notifyAdmins(subject: string, text: string) {
+    await this.json("/notify-admins", { method: "POST", body: JSON.stringify({ subject, text }), headers: { "content-type": "application/json" } });
+  }
+
   tenant() {
     return this.json<{
       id: string;

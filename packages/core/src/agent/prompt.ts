@@ -19,6 +19,7 @@ const KNOWLEDGE_RULE = "\n- Než odpovíš na otázku o klientech, zakázkách n
 
 const CHANNEL_FORMAT: Record<Channel, string> = {
   web: "# FORMÁT\nPíšeš do webového chatu. Používej Markdown (odrážky, **tučné**), krátké odstavce.",
+  public: "# FORMÁT\nPíšeš do chatu na webu firmy. Používej Markdown (odrážky, **tučné**), krátké odstavce.",
   whatsapp:
     "# FORMÁT\nPíšeš do WhatsAppu. Používej jen WhatsApp formátování (*tučné*, _kurzíva_, odrážky •). Žádné nadpisy, tabulky ani Markdown odkazy.",
 };

@@ -21,6 +21,8 @@ export interface InternalClaims {
   tenant?: string;
   role?: Role;
   channel?: Channel;
+  /** A customer on the tenant's public chat (no user, no role): the visitor's random id from their browser. */
+  visitor?: string;
   /** Gateway → control: every tenant the user may open, and whether they are a system admin. */
   memberships?: { tenantId: string; role: Role }[];
   systemAdmin?: boolean;

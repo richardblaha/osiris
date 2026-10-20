@@ -1,4 +1,5 @@
-export type Channel = "web" | "whatsapp";
+/** `public`: the tenant's customers, anonymous, on its public chat page or website widget. */
+export type Channel = "web" | "whatsapp" | "public";
 
 export interface ThreadSummary {
   id: string;
@@ -36,7 +37,7 @@ export interface MeResponse {
 }
 
 /** What a system admin can switch on or off per tenant. */
-export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations"] as const;
+export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type TenantFeatures = Record<Feature, boolean>;
 
@@ -68,6 +69,8 @@ export interface AssistantProfiles {
   system: { guards: string };
   tenant: AssistantProfile;
   personal: AssistantProfile;
+  /** The public assistant's own persona and rules (customers); for admins. */
+  public?: AssistantProfile;
 }
 
 /** Limits a system admin sets per tenant; null = no limit (storage: 80 % of the tenant's volume). */
@@ -321,6 +324,40 @@ export interface InviteResult {
 
 /** Tenant files (`/api/files`): shared by the tenant (admins write), the user's own, or one thread's temporary files. */
 export type FileScope = "tenant" | "personal" | "temp";
+
+/** Tools the public assistant may get besides searching the public knowledge base; the tenant admin picks them. */
+export const PUBLIC_TOOLS = ["estimate_price", "create_inquiry", "load_skill"] as const;
+export type PublicTool = (typeof PUBLIC_TOOLS)[number];
+
+/** The tenant's assistant for its customers (`/api/public-assistant`); knowledge/public/ is what it knows. */
+export interface PublicAssistantSettings {
+  enabled: boolean;
+  /** The business's name as customers see it. */
+  title: string;
+  greeting: string;
+  tools: PublicTool[];
+  /** Model tokens per calendar month for public chats (null = only the tenant's quota). */
+  tokensPerMonth: number | null;
+}
+
+/** What the public chat page shows before the first message (`/public/<tenant>/info`). */
+export interface PublicInfo {
+  enabled: boolean;
+  title: string;
+  greeting: string;
+}
+
+/** A customer's inquiry taken by the public assistant (`/api/inquiries`). */
+export interface Inquiry {
+  id: string;
+  name: string;
+  contact: string;
+  description: string;
+  preferredTime: string | null;
+  threadId: string | null;
+  status: "new" | "done";
+  createdAt: string;
+}
 
 /** A user's account at Google or Microsoft the assistant may use (`/api/integrations`). */
 export interface Integration {

@@ -66,6 +66,7 @@ const tenant = openTenant(config.TENANT_ID, db, {
   gotenbergUrl: config.GOTENBERG_URL,
   features,
   extraTools: (store) => controlTools(control, store, config.TIMEZONE),
+  notifyAdmins: (subject, text) => control.notifyAdmins(subject, text),
 });
 
 const activity = new Activity();

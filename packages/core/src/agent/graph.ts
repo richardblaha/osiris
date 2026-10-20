@@ -42,31 +42,43 @@ export interface AgentDeps {
   rules?: (ctx: RunContext) => Promise<GuardRules>;
   /** The persona for a run: the user's own, or the tenant's. */
   persona?: (ctx: RunContext) => Promise<Persona | null>;
+  /** Runs on the `public` channel (the tenant's customers) get this prompt instead, and their own token quota. */
+  publicPrompt?: (ctx: RunContext) => Promise<string>;
+  publicLimit?: () => Promise<number | null>;
 }
+
+/** What a customer gets when the public assistant's (or the tenant's) quota is used up. */
+export const PUBLIC_UNAVAILABLE = "Omlouvám se, asistent teď nemůže odpovídat. Kontaktujte prosím firmu přímo.";
 
 export const TOKENS_EXHAUSTED = "Měsíční limit využití asistenta pro tuto firmu je vyčerpaný. Obrať se na správce.";
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
 export function createAgentGraph(deps: AgentDeps) {
-  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage, rules, persona } = deps;
+  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage, rules, persona, publicPrompt, publicLimit } =
+    deps;
   if (!model.bindTools) throw new Error("Chat model does not support tool calling");
   const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
 
-  const exhausted = async () => {
+  const exhausted = async (ctx?: RunContext) => {
     const limit = (await features?.quotas())?.tokensPerMonth ?? null;
-    return !!usage && limit !== null && (await usage.tokens()) >= limit;
+    if (usage && limit !== null && (await usage.tokens()) >= limit) return true;
+    if (ctx?.channel !== "public") return false;
+    const own = (await publicLimit?.()) ?? null;
+    return !!usage && own !== null && (await usage.tokens(Date.now(), { public: true })) >= own;
   };
+  const count = (ctx: RunContext, tokens: number) => usage?.add(tokens, Date.now(), { public: ctx.channel === "public" });
   const noRules: GuardRules = { system: "", tenant: "", user: "" };
 
   /** Checks a message against the rules; null when there are none to check (or the quota is used up). */
   const check = async (config: RunnableConfig, kind: "input" | "output", text: string) => {
-    const r = (await rules?.(getRunContext(config))) ?? noRules;
-    if (!hasRules(r) || !text.trim() || (await exhausted())) return null;
+    const ctx = getRunContext(config);
+    const r = (await rules?.(ctx)) ?? noRules;
+    if (!hasRules(r) || !text.trim() || (await exhausted(ctx))) return null;
     const result = await breaksRules(model, r, kind, text).catch((err) => {
       console.error("Guard check failed", err);
       return { breaks: false, tokens: 0 };
     });
-    await usage?.add(result.tokens);
+    await count(ctx, result.tokens);
     return result.breaks;
   };
 
@@ -80,7 +92,7 @@ export function createAgentGraph(deps: AgentDeps) {
   /** A final answer breaking the rules is replaced (same id) by a refusal, in the history too. */
   const guardOutput = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const last = state.messages.at(-1);
-    if (!AIMessage.isInstance(last) || last.text === TOKENS_EXHAUSTED || !(await check(config, "output", last.text))) return {};
+    if (!AIMessage.isInstance(last) || last.text === TOKENS_EXHAUSTED || last.text === PUBLIC_UNAVAILABLE || !(await check(config, "output", last.text))) return {};
     return { messages: [new AIMessage({ id: last.id, content: GUARD_REFUSAL })] };
   };
 
@@ -88,10 +100,10 @@ export function createAgentGraph(deps: AgentDeps) {
     const ctx = getRunContext(config);
     if (ctx.tenant_id !== tenantId) throw new Error(`Run for tenant ${ctx.tenant_id} sent to graph of ${tenantId}`);
     const on = (await features?.get()) ?? DEFAULT_FEATURES;
-    if (await exhausted()) return { messages: [new AIMessage(TOKENS_EXHAUSTED)] };
+    if (await exhausted(ctx)) return { messages: [new AIMessage(ctx.channel === "public" ? PUBLIC_UNAVAILABLE : TOKENS_EXHAUSTED)] };
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.
     const system = new SystemMessage(
-      buildSystemPrompt({
+      ctx.channel === "public" && publicPrompt ? await publicPrompt(ctx) : buildSystemPrompt({
         channel: ctx.channel,
         timezone,
         knowledge: on.knowledge,
@@ -106,7 +118,7 @@ export function createAgentGraph(deps: AgentDeps) {
       }),
     );
     const response = await model.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);
-    await usage?.add(response.usage_metadata?.total_tokens ?? 0);
+    await count(ctx, response.usage_metadata?.total_tokens ?? 0);
     return { messages: [response] };
   };
 
