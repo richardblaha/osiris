@@ -379,9 +379,6 @@ function Workspace() {
           {tenant?.features.sites && (
             <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Weby" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
           )}
-          {tenant && (
-            <NavLink active={view.kind === "tenant"} onClick={() => setView({ kind: "tenant" })} label="O tenantovi" icon="M3 14V4l5-2 5 2v10M6 14v-3h4v3M6 6h1M9 6h1M6 8.5h1M9 8.5h1" />
-          )}
           {me.systemAdmin && (
             <>
               <NavLink
@@ -390,11 +387,10 @@ function Workspace() {
                 label="Uživatelé"
                 icon="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M11 2.5a2.5 2.5 0 0 1 0 4.5M12.5 9.7c1.2.6 2 2 2 3.8"
               />
-              <div className="mt-3 border-t border-line" />
               <NavLink
                 active={view.kind === "tenants"}
                 onClick={() => setView({ kind: "tenants" })}
-                label="Správa tenantů"
+                label="Tenanti"
                 icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01"
               />
             </>
@@ -403,7 +399,7 @@ function Workspace() {
 
         <div className="border-t border-line p-2">
           {tenant && usage && <QuotaMeters usage={usage} />}
-          <TenantSwitcher me={me} tenant={tenant} onOpen={() => setView({ kind: "tenant" })} onSelect={selectTenant} />
+          <TenantSwitcher me={me} tenant={tenant} active={view.kind === "tenant"} onOpen={() => setView({ kind: "tenant" })} onSelect={selectTenant} />
           <button onClick={() => setView({ kind: "profile" })} data-active={view.kind === "profile"} className="list-row flex w-full items-center gap-3 px-2 py-2 text-left">
             <Avatar user={me.user} />
             <span className="min-w-0 flex-1">
@@ -501,10 +497,23 @@ function Workspace() {
 }
 
 /**
- * The active tenant at the bottom of the sidebar, with its logo. With more than one tenant it opens a menu of the
- * tenants to switch to (closed by a click elsewhere or Esc); otherwise it opens the tenant's detail.
+ * The active tenant at the bottom of the sidebar, with its logo. A click opens the tenant's detail; with more than
+ * one tenant, a click while the detail is open opens a menu of the tenants to switch to (closed by a click elsewhere
+ * or Esc).
  */
-function TenantSwitcher({ me, tenant, onOpen, onSelect }: { me: MeResponse; tenant?: Tenant; onOpen: () => void; onSelect: (id: string) => void }) {
+function TenantSwitcher({
+  me,
+  tenant,
+  active,
+  onOpen,
+  onSelect,
+}: {
+  me: MeResponse;
+  tenant?: Tenant;
+  active: boolean;
+  onOpen: () => void;
+  onSelect: (id: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const menu = me.tenants.length > 1;
@@ -527,8 +536,8 @@ function TenantSwitcher({ me, tenant, onOpen, onSelect }: { me: MeResponse; tena
   return (
     <div ref={ref} className="relative">
       <button
-        onClick={menu ? () => setOpen((o) => !o) : onOpen}
-        data-active={open}
+        onClick={menu && (active || open) ? () => setOpen((o) => !o) : onOpen}
+        data-active={active || open}
         aria-haspopup={menu ? "menu" : undefined}
         aria-expanded={menu ? open : undefined}
         className="list-row flex w-full items-center gap-3 px-2 py-2 text-left"

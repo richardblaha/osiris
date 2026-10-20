@@ -317,7 +317,7 @@ export function TenantAdmin({
   return (
     <div className="flex h-full">
       <nav className="flex w-60 shrink-0 flex-col border-r border-line p-2 text-sm">
-        <h2 className="section-header px-2 py-1">Správa tenantů</h2>
+        <h2 className="section-header px-2 py-1">Tenanti</h2>
         <button onClick={() => setSelected(GUARDS)} data-active={selected === GUARDS} className="list-row mt-1 w-full px-2 py-1.5 text-left">
           Pravidla systému
         </button>
