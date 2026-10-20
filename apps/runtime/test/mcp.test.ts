@@ -107,14 +107,13 @@ describe("MCP tools in the agent", () => {
     expect(model.calls).toHaveLength(2);
   });
 
-  it("gives personal MCP tools only to their owner and keeps servers per tenant", async () => {
+  it("gives the tenant's MCP tools to everyone in it and keeps servers per tenant", async () => {
     const mcp = fakeMcp();
     const { tenants } = createTestTenants([], [], mcp.connect);
     const acme = await tenants.get("acme");
     await acme.mcpServers.put("weather", "", { url: "https://w.example/mcp", enabled: true });
-    await acme.mcpServers.put("kalendar", "alice", { url: "https://c.example/mcp", enabled: true });
 
-    expect((await acme.mcp.tools("alice")).map((t) => t.name)).toEqual(["weather_forecast", "kalendar_forecast"]);
+    expect((await acme.mcp.tools("alice")).map((t) => t.name)).toEqual(["weather_forecast"]);
     expect((await acme.mcp.tools("bob")).map((t) => t.name)).toEqual(["weather_forecast"]);
     expect(await (await tenants.get("beta")).mcp.tools("alice")).toEqual([]);
   });
@@ -154,24 +153,19 @@ describe("MCP API", () => {
     expect(await (await admin("/mcp-servers")).json()).toEqual([]);
   });
 
-  it("lets members manage personal servers but not tenant ones", async () => {
+  it("lets admins manage the tenant's servers and hides their addresses from members", async () => {
     const { as } = await setup();
     const admin = as("alice:tenant-admin=acme");
     const member = as("bob:tenant=acme");
-    await admin("/mcp-servers/weather", put({ url, scope: "tenant" }));
+    expect((await admin("/mcp-servers/weather", put({ url }))).status).toBe(204);
 
-    expect((await member("/mcp-servers/crm", put({ url, scope: "tenant" }))).status).toBe(403);
-    expect((await member("/mcp-servers/weather?scope=tenant", { method: "DELETE" })).status).toBe(403);
-    expect((await member("/mcp-servers/weather", put({ url }))).status).toBe(409);
-    expect((await member("/mcp-servers/kalendar", put({ url, headers: { Authorization: "Bearer bob" } }))).status).toBe(204);
-
-    expect(await (await member("/mcp-servers")).json()).toMatchObject([
-      { name: "weather", scope: "tenant", url: "" },
-      { name: "kalendar", scope: "personal", url },
-    ]);
-    expect((await (await admin("/mcp-servers")).json()).map((s: { name: string }) => s.name)).toEqual(["weather"]);
-    expect((await member("/mcp-servers/kalendar/test", { method: "POST" })).status).toBe(200);
-    expect((await member("/mcp-servers/kalendar", { method: "DELETE" })).status).toBe(204);
+    expect((await member("/mcp-servers/crm", put({ url }))).status).toBe(403);
+    expect((await member("/mcp-servers/weather", { method: "DELETE" })).status).toBe(403);
+    expect((await admin("/mcp-servers/crm", put({ url, scope: "personal" }))).status).toBe(400);
+    expect(await (await member("/mcp-servers")).json()).toMatchObject([{ name: "weather", scope: "tenant", url: "" }]);
+    expect(await (await admin("/mcp-servers")).json()).toMatchObject([{ name: "weather", scope: "tenant", url }]);
+    expect((await admin("/mcp-servers/weather/test", { method: "POST" })).status).toBe(200);
+    expect((await admin("/mcp-servers/weather", { method: "DELETE" })).status).toBe(204);
   });
 
   it("applies config changes to the agent without a restart", async () => {
@@ -180,12 +174,12 @@ describe("MCP API", () => {
     const tenant = await tenants.get("acme");
     expect(await tenant.mcp.tools("dev:alice")).toEqual([]);
 
-    await admin("/mcp-servers/weather", put({ url, scope: "tenant" }));
-    await admin("/mcp-servers/mine", put({ url }));
-    expect((await tenant.mcp.tools("dev:alice")).map((t) => t.name)).toEqual(["weather_forecast", "mine_forecast"]);
+    await admin("/mcp-servers/weather", put({ url }));
+    await admin("/mcp-servers/crm", put({ url }));
+    expect((await tenant.mcp.tools("dev:alice")).map((t) => t.name)).toEqual(["crm_forecast", "weather_forecast"]);
 
-    await admin("/mcp-servers/weather", put({ url, scope: "tenant", enabled: false }));
-    await admin("/mcp-servers/mine?scope=personal", { method: "DELETE" });
+    await admin("/mcp-servers/weather", put({ url, enabled: false }));
+    await admin("/mcp-servers/crm", { method: "DELETE" });
     expect(await tenant.mcp.tools("dev:alice")).toEqual([]);
   });
 });

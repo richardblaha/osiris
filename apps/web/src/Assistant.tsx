@@ -98,6 +98,7 @@ function ProfileForm({
         />
       </div>
 
+      {scope !== "personal" && (
       <div>
         <span className="section-header block">Pravidla (guardy)</span>
         <p className="mt-1 text-xs text-fg-muted">
@@ -119,12 +120,13 @@ function ProfileForm({
           className="field mt-2"
         />
       </div>
+      )}
 
       <ErrorNotice error={error} />
       {editable && (
         <div className="flex items-center gap-3">
           <button disabled={busy} className="btn-primary">
-            Uložit personu a pravidla
+            {scope === "personal" ? "Uložit personu" : "Uložit personu a pravidla"}
           </button>
           {saved && <span className="text-sm text-success">Uloženo.</span>}
         </div>

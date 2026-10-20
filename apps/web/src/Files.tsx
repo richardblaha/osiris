@@ -1,4 +1,4 @@
-import { fileType, type FileEntry, type FileSearchHit, type Scope } from "@osiris/shared";
+import { fileType, type FileEntry, type FileSearchHit } from "@osiris/shared";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, saveBlob } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
@@ -15,8 +15,9 @@ export const fileSize = (n: number) =>
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 
-/** The user's own files or the tenant's shared ones (members read, admins write), by the sidebar's tab, folder by folder. */
-export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean }) {
+/** The tenant's files, folder by folder; everyone in the tenant may change them. */
+export function Files() {
+  const tab = "tenant";
   const [dir, setDir] = useState("");
   const [entries, setEntries] = useState<FileEntry[]>();
   const [editing, setEditing] = useState<Editing>();
@@ -28,7 +29,7 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
   const [doc, setDoc] = useState<Doc>();
   const [search, setSearch] = useState("");
   const [hits, setHits] = useState<FileSearchHit[]>();
-  const editable = tab === "personal" || isAdmin;
+  const editable = true;
 
   const load = () => api.files(tab, dir).then(setEntries, (e: Error) => setError(e.message));
   useEffect(() => {
@@ -120,12 +121,10 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
         Šablony, obrázky a dokumenty, se kterými asistent pracuje. Šablony dokumentů patří do složky <code>sablony</code>.
       </p>
 
-      {tab === "tenant" && !isAdmin && <p className="mt-2 text-xs text-fg-muted">Firemní soubory může měnit jen správce tenanta.</p>}
-
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <nav className="flex min-w-0 flex-1 flex-wrap items-center gap-1 text-sm">
           <button onClick={() => setDir("")} className="btn-link">
-            {tab === "personal" ? "Moje soubory" : "Firemní"}
+            Soubory
           </button>
           {crumbs.map((c, i) => (
             <span key={i} className="flex items-center gap-1">
@@ -199,7 +198,7 @@ export function Files({ scope: tab, isAdmin }: { scope: Scope; isAdmin: boolean 
             setSearch(e.target.value);
             if (!e.target.value) setHits(undefined);
           }}
-          placeholder={`Hledat v textu souborů (${tab === "personal" ? "moje" : "firemní"})`}
+          placeholder="Hledat v textu souborů"
           className="field"
         />
         <button disabled={busy} className="btn-secondary text-sm">

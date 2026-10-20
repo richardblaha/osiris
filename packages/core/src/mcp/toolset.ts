@@ -160,11 +160,10 @@ export class McpToolset {
     );
   }
 
-  /** Tools for one user's run: the tenant's servers plus the user's personal ones. */
-  async tools(userId: string): Promise<StructuredToolInterface[]> {
+  /** Tools for a run: the tenant's servers (they are all the tenant's). */
+  async tools(_userId?: string): Promise<StructuredToolInterface[]> {
     this.evictIdle();
-    const [tenant, personal] = await Promise.all([this.ownerTools(""), this.ownerTools(userId)]);
-    return [...tenant, ...personal];
+    return this.ownerTools("");
   }
 
   invalidate(owner: string): void {

@@ -1,7 +1,7 @@
 import type { Memory, Scope } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 export const memoryKey = (m: Memory) => m.id;
 
@@ -13,7 +13,7 @@ export function MemoryDetail({ item, scope, isAdmin, onSaved, onDeleted }: Detai
   const [error, setError] = useState<string>();
 
   if (item) {
-    const editable = canEdit(item.scope, isAdmin);
+    const editable = true;
     return (
       <div className="detail">
         <DetailHeader title="Záznam v paměti" scope={item.scope} canEdit={editable}>

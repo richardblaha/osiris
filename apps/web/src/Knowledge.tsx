@@ -2,7 +2,7 @@ import type { DocumentSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 export const documentKey = (d: DocumentSummary) => d.id;
 
@@ -26,7 +26,7 @@ export function KnowledgeDetail({ item, scope, isAdmin, onSaved, onDeleted }: De
   }, []);
 
   if (item && path) {
-    const editable = canEdit(item.scope, isAdmin);
+    const editable = true;
     const save = () =>
       attempt(setBusy, setError, async () => {
         await api.uploadFile({ scope: item.scope, path }, new Blob([content], { type: "text/markdown" }), true);

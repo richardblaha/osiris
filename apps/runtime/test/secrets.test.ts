@@ -96,7 +96,7 @@ describe("http_request tool", () => {
 });
 
 describe("secrets in MCP servers", () => {
-  it("fills headers when connecting and keeps tenant servers to tenant secrets", async () => {
+  it("fills headers when connecting", async () => {
     const seen: Record<string, Record<string, string>> = {};
     const connect: McpConnector = async ({ name, headers }) => {
       seen[name] = headers;
@@ -106,14 +106,14 @@ describe("secrets in MCP servers", () => {
     const { tenants } = createTestTenants([], [], connect);
     const tenant = await tenants.get("acme");
     await tenant.secrets.put("CRM", "", { value: "tenant-crm", allowedHosts: ["crm.example.com"], description: "" });
-    await tenant.secrets.put("MINE", "alice", { value: "alice-cal", allowedHosts: ["cal.example.com"], description: "" });
     await tenant.mcpServers.put("crm", "", { url: "https://crm.example.com/mcp", enabled: true, headers: { Authorization: "Bearer {{secret:CRM}}" } });
-    await tenant.mcpServers.put("leak", "", { url: "https://cal.example.com/mcp", enabled: true, headers: { Authorization: "{{secret:MINE}}" } });
-    await tenant.mcpServers.put("cal", "alice", { url: "https://cal.example.com/mcp", enabled: true, headers: { Authorization: "{{secret:MINE}}" } });
+    await tenant.mcpServers.put("leak", "", { url: "https://cal.example.com/mcp", enabled: true, headers: { Authorization: "{{secret:CRM}}" } });
+    await tenant.mcpServers.put("gone", "", { url: "https://crm.example.com/mcp", enabled: true, headers: { Authorization: "{{secret:MISSING}}" } });
 
-    expect((await tenant.mcp.tools("alice")).map((t) => t.name)).toEqual(["crm_ping", "cal_ping"]);
-    expect(seen).toEqual({ crm: { Authorization: "Bearer tenant-crm" }, cal: { Authorization: "alice-cal" } });
-    expect(tenant.mcp.status("").get("leak")).toEqual({ ok: false, error: "Secret MINE neexistuje" });
+    expect((await tenant.mcp.tools("alice")).map((t) => t.name)).toEqual(["crm_ping"]);
+    expect(seen).toEqual({ crm: { Authorization: "Bearer tenant-crm" } });
+    expect(tenant.mcp.status("").get("gone")).toEqual({ ok: false, error: "Secret MISSING neexistuje" });
+    expect(tenant.mcp.status("").get("leak")?.ok).toBe(false);
   });
 });
 
@@ -127,27 +127,23 @@ describe("secrets API", () => {
   }
   const put = (body: object) => ({ method: "PUT", body: JSON.stringify({ allowedHosts: ["api.example.com"], ...body }) });
 
-  it("never returns values and enforces scopes", async () => {
+  it("never returns values and lets only admins manage them", async () => {
     const { as } = await setup();
     const admin = as("alice:tenant-admin=acme");
     const member = as("bob:tenant=acme");
 
-    expect((await member("/secrets/CRM", put({ value: "x", scope: "tenant" }))).status).toBe(403);
+    expect((await member("/secrets/CRM", put({ value: "x" }))).status).toBe(403);
     expect((await admin("/secrets/crm", put({ value: "x" }))).status).toBe(400);
     expect((await admin("/secrets/CRM", put({ value: "x", allowedHosts: [] }))).status).toBe(400);
     expect((await admin("/secrets/CRM", put({ value: "x", allowedHosts: ["https://api.example.com/"] }))).status).toBe(400);
-    expect((await admin("/secrets/CRM", put({ value: "tenant-value-1", scope: "tenant", description: "CRM" }))).status).toBe(204);
-    expect((await member("/secrets/MINE", put({ value: "bob-value-1" }))).status).toBe(204);
+    expect((await admin("/secrets/CRM", put({ value: "x", scope: "personal" }))).status).toBe(400);
+    expect((await admin("/secrets/CRM", put({ value: "tenant-value-1", description: "CRM" }))).status).toBe(204);
 
     const listed = await (await member("/secrets")).text();
     expect(listed).not.toMatch(/value-1/);
-    expect(JSON.parse(listed)).toMatchObject([
-      { name: "CRM", scope: "tenant", allowedHosts: ["api.example.com"], description: "CRM" },
-      { name: "MINE", scope: "personal" },
-    ]);
-    expect((await (await admin("/secrets")).json()).map((s: { name: string }) => s.name)).toEqual(["CRM"]);
-    expect((await member("/secrets/CRM?scope=tenant", { method: "DELETE" })).status).toBe(403);
-    expect((await member("/secrets/MINE", { method: "DELETE" })).status).toBe(204);
+    expect(JSON.parse(listed)).toMatchObject([{ name: "CRM", scope: "tenant", allowedHosts: ["api.example.com"], description: "CRM" }]);
+    expect((await member("/secrets/CRM", { method: "DELETE" })).status).toBe(403);
+    expect((await admin("/secrets/CRM", { method: "DELETE" })).status).toBe(204);
   });
 
   it("rejects MCP URLs with a secret in the host", async () => {

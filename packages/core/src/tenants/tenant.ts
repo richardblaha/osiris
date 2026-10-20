@@ -30,7 +30,7 @@ import { googleTools } from "../integrations/google.ts";
 import { microsoftTools } from "../integrations/microsoft.ts";
 import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
 import { publishSiteTool } from "../agent/tools/site.ts";
-import { FileIndexer, moveLegacyToFiles } from "../files/sync.ts";
+import { FileIndexer, mergePersonalIntoTenant, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
@@ -195,6 +195,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   // Old tenants' documents and skills move to files once, then the indexes catch up with the files on disk.
   const init = async () => {
     await moveLegacyToFiles(db, files);
+    await mergePersonalIntoTenant(db, files);
     await indexer!.reconcile();
   };
   return {

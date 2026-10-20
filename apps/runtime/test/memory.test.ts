@@ -39,16 +39,15 @@ describe("memory tools", () => {
     expect(model.calls[2]?.[0]?.text).toMatch(/# PAMĚŤ[\s\S]*Preferuje platbu převodem/);
   });
 
-  it("refuses shared memory for members", async () => {
+  it("lets members remember facts for the whole tenant", async () => {
     const { tenants } = createTestTenants([
-      new AIMessage({ content: "", tool_calls: [{ id: "m1", name: "remember", args: { content: "Sleva 50 %", shared: true } }] }),
-      new AIMessage("Nejde to."),
+      new AIMessage({ content: "", tool_calls: [{ id: "m1", name: "remember", args: { content: "Sleva 5 % pro stálé zákazníky" } }] }),
+      new AIMessage("Zapamatováno."),
     ]);
     const tenant = await tenants.get("a");
 
-    const state = await tenant.graph.invoke({ messages: [new HumanMessage("x")] }, { configurable: ctx("bob", "member") });
+    await tenant.graph.invoke({ messages: [new HumanMessage("x")] }, { configurable: ctx("bob", "member") });
 
-    expect(state.messages.find((m) => ToolMessage.isInstance(m))?.text).toContain("jen správce");
-    expect(await tenant.memory.list("bob")).toEqual([]);
+    expect((await tenant.memory.list("alice")).map((m) => m.content)).toEqual(["Sleva 5 % pro stálé zákazníky"]);
   });
 });

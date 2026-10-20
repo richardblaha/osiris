@@ -118,35 +118,32 @@ const SECTIONS: { id: Section; label: string; add: string; icon: string; enabled
 interface Row {
   key: string;
   label: string;
-  /** Which tab lists it: bundled skills belong with the tenant's. */
-  scope: Scope;
   badge?: ReactNode;
 }
 
-const tabOf = (scope: Scope | "bundled"): Scope => (scope === "personal" ? "personal" : "tenant");
+/** Everyone in a tenant adds to its knowledge base and memory; the rest is the admins'. */
+const MEMBERS_WRITE: Section[] = ["knowledge", "memory"];
 
 function rows(section: Section, lists: Lists): Row[] {
   switch (section) {
     case "knowledge":
-      return lists.knowledge.map((d) => ({ key: documentKey(d), label: d.title, scope: d.scope }));
+      return lists.knowledge.map((d) => ({ key: documentKey(d), label: d.title }));
     case "skills":
       return lists.skills.map((s) => ({
         key: skillKey(s),
         label: s.name,
-        scope: tabOf(s.source),
         badge: s.source === "bundled" ? <ScopeBadge scope="bundled" /> : undefined,
       }));
     case "memory":
-      return lists.memory.map((m) => ({ key: memoryKey(m), label: m.content, scope: m.scope }));
+      return lists.memory.map((m) => ({ key: memoryKey(m), label: m.content }));
     case "mcp":
-      return lists.mcp.map((s) => ({ key: mcpKey(s), label: s.name, scope: s.scope, badge: <McpStatus server={s} /> }));
+      return lists.mcp.map((s) => ({ key: mcpKey(s), label: s.name, badge: <McpStatus server={s} /> }));
     case "secrets":
-      return lists.secrets.map((s) => ({ key: secretKey(s), label: s.name, scope: s.scope }));
+      return lists.secrets.map((s) => ({ key: secretKey(s), label: s.name }));
   }
 }
 
 const LAST_TENANT = "osiris.tenant";
-const SCOPE_TAB = "osiris.scope";
 
 /** Per-browser conveniences only; the app works the same when storage is unavailable. */
 const stored = <T,>(key: string, fallback: T): T => {
@@ -214,8 +211,6 @@ function Workspace() {
     return { ...started, code: params.get("code"), state: params.get("state"), error: params.get("error_description") ?? params.get("error") };
   });
   const [view, setView] = useState<View>(notice || integrationReturn ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
-  // The sidebar's tab: tenant-wide or the user's own records, files and settings.
-  const [scope, setScope] = useState<Scope>(() => (stored<string>(SCOPE_TAB, "personal") === "tenant" ? "tenant" : "personal"));
   const [error, setError] = useState<string>();
 
   const refreshThreads = useCallback(() => api.threads().then(setThreads, (e: Error) => setError(e.message)), []);
@@ -276,7 +271,6 @@ function Workspace() {
       async (done) => {
         await api.testMcpServer(done.name, done.scope).catch(() => {});
         await refresh("mcp");
-        setScope(done.scope);
         setView({ kind: "item", section: "mcp", id: mcpKey({ scope: done.scope, name: done.name }) });
       },
       (e: Error) => fail(e.message),
@@ -321,24 +315,10 @@ function Workspace() {
   if (!me) return null;
   const isAdmin = tenant?.role === "admin";
   const sections = tenant ? SECTIONS.filter((s) => s.enabled(tenant.features)) : [];
-  const scoped = (section: Section) => rows(section, lists).filter((r) => r.scope === scope);
-  const switchScope = (next: Scope) => {
-    setScope(next);
-    store(SCOPE_TAB, next);
-    // A record belongs to one tab; its section's list in the other tab takes its place.
-    setView((v) => (v.kind === "item" ? { kind: "list", section: v.section } : v));
-  };
-  /** After a save the record is shown, in its own tab (a member's copy of a tenant skill is personal). */
-  const showSaved = (section: Section, key: string) =>
-    void refresh(section).then((items) => {
-      const saved = items && rows(section, { ...lists, [section]: items }).find((r) => r.key === key);
-      if (saved && saved.scope !== scope) {
-        setScope(saved.scope);
-        store(SCOPE_TAB, saved.scope);
-      }
-      setView({ kind: "item", section, id: key });
-    });
-  const hasScoped = !!tenant && (tenant.features.files || sections.length > 0);
+  const canAdd = (section: Section) => isAdmin || MEMBERS_WRITE.includes(section);
+  /** After a save the record is shown. */
+  const showSaved = (section: Section, key: string) => void refresh(section).then(() => setView({ kind: "item", section, id: key }));
+  const hasSettings = !!tenant && (tenant.features.files || sections.length > 0);
 
   return (
     <div className="flex h-full">
@@ -372,21 +352,9 @@ function Workspace() {
               {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
             </section>
           )}
-          {hasScoped && (
+          {hasSettings && (
             <>
-              <div role="tablist" aria-label="Pro koho" className="mt-3 grid grid-cols-2 gap-1 rounded-md bg-hover p-0.5">
-                {(["tenant", "personal"] as const).map((t) => (
-                  <button
-                    key={t}
-                    role="tab"
-                    aria-selected={scope === t}
-                    onClick={() => switchScope(t)}
-                    className={`rounded-sm px-2 py-1 font-medium ${scope === t ? "bg-canvas text-fg shadow-sm" : "text-fg-secondary hover:text-fg"}`}
-                  >
-                    {t === "tenant" ? "Pro tenanta" : "Pro mě"}
-                  </button>
-                ))}
-              </div>
+              <div className="mt-3 border-t border-line" />
               {tenant?.features.files && (
                 <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />
               )}
@@ -397,7 +365,7 @@ function Workspace() {
                   onClick={() => setView({ kind: "list", section: s.id })}
                   label={s.label}
                   icon={s.icon}
-                  count={scoped(s.id).length}
+                  count={rows(s.id, lists).length}
                 />
               ))}
             </>
@@ -470,7 +438,7 @@ function Workspace() {
         ) : view.kind === "profile" ? (
           <Profile key={`${tenant?.id}:${connections}`} me={me} notice={notice} features={tenant?.features} />
         ) : !tenant ? null : view.kind === "files" ? (
-          tenant.features.files ? <Files key={`${tenant.id}:${scope}`} scope={scope} isAdmin={isAdmin} /> : null
+          tenant.features.files ? <Files key={tenant.id} /> : null
         ) : view.kind === "schedules" ? (
           tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
         ) : view.kind === "public" ? (
@@ -481,12 +449,10 @@ function Workspace() {
           <SectionList
             title={SECTIONS.find((s) => s.id === view.section)!.label}
             add={SECTIONS.find((s) => s.id === view.section)!.add}
-            scope={scope}
-            canAdd={scope === "personal" || isAdmin}
-            rows={scoped(view.section)}
+            canAdd={canAdd(view.section)}
+            rows={rows(view.section, lists)}
             onOpen={(id) => setView({ kind: "item", section: view.section, id })}
-            // Built-in tools are the tenant's, so they're listed in its tab, above the tenant's MCP servers.
-            before={view.section === "mcp" && scope === "tenant" ? <BuiltinTools key={tenant.id} tenantId={tenant.id} systemAdmin={me.systemAdmin} /> : undefined}
+            before={view.section === "mcp" ? <BuiltinTools key={tenant.id} tenantId={tenant.id} systemAdmin={me.systemAdmin} /> : undefined}
             listTitle={view.section === "mcp" ? "MCP servery" : undefined}
           />
         ) : view.kind === "item" ? (
@@ -503,7 +469,7 @@ function Workspace() {
                 section={view.section}
                 id={view.id}
                 lists={lists}
-                scope={scope}
+                scope="tenant"
                 isAdmin={isAdmin}
                 onSaved={(key) => showSaved(view.section, key)}
                 onDeleted={() => void refresh(view.section).then(() => setView({ kind: "list", section: view.section }))}
@@ -633,11 +599,10 @@ function NavLink({ active, onClick, label, icon, count }: { active: boolean; onC
   );
 }
 
-/** A section's records in the sidebar tab's scope; a record opens its detail form. */
+/** A section's records; a record opens its detail form. */
 function SectionList(props: {
   title: string;
   add: string;
-  scope: Scope;
   canAdd: boolean;
   rows: Row[];
   onOpen: (id: string | null) => void;
@@ -649,7 +614,7 @@ function SectionList(props: {
     <div className="detail">
       <div className="flex items-center gap-3">
         <h1 className="min-w-0 flex-1 text-lg font-semibold">
-          {props.title} <ScopeBadge scope={props.scope} />
+          {props.title}
         </h1>
         {props.canAdd && (
           <button onClick={() => props.onOpen(null)} className="btn-primary">
@@ -658,7 +623,7 @@ function SectionList(props: {
         )}
       </div>
       <p className="mt-1 text-xs text-fg-muted">
-        {props.scope === "personal" ? "Platí jen pro tebe." : props.canAdd ? "Platí pro všechny v tenantovi." : "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."}
+        {props.canAdd ? "Platí pro všechny v tenantovi." : "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."}
       </p>
       {props.before}
       {props.listTitle && <h2 className="section-header mt-6">{props.listTitle}</h2>}

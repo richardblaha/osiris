@@ -2,39 +2,34 @@ import type { Scope, SkillSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export const skillKey = (s: Pick<SkillSummary, "source" | "name">) => `${s.source}:${s.name}`;
 
-/**
- * Every skill the user can see: their own, the tenant's and the bundled ones not replaced by the tenant.
- * A personal skill shadows a tenant skill of the same name for the user, but both are listed.
- */
+/** The tenant's skills and the bundled ones it didn't replace. */
 export async function loadSkills(): Promise<SkillSummary[]> {
-  const [personal, tenant] = await Promise.all([api.skills("personal"), api.skills("tenant")]);
-  return [...personal.filter((s) => s.source === "personal"), ...tenant].sort((a, b) => a.name.localeCompare(b.name));
+  return (await api.skills("tenant")).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 const INTRO =
-  "Postupy, podle kterých asistent pracuje (např. jak sestavit nabídku). Jsou to soubory skills/<název>/SKILL.md. Osobní dovednost má přednost před dovedností tenanta a ta před výchozí se stejným názvem.";
+  "Postupy, podle kterých asistent pracuje (např. jak sestavit nabídku). Jsou to soubory skills/<název>/SKILL.md. Dovednost tenanta má přednost před výchozí se stejným názvem.";
 
-export function SkillDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<SkillSummary>) {
+export function SkillDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<SkillSummary>) {
   const [name, setName] = useState(item?.name ?? "");
   const [description, setDescription] = useState(item?.description ?? "");
   const [instructions, setInstructions] = useState("");
-  /** A bundled skill, or a tenant one for a member, is changed by saving a copy at a scope the user may write. */
-  const own = item && item.source !== "bundled" && canEdit(item.source, isAdmin);
-  // A copy goes to the tab's scope when the user may write there, otherwise to their own skills.
-  const scope: Scope = own ? (item.source as Scope) : tab === "tenant" && isAdmin ? "tenant" : "personal";
+  /** Admins change the tenant's skills, and a bundled one by saving the tenant's copy. */
+  const own = item && item.source !== "bundled" && isAdmin;
+  const scope: Scope = "tenant";
   const [loaded, setLoaded] = useState(!item);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
   useEffect(() => {
     if (!item) return;
-    api.skill(item.name, item.source === "personal" ? "personal" : "tenant").then((s) => {
+    api.skill(item.name, "tenant").then((s) => {
       setInstructions(s.instructions);
       setLoaded(true);
     }, (e: Error) => setError(e.message));
@@ -52,7 +47,7 @@ export function SkillDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: D
   return (
     <div className="detail">
       <DetailHeader title={item?.name ?? "Nová dovednost"} scope={item ? (item.source === "bundled" ? undefined : item.source) : scope} canEdit={!!own}>
-        {item?.source === "bundled" ? "Výchozí dovednost, která je součástí aplikace. Změníš ji uložením kopie se stejným názvem." : INTRO}
+        {item?.source === "bundled" ? "Výchozí dovednost, která je součástí aplikace. Správce ji změní uložením kopie se stejným názvem." : INTRO}
       </DetailHeader>
       {loaded && (
         <form onSubmit={submit} className="mt-6 space-y-4">
@@ -68,13 +63,13 @@ export function SkillDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: D
             />
           </Field>
           <Field label="Kdy ji použít">
-            <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="jedna věta" required className="field" />
+            <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="jedna věta" required disabled={!isAdmin} className="field" />
           </Field>
           <div className="space-y-1">
             <span className="section-header block">Postup (Markdown, uloží se jako skills/{name || "…"}/SKILL.md)</span>
-            <LazyCodeEditor path="SKILL.md" value={instructions} onChange={setInstructions} height="50vh" />
+            <LazyCodeEditor path="SKILL.md" value={instructions} readOnly={!isAdmin} onChange={setInstructions} height="50vh" />
           </div>
-          <div className="flex items-center gap-4">
+          <div className={`flex items-center gap-4 ${isAdmin ? "" : "hidden"}`}>
             <button disabled={busy} className="btn-primary">
               {busy ? "Ukládám…" : !item ? "Přidat" : own ? "Uložit" : "Uložit kopii"}
             </button>

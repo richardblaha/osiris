@@ -108,7 +108,7 @@ export function createAgentGraph(deps: AgentDeps) {
         timezone,
         knowledge: on.knowledge,
         files: on.files,
-        skills: on.skills ? await skills?.list(ctx.user_id) : undefined,
+        skills: on.skills ? await skills?.list() : undefined,
         memories: on.memory ? await memory?.list(ctx.user_id) : undefined,
         userName: ctx.user_name,
         settings: await settings?.get(ctx.user_id),

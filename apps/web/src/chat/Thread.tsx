@@ -12,7 +12,7 @@ import { api, saveBlob } from "../api.ts";
 /** The open thread's id (null until the first message creates it), for downloading the thread's temp files. */
 export const ThreadIdContext = createContext<() => string | null>(() => null);
 
-const file = (a: Record<string, unknown>, scope = "scope", path = "path") => `${String(a[scope] ?? "personal")}:${String(a[path] ?? "")}`;
+const file = (a: Record<string, unknown>, scope = "scope", path = "path") => `${String(a[scope] ?? "tenant")}:${String(a[path] ?? "")}`;
 
 const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   search_knowledge: (a) => `Hledám ve znalostní bázi: „${String(a.query ?? "")}“`,

@@ -128,7 +128,7 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
       )}
       {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
 
-      <h2 className="section-header mt-8">Persona a pravidla asistenta</h2>
+      <h2 className="section-header mt-8">Persona asistenta</h2>
       <AssistantSettings scope="personal" editable />
     </div>
   );

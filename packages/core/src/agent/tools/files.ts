@@ -20,19 +20,19 @@ const PDF_ASSETS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "css", "
 const ESCAPED = new Set(["html", "htm", "xml", "svg"]);
 
 const scope = z
-  .enum(["personal", "tenant", "temp"])
-  .default("personal")
-  .describe("personal = soubory uživatele, tenant = firemní (zápis jen správce), temp = dočasné soubory této konverzace");
+  .enum(["tenant", "temp"])
+  .default("tenant")
+  .describe("tenant = soubory firmy (společné pro všechny), temp = dočasné soubory této konverzace");
 const path = z.string().trim().min(1).max(512).describe("Cesta uvnitř rozsahu, např. sablony/nabidka.html");
 
 export function locate(s: FileScope, ctx: RunContext): FileLocation {
-  if (s === "tenant") return { scope: "tenant" };
   if (s === "temp") return { scope: "temp", threadId: ctx.thread_id };
-  return { scope: "personal", userId: ctx.user_id };
+  return { scope: "tenant" };
 }
 
-const canWrite = (s: FileScope, ctx: RunContext) => s !== "tenant" || ctx.role === "admin";
-const READ_ONLY = "Do firemních souborů může zapisovat jen správce. Ulož soubor jako osobní (personal).";
+/** The tenant's files are everyone's to write. */
+const canWrite = (_s: FileScope, _ctx: RunContext) => true;
+const READ_ONLY = "Sem zapisovat nelze.";
 
 const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} kB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -240,16 +240,15 @@ async function siblingAssets(files: FileStore, loc: FileLocation, htmlPath: stri
 /** Full-text search in the tenant's files and the user's own (not in temp files). */
 export function searchFilesTool(index: FileIndex) {
   return tool(
-    async ({ query }, config) => {
-      const { user_id } = getRunContext(config);
-      const hits = await index.search(query, ["", user_id], 10);
+    async ({ query }) => {
+      const hits = await index.search(query, [""], 10);
       if (!hits.length) return "Nic nenalezeno.";
-      return hits.map((h) => `${h.owner ? "personal" : "tenant"}:${h.path}\n${h.snippet}`).join("\n\n");
+      return hits.map((h) => `${h.path}\n${h.snippet}`).join("\n\n");
     },
     {
       name: "search_files",
       description:
-        "Fulltextově vyhledá v textových souborech firmy a uživatele (šablony, poznámky, znalosti, web). Vrací cestu (rozsah:cesta) a úryvek; celý soubor přečti nástrojem read_file.",
+        "Fulltextově vyhledá v textových souborech firmy (šablony, poznámky, znalosti, web). Vrací cestu a úryvek; celý soubor přečti nástrojem read_file.",
       schema: z.object({ query: z.string().min(1).max(200).describe("Slova, která mají soubory obsahovat") }),
     },
   );

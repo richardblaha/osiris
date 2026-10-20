@@ -1,14 +1,11 @@
 import type { Scope } from "@osiris/shared";
 import type { ReactNode } from "react";
 
-/**
- * What every detail form gets. Settings records are personal (the user's own) or tenant-wide (managed by admins);
- * the sidebar's tabs ("Pro tenanta", "Pro mě") pick which ones are listed and where a new record goes.
- */
+/** What every detail form gets. Settings records are the tenant's. */
 export interface DetailProps<T> {
   /** The record shown, or undefined for a new one. */
   item?: T;
-  /** The sidebar's tab: a new record goes there (the tenant tab offers new records to tenant admins only). */
+  /** Always "tenant": settings are no longer personal. */
   scope: Scope;
   isAdmin: boolean;
   /** After a save: the list is reloaded and the saved record (by its sidebar key) selected. */
@@ -16,7 +13,7 @@ export interface DetailProps<T> {
   onDeleted: () => void;
 }
 
-/** Personal records are always the user's; tenant-wide ones only a tenant admin may change. */
+/** Admin-only settings (skills, MCP servers, secrets) only a tenant admin may change. */
 export const canEdit = (scope: Scope, isAdmin: boolean) => scope === "personal" || isAdmin;
 
 export function DetailHeader({ title, scope, canEdit, children }: { title: string; scope?: Scope; canEdit: boolean; children?: ReactNode }) {

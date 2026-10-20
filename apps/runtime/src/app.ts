@@ -30,7 +30,8 @@ import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
 
 const runBody = z.object({ message: z.string().trim().min(1).max(20_000) });
-const scope = z.enum(["tenant", "personal"]).default("personal");
+// Everything is the tenant's; "personal" is gone (only the user's profile is theirs).
+const scope = z.literal("tenant").default("tenant");
 const documentBody = z.object({
   title: z.string().trim().min(1).max(200),
   content: z.string().min(1).max(500_000),
@@ -115,7 +116,7 @@ const FILE_ERROR_STATUS: Record<FileErrorCode, 400 | 404 | 409 | 413 | 415 | 507
   type: 415,
   quota: 507,
 };
-const fileScope = z.enum(["tenant", "personal", "temp"]).default("personal");
+const fileScope = z.enum(["tenant", "temp"]).default("tenant");
 const fileRef = z.object({ scope: fileScope, path: z.string().min(1).max(512), thread: z.string().max(100).optional() });
 const moveBody = z.object({ from: fileRef, to: fileRef });
 
@@ -177,13 +178,11 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     if (ctx.role !== "admin") throw new HTTPException(403, { message: "Requires admin role" });
   };
   /** Anyone may change their personal settings; tenant-wide ones need an admin. */
-  const requireScope = (ctx: RequestContext, scope: Scope) => {
-    if (scope === "tenant") requireAdmin(ctx);
-  };
+  /** Tenant settings (skills, MCP servers, secrets, rules) are the admins'; the knowledge base, memory and files everyone's. */
+  const requireScope = (ctx: RequestContext, _scope: Scope) => requireAdmin(ctx);
   const queryScope = (value: string | undefined): Scope => {
-    if (value === undefined || value === "personal") return "personal";
-    if (value === "tenant") return "tenant";
-    throw new HTTPException(400, { message: "scope must be tenant or personal" });
+    if (value === undefined || value === "tenant") return "tenant";
+    throw new HTTPException(400, { message: "Osobní nastavení už nejsou, vše platí pro celý tenant" });
   };
   const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
     const r = schema.safeParse(value);
@@ -201,17 +200,14 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
   /** The file scope a request names; temp files belong to one of the caller's threads. */
   const fileLocation = async (ctx: RequestContext, scope: FileScope, thread: string | undefined): Promise<FileLocation> => {
     if (scope === "tenant") return { scope };
-    if (scope === "personal") return { scope, userId: ctx.user.sub };
     if (!thread) throw new HTTPException(400, { message: "thread is required for temp files" });
     await requireThread(ctx, thread);
-    return { scope, threadId: thread };
+    return { scope: "temp", threadId: thread };
   };
   const fileQuery = (c: { req: { query: (k: string) => string | undefined } }) =>
     parse(fileRef.partial({ path: true }), { scope: c.req.query("scope"), path: c.req.query("path"), thread: c.req.query("thread") });
-  /** Members read tenant files but write only their own and their threads' temp files. */
-  const requireFileWrite = (ctx: RequestContext, scope: FileScope) => {
-    if (scope === "tenant") requireAdmin(ctx);
-  };
+  /** The tenant's files are everyone's to write; temp files are checked to be the caller's own thread's. */
+  const requireFileWrite = (_ctx: RequestContext, _scope: FileScope) => {};
   const fileErrors = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
@@ -327,36 +323,29 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     // A document is a file in knowledge/; it's indexed as it's written. Its content is edited through /files.
     .post("/knowledge/documents", async (c) => {
       const ctx = c.get("ctx");
-      const { title, content, scope } = parse(documentBody, await c.req.json());
-      requireScope(ctx, scope);
-      const loc: FileLocation = scope === "tenant" ? { scope: "tenant" } : { scope: "personal", userId: ctx.user.sub };
+      const { title, content } = parse(documentBody, await c.req.json());
+      const loc: FileLocation = { scope: "tenant" };
       const id = `${slug(title)}.md`;
       // The title goes in as the leading heading, which the list shows (a file without one shows its name).
       const text = /^#\s/.test(content.trimStart()) ? content : `# ${title}\n\n${content}`;
       await fileErrors(() => ctx.tenant.files.write(loc, `${KNOWLEDGE_DIR}/${id}`, Buffer.from(text), { overwrite: false }));
-      const doc = (await ctx.tenant.knowledge.listDocuments(ctx.user.sub)).find((d) => d.id === id && d.scope === scope);
+      const doc = (await ctx.tenant.knowledge.listDocuments()).find((d) => d.id === id);
       return c.json(doc, 201);
     })
 
     .delete("/knowledge/documents/:id", async (c) => {
       const ctx = c.get("ctx");
-      const scope = queryScope(c.req.query("scope"));
-      requireScope(ctx, scope);
-      const loc: FileLocation = scope === "tenant" ? { scope: "tenant" } : { scope: "personal", userId: ctx.user.sub };
+      queryScope(c.req.query("scope"));
+      const loc: FileLocation = { scope: "tenant" };
       await fileErrors(() => ctx.tenant.files.delete(loc, `${KNOWLEDGE_DIR}/${c.req.param("id")}`));
       return c.body(null, 204);
     })
 
-    // `?scope=tenant` shows what the tenant has (tenant and bundled skills), without the caller's personal overrides.
-    .get("/skills", async (c) => {
-      const { tenant, user } = c.get("ctx");
-      return c.json(await tenant.skills.list(queryScope(c.req.query("scope")) === "tenant" ? "" : user.sub));
-    })
+    // The tenant's skills and the bundled ones it doesn't replace.
+    .get("/skills", async (c) => c.json(await c.get("ctx").tenant.skills.list()))
 
     .get("/skills/:name", async (c) => {
-      const { tenant, user } = c.get("ctx");
-      const viewer = queryScope(c.req.query("scope")) === "tenant" ? "" : user.sub;
-      const skill = await tenant.skills.get(c.req.param("name"), viewer);
+      const skill = await c.get("ctx").tenant.skills.get(c.req.param("name"));
       if (!skill) throw new HTTPException(404, { message: "Skill not found" });
       return c.json<Skill>(skill);
     })
@@ -366,15 +355,15 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const name = skillName(c.req.param("name"));
       const { scope, ...skill } = parse(skillBody, await c.req.json());
       requireScope(ctx, scope);
-      await fileErrors(() => ctx.tenant.skills.put({ name, ...skill }, scope, ctx.user.sub));
-      return c.json<Skill>((await ctx.tenant.skills.get(name, ctx.user.sub))!);
+      await fileErrors(() => ctx.tenant.skills.put({ name, ...skill }));
+      return c.json<Skill>((await ctx.tenant.skills.get(name))!);
     })
 
     .delete("/skills/:name", async (c) => {
       const ctx = c.get("ctx");
       const scope = queryScope(c.req.query("scope"));
       requireScope(ctx, scope);
-      if (!(await fileErrors(() => ctx.tenant.skills.delete(c.req.param("name"), scope, ctx.user.sub)))) {
+      if (!(await fileErrors(() => ctx.tenant.skills.delete(c.req.param("name"))))) {
         throw new HTTPException(404, { message: "Skill not found" });
       }
       return c.body(null, 204);
@@ -483,11 +472,16 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     // ?scope=tenant|personal, or public (the public assistant's, admins).
     .put("/assistant", async (c) => {
       const ctx = c.get("ctx");
-      const open = c.req.query("scope") === "public";
-      const scope = open ? "tenant" : queryScope(c.req.query("scope"));
-      requireScope(ctx, scope);
+      const which = c.req.query("scope");
       const profile = parse(profileBody, await c.req.json());
-      await ctx.tenant.profiles.put(open ? PUBLIC_PROFILE : scope === "tenant" ? "" : ctx.user.sub, profile);
+      // A user's own is personalization only: their persona, no rules (rules are the tenant's and the system's).
+      if (which === "personal") {
+        const own = { persona: profile.persona, guards: "" };
+        await ctx.tenant.profiles.put(ctx.user.sub, own);
+        return c.json<AssistantProfile>(own);
+      }
+      requireAdmin(ctx);
+      await ctx.tenant.profiles.put(which === "public" ? PUBLIC_PROFILE : "", profile);
       return c.json<AssistantProfile>(profile);
     })
     // Writes a persona's description from a character; nothing is saved until the (edited) profile is put.
@@ -597,16 +591,14 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     .post("/memories", async (c) => {
       const ctx = c.get("ctx");
-      const { content, scope } = parse(memoryBody, await c.req.json());
-      requireScope(ctx, scope);
-      return c.json(await ctx.tenant.memory.add(ctx.user.sub, content, scope), 201);
+      const { content } = parse(memoryBody, await c.req.json());
+      return c.json(await ctx.tenant.memory.add(ctx.user.sub, content, "tenant"), 201);
     })
 
     .delete("/memories/:id", async (c) => {
       const ctx = c.get("ctx");
-      const scope = queryScope(c.req.query("scope"));
-      requireScope(ctx, scope);
-      if (!(await ctx.tenant.memory.delete(c.req.param("id"), scope, ctx.user.sub))) {
+      queryScope(c.req.query("scope"));
+      if (!(await ctx.tenant.memory.delete(c.req.param("id"), "tenant", ctx.user.sub))) {
         throw new HTTPException(404, { message: "Memory not found" });
       }
       return c.body(null, 204);
@@ -617,7 +609,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const { tenant, user } = c.get("ctx");
       const q = (c.req.query("q") ?? "").slice(0, 200);
       const scope = c.req.query("scope");
-      const owners = scope === "tenant" ? [""] : scope === "personal" ? [user.sub] : ["", user.sub];
+      const owners = [""];
       const hits = await tenant.fileIndex.search(q, owners, 50);
       return c.json<FileSearchHit[]>(hits.map((h) => ({ scope: h.owner ? "personal" : "tenant", path: h.path, snippet: h.snippet })));
     })

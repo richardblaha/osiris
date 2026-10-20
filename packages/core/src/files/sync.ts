@@ -1,6 +1,6 @@
 import type { Client } from "@libsql/client";
 import { fileType } from "@osiris/shared";
-import { formatSkill, SKILLS_DIR } from "../agent/skills.ts";
+import { formatSkill, parseSkill, SKILLS_DIR } from "../agent/skills.ts";
 import { KNOWLEDGE_DIR, type KnowledgeStore } from "../rag/store.ts";
 import type { FileIndex } from "./index.ts";
 import type { FileChange, FileLocation, FileStore } from "./store.ts";
@@ -112,4 +112,56 @@ export async function moveLegacyToFiles(db: Client, files: FileStore) {
     }
     await db.execute("DROP TABLE skills");
   }
+}
+
+/**
+ * Settings are the tenant's, not the users' (only the assistant's persona stays personal): moves what users kept for
+ * themselves to the tenant, once. Files keep their paths (a taken one gets a `-2` suffix, a skill a new name), secrets
+ * a `_2` suffix; memories become tenant-wide and personal rules are dropped. Running it again changes nothing.
+ */
+export async function mergePersonalIntoTenant(db: Client, files: FileStore) {
+  const tenant: FileLocation = { scope: "tenant" };
+  const taken = async (path: string) => {
+    const dir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+    return (await files.list(tenant, dir).catch(() => [])).some((e) => e.path === path);
+  };
+  for (const userId of await files.personalOwners()) {
+    const from: FileLocation = { scope: "personal", userId };
+    for (const dir of await files.list(from, SKILLS_DIR).catch(() => [])) {
+      if (dir.type !== "dir") continue;
+      let name = dir.name;
+      for (let n = 2; await taken(`${SKILLS_DIR}/${name}`); n++) name = `${dir.name}-${n}`;
+      await files.move(from, dir.path, tenant, `${SKILLS_DIR}/${name}`);
+      if (name === dir.name) continue;
+      const path = `${SKILLS_DIR}/${name}/SKILL.md`;
+      await files
+        .read(tenant, path)
+        .then(({ data }) => files.write(tenant, path, Buffer.from(formatSkill({ ...parseSkill(data.toString("utf8")), name }))))
+        .catch(() => {});
+    }
+    for await (const f of files.walk(from)) {
+      const dot = f.path.lastIndexOf(".");
+      const [base, ext] = dot > f.path.lastIndexOf("/") ? [f.path.slice(0, dot), f.path.slice(dot)] : [f.path, ""];
+      let path = f.path;
+      for (let n = 2; await taken(path); n++) path = `${base}-${n}${ext}`;
+      await files.move(from, f.path, tenant, path);
+    }
+  }
+
+  const { rows } = await db.execute("SELECT owner, name FROM secrets WHERE owner <> ''");
+  for (const r of rows) {
+    let name = String(r.name);
+    for (let n = 2; (await db.execute({ sql: "SELECT 1 FROM secrets WHERE owner = '' AND name = ?", args: [name] })).rows.length; n++) name = `${r.name}_${n}`;
+    await db.execute({ sql: "UPDATE secrets SET owner = '', name = ? WHERE owner = ? AND name = ?", args: [name, String(r.owner), String(r.name)] });
+  }
+  await db.batch(
+    [
+      // MCP server names are unique across the tenant already, and a server's OAuth sign-in has the server's owner.
+      "UPDATE mcp_servers SET owner = '' WHERE owner <> ''",
+      "UPDATE mcp_oauth SET owner = '' WHERE owner <> ''",
+      "UPDATE memories SET user_id = NULL WHERE user_id IS NOT NULL",
+      "UPDATE assistant_profiles SET guards = '' WHERE owner NOT IN ('', '@public') AND guards <> ''",
+    ],
+    "write",
+  );
 }
