@@ -102,7 +102,8 @@ over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (`@osiris/platform/telemetry
 pod logs are not collected a second time.
 
 1. DNS: `observe.k6labs.cz` → the Traefik load balancer (as `osiris.k6labs.cz`).
-2. `.env`: `OSIRIS_O2_EMAIL`, `OSIRIS_O2_PASSWORD` (`openssl rand -base64 24`), then:
+2. `.env`: `OSIRIS_O2_EMAIL`, `OSIRIS_O2_PASSWORD` (OpenObserve refuses to start without a lowercase and an uppercase
+   letter, a digit and a special character: e.g. `"$(openssl rand -base64 24 | tr -d '/+=')Aa7-_"`), then:
    ```bash
    kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
    kubectl -n observability create secret generic openobserve-root --dry-run=client -o yaml \
