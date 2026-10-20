@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestDb, createTestTenants } from "./helpers.ts";
+import { createTestApp, createTestDb, createTestTenants } from "./helpers.ts";
 import { joinChunks, moveLegacyToFiles } from "@osiris/core/files/sync.ts";
 import { FileStore } from "@osiris/core/files/store.ts";
 import { mkdtempSync } from "node:fs";
@@ -8,35 +8,58 @@ import { join } from "node:path";
 
 const text = (s: string) => Buffer.from(s);
 
-describe("knowledge base in files", () => {
-  it("indexes files in knowledge/ as they're written and finds them by meaning and by words", async () => {
+describe("knowledge base", () => {
+  it("keeps documents in the database, indexed as they're saved, and finds them by meaning and by words", async () => {
     const { tenants } = createTestTenants();
     const acme = await tenants.get("acme");
-    await acme.files.write({ scope: "tenant" }, "knowledge/novak.md", text("Pan Novák chce rekonstrukci koupelny, obklad bílý."));
-    await acme.files.write({ scope: "tenant" }, "knowledge/cenik.md", text("Hodinová sazba elektrikáře je 650 Kč."));
-    await acme.files.write({ scope: "personal", userId: "bob" }, "knowledge/poznamka.md", text("Bobova sazba za víkend je dvojnásobná."));
-    // Outside knowledge/ a file is only full-text searchable.
-    await acme.files.write({ scope: "tenant" }, "sablony/faktura.html", text("<p>Sazba DPH 21 %</p>"));
+    await acme.knowledge.putDocument("novak.md", "Pan Novák chce rekonstrukci koupelny, obklad bílý.");
+    await acme.knowledge.putDocument("public/cenik.md", "# Ceník\n\nHodinová sazba elektrikáře je 650 Kč, víkend dvojnásobně.");
+    // A file is only full-text searchable, never knowledge.
+    await acme.files.write({ scope: "tenant" }, "knowledge/stary.md", text("Sazba DPH 21 %"));
 
     const [top] = await acme.knowledge.search("kolik stojí hodinová sazba");
-    expect(top).toMatchObject({ title: "cenik", path: "knowledge/cenik.md", owner: "" });
-    // Words without diacritics still match (full text), and personal files only for their owner.
-    expect((await acme.knowledge.search("vikend", "bob")).map((r) => r.path)).toContain("knowledge/poznamka.md");
-    expect((await acme.knowledge.search("vikend", "eva")).map((r) => r.path)).not.toContain("knowledge/poznamka.md");
-    expect((await acme.knowledge.listDocuments("bob")).map((d) => [d.id, d.scope])).toEqual([
-      ["cenik.md", "tenant"],
-      ["novak.md", "tenant"],
-      ["poznamka.md", "personal"],
+    expect(top).toMatchObject({ title: "Ceník", path: "knowledge/public/cenik.md", owner: "" });
+    expect((await acme.knowledge.search("vikend")).map((r) => r.path)[0]).toBe("knowledge/public/cenik.md");
+    expect((await acme.knowledge.search("DPH")).map((r) => r.path)).not.toContain("knowledge/stary.md");
+    expect((await acme.knowledge.listDocuments()).map((d) => [d.id, d.title, d.chunks])).toEqual([
+      ["novak.md", "novak", 1],
+      ["public/cenik.md", "Ceník", 1],
     ]);
 
-    // Editing, moving and deleting files keeps the index in step.
-    await acme.files.write({ scope: "tenant" }, "knowledge/cenik.md", text("Montáž zásuvky stojí 300 Kč."));
+    await acme.knowledge.putDocument("public/cenik.md", "Montáž zásuvky stojí 300 Kč.", "Ceník");
     expect((await acme.knowledge.search("hodinová sazba elektrikáře")).map((r) => r.content).join()).not.toContain("Hodinová");
-    await acme.files.move({ scope: "tenant" }, "knowledge/novak.md", { scope: "tenant" }, "archiv/novak.md");
-    expect((await acme.knowledge.listDocuments()).map((d) => d.id)).toEqual(["cenik.md"]);
-    expect((await acme.fileIndex.search("koupelny", [""])).map((h) => h.path)).toEqual(["archiv/novak.md"]);
-    await acme.files.delete({ scope: "tenant" }, "knowledge");
-    expect(await acme.knowledge.search("zásuvky")).toEqual([]);
+    expect(await acme.knowledge.deleteDocument("public/cenik.md")).toBe(true);
+    expect((await acme.knowledge.search("zásuvky")).map((r) => r.path)).toEqual(["knowledge/novak.md"]);
+    await expect(acme.knowledge.putDocument("../x.md", "x")).rejects.toThrow();
+  });
+
+  it("serves documents to the tenant's people", async () => {
+    const { tenants } = createTestTenants();
+    const app = await createTestApp(tenants);
+    const bob = (path: string, init: RequestInit = {}) =>
+      app.request(`/api${path}`, { ...init, headers: { authorization: "Bearer bob:tenant=acme", "x-tenant-id": "acme", "content-type": "application/json" } });
+    const created = await (await bob("/knowledge/documents", { method: "POST", body: JSON.stringify({ title: "Ceník služeb", content: "650 Kč", folder: "public" }) })).json();
+    expect(created).toMatchObject({ id: "public/cenik-sluzeb.md", title: "Ceník služeb", chunks: 1 });
+    expect((await (await bob("/knowledge/documents/public/cenik-sluzeb.md")).json()).content).toBe("650 Kč");
+    expect((await bob("/knowledge/documents/public/cenik-sluzeb.md", { method: "PUT", body: JSON.stringify({ title: "Ceník", content: "700 Kč" }) })).status).toBe(200);
+    expect((await (await bob("/knowledge/documents")).json()).map((d: { title: string }) => d.title)).toEqual(["Ceník"]);
+    expect((await bob("/knowledge/documents/public/cenik-sluzeb.md", { method: "DELETE" })).status).toBe(204);
+    expect((await bob("/knowledge/documents/public/cenik-sluzeb.md")).status).toBe(404);
+  });
+
+  it("moves the files once in knowledge/ into documents, once", async () => {
+    const { tenants } = createTestTenants();
+    const acme = await tenants.get("acme");
+    await acme.files.write({ scope: "tenant" }, "knowledge/public/cenik.md", text("# Ceník\n\n650 Kč"));
+    await acme.files.write({ scope: "tenant" }, "knowledge/plán zakázek.md", text("Brno v pondělí"));
+    await acme.files.write({ scope: "tenant" }, "knowledge/foto.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    await acme.init();
+    expect((await acme.knowledge.listDocuments()).map((d) => [d.id, d.title, d.chunks])).toEqual([
+      ["plán-zakázek.md", "plán zakázek", 1],
+      ["public/cenik.md", "Ceník", 1],
+    ]);
+    expect((await acme.files.list({ scope: "tenant" }, "knowledge")).map((e) => e.name)).toEqual(["public", "foto.png"]);
+    expect((await acme.knowledge.search("Brno")).map((r) => r.path)[0]).toBe("knowledge/plán-zakázek.md");
   });
 
   it("searches all text files by words, with a snippet", async () => {
@@ -51,14 +74,15 @@ describe("knowledge base in files", () => {
     expect((await acme.fileIndex.search("elektroinstalaci", [""])).map((h) => h.path)).toEqual(["sablony/nabidka.md"]);
   });
 
-  it("catches up with files changed on disk, e.g. after a restore", async () => {
+  it("indexes documents again whose chunks are gone (a new embedding model, a restore)", async () => {
     const { tenants } = createTestTenants();
     const acme = await tenants.get("acme");
-    await acme.files.write({ scope: "tenant" }, "knowledge/a.md", text("stará verze"));
-    // The index is lost (a restored database without it), the files stay.
+    await acme.knowledge.putDocument("a.md", "stará verze");
+    await acme.files.write({ scope: "tenant" }, "poznamky/a.md", text("stará verze"));
     await acme.db.batch(["DELETE FROM indexed_files", "DELETE FROM file_text", "DELETE FROM knowledge_chunks", "DELETE FROM knowledge_text"], "write");
     await acme.init();
     expect((await acme.knowledge.search("verze")).map((r) => r.path)).toEqual(["knowledge/a.md"]);
+    expect((await acme.fileIndex.search("verze", [""])).map((h) => h.path)).toEqual(["poznamky/a.md"]);
   });
 
   it("moves documents and skills from old tables to files, rebuilding documents from overlapping chunks", async () => {

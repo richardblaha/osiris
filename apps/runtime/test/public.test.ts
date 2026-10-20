@@ -53,9 +53,9 @@ describe("public assistants", () => {
   it("each know only their knowledge, memories and skills, get only their tools and keep visitors apart", async () => {
     const { tenants, model, admin, visitor, chat } = await setup([new AIMessage("Dobrý den."), new AIMessage("Dobrý den.")]);
     const acme = await tenants.get("acme");
-    await acme.files.write({ scope: "tenant" }, "knowledge/public/cenik.md", text("# Ceník\nZásuvka montáž 450 Kč za kus."));
-    await acme.files.write({ scope: "tenant" }, "knowledge/public_x/jine.md", text("Zásuvka jinde."));
-    await acme.files.write({ scope: "tenant" }, "knowledge/interni.md", text("Marže na zásuvkách je 60 %."));
+    await acme.knowledge.putDocument("public/cenik.md", "# Ceník\nZásuvka montáž 450 Kč za kus.");
+    await acme.knowledge.putDocument("public_x/jine.md", "Zásuvka jinde.");
+    await acme.knowledge.putDocument("interni.md", "Marže na zásuvkách je 60 %.");
     await acme.files.write({ scope: "tenant" }, "skills/reklamace/SKILL.md", text("---\nname: reklamace\ndescription: Jak přijmout reklamaci\n---\n\nPostup."));
     const fact = await acme.memory.add("", "Otevřeno Po–Pá 8–16.", "tenant");
     await acme.memory.add("", "Interní: šéf je na dovolené.", "tenant");

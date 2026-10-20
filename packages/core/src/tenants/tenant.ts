@@ -5,7 +5,7 @@ import { createAgentGraph, type AgentGraph } from "../agent/graph.ts";
 import { MemoryStore } from "../agent/memory.ts";
 import { UserSettingsStore } from "../agent/settings.ts";
 import { SkillStore, type Skill } from "../agent/skills.ts";
-import { searchKnowledgeTool } from "../agent/tools/knowledge.ts";
+import { saveKnowledgeTool, searchKnowledgeTool } from "../agent/tools/knowledge.ts";
 import { memoryTools } from "../agent/tools/memory.ts";
 import { loadSkillTool } from "../agent/tools/skills.ts";
 import { LibSQLSaver } from "../checkpointer/libsql-saver.ts";
@@ -32,7 +32,7 @@ import { microsoftTools } from "../integrations/microsoft.ts";
 import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
 import { buildVitepressTool, publishSiteTool } from "../agent/tools/site.ts";
 import { VitepressClient } from "../files/vitepress.ts";
-import { FileIndexer, mergePersonalIntoTenant, moveLegacyToFiles } from "../files/sync.ts";
+import { FileIndexer, mergePersonalIntoTenant, moveKnowledgeToDb, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
@@ -138,7 +138,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     },
     onChange: (change) => indexer!.apply(change),
   });
-  indexer = new FileIndexer(files, fileIndex, knowledge);
+  indexer = new FileIndexer(files, fileIndex);
   const skills = new SkillStore(files, deps.bundledSkills);
   guards = new GuardStore(files);
   const siteTargets = new SiteTargetStore(db, deps.secrets);
@@ -153,6 +153,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
   const builtins: [Feature, StructuredToolInterface][] = [
     ["knowledge", searchKnowledgeTool(knowledge)],
+    ["knowledge", saveKnowledgeTool(knowledge)],
     ["skills", loadSkillTool(skills)],
     ...memoryTools(memory).map((t): [Feature, StructuredToolInterface] => ["memory", t]),
     ...fileTools(files, gotenberg).map((t): [Feature, StructuredToolInterface] => ["files", t]),
@@ -228,6 +229,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const init = async () => {
     await moveLegacyToFiles(db, files);
     await mergePersonalIntoTenant(db, files);
+    await moveKnowledgeToDb(db, files, knowledge);
     await publicAssistants.migrateLegacy(skills);
     await guards.migrateProfiles(db);
     await indexer!.reconcile();

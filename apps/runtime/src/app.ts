@@ -11,7 +11,7 @@ import { publicProfile } from "@osiris/core/public/assistant.ts";
 import { isGuardPath, type GuardOwner } from "@osiris/core/agent/guards.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
-import { KNOWLEDGE_DIR } from "@osiris/core/rag/store.ts";
+import { DOCUMENT_ID } from "@osiris/core/rag/store.ts";
 import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import { SKILL_NAME } from "@osiris/core/agent/skills.ts";
 import { FileError, type FileErrorCode, type FileLocation } from "@osiris/core/files/store.ts";
@@ -36,7 +36,8 @@ const scope = z.literal("tenant").default("tenant");
 const documentBody = z.object({
   title: z.string().trim().min(1).max(200),
   content: z.string().min(1).max(500_000),
-  scope,
+  /** New documents: a folder, e.g. public (a public assistant may get just that folder). */
+  folder: z.string().trim().max(200).optional(),
 });
 const skillBody = z.object({
   description: z.string().trim().min(1).max(500),
@@ -344,29 +345,33 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     // Settings come in two scopes: `tenant` (everyone in the tenant, admins only) and `personal` (the caller only).
 
-    .get("/knowledge/documents", async (c) => {
-      const { tenant, user } = c.get("ctx");
-      return c.json(await tenant.knowledge.listDocuments(user.sub));
-    })
-
-    // A document is a file in knowledge/; it's indexed as it's written. Its content is edited through /files.
+    // The knowledge base: documents in the tenant's database (not files), indexed as they're saved.
+    .get("/knowledge/documents", async (c) => c.json(await c.get("ctx").tenant.knowledge.listDocuments()))
     .post("/knowledge/documents", async (c) => {
-      const ctx = c.get("ctx");
-      const { title, content } = parse(documentBody, await c.req.json());
-      const loc: FileLocation = { scope: "tenant" };
-      const id = `${slug(title)}.md`;
-      // The title goes in as the leading heading, which the list shows (a file without one shows its name).
-      const text = /^#\s/.test(content.trimStart()) ? content : `# ${title}\n\n${content}`;
-      await fileErrors(() => ctx.tenant.files.write(loc, `${KNOWLEDGE_DIR}/${id}`, Buffer.from(text), { overwrite: false }));
-      const doc = (await ctx.tenant.knowledge.listDocuments()).find((d) => d.id === id);
-      return c.json(doc, 201);
+      const { tenant } = c.get("ctx");
+      const { title, content, folder } = parse(documentBody, await c.req.json());
+      const base = `${folder ? `${folder}/` : ""}${slug(title)}`;
+      let id = `${base}.md`;
+      for (let n = 2; await tenant.knowledge.getDocument(id); n++) id = `${base}-${n}.md`;
+      if (!DOCUMENT_ID.test(id)) throw new HTTPException(400, { message: "Neplatná složka: písmena, číslice, tečky a pomlčky, / mezi složkami" });
+      await tenant.knowledge.putDocument(id, content, title);
+      return c.json((await tenant.knowledge.listDocuments()).find((d) => d.id === id), 201);
     })
-
-    .delete("/knowledge/documents/:id", async (c) => {
-      const ctx = c.get("ctx");
-      queryScope(c.req.query("scope"));
-      const loc: FileLocation = { scope: "tenant" };
-      await fileErrors(() => ctx.tenant.files.delete(loc, `${KNOWLEDGE_DIR}/${c.req.param("id")}`));
+    .get("/knowledge/documents/:id{.+}", async (c) => {
+      const doc = await c.get("ctx").tenant.knowledge.getDocument(c.req.param("id"));
+      if (!doc) throw new HTTPException(404, { message: "Dokument neexistuje" });
+      return c.json(doc);
+    })
+    .put("/knowledge/documents/:id{.+}", async (c) => {
+      const { tenant } = c.get("ctx");
+      const id = c.req.param("id");
+      if (!(await tenant.knowledge.getDocument(id))) throw new HTTPException(404, { message: "Dokument neexistuje" });
+      const { title, content } = parse(documentBody, await c.req.json());
+      await tenant.knowledge.putDocument(id, content, title);
+      return c.json(await tenant.knowledge.getDocument(id));
+    })
+    .delete("/knowledge/documents/:id{.+}", async (c) => {
+      if (!(await c.get("ctx").tenant.knowledge.deleteDocument(c.req.param("id")))) throw new HTTPException(404, { message: "Dokument neexistuje" });
       return c.body(null, 204);
     })
 

@@ -91,6 +91,8 @@ export interface FileRef {
   thread?: string;
 }
 
+const docPath = (id: string) => id.split("/").map(encodeURIComponent).join("/");
+
 const query = (params: Record<string, string | undefined>) =>
   new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => e[1] !== undefined)).toString();
 
@@ -112,9 +114,13 @@ export const api = {
   deleteThread: (id: string) => request(`/threads/${id}`, { method: "DELETE" }),
   messages: (id: string) => json<ThreadMessage[]>(`/threads/${id}/messages`),
   documents: () => json<DocumentSummary[]>("/knowledge/documents"),
-  addDocument: (title: string, content: string, scope: Scope) =>
-    json<DocumentSummary>("/knowledge/documents", { method: "POST", body: JSON.stringify({ title, content, scope }) }),
-  deleteDocument: (id: string, scope: Scope) => request(`/knowledge/documents/${id}?scope=${scope}`, { method: "DELETE" }),
+  addDocument: (title: string, content: string, folder?: string) =>
+    json<DocumentSummary>("/knowledge/documents", { method: "POST", body: JSON.stringify({ title, content, folder }) }),
+  /** Ids may hold folders (public/cenik.md): each segment is encoded, the slashes stay. */
+  document: (id: string) => json<{ id: string; title: string; content: string; updatedAt: string }>(`/knowledge/documents/${docPath(id)}`),
+  saveDocument: (id: string, title: string, content: string) =>
+    json<unknown>(`/knowledge/documents/${docPath(id)}`, { method: "PUT", body: JSON.stringify({ title, content }) }),
+  deleteDocument: (id: string) => request(`/knowledge/documents/${docPath(id)}`, { method: "DELETE" }),
   skills: (scope: Scope) => json<SkillSummary[]>(`/skills?scope=${scope}`),
   skill: (name: string, scope: Scope) => json<Skill>(`/skills/${name}?scope=${scope}`),
   saveSkill: (name: string, description: string, instructions: string, scope: Scope) =>

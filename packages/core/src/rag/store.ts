@@ -4,8 +4,19 @@ import type { Client } from "@libsql/client";
 import type { DocumentSummary } from "@osiris/shared";
 import { ftsQuery } from "../files/index.ts";
 
-/** Where the knowledge base lives in the tenant's and each user's files. */
+/** Chunks of a document are keyed by path `knowledge/<id>`; it was the knowledge base's folder in the files. */
 export const KNOWLEDGE_DIR = "knowledge";
+
+/** A document's id: segments of letters, digits, dots, dashes and underscores, `/` between them (a folder). */
+export const DOCUMENT_ID = /^[\p{L}\p{N}_-][\p{L}\p{N}._-]*(\/[\p{L}\p{N}_-][\p{L}\p{N}._-]*)*$/u;
+
+export interface KnowledgeDocument {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface SearchResult {
   owner: string;
@@ -23,11 +34,10 @@ const RRF_K = 60;
 export const titleOf = (path: string, text = "") => /^#\s+(.+)/.exec(text.trimStart())?.[1]?.trim() || (path.split("/").at(-1) ?? path).replace(/\.[^.]+$/, "");
 
 /**
- * The knowledge base: the files in `knowledge/` of the tenant (owner '') and of each user (their sub, searched only
- * for them). The files are the truth; this keeps their chunks with vectors and text, updated whenever a file changes.
- * Search combines vector similarity with full-text matches.
+ * The knowledge base: the tenant's documents (`knowledge_documents`) with their chunks' vectors and text, indexed as
+ * a document is saved. Search combines vector similarity with full-text matches.
  *
- * Chunks record `embeddingModel`, so changing EMBEDDING_MODEL hides old vectors until the files are indexed again.
+ * Chunks record `embeddingModel`, so changing EMBEDDING_MODEL hides old vectors until `reindexStale` (at startup).
  */
 export class KnowledgeStore {
   constructor(
@@ -107,21 +117,53 @@ export class KnowledgeStore {
     });
   }
 
-  /** The knowledge base's files: the tenant's and `userId`'s own, with their chunk counts. */
-  async listDocuments(userId = ""): Promise<DocumentSummary[]> {
-    const { rows } = await this.db.execute({
-      sql: `SELECT f.owner, f.path, f.modified,
-              (SELECT COUNT(*) FROM knowledge_chunks c WHERE c.owner = f.owner AND c.path = f.path) AS chunks,
-              (SELECT content FROM knowledge_chunks c WHERE c.owner = f.owner AND c.path = f.path AND c.idx = 0) AS head
-            FROM indexed_files f WHERE f.owner IN ('', ?) AND f.path LIKE ? ORDER BY f.path`,
-      args: [userId, `${KNOWLEDGE_DIR}/%`],
-    });
+  /** The documents, with their chunk counts. */
+  async listDocuments(): Promise<DocumentSummary[]> {
+    const { rows } = await this.db.execute(
+      `SELECT d.id, d.title, d.updated_at,
+         (SELECT COUNT(*) FROM knowledge_chunks c WHERE c.owner = '' AND c.path = '${KNOWLEDGE_DIR}/' || d.id) AS chunks
+       FROM knowledge_documents d ORDER BY d.id`,
+    );
     return rows.map((r) => ({
-      id: String(r.path).slice(KNOWLEDGE_DIR.length + 1),
-      title: titleOf(String(r.path), String(r.head ?? "")),
+      id: String(r.id),
+      title: String(r.title),
       chunks: Number(r.chunks),
-      scope: r.owner === "" ? "tenant" : "personal",
-      createdAt: new Date(Number(r.modified)).toISOString(),
+      scope: "tenant",
+      createdAt: new Date(`${String(r.updated_at).replace(" ", "T")}Z`).toISOString(),
     }));
+  }
+
+  async getDocument(id: string): Promise<KnowledgeDocument | null> {
+    const { rows } = await this.db.execute({ sql: "SELECT * FROM knowledge_documents WHERE id = ?", args: [id] });
+    const r = rows[0];
+    return r ? { id: String(r.id), title: String(r.title), content: String(r.content), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } : null;
+  }
+
+  /** Saves a document (new or changed) and indexes it; the title defaults to its leading heading or its id. */
+  async putDocument(id: string, content: string, title = titleOf(id, content)): Promise<void> {
+    if (!DOCUMENT_ID.test(id) || id.length > 300) throw new Error(`Invalid document id: ${id}`);
+    await this.db.execute({
+      sql: `INSERT INTO knowledge_documents (id, title, content) VALUES (?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET title = excluded.title, content = excluded.content, updated_at = datetime('now')`,
+      args: [id, title, content],
+    });
+    await this.indexFile("", `${KNOWLEDGE_DIR}/${id}`, content);
+  }
+
+  async deleteDocument(id: string): Promise<boolean> {
+    const [r] = await this.db.batch([{ sql: "DELETE FROM knowledge_documents WHERE id = ?", args: [id] }, ...this.removing("", `${KNOWLEDGE_DIR}/${id}`, false)], "write");
+    return r!.rowsAffected > 0;
+  }
+
+  /** Indexes the documents without chunks of the current embedding model (new model, or never indexed). */
+  async reindexStale(): Promise<void> {
+    const { rows } = await this.db.execute({
+      sql: `SELECT id, content FROM knowledge_documents d WHERE NOT EXISTS
+              (SELECT 1 FROM knowledge_chunks c WHERE c.owner = '' AND c.path = '${KNOWLEDGE_DIR}/' || d.id AND c.embedding_model = ?)`,
+      args: [this.embeddingModel],
+    });
+    for (const r of rows) {
+      await this.indexFile("", `${KNOWLEDGE_DIR}/${String(r.id)}`, String(r.content)).catch((err) => console.error(`Indexing ${String(r.id)} failed`, err));
+    }
   }
 }

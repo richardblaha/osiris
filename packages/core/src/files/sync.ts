@@ -1,7 +1,7 @@
 import type { Client } from "@libsql/client";
 import { fileType } from "@osiris/shared";
 import { formatSkill, parseSkill, SKILLS_DIR } from "../agent/skills.ts";
-import { KNOWLEDGE_DIR, type KnowledgeStore } from "../rag/store.ts";
+import { KNOWLEDGE_DIR, titleOf, type KnowledgeStore } from "../rag/store.ts";
 import type { FileIndex } from "./index.ts";
 import type { FileChange, FileLocation, FileStore } from "./store.ts";
 
@@ -10,24 +10,21 @@ const MAX_INDEXED_BYTES = 1024 * 1024;
 
 const ownerOf = (loc: FileLocation) => (loc.scope === "personal" ? loc.userId : "");
 const locOf = (owner: string): FileLocation => (owner ? { scope: "personal", userId: owner } : { scope: "tenant" });
-const inKnowledge = (path: string) => path === KNOWLEDGE_DIR || path.startsWith(`${KNOWLEDGE_DIR}/`);
 
 /**
- * Keeps the full-text index and the knowledge base's chunks in step with the files: every change the file store
- * makes goes through `apply`, and `reconcile` catches up with what changed on disk otherwise (a restored snapshot).
+ * Keeps the full-text index in step with the files: every change the file store makes goes through `apply`, and
+ * `reconcile` catches up with what changed on disk otherwise (a restored snapshot).
  */
 export class FileIndexer {
   constructor(
     private readonly files: FileStore,
     private readonly index: FileIndex,
-    private readonly knowledge: KnowledgeStore,
   ) {}
 
   apply = async (change: FileChange) => {
     const owner = ownerOf(change.loc);
     if (change.kind === "delete") {
       await this.index.remove(owner, change.path);
-      if (inKnowledge(change.path)) await this.knowledge.removeFile(owner, change.path);
       return;
     }
     // A written file, or a folder moved in: everything under it.
@@ -38,9 +35,7 @@ export class FileIndexer {
     const loc = locOf(owner);
     const { entry, data } = await this.files.read(loc, path);
     if (!fileType(path)?.text || entry.size > MAX_INDEXED_BYTES) return;
-    const text = data.toString("utf8");
-    if (inKnowledge(path)) await this.knowledge.indexFile(owner, path, text);
-    await this.index.put(owner, path, text, Date.parse(modifiedAt));
+    await this.index.put(owner, path, data.toString("utf8"), Date.parse(modifiedAt));
   }
 
   /** Indexes files changed since they were indexed and drops those that are gone. */
@@ -55,12 +50,35 @@ export class FileIndexer {
         if (indexed === modified || !fileType(entry.path)?.text || entry.size > MAX_INDEXED_BYTES) continue;
         await this.indexFile(owner, entry.path, entry.modifiedAt).catch((err) => console.error(`Indexing ${entry.path} failed`, err));
       }
-      for (const gone of known.keys()) {
-        await this.index.remove(owner, gone);
-        if (inKnowledge(gone)) await this.knowledge.removeFile(owner, gone);
-      }
+      for (const gone of known.keys()) await this.index.remove(owner, gone);
     }
   }
+}
+
+/**
+ * Moves the text files once in knowledge/ (the knowledge base when it was files) into knowledge_documents, once:
+ * same ids, so their chunks and public assistants' picks stay; other files stay where they are.
+ */
+export async function moveKnowledgeToDb(db: Client, files: FileStore, knowledge: KnowledgeStore) {
+  const tenant: FileLocation = { scope: "tenant" };
+  for await (const f of files.walk(tenant, KNOWLEDGE_DIR)) {
+    if (!fileType(f.path)?.text) continue;
+    const id = f.path
+      .slice(KNOWLEDGE_DIR.length + 1)
+      .split("/")
+      .map((s) => s.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^[.-]+/, "") || "dokument")
+      .join("/");
+    const content = (await files.read(tenant, f.path)).data.toString("utf8");
+    await db.execute({ sql: "INSERT OR IGNORE INTO knowledge_documents (id, title, content) VALUES (?, ?, ?)", args: [id, titleOf(f.path, content), content] });
+    if (id !== f.path.slice(KNOWLEDGE_DIR.length + 1)) await db.execute({ sql: "DELETE FROM knowledge_chunks WHERE owner = '' AND path = ?", args: [f.path] });
+    await files.delete(tenant, f.path);
+  }
+  // An emptied knowledge/ goes too.
+  let left = false;
+  for await (const _ of files.walk(tenant, KNOWLEDGE_DIR)) left = true;
+  if (!left) await files.delete(tenant, KNOWLEDGE_DIR).catch(() => {});
+  // Indexes what wasn't (renamed ids, a changed embedding model).
+  await knowledge.reindexStale();
 }
 
 /** A file name from a title: letters, digits and dashes, without diacritics. */

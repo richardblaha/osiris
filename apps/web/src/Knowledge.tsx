@@ -6,64 +6,66 @@ import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps } from "./S
 
 export const documentKey = (d: DocumentSummary) => d.id;
 
-const INTRO = "Poznámky ke klientům, ceníky a postupy, ve kterých asistent vyhledává. Jsou to soubory ve složce knowledge/.";
+const INTRO = "Poznámky ke klientům, ceníky a postupy, ve kterých asistent vyhledává podle významu i slov.";
 
-/** A document of the knowledge base: a file in knowledge/, edited here (or in Soubory) and indexed as it's saved. */
-export function KnowledgeDetail({ item, scope, isAdmin, onSaved, onDeleted }: DetailProps<DocumentSummary>) {
-  const [title, setTitle] = useState("");
-  const [content, setContent] = useState("");
-  const [saved, setSaved] = useState<string>();
+/** A document of the knowledge base: kept in the tenant's database and indexed as it's saved. */
+export function KnowledgeDetail({ item, scope, onSaved, onDeleted }: DetailProps<DocumentSummary>) {
+  const [title, setTitle] = useState(item?.title ?? "");
+  const [folder, setFolder] = useState("");
+  const [content, setContent] = useState(item ? undefined : "");
+  const [saved, setSaved] = useState<{ title: string; content: string }>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const path = item && `knowledge/${item.id}`;
 
   useEffect(() => {
-    if (!item || !path) return;
-    api.downloadFile({ scope: item.scope, path }).then(
-      (blob) => blob.text().then((text) => (setContent(text), setSaved(text))),
+    if (!item) return;
+    api.document(item.id).then(
+      (d) => (setTitle(d.title), setContent(d.content), setSaved({ title: d.title, content: d.content })),
       (e: Error) => setError(e.message),
     );
   }, []);
 
-  if (item && path) {
-    const editable = true;
+  if (item) {
+    const dirty = !!saved && (title !== saved.title || content !== saved.content);
     const save = () =>
       attempt(setBusy, setError, async () => {
-        await api.uploadFile({ scope: item.scope, path }, new Blob([content], { type: "text/markdown" }), true);
-        setSaved(content);
+        await api.saveDocument(item.id, title, content ?? "");
+        setSaved({ title, content: content ?? "" });
         onSaved(item.id);
       });
     return (
       <div className="detail max-w-4xl">
-        <DetailHeader title={item.title} scope={item.scope} canEdit={editable}>
+        <DetailHeader title={item.title} scope={item.scope} canEdit>
           {INTRO}
         </DetailHeader>
         <p className="mt-2 text-xs text-fg-muted">
-          <code>{path}</code> · {item.chunks} {item.chunks === 1 ? "část" : item.chunks < 5 ? "části" : "částí"} v indexu · změněno{" "}
+          <code>{item.id}</code> · {item.chunks} {item.chunks === 1 ? "část" : item.chunks < 5 ? "části" : "částí"} v indexu · změněno{" "}
           {new Date(item.createdAt).toLocaleString("cs-CZ")}
         </p>
+        <Field label="Název">
+          <input value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={200} className="field mt-1" />
+        </Field>
         <div className="mt-4">
-          {saved === undefined ? (
+          {content === undefined ? (
             <p className="text-sm text-fg-muted">Načítám…</p>
           ) : (
-            <LazyCodeEditor path={path} value={content} readOnly={!editable} onChange={setContent} />
+            <LazyCodeEditor path={item.id.endsWith(".md") ? item.id : `${item.id}.md`} value={content} onChange={setContent} />
           )}
         </div>
-        {editable && (
-          <div className="mt-4 flex items-center gap-4">
-            <button disabled={busy || saved === undefined || content === saved} onClick={() => void save()} className="btn-primary">
-              {busy ? "Ukládám…" : "Uložit"}
-            </button>
-            {saved !== undefined && content !== saved && <span className="text-xs text-warning">neuloženo</span>}
-            <button
-              disabled={busy}
-              onClick={() => attempt(setBusy, setError, async () => (await api.deleteDocument(item.id, item.scope), onDeleted()))}
-              className="btn-danger text-sm"
-            >
-              Smazat dokument
-            </button>
-          </div>
-        )}
+        <div className="mt-4 flex items-center gap-4">
+          <button disabled={busy || !dirty || !title.trim() || !content?.trim()} onClick={() => void save()} className="btn-primary">
+            {busy ? "Ukládám…" : "Uložit"}
+          </button>
+          {dirty && <span className="text-xs text-warning">neuloženo</span>}
+          <span className="flex-1" />
+          <button
+            disabled={busy}
+            onClick={() => window.confirm(`Smazat dokument ${item.title}?`) && void attempt(setBusy, setError, async () => (await api.deleteDocument(item.id), onDeleted()))}
+            className="btn-danger text-sm"
+          >
+            Smazat dokument
+          </button>
+        </div>
         <ErrorNotice error={error} />
       </div>
     );
@@ -71,8 +73,8 @@ export function KnowledgeDetail({ item, scope, isAdmin, onSaved, onDeleted }: De
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!content.trim()) return setError("Napiš text dokumentu.");
-    void attempt(setBusy, setError, async () => onSaved(documentKey(await api.addDocument(title, content, scope))));
+    if (!content?.trim()) return setError("Napiš text dokumentu.");
+    void attempt(setBusy, setError, async () => onSaved(documentKey(await api.addDocument(title, content, folder.trim() || undefined))));
   };
 
   return (
@@ -81,12 +83,17 @@ export function KnowledgeDetail({ item, scope, isAdmin, onSaved, onDeleted }: De
         {INTRO}
       </DetailHeader>
       <form onSubmit={submit} className="mt-6 space-y-4">
-        <Field label="Název">
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="např. Ceník 2026" required className="field" />
-        </Field>
+        <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
+          <Field label="Název">
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="např. Ceník 2026" required className="field" />
+          </Field>
+          <Field label="Složka (nepovinná, např. public)">
+            <input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="public" className="field" />
+          </Field>
+        </div>
         <div className="space-y-1">
           <span className="section-header block">Text (Markdown)</span>
-          <LazyCodeEditor path="novy.md" value={content} onChange={setContent} height="50vh" />
+          <LazyCodeEditor path="novy.md" value={content ?? ""} onChange={setContent} height="50vh" />
         </div>
         <button disabled={busy} className="btn-primary">
           {busy ? "Ukládám…" : "Přidat"}
