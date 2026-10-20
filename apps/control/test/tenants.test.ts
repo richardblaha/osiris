@@ -64,6 +64,25 @@ describe("control API", () => {
     expect((await app.request("/api/me", { headers: { authorization: forged } })).status).toBe(401);
   });
 
+  it("starts new tenants and users with the system's defaults", async () => {
+    const { asUser, asRuntime } = await createTestControl({ users: [] });
+    const root = asUser("root", [], admin);
+    const json = (body: object) => ({ body: JSON.stringify(body) });
+    const defaults = await (await root("/admin/defaults")).json();
+    expect(defaults).toMatchObject({ tenant: { idleMinutes: 30, storageGb: 5, quotas: { tokensPerMonth: null } }, user: { address: "auto", language: "auto" } });
+    defaults.tenant.features.mcp = false;
+    defaults.tenant.quotas.tokensPerMonth = 100_000;
+    defaults.tenant.idleMinutes = 10;
+    defaults.user = { address: "vy", language: "cs" };
+    expect((await asUser("alice", [{ tenantId: "acme", role: "admin" }])("/admin/defaults", { method: "PUT", ...json(defaults) })).status).toBe(403);
+    expect((await root("/admin/defaults", { method: "PUT", ...json(defaults) })).status).toBe(200);
+    expect((await root("/admin/tenants", { method: "POST", ...json({ id: "novak", name: "Novák", features: { http: false } }) })).status).toBe(201);
+    const detail = await (await root("/admin/tenants/novak")).json();
+    expect(detail).toMatchObject({ idleMinutes: 10, quotas: { tokensPerMonth: 100_000 } });
+    expect(detail.features).toMatchObject({ mcp: false, http: false, knowledge: true });
+    expect(await (await asRuntime("novak")("/tenant")).json()).toMatchObject({ userDefaults: { address: "vy", language: "cs" } });
+  });
+
   it("lets only system admins manage tenants", async () => {
     const { asUser, asRuntime, users } = await createTestControl({ users: [{ id: "bob", name: "Bob", claims: { tenant: "acme" } }] });
     const root = asUser("root", [], admin);

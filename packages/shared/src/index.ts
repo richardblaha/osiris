@@ -58,14 +58,13 @@ export interface Persona {
   description: string;
 }
 
-/** The assistant's persona at one level: tenant-wide, a user's own or a public assistant's. */
+/** The assistant's persona: a user's own or a public assistant's (personalization is the user's, not the tenant's). */
 export interface AssistantProfile {
   persona: Persona | null;
 }
 
 /** Everything that shapes the assistant's persona for the current user (`/api/assistant`). */
 export interface AssistantProfiles {
-  tenant: AssistantProfile;
   personal: AssistantProfile;
   /** A public assistant's own persona (customers; `?assistant=<name>`); for admins. */
   public?: AssistantProfile;
@@ -90,6 +89,13 @@ export interface Guards {
   /** The caller's own. */
   user: Guard[];
   assistants?: Record<string, Guard[]>;
+}
+
+/** What new tenants and users start with (system admins, System > Nastavení, `/api/admin/defaults`). */
+export interface SystemDefaults {
+  tenant: { features: TenantFeatures; quotas: TenantQuotas; idleMinutes: number; storageGb: number };
+  /** A user's assistant settings until they save their own. */
+  user: Pick<UserSettings, "address" | "language">;
 }
 
 /** Guard names, also their file names: kebab-case. */

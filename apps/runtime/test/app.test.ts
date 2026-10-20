@@ -268,18 +268,18 @@ describe("assistant persona and rules", () => {
     return { text, history };
   };
 
-  it("writes a persona, keeps the user's over the tenant's and puts it in the prompt", async () => {
+  it("writes a persona, the user's own only, and puts it in the prompt", async () => {
     const { as, model } = await setup([new AIMessage("Mluv stručně a s klidem mistra Jedi."), new AIMessage("Ahoj.")]);
     const admin = as("acme");
     const bob = as("bob:tenant=acme");
 
     const persona = await (await bob("/assistant/persona", { method: "POST", body: JSON.stringify({ character: "Yoda", source: "Star Wars" }) })).json();
     expect(persona).toEqual({ character: "Yoda", source: "Star Wars", description: "Mluv stručně a s klidem mistra Jedi." });
-    // Members keep the tenant's profile, admins set it.
-    expect((await bob("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona }) })).status).toBe(403);
-    await admin("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona: { ...persona, character: "Firemní" } }) });
+    // Personalization is the user's: there is no tenant persona.
+    expect((await admin("/assistant?scope=tenant", { method: "PUT", body: JSON.stringify({ persona }) })).status).toBe(400);
     await bob("/assistant?scope=personal", { method: "PUT", body: JSON.stringify({ persona: { ...persona, description: "Mluv jako Yoda, upravené." } }) });
-    expect(await (await bob("/assistant")).json()).toMatchObject({ tenant: { persona: { character: "Firemní" } }, personal: { persona: { character: "Yoda" } } });
+    expect(await (await bob("/assistant")).json()).toEqual({ personal: { persona: { ...persona, description: "Mluv jako Yoda, upravené." } } });
+    expect(await (await admin("/assistant")).json()).toEqual({ personal: { persona: null } });
 
     await run(bob, "Ahoj");
     const prompt = model.calls.at(-1)![0]!.text;

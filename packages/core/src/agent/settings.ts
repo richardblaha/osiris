@@ -5,12 +5,16 @@ export const DEFAULT_SETTINGS: UserSettings = { address: "auto", language: "auto
 
 /** "Můj profil" of users in one tenant: how the agent should treat each of them. */
 export class UserSettingsStore {
-  constructor(private readonly db: Client) {}
+  constructor(
+    private readonly db: Client,
+    /** The system's defaults for users who haven't saved their own (System > Nastavení). */
+    private readonly defaults: () => Promise<Partial<UserSettings>> = async () => ({}),
+  ) {}
 
   async get(userId: string): Promise<UserSettings> {
     const { rows } = await this.db.execute({ sql: "SELECT * FROM user_settings WHERE user_id = ?", args: [userId] });
     const r = rows[0];
-    if (!r) return { ...DEFAULT_SETTINGS };
+    if (!r) return { ...DEFAULT_SETTINGS, ...(await this.defaults().catch(() => ({}))) };
     return {
       address: r.address as UserSettings["address"],
       language: r.language as UserSettings["language"],

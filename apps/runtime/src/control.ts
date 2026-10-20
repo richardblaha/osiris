@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { NO_QUOTAS, type Feature, type Guard, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
+import { NO_QUOTAS, type Feature, type Guard, type UserSettings, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
 import type { FeatureSource } from "@osiris/core/tenants/features.ts";
 import { callJson, ServiceError } from "@osiris/platform/http.ts";
 
@@ -44,6 +44,7 @@ export class ControlClient {
       counts: { members: number; schedules: number };
       /** A string from a control older than guard files. */
       systemGuards: Guard[] | string;
+      userDefaults?: Partial<UserSettings>;
     }>("/tenant");
   }
 
@@ -121,6 +122,7 @@ export class RemoteFeatures implements FeatureSource {
             disabledTools: t.disabledTools ?? [],
             quotas: { ...NO_QUOTAS, ...t.quotas },
             counts: t.counts ?? { members: 0, schedules: 0 },
+            userDefaults: t.userDefaults ?? {},
             systemGuards: Array.isArray(t.systemGuards) ? t.systemGuards : t.systemGuards ? [{ name: "pravidla", description: "", rule: t.systemGuards }] : [],
           }),
       )
@@ -152,6 +154,10 @@ export class RemoteFeatures implements FeatureSource {
     return (await this.load()).systemGuards;
   }
 
+  async userDefaults() {
+    return (await this.load()).userDefaults;
+  }
+
   /** Members and scheduled tasks, counted by control (as of the last fetch). */
   async counts() {
     return (await this.load()).counts;
@@ -164,4 +170,5 @@ interface TenantPolicy {
   quotas: TenantQuotas;
   counts: { members: number; schedules: number };
   systemGuards: Guard[];
+  userDefaults: Partial<UserSettings>;
 }

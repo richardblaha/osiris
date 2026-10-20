@@ -77,7 +77,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     const user = body?.user
       ? "\n\n" + Object.entries(body.user).map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") || "—" : (v ?? "—")}`).join("\n")
       : "";
-    throw new Error((body?.error ?? `HTTP ${res.status}`) + user);
+    throw Object.assign(new Error((body?.error ?? `HTTP ${res.status}`) + user), { status: res.status });
   }
   return res;
 }
@@ -229,6 +229,10 @@ export const api = {
   deleteSchedule: (id: string) => request(`/schedules/${id}`, { method: "DELETE" }),
 
   siteTargets: () => json<SiteTarget[]>("/site-targets"),
+  vitepressSites: () => json<{ sites: string[]; builder: boolean }>("/vitepress-sites"),
+  createVitepressSite: (name: string) => json<{ name: string }>("/vitepress-sites", { method: "POST", body: JSON.stringify({ name }) }),
+  buildVitepressSite: (name: string) => json<{ message: string }>(`/vitepress-sites/${encodeURIComponent(name)}/build`, { method: "POST" }),
+  deleteVitepressSite: (name: string) => request(`/vitepress-sites/${encodeURIComponent(name)}`, { method: "DELETE" }),
   saveSiteTarget: (
     name: string,
     body: { host: string; port: number; username: string; remoteDir: string; auth: SiteTarget["auth"]; secret?: string },

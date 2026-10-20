@@ -35,60 +35,137 @@ export function publishSiteTool(files: FileStore, targets: SiteTargetStore) {
 }
 
 /** A site's name, its folder: kebab-case, dots allowed between parts (k6labs.cz). */
-const SITE_NAME = /^[a-z0-9]+([.-][a-z0-9]+)*$/;
+export const SITE_NAME = /^[a-z0-9]+([.-][a-z0-9]+)*$/;
+export const VITEPRESS_DIR = "vitepress";
+
+export interface SiteBuild {
+  dir: string;
+  written: number;
+  bytes: number;
+  deleted: number;
+  skipped: string[];
+}
+
+const tenant = { scope: "tenant" } as const;
 
 /**
  * Builds a VitePress site from the tenant's `vitepress/<site>/` (`_vitepress/` holds its config and theme, as
  * `.vitepress/` in VitePress) into `www/<site>/`, replacing what was there. The build runs in the shared builder.
  */
+export async function buildSite(files: FileStore, vitepress: VitepressClient, site: string): Promise<SiteBuild> {
+  const src = `${VITEPRESS_DIR}/${site}`;
+  const dst = `www/${site}`;
+  const input: SiteFile[] = [];
+  for await (const e of files.walk(tenant, src)) input.push({ path: e.path.slice(src.length + 1), data: (await files.read(tenant, e.path)).data });
+  if (!input.length) throw new FileError(`Složka ${src} neexistuje nebo je prázdná.`, "not_found");
+  const built = await vitepress.build(input);
+  const written = new Set<string>();
+  let bytes = 0;
+  const skipped: string[] = [];
+  for (const f of built) {
+    const path = `${dst}/${f.path}`;
+    if (!fileType(path)) {
+      skipped.push(f.path);
+      continue;
+    }
+    try {
+      await files.write(tenant, path, f.data, { overwrite: true });
+    } catch (err) {
+      // A file the store can't take (type, name) is left out; anything else (quota) stops the build.
+      if (err instanceof FileError && (err.code === "type" || err.code === "invalid")) {
+        skipped.push(f.path);
+        continue;
+      }
+      throw err;
+    }
+    written.add(path);
+    bytes += f.data.length;
+  }
+  let deleted = 0;
+  for await (const e of files.walk(tenant, dst)) {
+    if (!written.has(e.path)) {
+      await files.delete(tenant, e.path);
+      deleted++;
+    }
+  }
+  return { dir: dst, written: written.size, bytes, deleted, skipped };
+}
+
+export const describeBuild = (b: SiteBuild) =>
+  [
+    `Sestaveno do ${b.dir}: ${b.written} souborů (${Math.max(1, Math.round(b.bytes / 1024))} kB), smazáno ${b.deleted} starých.`,
+    b.skipped.length ? `Vynecháno (nepodporovaný typ): ${b.skipped.slice(0, 10).join(", ")}${b.skipped.length > 10 ? "…" : ""}.` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+/** The default template of a new site: VitePress's default theme, a home page and one more page, in Czech. */
+export function defaultTemplate(site: string): Record<string, string> {
+  return {
+    "index.md": `---
+layout: home
+
+hero:
+  name: ${site}
+  tagline: Krátce, co děláme a pro koho.
+  actions:
+    - theme: brand
+      text: O nás
+      link: /o-nas
+features:
+  - title: Služba
+    details: Co pro zákazníky děláme.
+  - title: Kvalita
+    details: Proč se na nás mohou spolehnout.
+  - title: Kontakt
+    details: Jak se s námi spojit.
+---
+`,
+    "o-nas.md": `# O nás
+
+Kdo jsme, co umíme a kde nás najdete.
+`,
+    "_vitepress/config.mjs": `// Nastavení webu: https://vitepress.dev/reference/site-config
+export default {
+  lang: "cs",
+  title: ${JSON.stringify(site)},
+  description: "",
+  cleanUrls: true,
+  themeConfig: {
+    nav: [
+      { text: "Domů", link: "/" },
+      { text: "O nás", link: "/o-nas" },
+    ],
+    footer: { copyright: "© ${new Date().getFullYear()} ${site.replace(/["\\]/g, "")}" },
+  },
+};
+`,
+  };
+}
+
+/** The tenant's VitePress sites: the folders in vitepress/. */
+export async function listSites(files: FileStore): Promise<string[]> {
+  const entries = await files.list(tenant, VITEPRESS_DIR).catch((err) => {
+    if (err instanceof FileError && err.code === "not_found") return [];
+    throw err;
+  });
+  return entries.filter((e) => e.type === "dir" && SITE_NAME.test(e.name)).map((e) => e.name);
+}
+
+/** A new site from the default template; refused when the folder exists. */
+export async function createSite(files: FileStore, site: string): Promise<void> {
+  if (!SITE_NAME.test(site)) throw new FileError("Název webu: malá písmena, číslice, pomlčky a tečky (např. firma.cz)", "invalid");
+  if ((await listSites(files)).includes(site)) throw new FileError(`Web ${site} už existuje`, "exists");
+  for (const [path, text] of Object.entries(defaultTemplate(site))) await files.write(tenant, `${VITEPRESS_DIR}/${site}/${path}`, Buffer.from(text), { overwrite: false });
+}
+
 export function buildVitepressTool(files: FileStore, vitepress: VitepressClient) {
-  const tenant = { scope: "tenant" } as const;
   return tool(
     async ({ site }) => {
-      const src = `vitepress/${site}`;
-      const dst = `www/${site}`;
       try {
-        const input: SiteFile[] = [];
-        for await (const e of files.walk(tenant, src)) input.push({ path: e.path.slice(src.length + 1), data: (await files.read(tenant, e.path)).data });
-        if (!input.length) return `Složka ${src} neexistuje nebo je prázdná.`;
-        const built = await vitepress.build(input);
-        const written = new Set<string>();
-        let bytes = 0;
-        const skipped: string[] = [];
-        for (const f of built) {
-          const path = `${dst}/${f.path}`;
-          if (!fileType(path)) {
-            skipped.push(f.path);
-            continue;
-          }
-          try {
-            await files.write(tenant, path, f.data, { overwrite: true });
-          } catch (err) {
-            // A file the store can't take (type, name) is left out; anything else (quota) stops the build.
-            if (err instanceof FileError && (err.code === "type" || err.code === "invalid")) {
-              skipped.push(f.path);
-              continue;
-            }
-            throw err;
-          }
-          written.add(path);
-          bytes += f.data.length;
-        }
-        let deleted = 0;
-        for await (const e of files.walk(tenant, dst)) {
-          if (!written.has(e.path)) {
-            await files.delete(tenant, e.path);
-            deleted++;
-          }
-        }
-        return [
-          `Sestaveno do ${dst}: ${written.size} souborů (${Math.max(1, Math.round(bytes / 1024))} kB), smazáno ${deleted} starých.`,
-          skipped.length ? `Vynecháno (nepodporovaný typ): ${skipped.slice(0, 10).join(", ")}${skipped.length > 10 ? "…" : ""}.` : "",
-          `Zveřejnit jde nástrojem publish_site se složkou ${dst}.`,
-        ]
-          .filter(Boolean)
-          .join(" ");
+        return `${describeBuild(await buildSite(files, vitepress, site))} Zveřejnit jde nástrojem publish_site se složkou www/${site}.`;
       } catch (err) {
+        if (err instanceof FileError && err.code === "not_found") return err.message;
         return `Sestavení selhalo: ${(err as Error).message}`;
       }
     },

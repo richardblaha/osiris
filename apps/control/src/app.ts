@@ -4,6 +4,7 @@ import {
   FEATURES,
   GUARD_NAME,
   type Guard,
+  type SystemDefaults,
   type AdminUser,
   type InviteResult,
   type MeResponse,
@@ -83,6 +84,15 @@ const updateTenantBody = z.object({
     })
     .partial()
     .optional(),
+});
+const defaultsBody = z.object({
+  tenant: z.object({
+    features: z.object(Object.fromEntries(FEATURES.map((f) => [f, z.boolean()])) as Record<(typeof FEATURES)[number], z.ZodBoolean>),
+    quotas: updateTenantBody.shape.quotas.unwrap().required(),
+    idleMinutes: z.number().int().min(0).max(24 * 60),
+    storageGb: z.number().int().min(1).max(500),
+  }),
+  user: z.object({ address: z.enum(["auto", "ty", "vy"]), language: z.enum(["auto", "cs", "sk"]) }),
 });
 const roleBody = z.object({ role: z.enum(["admin", "member"]) });
 const personName = z.string().trim().max(50);
@@ -408,6 +418,12 @@ export function createControlApp(deps: ControlDeps) {
       await deps.snapshot(c.req.param("id"));
       return c.body(null, 202);
     })
+    .get("/defaults", async (c) => c.json<SystemDefaults>(await tenants.defaults()))
+    .put("/defaults", async (c) => {
+      const d = parse(defaultsBody, await json(c));
+      await tenants.setDefaults(d);
+      return c.json<SystemDefaults>(d);
+    })
     .get("/guards", async (c) => c.json<Guard[]>(await tenants.systemGuards()))
     .put("/guards/:name", async (c) => {
       const name = c.req.param("name");
@@ -524,6 +540,7 @@ export function createControlApp(deps: ControlDeps) {
         // What the runtime shows next to the quotas it doesn't count itself.
         counts: { members: await directory.memberCount(t.id), schedules: (await schedules.list(t.id)).length },
         systemGuards: await tenants.systemGuards(),
+        userDefaults: (await tenants.defaults()).user,
       });
     })
     .put("/backups", async (c) => {

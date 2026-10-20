@@ -8,6 +8,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
 import { publicProfile } from "@osiris/core/public/assistant.ts";
+import { buildSite, createSite, describeBuild, listSites, SITE_NAME, VITEPRESS_DIR } from "@osiris/core/agent/tools/site.ts";
 import { isGuardPath, type GuardOwner } from "@osiris/core/agent/guards.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
@@ -116,6 +117,7 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/secrets", ["http", "mcp"]],
   ["/files", ["files"]],
   ["/site-targets", ["sites", "files"]],
+  ["/vitepress-sites", ["sites"]],
 ];
 
 const FILE_ERROR_STATUS: Record<FileErrorCode, 400 | 404 | 409 | 413 | 415 | 507> = {
@@ -492,18 +494,17 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       return c.json<UserSettings>(await tenant.settings.get(user.sub));
     })
 
-    // The assistant's persona: the tenant's, the user's own and (admins) a public assistant's.
+    // The assistant's persona: the user's own and (admins) a public assistant's.
     .get("/assistant", async (c) => {
       const { tenant, user, role } = c.get("ctx");
       const assistant = c.req.query("assistant");
-      const [tenantProfile, personal, open] = await Promise.all([
-        tenant.profiles.get(""),
+      const [personal, open] = await Promise.all([
         tenant.profiles.get(user.sub),
         assistant && role === "admin" ? tenant.profiles.get(publicProfile(assistant)) : undefined,
       ]);
-      return c.json<AssistantProfiles>({ tenant: tenantProfile, personal, ...(open ? { public: open } : {}) });
+      return c.json<AssistantProfiles>({ personal, ...(open ? { public: open } : {}) });
     })
-    // ?scope=tenant|personal, or public&assistant=<name> (a public assistant's, admins).
+    // ?scope=personal, or public&assistant=<name> (a public assistant's, admins). The tenant has none.
     .put("/assistant", async (c) => {
       const ctx = c.get("ctx");
       const which = c.req.query("scope");
@@ -512,14 +513,11 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
         await ctx.tenant.profiles.put(ctx.user.sub, profile);
         return c.json<AssistantProfile>(profile);
       }
+      if (which !== "public") throw new HTTPException(400, { message: "Persona je jen vlastní (scope=personal) nebo veřejného asistenta" });
       requireAdmin(ctx);
-      let owner = "";
-      if (which === "public") {
-        const a = await ctx.tenant.publicAssistants.get(c.req.query("assistant") ?? "");
-        if (!a || c.req.query("assistant") !== a.name) throw new HTTPException(404, { message: "Asistent neexistuje" });
-        owner = publicProfile(a.name);
-      }
-      await ctx.tenant.profiles.put(owner, profile);
+      const a = await ctx.tenant.publicAssistants.get(c.req.query("assistant") ?? "");
+      if (!a || c.req.query("assistant") !== a.name) throw new HTTPException(404, { message: "Asistent neexistuje" });
+      await ctx.tenant.profiles.put(publicProfile(a.name), profile);
       return c.json<AssistantProfile>(profile);
     })
     // Guards: the system's (read-only here), the tenant's and the public assistants' (admins write), the caller's own.
@@ -747,6 +745,40 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       requireFileWrite(ctx, q.scope, q.path);
       const loc = await fileLocation(ctx, q.scope, q.thread);
       await fileErrors(() => ctx.tenant.files.delete(loc, q.path ?? ""));
+      return c.body(null, 204);
+    })
+
+    // The tenant's VitePress sites (vitepress/<site>/, built into www/<site>/): admins create, build and remove them.
+    .get("/vitepress-sites", async (c) => {
+      const { tenant } = c.get("ctx");
+      return c.json({ sites: await listSites(tenant.files), builder: !!tenant.vitepress });
+    })
+    .post("/vitepress-sites", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const { name } = parse(z.object({ name: z.string().trim().toLowerCase().max(60) }), await c.req.json());
+      await fileErrors(() => createSite(ctx.tenant.files, name));
+      return c.json({ name }, 201);
+    })
+    .post("/vitepress-sites/:name/build", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      if (!ctx.tenant.vitepress) throw new HTTPException(503, { message: "Sestavování webů tu není nastavené" });
+      const name = c.req.param("name");
+      if (!SITE_NAME.test(name)) throw new HTTPException(400, { message: "Neplatný název webu" });
+      const result = await fileErrors(() => buildSite(ctx.tenant.files, ctx.tenant.vitepress!, name)).catch((err: Error) => {
+        if (err instanceof HTTPException) throw err;
+        throw new HTTPException(502, { message: err.message });
+      });
+      return c.json({ ...result, message: describeBuild(result) });
+    })
+    .delete("/vitepress-sites/:name", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const name = c.req.param("name");
+      if (!(await listSites(ctx.tenant.files)).includes(name)) throw new HTTPException(404, { message: "Web neexistuje" });
+      await fileErrors(() => ctx.tenant.files.delete({ scope: "tenant" }, `${VITEPRESS_DIR}/${name}`));
+      await ctx.tenant.files.delete({ scope: "tenant" }, `www/${name}`).catch(() => {});
       return c.body(null, 204);
     })
 

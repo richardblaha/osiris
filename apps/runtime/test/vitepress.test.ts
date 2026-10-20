@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildVitepressTool } from "@osiris/core/agent/tools/site.ts";
 import { VitepressClient } from "@osiris/core/files/vitepress.ts";
-import { createTestTenants } from "./helpers.ts";
+import { createTestApp, createTestTenants } from "./helpers.ts";
 
 const tenant = { scope: "tenant" } as const;
 
@@ -37,5 +37,30 @@ describe("build_vitepress_site", () => {
 
     expect(await tool.invoke({ site: "nic" })).toContain("neexistuje");
     await expect(tool.invoke({ site: "../www" })).rejects.toThrow();
+  });
+});
+
+describe("VitePress sites", () => {
+  it("are created from the default template, built and removed by admins", async () => {
+    const { tenants } = createTestTenants();
+    const app = await createTestApp(tenants);
+    const as = (who: string) => (path: string, init: RequestInit = {}) =>
+      app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${who}`, "x-tenant-id": "acme", "content-type": "application/json" } });
+    const admin = as("acme");
+    expect((await as("bob:tenant=acme")("/vitepress-sites", { method: "POST", body: JSON.stringify({ name: "firma.cz" }) })).status).toBe(403);
+    expect((await admin("/vitepress-sites", { method: "POST", body: JSON.stringify({ name: "firma.cz" }) })).status).toBe(201);
+    expect((await admin("/vitepress-sites", { method: "POST", body: JSON.stringify({ name: "firma.cz" }) })).status).toBe(409);
+    expect((await admin("/vitepress-sites", { method: "POST", body: JSON.stringify({ name: "../x" }) })).status).toBe(400);
+    expect(await (await admin("/vitepress-sites")).json()).toEqual({ sites: ["firma.cz"], builder: false });
+    const acme = await tenants.get("acme");
+    const config = (await acme.files.read(tenant, "vitepress/firma.cz/_vitepress/config.mjs")).data.toString();
+    expect(config).toContain('title: "firma.cz"');
+    expect((await acme.files.read(tenant, "vitepress/firma.cz/index.md")).data.toString()).toContain("layout: home");
+    // Without a builder there is nothing to build with.
+    expect((await admin("/vitepress-sites/firma.cz/build", { method: "POST" })).status).toBe(503);
+    await acme.files.write(tenant, "www/firma.cz/index.html", Buffer.from("<p>x</p>"));
+    expect((await admin("/vitepress-sites/firma.cz", { method: "DELETE" })).status).toBe(204);
+    expect(await (await admin("/vitepress-sites")).json()).toEqual({ sites: [], builder: false });
+    await expect(acme.files.read(tenant, "www/firma.cz/index.html")).rejects.toThrow();
   });
 });

@@ -57,6 +57,8 @@ export interface Tenant {
   integrations: IntegrationAccounts;
   /** The assistant for the tenant's customers, and the inquiries it took. */
   publicAssistants: PublicAssistantStore;
+  /** The VitePress builder, when there is one. */
+  vitepress?: VitepressClient;
   inquiries: InquiryStore;
   /** Run once before serving: moves old database content to files and brings the indexes up to date. */
   init(): Promise<void>;
@@ -106,7 +108,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const mcpServers = new McpServerStore(db, deps.secrets);
   const secrets = new SecretVault(db, deps.secrets);
   const mcp = new McpToolset(mcpServers, secrets, new McpOAuthStore(db, deps.secrets), deps.mcp);
-  const settings = new UserSettingsStore(db);
+  const settings = new UserSettingsStore(db, async () => (await deps.features.userDefaults?.()) ?? {});
   const features = deps.features;
   const usage = new UsageStore(db);
   const profiles = new AssistantProfileStore(db);
@@ -150,6 +152,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     deps.integrations?.fetch,
   );
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
+  const vitepress = deps.vitepressUrl ? new VitepressClient(deps.vitepressUrl, deps.fetch) : undefined;
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
   const builtins: [Feature, StructuredToolInterface][] = [
     ["knowledge", searchKnowledgeTool(knowledge)],
@@ -159,7 +162,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ...fileTools(files, gotenberg).map((t): [Feature, StructuredToolInterface] => ["files", t]),
     ["files", searchFilesTool(fileIndex)],
     ["sites", publishSiteTool(files, siteTargets)],
-    ...(deps.vitepressUrl ? [["sites", buildVitepressTool(files, new VitepressClient(deps.vitepressUrl, deps.fetch))] as [Feature, StructuredToolInterface]] : []),
+    ...(vitepress ? [["sites", buildVitepressTool(files, vitepress)] as [Feature, StructuredToolInterface]] : []),
     ...googleTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ...microsoftTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
@@ -196,7 +199,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     persona: async (ctx) =>
       ctx.channel === "public"
         ? (await profiles.get(publicProfile(ctx.assistant ?? ""))).persona
-        : ((await profiles.get(ctx.user_id)).persona ?? (await profiles.get("")).persona),
+        : (await profiles.get(ctx.user_id)).persona,
     publicPrompt: async (ctx) => {
       const a = await publicAssistants.get(ctx.assistant);
       if (!a) throw new Error(`No public assistant ${ctx.assistant}`);
@@ -252,6 +255,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     integrations,
     publicAssistants,
     inquiries,
+    vitepress,
     builtinTools: builtins,
     usage,
     profiles,

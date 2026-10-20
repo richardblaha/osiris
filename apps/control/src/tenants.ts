@@ -1,4 +1,4 @@
-import { FEATURES, NO_QUOTAS, type AdminUser, type Guard, type DirectoryUser, type TenantQuotas, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type AdminUser, type Guard, type SystemDefaults, type DirectoryUser, type TenantQuotas, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
 import { CLAIMS, claimList, isAuthorized, SYSTEM_ADMIN_ROLE, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
 import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
@@ -78,6 +78,32 @@ export class TenantStore {
     return row ? this.toTenant(row) : null;
   }
 
+  /** What new tenants and users start with; until a system admin sets them, everything on and no limits. */
+  async defaults(): Promise<SystemDefaults> {
+    const [r] = await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'defaults'");
+    const stored = r ? (JSON.parse(r.value) as Partial<SystemDefaults>) : {};
+    return {
+      tenant: {
+        idleMinutes: 30,
+        storageGb: 5,
+        ...stored.tenant,
+        features: withDefaults(stored.tenant?.features ?? {}),
+        quotas: { ...NO_QUOTAS, ...stored.tenant?.quotas },
+      },
+      user: { address: "auto", language: "auto", ...stored.user },
+    };
+  }
+
+  async setDefaults(d: SystemDefaults) {
+    await this.db.execute([
+      run(
+        "INSERT INTO system_settings (key, value, updated_at) VALUES ('defaults', ?, ?) ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at",
+        JSON.stringify(d),
+        Date.now(),
+      ),
+    ]);
+  }
+
   /** Rules every tenant's assistant keeps to, above the tenant's, the users' and the public assistants' own. */
   async systemGuards(): Promise<Guard[]> {
     return this.db.query<Guard>("SELECT name, description, rule FROM system_guards ORDER BY name");
@@ -137,16 +163,25 @@ export class TenantStore {
   }
 
   /** Creates the tenant, or brings back an archived one under the same id. */
-  async create(id: string, name: string, features: Partial<TenantFeatures> = {}): Promise<TenantRow> {
+  async create(
+    id: string,
+    name: string,
+    features: Partial<TenantFeatures> = {},
+    start: { idleMinutes: number; storageGb: number; quotas: TenantQuotas } = { idleMinutes: 30, storageGb: 5, quotas: NO_QUOTAS },
+  ): Promise<TenantRow> {
     const now = Date.now();
     const [result] = await this.db.execute([
       run(
-        `INSERT INTO tenants (id, name, status, features, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?)
-         ON CONFLICT (id) DO UPDATE SET name = excluded.name, status = 'active', features = excluded.features, updated_at = excluded.updated_at
+        `INSERT INTO tenants (id, name, status, features, quotas, idle_minutes, storage_gb, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (id) DO UPDATE SET name = excluded.name, status = 'active', features = excluded.features, quotas = excluded.quotas,
+           idle_minutes = excluded.idle_minutes, updated_at = excluded.updated_at
          WHERE tenants.status = 'archived'`,
         id,
         name,
         JSON.stringify(features),
+        JSON.stringify(start.quotas),
+        start.idleMinutes,
+        start.storageGb,
         now,
         now,
       ),
@@ -251,8 +286,10 @@ export class TenantDirectory {
     await this.orchestrator.apply(await this.store.spec(id));
   }
 
+  /** A new tenant starts with the system's defaults (features, quotas, sleep, volume), the given features over them. */
   async create(id: string, name: string, features?: Partial<TenantFeatures>) {
-    const tenant = await this.store.create(id, name, features);
+    const { tenant: d } = await this.store.defaults();
+    const tenant = await this.store.create(id, name, { ...d.features, ...features }, d);
     await this.sync(id);
     return tenant;
   }
