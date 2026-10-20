@@ -19,8 +19,8 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   whatsapp: { label: "WhatsApp", hint: "asistent odpovídá i ve WhatsAppu" },
   files: { label: "Soubory", hint: "úložiště šablon, obrázků a dokumentů, se kterými asistent pracuje" },
   scheduler: { label: "Plánované úlohy", hint: "asistent v nastavený čas sám spustí zadaný úkol" },
-  sites: { label: "Web", hint: "publikování webu firmy ze složky www na hosting přes SFTP" },
-  public: { label: "Veřejný asistent", hint: "asistent pro zákazníky firmy na webu (ze složky knowledge/public)" },
+  sites: { label: "Weby", hint: "publikování webu firmy ze složky www na hosting přes SFTP" },
+  public: { label: "Asistenti", hint: "asistenti pro zákazníky firmy na webu, s vybranými znalostmi a nástroji" },
   integrations: { label: "Google a Microsoft účty", hint: "asistent pracuje s poštou, kontakty a kalendářem uživatelů, kteří si účet propojí" },
 };
 

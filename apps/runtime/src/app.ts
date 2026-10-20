@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
-import { PUBLIC_TOOLS } from "@osiris/shared";
+import { PUBLIC_ASSISTANT_NAME, PUBLIC_TOOLS } from "@osiris/shared";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
-import { PUBLIC_PROFILE } from "@osiris/core/public/assistant.ts";
+import { publicProfile } from "@osiris/core/public/assistant.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
 import { KNOWLEDGE_DIR } from "@osiris/core/rag/store.ts";
@@ -64,10 +64,18 @@ const profileBody = z.object({
   persona: personaBody.extend({ description: z.string().trim().min(1).max(2000) }).nullable(),
   guards: z.string().trim().max(4000),
 });
+/** A knowledge base document or folder, relative to knowledge/: plain segments only. */
+const knowledgePath = z
+  .string()
+  .max(512)
+  .refine((p) => p.split("/").every((seg) => seg && seg !== "." && seg !== ".." && !seg.startsWith(".")), "Neplatná cesta ve znalostní bázi");
 const publicSettingsBody = z.object({
   enabled: z.boolean(),
   title: z.string().trim().max(120),
   greeting: z.string().trim().max(500),
+  knowledge: z.array(knowledgePath).max(200),
+  memories: z.array(z.string().max(100)).max(100),
+  skills: z.array(z.string().regex(SKILL_NAME)).max(100),
   tools: z.array(z.enum(PUBLIC_TOOLS)).max(PUBLIC_TOOLS.length),
   tokensPerMonth: z.number().int().min(0).max(1e12).nullable(),
 });
@@ -101,7 +109,7 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/mcp-servers", ["mcp"]],
   ["/mcp-oauth", ["mcp"]],
   ["/integrations", ["integrations"]],
-  ["/public-assistant", ["public"]],
+  ["/public-assistants", ["public"]],
   ["/inquiries", ["public"]],
   ["/secrets", ["http", "mcp"]],
   ["/files", ["files"]],
@@ -140,7 +148,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
   const activeRuns = new Set<string>();
 
   /** Runs the agent on one message of a thread and streams its events (web and public chats). */
-  const runThread = async (c: Context, ctx: RequestContext, id: string, message: string) => {
+  const runThread = async (c: Context, ctx: RequestContext, id: string, message: string, assistant?: string) => {
     const { tenant, user, role, channel } = ctx;
     const runKey = `${tenant.id}/${id}`;
     if (activeRuns.has(runKey)) throw new HTTPException(409, { message: "A run is already in progress for this thread" });
@@ -152,7 +160,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     return streamSSE(c, async (sse) => {
       sse.onAbort(() => abort.abort());
       try {
-        const runCtx = { thread_id: id, tenant_id: tenant.id, user_id: user.sub, role, channel, user_name: user.name ?? undefined };
+        const runCtx = { thread_id: id, tenant_id: tenant.id, user_id: user.sub, role, channel, assistant, user_name: user.name ?? undefined };
         // With rules, the answer is sent only after the output check (the public assistant's rules too).
         const guarded = channel === "public" ? true : hasRules(await tenant.rules(user.sub));
         for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal, { guarded })) {
@@ -222,10 +230,15 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     return name;
   };
 
-  /** The public assistant is on when the system admin allows the feature and the tenant admin switched it on. */
-  const publicOn = async () => (await tenant.features.get()).public && (await tenant.publicSettings.get()).enabled;
-  const requirePublic = async () => {
-    if (!(await publicOn())) throw new HTTPException(404, { message: "Asistent není dostupný" });
+  /** A public assistant, when the system admin allows the feature and the tenant admin switched it on. */
+  const publicAssistant = async (name: string) => {
+    const a = (await tenant.features.get()).public ? await tenant.publicAssistants.get(name) : null;
+    return a?.enabled ? a : null;
+  };
+  const requirePublic = async (name: string) => {
+    const a = await publicAssistant(name);
+    if (!a) throw new HTTPException(404, { message: "Asistent není dostupný" });
+    return a;
   };
 
   // The tenant's customers (anonymous): the public chat page and the website widget, through the gateway.
@@ -235,29 +248,29 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       activity.touch();
       await next();
     })
-    .get("/info", async (c) => {
-      const s = await tenant.publicSettings.get();
-      return c.json<PublicInfo>({ enabled: await publicOn(), title: s.title || tenant.id, greeting: s.greeting });
+    .get("/:assistant/info", async (c) => {
+      const a = await publicAssistant(c.req.param("assistant"));
+      return c.json<PublicInfo>({ enabled: !!a, title: a?.title || tenant.id, greeting: a?.greeting ?? "" });
     })
-    .post("/threads", async (c) => {
-      await requirePublic();
+    .post("/:assistant/threads", async (c) => {
+      await requirePublic(c.req.param("assistant"));
       const { user } = c.get("ctx");
       const id = randomUUID();
       await threads.createThread(tenant.db, user.sub, id, "public");
       return c.json({ id }, 201);
     })
-    .get("/threads/:id/messages", async (c) => {
+    .get("/:assistant/threads/:id/messages", async (c) => {
       const ctx = c.get("ctx");
       await requireThread(ctx, c.req.param("id"));
       const state = await tenant.graph.getState({ configurable: { thread_id: c.req.param("id") } });
       return c.json<ThreadMessage[]>(toThreadMessages(state.values.messages ?? []));
     })
-    .post("/threads/:id/runs", async (c) => {
-      await requirePublic();
+    .post("/:assistant/threads/:id/runs", async (c) => {
+      const a = await requirePublic(c.req.param("assistant"));
       const ctx = c.get("ctx");
       await requireThread(ctx, c.req.param("id"));
       const { message } = parse(z.object({ message: z.string().trim().min(1).max(2000) }), await c.req.json());
-      return runThread(c, ctx, c.req.param("id"), message);
+      return runThread(c, ctx, c.req.param("id"), message, a.name);
     });
 
   const api = new Hono<AuthEnv>()
@@ -461,15 +474,16 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     // The assistant's persona and rules: the system's (read-only here), the tenant's and the user's own.
     .get("/assistant", async (c) => {
       const { tenant, user, role } = c.get("ctx");
+      const assistant = c.req.query("assistant");
       const [system, tenantProfile, personal, open] = await Promise.all([
         tenant.features.systemGuards(),
         tenant.profiles.get(""),
         tenant.profiles.get(user.sub),
-        tenant.profiles.get(PUBLIC_PROFILE),
+        assistant && role === "admin" ? tenant.profiles.get(publicProfile(assistant)) : undefined,
       ]);
-      return c.json<AssistantProfiles>({ system: { guards: system }, tenant: tenantProfile, personal, ...(role === "admin" ? { public: open } : {}) });
+      return c.json<AssistantProfiles>({ system: { guards: system }, tenant: tenantProfile, personal, ...(open ? { public: open } : {}) });
     })
-    // ?scope=tenant|personal, or public (the public assistant's, admins).
+    // ?scope=tenant|personal, or public&assistant=<name> (a public assistant's, admins).
     .put("/assistant", async (c) => {
       const ctx = c.get("ctx");
       const which = c.req.query("scope");
@@ -481,7 +495,13 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
         return c.json<AssistantProfile>(own);
       }
       requireAdmin(ctx);
-      await ctx.tenant.profiles.put(which === "public" ? PUBLIC_PROFILE : "", profile);
+      let owner = "";
+      if (which === "public") {
+        const a = await ctx.tenant.publicAssistants.get(c.req.query("assistant") ?? "");
+        if (!a || c.req.query("assistant") !== a.name) throw new HTTPException(404, { message: "Asistent neexistuje" });
+        owner = publicProfile(a.name);
+      }
+      await ctx.tenant.profiles.put(owner, profile);
       return c.json<AssistantProfile>(profile);
     })
     // Writes a persona's description from a character; nothing is saved until the (edited) profile is put.
@@ -495,17 +515,25 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       return c.json<Persona>({ character, source, description });
     })
 
-    // The public assistant (the tenant's customers): its settings for admins, the inquiries it took for everyone.
-    .get("/public-assistant", async (c) => {
+    // The public assistants (the tenant's customers): their settings for admins, the inquiries they took for everyone.
+    .get("/public-assistants", async (c) => {
       requireAdmin(c.get("ctx"));
-      return c.json<PublicAssistantSettings>(await c.get("ctx").tenant.publicSettings.get());
+      return c.json<PublicAssistantSettings[]>(await c.get("ctx").tenant.publicAssistants.list());
     })
-    .put("/public-assistant", async (c) => {
+    .put("/public-assistants/:name", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
-      const settings = parse(publicSettingsBody, await c.req.json());
-      await ctx.tenant.publicSettings.put(settings);
+      const name = c.req.param("name");
+      if (!PUBLIC_ASSISTANT_NAME.test(name) || name.length > 40) throw new HTTPException(400, { message: "Název: malá písmena, číslice a pomlčky" });
+      const settings = { ...parse(publicSettingsBody, await c.req.json()), name };
+      await ctx.tenant.publicAssistants.put(settings);
       return c.json<PublicAssistantSettings>(settings);
+    })
+    .delete("/public-assistants/:name", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      if (!(await ctx.tenant.publicAssistants.delete(c.req.param("name")))) throw new HTTPException(404, { message: "Asistent neexistuje" });
+      return c.body(null, 204);
     })
     .get("/inquiries", async (c) => c.json<Inquiry[]>(await c.get("ctx").tenant.inquiries.list()))
     .patch("/inquiries/:id", async (c) => {

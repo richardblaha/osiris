@@ -157,9 +157,10 @@ export const api = {
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   tools: () => json<BuiltinTool[]>("/tools"),
   usage: () => json<TenantUsage>("/usage"),
-  publicAssistant: () => json<PublicAssistantSettings>("/public-assistant"),
-  savePublicAssistant: (settings: PublicAssistantSettings) =>
-    json<PublicAssistantSettings>("/public-assistant", { method: "PUT", body: JSON.stringify(settings) }),
+  publicAssistants: () => json<PublicAssistantSettings[]>("/public-assistants"),
+  savePublicAssistant: ({ name, ...settings }: PublicAssistantSettings) =>
+    json<PublicAssistantSettings>(`/public-assistants/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(settings) }),
+  deletePublicAssistant: (name: string) => request(`/public-assistants/${encodeURIComponent(name)}`, { method: "DELETE" }),
   inquiries: () => json<Inquiry[]>("/inquiries"),
   setInquiryStatus: (id: string, status: Inquiry["status"]) =>
     request(`/inquiries/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ status }) }),
@@ -170,9 +171,10 @@ export const api = {
   disconnectIntegration: (provider: Integration["provider"]) => request(`/integrations/${provider}`, { method: "DELETE" }),
   finishIntegration: (body: { state: string; code: string }) =>
     json<{ provider: Integration["provider"]; account: string | null }>("/integrations/callback", { method: "POST", body: JSON.stringify(body) }),
-  assistant: () => json<AssistantProfiles>("/assistant"),
-  saveAssistant: (scope: Scope | "public", profile: AssistantProfile) =>
-    json<AssistantProfile>(`/assistant?scope=${scope}`, { method: "PUT", body: JSON.stringify(profile) }),
+  /** With `assistant`, also that public assistant's persona and rules (admins). */
+  assistant: (assistant?: string) => json<AssistantProfiles>(`/assistant${assistant ? `?${query({ assistant })}` : ""}`),
+  saveAssistant: (scope: Scope | "public", profile: AssistantProfile, assistant?: string) =>
+    json<AssistantProfile>(`/assistant?${query({ scope, assistant })}`, { method: "PUT", body: JSON.stringify(profile) }),
   generatePersona: (character: string, source: string) =>
     json<Persona>("/assistant/persona", { method: "POST", body: JSON.stringify({ character, source }) }),
   saveTenantLogo: (image: Blob) => request("/tenant/logo", { method: "PUT", body: image, headers: { "content-type": image.type } }),

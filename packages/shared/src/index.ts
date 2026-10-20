@@ -69,7 +69,7 @@ export interface AssistantProfiles {
   system: { guards: string };
   tenant: AssistantProfile;
   personal: AssistantProfile;
-  /** The public assistant's own persona and rules (customers); for admins. */
+  /** A public assistant's own persona and rules (customers; `?assistant=<name>`); for admins. */
   public?: AssistantProfile;
 }
 
@@ -325,22 +325,32 @@ export interface InviteResult {
 /** Tenant files (`/api/files`): shared by the tenant (admins write), the user's own, or one thread's temporary files. */
 export type FileScope = "tenant" | "personal" | "temp";
 
-/** Tools the public assistant may get besides searching the public knowledge base; the tenant admin picks them. */
-export const PUBLIC_TOOLS = ["estimate_price", "create_inquiry", "load_skill"] as const;
+/** Tools a public assistant may get besides searching its knowledge and loading its skills; the tenant admin picks them. */
+export const PUBLIC_TOOLS = ["estimate_price", "create_inquiry"] as const;
 export type PublicTool = (typeof PUBLIC_TOOLS)[number];
 
-/** The tenant's assistant for its customers (`/api/public-assistant`); knowledge/public/ is what it knows. */
+/** Public assistant names: in its link (`/c/<tenant>/<name>`), kebab-case. */
+export const PUBLIC_ASSISTANT_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/** One of the tenant's assistants for its customers (`/api/public-assistants`); it knows only what the admin picked. */
 export interface PublicAssistantSettings {
+  name: string;
   enabled: boolean;
   /** The business's name as customers see it. */
   title: string;
   greeting: string;
+  /** Knowledge base documents and folders it searches, relative to knowledge/ (e.g. `public` or `cenik.md`). */
+  knowledge: string[];
+  /** Ids of the tenant's memories it is told. */
+  memories: string[];
+  /** Tenant skills it may load. */
+  skills: string[];
   tools: PublicTool[];
-  /** Model tokens per calendar month for public chats (null = only the tenant's quota). */
+  /** Model tokens per calendar month for its chats (null = only the tenant's quota). */
   tokensPerMonth: number | null;
 }
 
-/** What the public chat page shows before the first message (`/public/<tenant>/info`). */
+/** What the public chat page shows before the first message (`/public/<tenant>/<assistant>/info`). */
 export interface PublicInfo {
   enabled: boolean;
   title: string;
@@ -355,6 +365,8 @@ export interface Inquiry {
   description: string;
   preferredTime: string | null;
   threadId: string | null;
+  /** The public assistant that took it. */
+  assistant: string | null;
   status: "new" | "done";
   createdAt: string;
 }

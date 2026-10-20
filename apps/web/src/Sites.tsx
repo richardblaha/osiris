@@ -30,7 +30,7 @@ export function Sites({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin) {
     return (
       <div className="detail">
-        <h1 className="text-lg font-semibold">Web</h1>
+        <h1 className="text-lg font-semibold">Weby</h1>
         <p className="mt-2 text-sm text-fg-secondary">Web firmy publikuje správce tenanta ze složky www/ ve firemních souborech.</p>
       </div>
     );
@@ -38,7 +38,7 @@ export function Sites({ isAdmin }: { isAdmin: boolean }) {
 
   return (
     <div className="detail max-w-3xl">
-      <h1 className="text-lg font-semibold">Web</h1>
+      <h1 className="text-lg font-semibold">Weby</h1>
       <p className="mt-1 text-sm text-fg-secondary">
         Web firmy jsou soubory ve složce <code>www</code> (firemní soubory, musí obsahovat <code>index.html</code>). Publikování je nahraje přes SFTP
         na hosting, např. na VPS u vas-hosting.cz; nahrávají se jen změny a mažou jen soubory, které tam dřív nahrál Osiris. Doménu a DNS

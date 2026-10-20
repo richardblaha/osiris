@@ -27,6 +27,17 @@ export class MemoryStore {
     }));
   }
 
+  /** The tenant's shared memories among these ids (a public assistant's), newest first. */
+  async tenantByIds(ids: string[]): Promise<Memory[]> {
+    if (!ids.length) return [];
+    const { rows } = await this.db.execute({
+      sql: `SELECT id, content, created_at FROM memories WHERE user_id IS NULL AND id IN (${ids.map(() => "?").join(", ")})
+            ORDER BY created_at DESC, rowid DESC LIMIT ?`,
+      args: [...ids, PROMPT_MEMORY_LIMIT],
+    });
+    return rows.map((r) => ({ id: String(r.id), content: String(r.content), scope: "tenant", createdAt: String(r.created_at) }));
+  }
+
   async add(userId: string, content: string, scope: Scope): Promise<Memory> {
     const id = randomUUID();
     await this.db.execute({

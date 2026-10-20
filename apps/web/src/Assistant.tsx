@@ -7,10 +7,10 @@ import { attempt, ErrorNotice, Field } from "./Scope.tsx";
  * The assistant's persona and rules at one level (the tenant's or the user's own), with what applies from the levels
  * above. A persona is written by the model from a character and the work it comes from, then edited before saving.
  */
-export function AssistantSettings({ scope, editable }: { scope: Scope | "public"; editable: boolean }) {
+export function AssistantSettings({ scope, editable, assistant }: { scope: Scope | "public"; editable: boolean; assistant?: string }) {
   const [all, setAll] = useState<AssistantProfiles>();
   const [error, setError] = useState<string>();
-  useEffect(() => void api.assistant().then(setAll, (e: Error) => setError(e.message)), []);
+  useEffect(() => void api.assistant(assistant).then(setAll, (e: Error) => setError(e.message)), []);
   if (!all) return <ErrorNotice error={error} />;
   const own = (scope === "public" ? all.public : scope === "tenant" ? all.tenant : all.personal) ?? { persona: null, guards: "" };
   return (
@@ -20,6 +20,7 @@ export function AssistantSettings({ scope, editable }: { scope: Scope | "public"
       profile={own}
       editable={editable}
       inherited={all}
+      assistant={assistant}
       onSaved={(p) => setAll({ ...all, [scope]: p })}
     />
   );
@@ -30,12 +31,14 @@ function ProfileForm({
   profile,
   editable,
   inherited,
+  assistant,
   onSaved,
 }: {
   scope: Scope | "public";
   profile: AssistantProfile;
   editable: boolean;
   inherited: AssistantProfiles;
+  assistant?: string;
   onSaved: (p: AssistantProfile) => void;
 }) {
   const [character, setCharacter] = useState(profile.persona?.character ?? "");
@@ -53,7 +56,7 @@ function ProfileForm({
     setSaved(false);
     const next: AssistantProfile = { persona: description.trim() ? { character: character.trim() || "Vlastní", source: source.trim(), description } : null, guards };
     void attempt(setBusy, setError, async () => {
-      onSaved(await api.saveAssistant(scope, next));
+      onSaved(await api.saveAssistant(scope, next, assistant));
       setSaved(true);
     });
   };
@@ -72,7 +75,7 @@ function ProfileForm({
           Jak má asistent komunikovat. Zadej postavu a knihu nebo film, asistent z nich připraví popis, který můžeš upravit.
           {tenantPersona && ` Bez vlastní persony platí firemní: ${tenantPersona.character}.`}
           {scope === "tenant" && " Uživatelé si ji mohou přepsat vlastní."}
-          {scope === "public" && " Platí jen pro asistenta, se kterým mluví zákazníci."}
+          {scope === "public" && " Platí jen pro tohoto asistenta pro zákazníky."}
         </p>
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <Field label="Postava">

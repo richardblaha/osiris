@@ -11,6 +11,8 @@ export interface RunContext {
   user_id: string;
   role: Role;
   channel: Channel;
+  /** On the `public` channel: which of the tenant's public assistants. */
+  assistant?: string;
   /** Display name from PocketID, for the prompt. */
   user_name?: string;
 }

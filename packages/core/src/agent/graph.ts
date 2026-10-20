@@ -44,7 +44,7 @@ export interface AgentDeps {
   persona?: (ctx: RunContext) => Promise<Persona | null>;
   /** Runs on the `public` channel (the tenant's customers) get this prompt instead, and their own token quota. */
   publicPrompt?: (ctx: RunContext) => Promise<string>;
-  publicLimit?: () => Promise<number | null>;
+  publicLimit?: (ctx: RunContext) => Promise<number | null>;
 }
 
 /** What a customer gets when the public assistant's (or the tenant's) quota is used up. */
@@ -63,10 +63,10 @@ export function createAgentGraph(deps: AgentDeps) {
     const limit = (await features?.quotas())?.tokensPerMonth ?? null;
     if (usage && limit !== null && (await usage.tokens()) >= limit) return true;
     if (ctx?.channel !== "public") return false;
-    const own = (await publicLimit?.()) ?? null;
-    return !!usage && own !== null && (await usage.tokens(Date.now(), { public: true })) >= own;
+    const own = (await publicLimit?.(ctx)) ?? null;
+    return !!usage && own !== null && (await usage.tokens(Date.now(), { public: ctx.assistant })) >= own;
   };
-  const count = (ctx: RunContext, tokens: number) => usage?.add(tokens, Date.now(), { public: ctx.channel === "public" });
+  const count = (ctx: RunContext, tokens: number) => usage?.add(tokens, Date.now(), { public: ctx.channel === "public" ? ctx.assistant : undefined });
   const noRules: GuardRules = { system: "", tenant: "", user: "" };
 
   /** Checks a message against the rules; null when there are none to check (or the quota is used up). */

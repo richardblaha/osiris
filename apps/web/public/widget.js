@@ -1,11 +1,13 @@
 /*
  * Osiris chat widget for a business's website:
- *   <script src="https://osiris.k6labs.cz/widget.js" data-tenant="<tenant>" async></script>
- * A button in the corner opens the business's public assistant (osiris.k6labs.cz/c/<tenant>) in a panel.
+ *   <script src="https://osiris.k6labs.cz/widget.js" data-tenant="<tenant>" data-assistant="<assistant>" async></script>
+ * A button in the corner opens the business's public assistant (osiris.k6labs.cz/c/<tenant>/<assistant>) in a panel;
+ * without data-assistant, the tenant's first one.
  */
 (function () {
   var script = document.currentScript;
   var tenant = script && script.getAttribute("data-tenant");
+  var assistant = script && script.getAttribute("data-assistant");
   if (!tenant || document.getElementById("osiris-widget")) return;
   var origin = new URL(script.src).origin;
   var color = script.getAttribute("data-color") || "#0f766e";
@@ -31,7 +33,7 @@
   button.addEventListener("click", function () {
     var open = frame.style.display === "none";
     // The chat loads the first time it's opened.
-    if (open && !frame.src) frame.src = origin + "/c/" + encodeURIComponent(tenant) + "?embed=1";
+    if (open && !frame.src) frame.src = origin + "/c/" + encodeURIComponent(tenant) + (assistant ? "/" + encodeURIComponent(assistant) : "") + "?embed=1";
     frame.style.display = open ? "block" : "none";
     button.textContent = open ? "Zavřít" : label;
     button.setAttribute("aria-expanded", String(open));

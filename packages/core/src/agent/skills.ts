@@ -15,7 +15,7 @@ export interface Skill {
   name: string;
   description: string;
   instructions: string;
-  /** Frontmatter `public: true`: the public assistant (customers) may use it too. Tenant skills only. */
+  /** Frontmatter `public: true`: the old single public assistant's skills, moved to its skill list (`migrateLegacy`). */
   public?: boolean;
 }
 
@@ -108,9 +108,9 @@ export class SkillStore {
     return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /** The tenant's tenant skills marked `public: true`, for the public assistant. */
-  async publicSkills(): Promise<Skill[]> {
-    return [...(await this.read("tenant", "")).values()].filter((s) => s.public);
+  /** The tenant's own skills (not the bundled ones), for public assistants. */
+  async tenantSkills(): Promise<Skill[]> {
+    return [...(await this.read("tenant", "")).values()];
   }
 
   /** The skill of that name: the tenant's, else the bundled one. */

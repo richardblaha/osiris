@@ -25,7 +25,7 @@ import { UsageStore } from "../agent/usage.ts";
 import { McpOAuthStore } from "../mcp/oauth.ts";
 import { FileIndex } from "../files/index.ts";
 import { SiteTargetStore } from "../sites/sftp.ts";
-import { buildPublicPrompt, InquiryStore, PUBLIC_PROFILE, PublicSettingsStore, publicTools } from "../public/assistant.ts";
+import { buildPublicPrompt, InquiryStore, PublicAssistantStore, publicProfile, publicTools } from "../public/assistant.ts";
 import { googleTools } from "../integrations/google.ts";
 import { microsoftTools } from "../integrations/microsoft.ts";
 import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
@@ -54,7 +54,7 @@ export interface Tenant {
   /** Users' Google and Microsoft accounts. */
   integrations: IntegrationAccounts;
   /** The assistant for the tenant's customers, and the inquiries it took. */
-  publicSettings: PublicSettingsStore;
+  publicAssistants: PublicAssistantStore;
   inquiries: InquiryStore;
   /** Run once before serving: moves old database content to files and brings the indexes up to date. */
   init(): Promise<void>;
@@ -109,10 +109,10 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     const [system, tenant, user] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(userId)]);
     return { system, tenant: tenant.guards, user: user.guards };
   };
-  // The public assistant (customers): its own persona and rules after the system's and the tenant's.
-  const publicSettings = new PublicSettingsStore(db);
-  const publicRules = async (): Promise<GuardRules> => {
-    const [system, tenant, open] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(PUBLIC_PROFILE)]);
+  // The public assistants (customers): each its own persona and rules after the system's and the tenant's.
+  const publicAssistants = new PublicAssistantStore(db);
+  const publicRules = async (name = ""): Promise<GuardRules> => {
+    const [system, tenant, open] = await Promise.all([features.systemGuards(), profiles.get(""), profiles.get(publicProfile(name))]);
     return { system, tenant: tenant.guards, user: open.guards };
   };
   const inquiries = new InquiryStore(db);
@@ -158,15 +158,16 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     // Resolved on every step, so switching a feature or a tool applies from the next step.
     dynamicTools: async (ctx) => {
       if (ctx.channel === "public") {
-        const settings = await publicSettings.get();
+        const assistant = await publicAssistants.get(ctx.assistant);
+        if (!assistant) return [];
         const notify = deps.notifyAdmins
           ? (i: Inquiry) =>
               deps.notifyAdmins!(
                 `Nová poptávka: ${i.name}`,
-                `Veřejný asistent přijal poptávku.\n\nJméno: ${i.name}\nKontakt: ${i.contact}\n${i.preferredTime ? `Termín: ${i.preferredTime}\n` : ""}\n${i.description}\n\nPoptávky najdete v Osirisu v části Veřejný asistent.`,
+                `Veřejný asistent ${assistant.title || assistant.name} přijal poptávku.\n\nJméno: ${i.name}\nKontakt: ${i.contact}\n${i.preferredTime ? `Termín: ${i.preferredTime}\n` : ""}\n${i.description}\n\nPoptávky najdete v Osirisu v části Asistenti.`,
               )
           : undefined;
-        return publicTools({ knowledge, inquiries, skills, notify }, settings.tools);
+        return publicTools({ knowledge, inquiries, skills, notify }, assistant);
       }
       const [on, off] = await Promise.all([features.get(), features.disabledTools()]);
       // Google and Microsoft tools only for accounts the user connected.
@@ -177,14 +178,32 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     },
     features,
     usage,
-    rules: (ctx) => (ctx.channel === "public" ? publicRules() : rules(ctx.user_id)),
+    rules: (ctx) => (ctx.channel === "public" ? publicRules(ctx.assistant) : rules(ctx.user_id)),
     persona: async (ctx) =>
-      ctx.channel === "public" ? (await profiles.get(PUBLIC_PROFILE)).persona : ((await profiles.get(ctx.user_id)).persona ?? (await profiles.get("")).persona),
-    publicPrompt: async () => {
-      const [settings, r, profile, open] = await Promise.all([publicSettings.get(), publicRules(), profiles.get(PUBLIC_PROFILE), skills.publicSkills()]);
-      return buildPublicPrompt({ title: settings.title || id, timezone: deps.timezone, rules: r, persona: profile.persona, skills: open, tools: settings.tools });
+      ctx.channel === "public"
+        ? (await profiles.get(publicProfile(ctx.assistant ?? ""))).persona
+        : ((await profiles.get(ctx.user_id)).persona ?? (await profiles.get("")).persona),
+    publicPrompt: async (ctx) => {
+      const a = await publicAssistants.get(ctx.assistant);
+      if (!a) throw new Error(`No public assistant ${ctx.assistant}`);
+      const [r, profile, own, facts] = await Promise.all([
+        publicRules(a.name),
+        profiles.get(publicProfile(a.name)),
+        skills.tenantSkills(),
+        memory.tenantByIds(a.memories),
+      ]);
+      return buildPublicPrompt({
+        title: a.title || id,
+        timezone: deps.timezone,
+        rules: r,
+        persona: profile.persona,
+        skills: own.filter((s) => a.skills.includes(s.name)),
+        memories: facts,
+        knowledge: a.knowledge.length > 0,
+        tools: a.tools,
+      });
     },
-    publicLimit: async () => (await publicSettings.get()).tokensPerMonth,
+    publicLimit: async (ctx) => (await publicAssistants.get(ctx.assistant))?.tokensPerMonth ?? null,
     checkpointer,
     timezone: deps.timezone,
     skills,
@@ -196,6 +215,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const init = async () => {
     await moveLegacyToFiles(db, files);
     await mergePersonalIntoTenant(db, files);
+    await publicAssistants.migrateLegacy(skills);
     await indexer!.reconcile();
   };
   return {
@@ -214,7 +234,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     fileIndex,
     siteTargets,
     integrations,
-    publicSettings,
+    publicAssistants,
     inquiries,
     builtinTools: builtins,
     usage,

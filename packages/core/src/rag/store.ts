@@ -70,22 +70,25 @@ export class KnowledgeStore {
   }
 
   /** Searches the tenant's files plus `userId`'s own: by meaning (vectors) and by words (full text), merged. */
-  async search(query: string, userId = "", limit = 5, { under }: { under?: string } = {}): Promise<SearchResult[]> {
-    // `under`: only the tenant's files in that folder (the public assistant's knowledge/public/).
-    const scope = under ? "owner = '' AND path LIKE ?" : "owner IN ('', ?)";
-    const scopeArg = under ? `${under}/%` : userId;
+  async search(query: string, userId = "", limit = 5, { under }: { under?: string[] } = {}): Promise<SearchResult[]> {
+    // `under`: only the tenant's files that are these files or in these folders (a public assistant's knowledge).
+    if (under && !under.length) return [];
+    const scope = under
+      ? `owner = '' AND (${under.map(() => "path = ? OR substr(path, 1, length(?)) = ?").join(" OR ")})`
+      : "owner IN ('', ?)";
+    const scopeArgs = under ? under.flatMap((p) => [p, `${p}/`, `${p}/`]) : [userId];
     const vector = await this.embeddings.embedQuery(query);
     const { rows: near } = await this.db.execute({
       sql: `SELECT id FROM knowledge_chunks WHERE embedding_model = ? AND ${scope}
             ORDER BY vector_distance_cos(embedding, vector32(?)) LIMIT 20`,
-      args: [this.embeddingModel, scopeArg, JSON.stringify(vector)],
+      args: [this.embeddingModel, ...scopeArgs, JSON.stringify(vector)],
     });
     const match = ftsQuery(query, "OR");
     const { rows: words } = match
       ? await this.db.execute({
           sql: `SELECT c.id FROM knowledge_text t JOIN knowledge_chunks c ON c.id = t.rowid
-                WHERE knowledge_text MATCH ? AND ${scope.replace("owner", "c.owner").replace("path", "c.path")} ORDER BY bm25(knowledge_text) LIMIT 20`,
-          args: [match, scopeArg],
+                WHERE knowledge_text MATCH ? AND ${scope.replaceAll("owner", "c.owner").replaceAll("path", "c.path")} ORDER BY bm25(knowledge_text) LIMIT 20`,
+          args: [match, ...scopeArgs],
         })
       : { rows: [] };
     const score = new Map<number, number>();
