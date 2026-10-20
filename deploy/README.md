@@ -211,8 +211,15 @@ kubectl -n osiris get tenants
    Every tenant gets its row in rqlite, a `Tenant` object, and an `import` backup that its runtime restores on first
    wake.
 5. Check a tenant end to end (login, chat, files), then remove the monolith: `kubectl -n osiris delete deploy/osiris svc/osiris`.
-   Keep the `osiris-data` volume until you're sure; it is the fallback (`kubectl -n osiris scale deploy/osiris --replicas=1`
-   with the previous manifests restores the old setup).
+
+   Done on 2026-10-17; the monolith's volume (`osiris-data`) and its manifests were removed on 2026-10-20, so this
+   section only documents how tenants got here (`legacy-import-job.yaml` is in git history).
+
+Volumes of sleeping tenants show as detached in the Civo dashboard (named `pvc-…`): they hold the tenants' data.
+Before deleting a volume there, check that no PV points to it
+(`kubectl get pv -o custom-columns=PV:.metadata.name,CIVO_ID:.spec.csi.volumeHandle,NS:.spec.claimRef.namespace`).
+A tenant whose volume is gone comes back from its newest snapshot: delete its PVC `data-runtime-0` (and the PV, once
+the volume no longer exists) and the next start restores it.
 
 ## Checks after a rollout
 

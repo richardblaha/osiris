@@ -15,5 +15,3 @@ resources:
   - sites.yaml
   - gotenberg.yaml
   - ingress.yaml
-  # The monolith's data volume, kept until the import (legacy-import-job.yaml) is done and checked.
-  - pvc.yaml
