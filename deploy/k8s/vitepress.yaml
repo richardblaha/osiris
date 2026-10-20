@@ -50,9 +50,11 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 30
           resources:
+            # A build reads most of node_modules: with less memory on a full node the page cache thrashes, the
+            # build times out and the node's other pods stall. The request keeps it on a node with room.
             requests:
-              cpu: 50m
-              memory: 128Mi
+              cpu: 100m
+              memory: 768Mi
             limits:
               memory: 1536Mi
           volumeMounts:

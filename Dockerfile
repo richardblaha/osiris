@@ -77,10 +77,13 @@ USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
 
 FROM base AS vitepress
+RUN apt-get update && apt-get install -y --no-install-recommends tini && rm -rf /var/lib/apt/lists/*
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/vitepress..." && pnpm store prune
 COPY apps/vitepress/src apps/vitepress/src
-ENV PORT=3000
+ENV PORT=3000 ISOLATED_BUILDS=true
 WORKDIR /app/apps/vitepress
 USER node
-# One process, PID 1: after each build it kills every other process (see src/build.ts), so no tsx CLI wrapper.
+# tini (PID 1) reaps what the builds leave; the server, its only child, kills every other process after each build
+# (src/build.ts), so it runs as one process, without the tsx CLI wrapper.
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "--import", "tsx", "src/index.ts"]

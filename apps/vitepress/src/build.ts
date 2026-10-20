@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
+import { readdirSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -91,12 +92,28 @@ function run(cwd: string, args: string[]): Promise<{ code: number | null; log: s
 }
 
 /**
- * Kills whatever the build left running. In the container this server is PID 1, so a helper kills every other process
- * (kill -1 spares only PID 1 and the caller); elsewhere (development) only the build's process group.
+ * Kills whatever the build left running. In the container (`ISOLATED_BUILDS=true`, tini as PID 1 reaping what dies)
+ * that is every process but tini and this server, again until none is left, so nothing a build started survives into
+ * the next one; elsewhere (development) only the build's process group.
  */
 function killAll(pid: number | undefined) {
-  if (process.pid === 1) spawnSync(process.execPath, ["-e", "process.kill(-1, 'SIGKILL')"]);
-  else if (pid) {
+  if (process.env.ISOLATED_BUILDS === "true") {
+    for (let round = 0; round < 20; round++) {
+      const others = readdirSync("/proc").filter((p) => /^\d+$/.test(p) && p !== "1" && Number(p) !== process.pid);
+      if (!others.length) return;
+      for (const p of others) {
+        try {
+          process.kill(Number(p), "SIGKILL");
+        } catch {
+          // Gone already, or tini's.
+        }
+      }
+      // Killed processes are zombies until tini reaps them; give it a moment.
+      spawnSync("sleep", ["0.05"]);
+    }
+    return;
+  }
+  if (pid) {
     try {
       process.kill(-pid, "SIGKILL");
     } catch {
