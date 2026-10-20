@@ -1,11 +1,8 @@
-import { Readable } from "node:stream";
 import { tool, type StructuredToolInterface } from "@langchain/core/tools";
 import type { Feature } from "@osiris/shared";
-import * as tar from "tar";
 import { z } from "zod";
 import { getRunContext } from "@osiris/core/agent/context.ts";
-import { locate } from "@osiris/core/agent/tools/files.ts";
-import { FileError, type FileLocation, type FileStore } from "@osiris/core/files/store.ts";
+import { FileError, type FileStore } from "@osiris/core/files/store.ts";
 import { ServiceError } from "@osiris/platform/http.ts";
 import type { ControlClient } from "./control.ts";
 
@@ -21,18 +18,7 @@ async function guarded(action: () => Promise<string>): Promise<string> {
   }
 }
 
-/** Packs a folder of the tenant's files and publishes it as the site of a verified domain. */
-export async function publishFolder(control: ControlClient, files: FileStore, loc: FileLocation, dir: string, domain: string, userId: string) {
-  const domains = await control.domains();
-  const target = domains.find((d) => d.domain === domain.toLowerCase());
-  if (!target) throw new ServiceError(`Doména ${domain} není přidaná. Domény: ${domains.map((d) => d.domain).join(", ") || "žádné"}.`, 400);
-  if (target.status !== "verified") throw new ServiceError(`Doména ${domain} ještě není ověřená (Weby → domény).`, 400);
-  const folder = await files.folderPath(loc, dir);
-  const archive = Readable.from(tar.c({ gzip: true, cwd: folder, portable: true, follow: false }, ["."]));
-  return control.publishSite(target.domain, archive, userId);
-}
-
-/** Tools that act through control: scheduled tasks (feature `scheduler`) and publishing the tenant's site (`sites`). */
+/** Tools that act through control: scheduled tasks (feature `scheduler`). */
 export function controlTools(control: ControlClient, files: FileStore, timezone: string): [Feature, StructuredToolInterface][] {
   const scheduleTask = tool(
     ({ title, prompt, cron, run_at, delivery }, config) =>
@@ -80,30 +66,9 @@ export function controlTools(control: ControlClient, files: FileStore, timezone:
     { name: "cancel_schedule", description: "Zruší plánovanou úlohu uživatele podle id.", schema: z.object({ id: z.string().min(1).max(100) }) },
   );
 
-  const publishSite = tool(
-    ({ scope, dir, domain }, config) =>
-      guarded(async () => {
-        const ctx = getRunContext(config);
-        if (ctx.role !== "admin") return "Web firmy může publikovat jen správce tenanta.";
-        const release = await publishFolder(control, files, locate(scope, ctx), dir, domain, ctx.user_id);
-        return `Publikováno na https://${release.domain} (${release.files} souborů, vydání ${release.id}).`;
-      }),
-    {
-      name: "publish_site",
-      description:
-        "Zveřejní složku se statickým webem (musí obsahovat index.html) na ověřené doméně firmy. Jen na výslovný pokyn uživatele.",
-      schema: z.object({
-        scope: z.enum(["personal", "tenant", "temp"]).default("tenant"),
-        dir: z.string().max(512).default("www").describe("Složka s webem, obvykle www"),
-        domain: z.string().max(253).describe("Ověřená doména, např. www.mojefirma.cz"),
-      }),
-    },
-  );
-
   return [
     ["scheduler", scheduleTask],
     ["scheduler", listSchedules],
     ["scheduler", cancelSchedule],
-    ["sites", publishSite],
   ];
 }

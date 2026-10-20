@@ -14,14 +14,14 @@ import type {
   Memory,
   MeResponse,
   Persona,
+  PublishResult,
   RunEvent,
   Schedule,
   ScheduleInput,
   Scope,
   SecretSummary,
   SecurityOverview,
-  SiteDomain,
-  SiteRelease,
+  SiteTarget,
   Skill,
   SkillSummary,
   SocialProvider,
@@ -196,14 +196,15 @@ export const api = {
   runSchedule: (id: string) => json<Schedule>(`/schedules/${id}/run`, { method: "POST" }),
   deleteSchedule: (id: string) => request(`/schedules/${id}`, { method: "DELETE" }),
 
-  domains: () => json<SiteDomain[]>("/domains"),
-  addDomain: (domain: string) => json<SiteDomain>("/domains", { method: "POST", body: JSON.stringify({ domain }) }),
-  verifyDomain: (domain: string) => json<SiteDomain>(`/domains/${encodeURIComponent(domain)}/verify`, { method: "POST" }),
-  removeDomain: (domain: string) => request(`/domains/${encodeURIComponent(domain)}`, { method: "DELETE" }),
-  releases: (domain: string) => json<SiteRelease[]>(`/sites/releases?domain=${encodeURIComponent(domain)}`),
-  activateRelease: (domain: string, id: string) => request(`/sites/releases/${id}/activate`, { method: "POST", body: JSON.stringify({ domain }) }),
-  publishSite: (body: { scope: FileScope; dir: string; domain: string }) =>
-    json<SiteRelease>("/site-publish", { method: "POST", body: JSON.stringify(body) }),
+  siteTargets: () => json<SiteTarget[]>("/site-targets"),
+  saveSiteTarget: (
+    name: string,
+    body: { host: string; port: number; username: string; remoteDir: string; auth: SiteTarget["auth"]; secret?: string },
+  ) => request(`/site-targets/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteSiteTarget: (name: string) => request(`/site-targets/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  testSiteTarget: (name: string) => json<{ entries: string[] }>(`/site-targets/${encodeURIComponent(name)}/test`, { method: "POST" }),
+  publishSite: (name: string, dir = "www") =>
+    json<PublishResult>(`/site-targets/${encodeURIComponent(name)}/publish`, { method: "POST", body: JSON.stringify({ dir }) }),
 
   admin: {
     tenants: () => json<TenantSummary[]>("/admin/tenants"),

@@ -322,6 +322,29 @@ export interface InviteResult {
 /** Tenant files (`/api/files`): shared by the tenant (admins write), the user's own, or one thread's temporary files. */
 export type FileScope = "tenant" | "personal" | "temp";
 
+/** Where the tenant's site is published over SFTP (`/api/site-targets`); the password or key is never returned. */
+export interface SiteTarget {
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  remoteDir: string;
+  auth: "password" | "key";
+  /** The server's host key, pinned on the first connection (null until then). */
+  hostKey: string | null;
+  lastPublish: PublishResult | null;
+}
+
+export interface PublishResult {
+  at: string;
+  ok: boolean;
+  uploaded: number;
+  deleted: number;
+  unchanged: number;
+  bytes: number;
+  error?: string;
+}
+
 /** A full-text match in the tenant's or the user's files (`/api/files/search`). */
 export interface FileSearchHit {
   scope: "tenant" | "personal";

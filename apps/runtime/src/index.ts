@@ -15,7 +15,7 @@ import { createRuntimeApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { ControlClient, RemoteFeatures } from "./control.ts";
 import { dbPath, filesDir, hasDatabase, restoreSnapshot, withSnapshot } from "./snapshot.ts";
-import { controlTools, publishFolder } from "./tools.ts";
+import { controlTools } from "./tools.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 
 const config = loadConfig();
@@ -65,7 +65,6 @@ const app = createRuntimeApp({
   verifier: new InternalVerifier(config.INTERNAL_JWT_PUBLIC_KEY),
   activity,
   snapshot,
-  publishSite: (loc, dir, domain, userId) => publishFolder(control, tenant.files, loc, dir, domain, userId),
   counts: () => features.counts(),
 });
 // Before serving: old database content moves to files, and the file indexes catch up with the files on disk.

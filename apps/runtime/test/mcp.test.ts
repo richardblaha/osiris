@@ -28,9 +28,11 @@ describe("SecretBox", () => {
   it("round-trips and detects tampering", () => {
     const box = SecretBox.insecureDev();
     const sealed = box.seal("Bearer abc");
-    expect(sealed).not.toContain("abc");
+    expect(sealed).not.toContain("Bearer");
     expect(box.open(sealed)).toBe("Bearer abc");
-    expect(() => box.open(sealed.slice(0, -2) + "xx")).toThrow();
+    // Change one character of the sealed text (to one it surely isn't): the tag no longer matches.
+    const last = sealed.at(-2)!;
+    expect(() => box.open(`${sealed.slice(0, -2)}${last === "A" ? "B" : "A"}${sealed.at(-1)}`)).toThrow();
   });
 });
 

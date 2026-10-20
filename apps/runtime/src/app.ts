@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileSearchHit, Persona, TenantUsage, FileEntry, FileScope, McpServer, Scope, SecretSummary, SiteRelease, Skill, UserSettings } from "@osiris/shared";
+import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileEntry, FileScope, FileSearchHit, McpServer, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
+import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
 import { KNOWLEDGE_DIR } from "@osiris/core/rag/store.ts";
 import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
@@ -19,7 +20,6 @@ import { HOST_PATTERN, SECRET_NAME, SecretUseError } from "@osiris/core/vault/te
 import { secretOwner } from "@osiris/core/vault/vault.ts";
 import type { Tenant } from "@osiris/core/tenants/tenant.ts";
 import type { InternalVerifier } from "@osiris/platform/internal-auth.ts";
-import { ServiceError } from "@osiris/platform/http.ts";
 import { SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import type { Activity } from "./activity.ts";
 import { userAuth, type AuthEnv, type RequestContext } from "./auth.ts";
@@ -61,6 +61,15 @@ const profileBody = z.object({
   persona: personaBody.extend({ description: z.string().trim().min(1).max(2000) }).nullable(),
   guards: z.string().trim().max(4000),
 });
+const siteTargetBody = z.object({
+  host: z.string().trim().min(1).max(253).regex(/^[A-Za-z0-9.-]+$/, "Server: název nebo IP adresa"),
+  port: z.number().int().min(1).max(65535).default(22),
+  username: z.string().trim().min(1).max(100),
+  remoteDir: z.string().trim().min(1).max(500).regex(/^\//, "Cílová složka musí být absolutní cesta, např. /var/www/firma"),
+  auth: z.enum(["password", "key"]),
+  // Omitted = keep the stored one. Never returned.
+  secret: z.string().min(1).max(20_000).optional(),
+});
 const oauthCallbackBody = z.object({ state: z.string().min(16).max(200), code: z.string().min(1).max(4000), iss: z.string().max(2000).optional() });
 const memoryBody = z.object({ content: z.string().trim().min(1).max(500), scope });
 const secretBody = z.object({
@@ -83,7 +92,7 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/mcp-oauth", ["mcp"]],
   ["/secrets", ["http", "mcp"]],
   ["/files", ["files"]],
-  ["/site-publish", ["sites", "files"]],
+  ["/site-targets", ["sites", "files"]],
 ];
 
 const FILE_ERROR_STATUS: Record<FileErrorCode, 400 | 404 | 409 | 413 | 415 | 507> = {
@@ -104,8 +113,6 @@ export interface RuntimeAppDeps {
   activity: Activity;
   /** Takes a snapshot and uploads it (operator before sleep, control on demand). */
   snapshot: (reason: string) => Promise<{ key: string; bytes: number }>;
-  /** Publishes a folder of the tenant's files as a site (through control). */
-  publishSite?: (loc: FileLocation, dir: string, domain: string, userId: string) => Promise<SiteRelease>;
   /** Members and scheduled tasks, which control counts, for the quota meters. */
   counts?: () => Promise<{ members: number; schedules: number }>;
 }
@@ -115,7 +122,7 @@ export interface RuntimeAppDeps {
  * the PocketID token and the membership), scheduled runs and WhatsApp messages from control, activity checks and
  * snapshots from the operator. The tenant is fixed: this process serves one tenant and refuses tokens for another.
  */
-export function createRuntimeApp({ tenant, verifier, activity, snapshot, publishSite, counts }: RuntimeAppDeps) {
+export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts }: RuntimeAppDeps) {
   // One run per thread at a time. In-process is enough: a tenant has exactly one runtime.
   const activeRuns = new Set<string>();
 
@@ -567,18 +574,48 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
       return c.body(null, 204);
     })
 
-    .post("/site-publish", async (c) => {
+    // Where the tenant's website is published over SFTP (its VPS at vas-hosting.cz…): admins manage and publish.
+    .get("/site-targets", async (c) => {
+      requireAdmin(c.get("ctx"));
+      return c.json<SiteTarget[]>(await c.get("ctx").tenant.siteTargets.list());
+    })
+    .put("/site-targets/:name", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
-      if (!publishSite) throw new HTTPException(404, { message: "Publishing is not available" });
-      const body = parse(z.object({ scope: fileScope, dir: z.string().max(512), domain: z.string().min(4).max(253) }), await c.req.json());
-      const loc = await fileLocation(ctx, body.scope, undefined);
-      try {
-        return c.json<SiteRelease>(await fileErrors(() => publishSite(loc, body.dir, body.domain, ctx.user.sub)), 201);
-      } catch (err) {
-        if (err instanceof ServiceError) throw new HTTPException(err.status === 413 ? 413 : 400, { message: err.message });
-        throw err;
-      }
+      const name = c.req.param("name");
+      if (!MCP_SERVER_NAME.test(name)) throw new HTTPException(400, { message: "Název: malá písmena, číslice a pomlčky" });
+      const body = parse(siteTargetBody, await c.req.json());
+      await ctx.tenant.siteTargets.put(name, body).catch((err: Error) => {
+        throw new HTTPException(400, { message: err.message });
+      });
+      return c.body(null, 204);
+    })
+    .delete("/site-targets/:name", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      if (!(await ctx.tenant.siteTargets.delete(c.req.param("name")))) throw new HTTPException(404, { message: "Cíl neexistuje" });
+      return c.body(null, 204);
+    })
+    // Connects and lists the target folder (pins the server's host key on the first connection).
+    .post("/site-targets/:name/test", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const entries = await testTarget(ctx.tenant.siteTargets, c.req.param("name")).catch((err: Error) => {
+        throw new HTTPException(502, { message: `Připojení selhalo: ${err.message}` });
+      });
+      return c.json({ entries });
+    })
+    .post("/site-targets/:name/publish", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const { dir } = parse(z.object({ dir: z.string().max(512).default("www") }), await c.req.json().catch(() => ({})));
+      const result = await fileErrors(() => publishSftp(ctx.tenant.files, { scope: "tenant" }, dir, ctx.tenant.siteTargets, c.req.param("name"))).catch(
+        (err: Error) => {
+          if (err instanceof HTTPException) throw err;
+          throw new HTTPException(502, { message: `Publikování selhalo: ${err.message}` });
+        },
+      );
+      return c.json<PublishResult>(result);
     })
 
     // Secrets are write-only: the list has names, hosts and descriptions, never values.

@@ -1,152 +1,199 @@
-import type { FileScope, SiteDomain, SiteRelease } from "@osiris/shared";
-import { useEffect, useState } from "react";
+import type { SiteTarget } from "@osiris/shared";
+import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { fileSize } from "./Files.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 
-const STATUS: Record<SiteDomain["status"], string> = { pending: "čeká na ověření", verified: "ověřená", failed: "neověřená" };
+const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-/** The tenant's website: custom domains (proved by DNS) and the releases published to them. */
+/**
+ * The tenant's website: the files in www/ published over SFTP to its hosting (a VPS at vas-hosting.cz…). Domains,
+ * DNS and the web server there are managed through the hosting's MCP server (Nástroje a MCP) or its own portal.
+ */
 export function Sites({ isAdmin }: { isAdmin: boolean }) {
-  const [domains, setDomains] = useState<SiteDomain[]>();
-  const [domain, setDomain] = useState("");
+  const [targets, setTargets] = useState<SiteTarget[]>();
+  const [editing, setEditing] = useState<SiteTarget | "new">();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [notice, setNotice] = useState<string>();
 
-  const load = () => api.domains().then(setDomains, (e: Error) => setError(e.message));
-  useEffect(() => void load(), []);
-  const act = (action: () => Promise<unknown>) => attempt(setBusy, setError, async () => (await action(), await load()));
+  const load = () => api.siteTargets().then(setTargets, (e: Error) => setError(e.message));
+  useEffect(() => void (isAdmin ? load() : undefined), []);
+  const act = (action: () => Promise<string | void>) =>
+    attempt(setBusy, setError, async () => {
+      setNotice(undefined);
+      const message = await action();
+      if (message) setNotice(message);
+      await load();
+    });
+
+  if (!isAdmin) {
+    return (
+      <div className="detail">
+        <h1 className="text-lg font-semibold">Web</h1>
+        <p className="mt-2 text-sm text-fg-secondary">Web firmy publikuje správce tenanta ze složky www/ ve firemních souborech.</p>
+      </div>
+    );
+  }
 
   return (
-    <div className="detail max-w-4xl">
+    <div className="detail max-w-3xl">
       <h1 className="text-lg font-semibold">Web</h1>
       <p className="mt-1 text-sm text-fg-secondary">
-        Statický web firmy na vlastní doméně. Připrav složku s <code>index.html</code> v Souborech (nebo ať ji připraví asistent) a
-        publikuj ji. Každé publikování je nové vydání, k předchozím se dá vrátit.
+        Web firmy jsou soubory ve složce <code>www</code> (firemní soubory, musí obsahovat <code>index.html</code>). Publikování je nahraje přes SFTP
+        na hosting, např. na VPS u vas-hosting.cz; nahrávají se jen změny a mažou jen soubory, které tam dřív nahrál Osiris. Doménu a DNS
+        nastavíš v portálu hostingu nebo přes asistenta s MCP serverem vas-hosting.
       </p>
-
-      {isAdmin && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void act(async () => (await api.addDomain(domain), setDomain("")));
-          }}
-          className="mt-4 flex gap-2"
-        >
-          <input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="www.mojefirma.cz" required className="field min-w-0 flex-1" />
-          <button disabled={busy} className="btn-primary">
-            Přidat doménu
-          </button>
-        </form>
-      )}
       <ErrorNotice error={error} />
+      {notice && <p className="notice mt-3 px-3 py-2 text-sm">{notice}</p>}
 
-      <div className="mt-4 space-y-4">
-        {domains?.map((d) => (
-          <Domain key={d.domain} d={d} isAdmin={isAdmin} busy={busy} act={act} />
+      <ul className="mt-4 space-y-3">
+        {targets?.map((t) => (
+          <li key={t.name} className="notice px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{t.name}</span>
+              <code className="text-xs text-fg-secondary">
+                {t.username}@{t.host}:{t.port}
+                {t.remoteDir}
+              </code>
+              <span className="flex-1" />
+              <button
+                disabled={busy}
+                onClick={() =>
+                  void act(async () => {
+                    const r = await api.publishSite(t.name);
+                    return `Publikováno: nahráno ${r.uploaded} (${fileSize(r.bytes)}), smazáno ${r.deleted}, beze změny ${r.unchanged}.`;
+                  })
+                }
+                className="btn-primary text-sm"
+              >
+                {busy ? "Pracuji…" : "Publikovat www/"}
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => void act(async () => `Připojeno. Ve složce: ${(await api.testSiteTarget(t.name)).entries.join(", ") || "nic"}.`)}
+                className="btn-secondary text-sm"
+              >
+                Vyzkoušet
+              </button>
+              <button disabled={busy} onClick={() => setEditing(t)} className="btn-link text-sm">
+                Upravit
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => window.confirm(`Odebrat cíl ${t.name}? Soubory na serveru zůstanou.`) && void act(async () => void (await api.deleteSiteTarget(t.name)))}
+                className="btn-danger text-sm"
+              >
+                Odebrat
+              </button>
+            </div>
+            <p className="mt-1 text-xs text-fg-muted">
+              {t.hostKey ? `Klíč serveru: ${t.hostKey}` : "Klíč serveru se uloží při prvním připojení."}
+              {t.lastPublish &&
+                ` · Naposledy ${new Date(t.lastPublish.at).toLocaleString("cs-CZ")}: ${
+                  t.lastPublish.ok ? `nahráno ${t.lastPublish.uploaded}, smazáno ${t.lastPublish.deleted}` : `chyba (${t.lastPublish.error})`
+                }`}
+            </p>
+          </li>
         ))}
-        {domains && !domains.length && <p className="text-sm text-fg-muted">Zatím žádná doména.</p>}
-      </div>
+      </ul>
+      {targets && !targets.length && !editing && <p className="mt-4 text-sm text-fg-muted">Zatím žádný cíl publikování.</p>}
+
+      {editing ? (
+        <TargetForm
+          key={editing === "new" ? "new" : editing.name}
+          target={editing === "new" ? undefined : editing}
+          onDone={() => {
+            setEditing(undefined);
+            void load();
+          }}
+        />
+      ) : (
+        <button onClick={() => setEditing("new")} className="btn-secondary mt-4 text-sm">
+          + Přidat cíl publikování
+        </button>
+      )}
     </div>
   );
 }
 
-function Domain({ d, isAdmin, busy, act }: { d: SiteDomain; isAdmin: boolean; busy: boolean; act: (a: () => Promise<unknown>) => Promise<void> }) {
-  const [releases, setReleases] = useState<SiteRelease[]>([]);
-  const [source, setSource] = useState<{ scope: FileScope; dir: string }>({ scope: "tenant", dir: "www" });
+function TargetForm({ target, onDone }: { target?: SiteTarget; onDone: () => void }) {
+  const [name, setName] = useState(target?.name ?? "");
+  const [host, setHost] = useState(target?.host ?? "");
+  const [port, setPort] = useState(target?.port ?? 22);
+  const [username, setUsername] = useState(target?.username ?? "");
+  const [remoteDir, setRemoteDir] = useState(target?.remoteDir ?? "/var/www/");
+  const [auth, setAuth] = useState<SiteTarget["auth"]>(target?.auth ?? "key");
+  const [secret, setSecret] = useState("");
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const loadReleases = () => api.releases(d.domain).then(setReleases, (e: Error) => setError(e.message));
-  useEffect(() => void loadReleases(), [d.releaseId]);
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    void attempt(setBusy, setError, async () => {
+      await api.saveSiteTarget(name, { host, port, username, remoteDir, auth, secret: secret || undefined });
+      onDone();
+    });
+  };
 
   return (
-    <section className="notice space-y-3 p-3 text-sm">
-      <div className="flex flex-wrap items-center gap-3">
-        <a href={`https://${d.domain}`} target="_blank" rel="noreferrer" className="btn-link font-medium">
-          {d.domain}
-        </a>
-        <span className={`badge ${d.status === "verified" ? "badge-accent" : ""}`}>{STATUS[d.status]}</span>
-        {isAdmin && (
-          <span className="ml-auto flex gap-3">
-            <button disabled={busy} onClick={() => void act(() => api.verifyDomain(d.domain))} className="btn-link">
-              Ověřit
-            </button>
-            <button
-              disabled={busy}
-              onClick={() => window.confirm(`Odebrat doménu ${d.domain} i s publikovaným webem?`) && void act(() => api.removeDomain(d.domain))}
-              className="btn-danger"
-            >
-              Odebrat
-            </button>
-          </span>
-        )}
+    <form onSubmit={submit} className="mt-6 space-y-4">
+      <h2 className="section-header">{target ? `Upravit ${target.name}` : "Nový cíl publikování"}</h2>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field label="Název">
+          <input value={name} onChange={(e) => setName(e.target.value.toLowerCase())} pattern={NAME.source} readOnly={!!target} required placeholder="např. firma-cz" className="field" />
+        </Field>
+        <Field label="Server (SFTP)">
+          <input value={host} onChange={(e) => setHost(e.target.value)} required placeholder="např. 185.8.236.10" className="field" />
+        </Field>
+        <Field label="Port">
+          <input type="number" min={1} max={65535} value={port} onChange={(e) => setPort(Number(e.target.value))} className="field w-28" />
+        </Field>
+        <Field label="Uživatel">
+          <input value={username} onChange={(e) => setUsername(e.target.value)} required className="field" />
+        </Field>
       </div>
-      {d.error && <p className="text-xs text-error">{d.error}</p>}
-      {d.status !== "verified" && (
-        <div className="text-xs text-fg-secondary">
-          <p>U správce DNS domény nastav:</p>
-          <ul className="mt-1 list-disc pl-5">
-            <li>
-              TXT záznam <code>_osiris-challenge.{d.domain}</code> s hodnotou <code>{d.token}</code>
-            </li>
-            {d.target.cname && (
-              <li>
-                CNAME <code>{d.domain}</code> → <code>{d.target.cname}</code>
-              </li>
-            )}
-            {d.target.ips.length > 0 && (
-              <li>
-                {d.target.cname ? "nebo " : ""}A záznam <code>{d.domain}</code> → <code>{d.target.ips.join(", ")}</code>
-              </li>
-            )}
-          </ul>
-          <p className="mt-1">Pak klikni na Ověřit. Změny DNS se mohou projevit až za několik hodin. Certifikát HTTPS se vystaví sám.</p>
-        </div>
-      )}
-
-      {d.status === "verified" && isAdmin && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            void act(async () => (await api.publishSite({ ...source, domain: d.domain }), await loadReleases()));
-          }}
-          className="flex flex-wrap items-end gap-2"
-        >
-          <Field label="Soubory">
-            <select value={source.scope} onChange={(e) => setSource({ ...source, scope: e.target.value as FileScope })} className="field w-auto">
-              <option value="tenant">firemní</option>
-              <option value="personal">moje</option>
-            </select>
-          </Field>
-          <Field label="Složka">
-            <input value={source.dir} onChange={(e) => setSource({ ...source, dir: e.target.value })} required className="field w-auto" />
-          </Field>
-          <button disabled={busy} className="btn-primary">
-            Publikovat
-          </button>
-        </form>
-      )}
-
-      {releases.length > 0 && (
-        <ul className="divide-y divide-line">
-          {releases.map((r) => (
-            <li key={r.id} className="flex items-center gap-3 py-1.5 text-xs">
-              <span className="flex-1">
-                {new Date(r.createdAt).toLocaleString("cs-CZ")} · {r.files} souborů · {fileSize(r.bytes)}
-              </span>
-              {r.current ? (
-                <span className="badge badge-accent">aktuální</span>
-              ) : (
-                isAdmin && (
-                  <button disabled={busy} onClick={() => void act(() => api.activateRelease(d.domain, r.id))} className="btn-link">
-                    Vrátit na tuto verzi
-                  </button>
-                )
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <Field label="Cílová složka na serveru">
+        <input value={remoteDir} onChange={(e) => setRemoteDir(e.target.value)} required pattern="/.*" placeholder="/var/www/firma.cz" className="field" />
+      </Field>
+      <Field label="Přihlášení">
+        <select value={auth} onChange={(e) => setAuth(e.target.value as SiteTarget["auth"])} className="field w-auto">
+          <option value="key">SSH klíč</option>
+          <option value="password">heslo</option>
+        </select>
+      </Field>
+      <Field label={auth === "key" ? "Privátní klíč (OpenSSH/PEM)" : "Heslo"}>
+        {auth === "key" ? (
+          <textarea
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            rows={5}
+            placeholder={target ? "Uložený klíč zůstane, pokud nevložíš nový." : "-----BEGIN OPENSSH PRIVATE KEY-----"}
+            required={!target}
+            className="field font-mono text-xs"
+          />
+        ) : (
+          <input
+            type="password"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder={target ? "Uložené heslo zůstane, pokud nezadáš nové." : ""}
+            required={!target}
+            autoComplete="new-password"
+            className="field"
+          />
+        )}
+      </Field>
+      <p className="text-xs text-fg-muted">Heslo i klíč se ukládají šifrovaně a už se nikde nezobrazí.</p>
       <ErrorNotice error={error} />
-    </section>
+      <div className="flex gap-3">
+        <button disabled={busy} className="btn-primary">
+          {busy ? "Ukládám…" : "Uložit"}
+        </button>
+        <button type="button" onClick={onDone} className="btn-secondary">
+          Zrušit
+        </button>
+      </div>
+    </form>
   );
 }

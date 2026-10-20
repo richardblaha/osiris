@@ -24,6 +24,8 @@ import type { FeatureSource } from "./features.ts";
 import { UsageStore } from "../agent/usage.ts";
 import { McpOAuthStore } from "../mcp/oauth.ts";
 import { FileIndex } from "../files/index.ts";
+import { SiteTargetStore } from "../sites/sftp.ts";
+import { publishSiteTool } from "../agent/tools/site.ts";
 import { FileIndexer, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 
@@ -43,6 +45,8 @@ export interface Tenant {
   files: FileStore;
   /** Full-text index of the tenant's and users' text files. */
   fileIndex: FileIndex;
+  /** Where the tenant's website is published over SFTP. */
+  siteTargets: SiteTargetStore;
   /** Run once before serving: moves old database content to files and brings the indexes up to date. */
   init(): Promise<void>;
   /** The built-in tools, each with the feature it belongs to. */
@@ -105,6 +109,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   });
   indexer = new FileIndexer(files, fileIndex, knowledge);
   const skills = new SkillStore(files, deps.bundledSkills);
+  const siteTargets = new SiteTargetStore(db, deps.secrets);
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
   const builtins: [Feature, StructuredToolInterface][] = [
@@ -113,6 +118,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ...memoryTools(memory).map((t): [Feature, StructuredToolInterface] => ["memory", t]),
     ...fileTools(files, gotenberg).map((t): [Feature, StructuredToolInterface] => ["files", t]),
     ["files", searchFilesTool(fileIndex)],
+    ["sites", publishSiteTool(files, siteTargets)],
     ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
     ...(deps.extraTools?.(files) ?? []),
   ];
@@ -156,6 +162,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     features,
     files,
     fileIndex,
+    siteTargets,
     builtinTools: builtins,
     usage,
     profiles,
