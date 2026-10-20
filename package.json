@@ -7,7 +7,7 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "pnpm --parallel --filter @osiris/gateway --filter @osiris/control --filter @osiris/sites --filter @osiris/web dev",
+    "dev": "pnpm --parallel --filter @osiris/gateway --filter @osiris/control --filter @osiris/sites --filter @osiris/vitepress --filter @osiris/web dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test"

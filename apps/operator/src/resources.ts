@@ -29,13 +29,14 @@ export interface TenantResource extends KubeObject {
 export const TELEMETRY_NAMESPACE = "observability";
 
 export interface OperatorSettings {
-  /** Namespace of the shared services (gateway, control, operator, sites, gotenberg). */
+  /** Namespace of the shared services (gateway, control, operator, sites, gotenberg, vitepress). */
   namespace: string;
   runtimeImage: string;
   imagePullSecret?: { dockerconfigjson: string };
   storageClass: string;
   controlUrl: string;
   gotenbergUrl?: string;
+  vitepressUrl?: string;
   internalPublicKey: string;
   /** Plain settings for every runtime (model, time zone). */
   runtimeEnv: Record<string, string>;
@@ -70,6 +71,7 @@ export function tenantResources(t: TenantResource, s: OperatorSettings, replicas
     // Files may use most of the volume; the database needs the rest.
     FILES_QUOTA_MB: String(Math.floor(storageGi * 1024 * 0.8)),
     ...(s.gotenbergUrl ? { GOTENBERG_URL: s.gotenbergUrl } : {}),
+    ...(s.vitepressUrl ? { VITEPRESS_URL: s.vitepressUrl } : {}),
     ...s.runtimeEnv,
   };
   const secret: Record<string, string> = { TENANT_SECRETS_KEY: s.tenantSecretsKey(id), ...s.runtimeSecrets };
@@ -189,7 +191,7 @@ export function tenantResources(t: TenantResource, s: OperatorSettings, replicas
             to: [
               {
                 namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": s.namespace } },
-                podSelector: { matchExpressions: [{ key: "app", operator: "In", values: ["control", "gotenberg"] }] },
+                podSelector: { matchExpressions: [{ key: "app", operator: "In", values: ["control", "gotenberg", "vitepress"] }] },
               },
             ],
           },

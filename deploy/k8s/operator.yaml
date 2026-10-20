@@ -38,6 +38,7 @@ spec:
             - { name: IMAGE_PULL_SECRET, value: ghcr-pull }
             - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
             - { name: GOTENBERG_URL, value: http://gotenberg.osiris.svc.cluster.local:3000 }
+            - { name: VITEPRESS_URL, value: http://vitepress.osiris.svc.cluster.local:3000 }
             - { name: CLUSTER_ISSUER, value: letsencrypt }
             - { name: SITES_MIDDLEWARE, value: osiris-redirect-https@kubernetescrd }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }

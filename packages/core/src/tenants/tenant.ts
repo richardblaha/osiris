@@ -29,7 +29,8 @@ import { buildPublicPrompt, InquiryStore, PublicAssistantStore, publicProfile, p
 import { googleTools } from "../integrations/google.ts";
 import { microsoftTools } from "../integrations/microsoft.ts";
 import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
-import { publishSiteTool } from "../agent/tools/site.ts";
+import { buildVitepressTool, publishSiteTool } from "../agent/tools/site.ts";
+import { VitepressClient } from "../files/vitepress.ts";
 import { FileIndexer, mergePersonalIntoTenant, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 
@@ -90,6 +91,8 @@ export interface TenantDeps {
   integrations?: { clients: Partial<Record<IntegrationProvider, IntegrationClient>>; redirectUrl: string; fetch?: typeof fetch };
   /** Gotenberg for converting files to PDF; without it there is no convert_to_pdf tool. */
   gotenbergUrl?: string;
+  /** The VitePress builder; without it there is no build_vitepress_site tool. */
+  vitepressUrl?: string;
   /** Replaces global fetch for the http_request tool (tests). */
   fetch?: typeof fetch;
 }
@@ -146,6 +149,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ...fileTools(files, gotenberg).map((t): [Feature, StructuredToolInterface] => ["files", t]),
     ["files", searchFilesTool(fileIndex)],
     ["sites", publishSiteTool(files, siteTargets)],
+    ...(deps.vitepressUrl ? [["sites", buildVitepressTool(files, new VitepressClient(deps.vitepressUrl, deps.fetch))] as [Feature, StructuredToolInterface]] : []),
     ...googleTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ...microsoftTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],

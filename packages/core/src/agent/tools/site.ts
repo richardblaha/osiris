@@ -1,6 +1,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import type { FileStore } from "../../files/store.ts";
+import { fileType } from "@osiris/shared";
+import { FileError, type FileStore } from "../../files/store.ts";
+import type { SiteFile, VitepressClient } from "../../files/vitepress.ts";
 import { publishFolder, type SiteTargetStore } from "../../sites/sftp.ts";
 import { getRunContext } from "../context.ts";
 
@@ -28,6 +30,73 @@ export function publishSiteTool(files: FileStore, targets: SiteTargetStore) {
         target: z.string().max(80).optional().describe("Název cíle publikování; když je jen jeden, není potřeba"),
         dir: z.string().max(512).default("www").describe("Složka s webem, obvykle www"),
       }),
+    },
+  );
+}
+
+const SITE_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+
+/**
+ * Builds a VitePress site from the tenant's `vitepress/<site>/` (`_vitepress/` holds its config and theme, as
+ * `.vitepress/` in VitePress) into `www/<site>/`, replacing what was there. The build runs in the shared builder.
+ */
+export function buildVitepressTool(files: FileStore, vitepress: VitepressClient) {
+  const tenant = { scope: "tenant" } as const;
+  return tool(
+    async ({ site }) => {
+      const src = `vitepress/${site}`;
+      const dst = `www/${site}`;
+      try {
+        const input: SiteFile[] = [];
+        for await (const e of files.walk(tenant, src)) input.push({ path: e.path.slice(src.length + 1), data: (await files.read(tenant, e.path)).data });
+        if (!input.length) return `Složka ${src} neexistuje nebo je prázdná.`;
+        const built = await vitepress.build(input);
+        const written = new Set<string>();
+        let bytes = 0;
+        const skipped: string[] = [];
+        for (const f of built) {
+          const path = `${dst}/${f.path}`;
+          if (!fileType(path)) {
+            skipped.push(f.path);
+            continue;
+          }
+          try {
+            await files.write(tenant, path, f.data, { overwrite: true });
+          } catch (err) {
+            // A file the store can't take (type, name) is left out; anything else (quota) stops the build.
+            if (err instanceof FileError && (err.code === "type" || err.code === "invalid")) {
+              skipped.push(f.path);
+              continue;
+            }
+            throw err;
+          }
+          written.add(path);
+          bytes += f.data.length;
+        }
+        let deleted = 0;
+        for await (const e of files.walk(tenant, dst)) {
+          if (!written.has(e.path)) {
+            await files.delete(tenant, e.path);
+            deleted++;
+          }
+        }
+        return [
+          `Sestaveno do ${dst}: ${written.size} souborů (${Math.max(1, Math.round(bytes / 1024))} kB), smazáno ${deleted} starých.`,
+          skipped.length ? `Vynecháno (nepodporovaný typ): ${skipped.slice(0, 10).join(", ")}${skipped.length > 10 ? "…" : ""}.` : "",
+          `Zveřejnit jde nástrojem publish_site se složkou ${dst}.`,
+        ]
+          .filter(Boolean)
+          .join(" ");
+      } catch (err) {
+        return `Sestavení selhalo: ${(err as Error).message}`;
+      }
+    },
+    {
+      name: "build_vitepress_site",
+      description:
+        "Sestaví web z VitePress šablony ve firemních souborech vitepress/<site>/ (stránky v Markdownu, index.md povinný; konfigurace a téma " +
+        "ve vitepress/<site>/_vitepress/, tj. config.js a theme/, místo .vitepress) a uloží hotový web do www/<site>/ (to, co tam bylo, nahradí).",
+      schema: z.object({ site: z.string().regex(SITE_NAME, "Název webu: malá písmena, číslice a pomlčky").max(60).describe("Název webu, složka ve vitepress/") }),
     },
   );
 }

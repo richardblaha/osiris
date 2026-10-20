@@ -1,0 +1,95 @@
+# The VitePress builder (tool build_vitepress_site): builds tenants' sites from their vitepress/<site>/ files. A site's
+# config and Markdown run code during the build, so it is stateless, unprivileged, holds no secrets, is reachable only
+# from tenant runtimes and cut off from the network; builds run one at a time and each leaves nothing behind.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vitepress
+  labels:
+    app: vitepress
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vitepress
+  template:
+    metadata:
+      labels:
+        app: vitepress
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: vitepress
+          image: ghcr.io/richardblaha/osiris-vitepress:main
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 3000
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 1536Mi
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vitepress
+spec:
+  selector:
+    app: vitepress
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: vitepress
+spec:
+  podSelector:
+    matchLabels:
+      app: vitepress
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        # Tenant runtimes (build_vitepress_site).
+        - namespaceSelector: { matchExpressions: [{ key: osiris.k6labs.cz/tenant, operator: Exists }] }
+          podSelector: { matchLabels: { app: runtime } }
+      ports:
+        - port: 3000
+  # No egress rules: the builder can't reach anything, not even DNS.
+  egress: []

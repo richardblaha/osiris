@@ -1,4 +1,4 @@
-# One Dockerfile, one image per service: docker build --target <gateway|control|runtime|operator|sites> .
+# One Dockerfile, one image per service: docker build --target <gateway|control|runtime|operator|sites|vitepress> .
 # Every service runs TypeScript with tsx as the unprivileged node user, read-only root filesystem (tsx caches in /tmp).
 
 FROM node:24-slim AS base
@@ -14,6 +14,7 @@ COPY apps/control/package.json apps/control/
 COPY apps/runtime/package.json apps/runtime/
 COPY apps/operator/package.json apps/operator/
 COPY apps/sites/package.json apps/sites/
+COPY apps/vitepress/package.json apps/vitepress/
 ENV NODE_ENV=production
 EXPOSE 8080
 
@@ -74,3 +75,12 @@ ENV PORT=8080
 WORKDIR /app/apps/sites
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
+
+FROM base AS vitepress
+RUN pnpm install --frozen-lockfile --prod --filter "@osiris/vitepress..." && pnpm store prune
+COPY apps/vitepress/src apps/vitepress/src
+ENV PORT=3000
+WORKDIR /app/apps/vitepress
+USER node
+# One process, PID 1: after each build it kills every other process (see src/build.ts), so no tsx CLI wrapper.
+CMD ["node", "--import", "tsx", "src/index.ts"]

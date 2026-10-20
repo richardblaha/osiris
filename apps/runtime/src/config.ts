@@ -35,6 +35,7 @@ const schema = z
     FILES_QUOTA_MB: z.coerce.number().int().positive().default(4096),
     // Gotenberg (HTML and office documents to PDF); without it there is no convert_to_pdf tool.
     GOTENBERG_URL: z.url().optional(),
+    VITEPRESS_URL: z.url().optional(),
     // Development only: let MCP servers and http_request use http and private addresses.
     MCP_ALLOW_PRIVATE: bool,
     // Where the web app runs; OAuth providers of MCP servers send the user back to <PUBLIC_URL>/mcp-callback.

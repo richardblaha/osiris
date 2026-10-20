@@ -14,23 +14,32 @@ const INTEGRATION_GROUPS: Record<string, string> = {
   microsoft_calendar: "Microsoft kalendář",
 };
 
+/** Tools of a feature that form a tool of their own. */
+const OWN_GROUPS: Record<string, { key: string; label: string }> = {
+  render_template: { key: "templates", label: "Templates" },
+  convert_to_pdf: { key: "pdf", label: "PDF" },
+  resize_image: { key: "image", label: "Image" },
+  build_vitepress_site: { key: "vitepress", label: "Vitepress" },
+};
+
 interface Group {
   key: string;
   label: string;
   tools: BuiltinTool[];
 }
 
-/** By feature, the integrations' tools by service. */
+/** By feature, the integrations' tools by service, and the tools in OWN_GROUPS each after their feature. */
 function groups(tools: BuiltinTool[]): Group[] {
   return FEATURES.flatMap((f) => {
-    const list = tools.filter((t) => t.feature === f);
-    if (f !== "integrations") return list.length ? [{ key: f, label: FEATURE_LABELS[f].label, tools: list }] : [];
-    const byService = new Map<string, BuiltinTool[]>();
-    for (const t of list) {
-      const key = t.name.split("_").slice(0, 2).join("_");
-      byService.set(key, [...(byService.get(key) ?? []), t]);
+    const byKey = new Map<string, Group>();
+    for (const t of tools.filter((t) => t.feature === f)) {
+      const service = f === "integrations" ? t.name.split("_").slice(0, 2).join("_") : undefined;
+      const { key, label } = service ? { key: service, label: INTEGRATION_GROUPS[service] ?? service } : (OWN_GROUPS[t.name] ?? { key: f, label: FEATURE_LABELS[f].label });
+      const group = byKey.get(key) ?? byKey.set(key, { key, label, tools: [] }).get(key)!;
+      group.tools.push(t);
     }
-    return [...byService].map(([key, tools]) => ({ key, label: INTEGRATION_GROUPS[key] ?? key, tools }));
+    // The feature's own group first.
+    return [...byKey.values()].sort((a, b) => Number(b.key === f) - Number(a.key === f));
   });
 }
 

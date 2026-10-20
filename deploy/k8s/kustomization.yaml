@@ -14,4 +14,5 @@ resources:
   - operator.yaml
   - sites.yaml
   - gotenberg.yaml
+  - vitepress.yaml
   - ingress.yaml

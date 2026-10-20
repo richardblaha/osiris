@@ -64,6 +64,7 @@ const tenant = openTenant(config.TENANT_ID, db, {
   },
   files,
   gotenbergUrl: config.GOTENBERG_URL,
+  vitepressUrl: config.VITEPRESS_URL,
   features,
   extraTools: (store) => controlTools(control, store, config.TIMEZONE),
   notifyAdmins: (subject, text) => control.notifyAdmins(subject, text),
