@@ -42,6 +42,8 @@ const skillBody = z.object({
 const mcpServerBody = z.object({
   url: z.string().trim().min(1).max(2000),
   enabled: z.boolean().default(true),
+  // headers: static headers (sealed); oauth: the owner signs in at the provider instead.
+  auth: z.enum(["headers", "oauth"]).default("headers"),
   // Omitted = keep the stored headers. Values are secrets (tokens) and are never returned.
   headers: z
     .record(z.string().regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/, "Neplatný název hlavičky"), z.string().max(4000).regex(/^[^\r\n]*$/))
@@ -59,6 +61,7 @@ const profileBody = z.object({
   persona: personaBody.extend({ description: z.string().trim().min(1).max(2000) }).nullable(),
   guards: z.string().trim().max(4000),
 });
+const oauthCallbackBody = z.object({ state: z.string().min(16).max(200), code: z.string().min(1).max(4000), iss: z.string().max(2000).optional() });
 const memoryBody = z.object({ content: z.string().trim().min(1).max(500), scope });
 const secretBody = z.object({
   // Omitted = keep the stored value (e.g. when only the hosts change). Never returned.
@@ -77,6 +80,7 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/skills", ["skills"]],
   ["/memories", ["memory"]],
   ["/mcp-servers", ["mcp"]],
+  ["/mcp-oauth", ["mcp"]],
   ["/secrets", ["http", "mcp"]],
   ["/files", ["files"]],
   ["/site-publish", ["sites", "files"]],
@@ -325,10 +329,13 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
       const { tenant, user, role } = c.get("ctx");
       const servers = await tenant.mcpServers.list(user.sub, { showTenantUrls: role === "admin" });
       return c.json<McpServer[]>(
-        servers.map((s) => ({
-          ...s,
-          status: s.enabled ? tenant.mcp.status(mcpOwner(s.scope, user.sub)).get(s.name) : undefined,
-        })),
+        await Promise.all(
+          servers.map(async (s) => ({
+            ...s,
+            signedIn: s.auth === "oauth" ? await tenant.mcp.signedIn(mcpOwner(s.scope, user.sub), s.name) : undefined,
+            status: s.enabled ? tenant.mcp.status(mcpOwner(s.scope, user.sub)).get(s.name) : undefined,
+          })),
+        ),
       );
     })
 
@@ -360,6 +367,35 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, publish
       }
       ctx.tenant.mcp.invalidate(owner);
       return c.body(null, 204);
+    })
+
+    // Signing in to an OAuth server: the provider's URL to send the user to (null when the sign-in still holds).
+    .post("/mcp-servers/:name/sign-in", async (c) => {
+      const ctx = c.get("ctx");
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      const owner = mcpOwner(scope, ctx.user.sub);
+      const server = await ctx.tenant.mcpServers.get(c.req.param("name"), owner);
+      if (!server) throw new HTTPException(404, { message: "MCP server not found" });
+      if (server.auth !== "oauth") throw new HTTPException(400, { message: "Server se nepřihlašuje přes OAuth" });
+      const url = await ctx.tenant.mcp.startSignIn(server, owner).catch((err: Error) => {
+        throw new HTTPException(502, { message: `Přihlášení u poskytovatele selhalo: ${err.message}` });
+      });
+      return c.json({ authorizationUrl: url });
+    })
+    // The provider sent the user back (web app's /mcp-callback): the code becomes tokens. Only who started it finishes.
+    .post("/mcp-oauth/callback", async (c) => {
+      const ctx = c.get("ctx");
+      const { state, code, iss } = parse(oauthCallbackBody, await c.req.json());
+      const pending = await ctx.tenant.mcp.pendingSignIn(state);
+      if (!pending) throw new HTTPException(400, { message: "Přihlášení vypršelo nebo už bylo dokončeno, zkus to znovu" });
+      requireScope(ctx, pending.owner === "" ? "tenant" : "personal");
+      if (pending.owner !== "" && pending.owner !== ctx.user.sub) throw new HTTPException(403, { message: "Přihlášení patří jinému uživateli" });
+      const done = await ctx.tenant.mcp.finishSignIn(state, code, iss).catch((err: Error) => {
+        throw new HTTPException(502, { message: `Přihlášení se nepodařilo dokončit: ${err.message}` });
+      });
+      if (!done) throw new HTTPException(400, { message: "Přihlášení vypršelo, zkus to znovu" });
+      return c.json({ name: done.name, scope: done.owner === "" ? "tenant" : "personal" });
     })
 
     // Connects once with the stored configuration and reports the tools (or the error).

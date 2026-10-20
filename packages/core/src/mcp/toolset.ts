@@ -3,6 +3,7 @@ import { MCPAdapter } from "@langchain/mcp-adapters";
 import type { McpServerStatus } from "@osiris/shared";
 import { SECRET_REF, templateHost } from "../vault/template.ts";
 import type { SecretVault } from "../vault/vault.ts";
+import { finishOAuth, StoredOAuthProvider, startOAuth, type McpOAuthStore } from "./oauth.ts";
 import type { McpServerConfig, McpServerStore } from "./store.ts";
 import { assertSafePublicUrl } from "./url.ts";
 
@@ -12,13 +13,20 @@ export interface McpConnection {
 }
 
 /** Opens one server and lists its tools. Replaceable in tests. */
-export type McpConnector = (server: McpServerConfig) => Promise<McpConnection>;
+export type McpConnector = (server: McpServerConfig & { authProvider?: StoredOAuthProvider }) => Promise<McpConnection>;
 
 export interface McpOptions {
   /** Development only: allow http and private addresses (MCP servers on localhost). */
   allowPrivate?: boolean;
   connect?: McpConnector;
+  /** Where OAuth providers send the user back: the web app's `/mcp-callback`. */
+  oauthRedirectUrl?: string;
+  /** For OAuth discovery, registration and tokens (tests). */
+  oauthFetch?: typeof fetch;
 }
+
+/** The server uses OAuth and its owner hasn't signed in (or the sign-in expired for good). */
+export class McpSignInRequiredError extends Error {}
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const TOOL_TIMEOUT_MS = 60_000;
@@ -31,10 +39,10 @@ const IDLE_MS = 15 * 60_000;
 
 export const defaultConnector =
   (allowPrivate: boolean): McpConnector =>
-  async ({ name, url, headers }) => {
+  async ({ name, url, headers, authProvider }) => {
     await assertSafePublicUrl(url, { allowPrivate });
     // One adapter per server, so a failing server is isolated. Tool names get the server prefix (`<server>_<tool>`).
-    const adapter = new MCPAdapter({ servers: { [name]: { url, headers } }, defaultToolTimeout: TOOL_TIMEOUT_MS });
+    const adapter = new MCPAdapter({ servers: { [name]: { url, headers, authProvider } }, defaultToolTimeout: TOOL_TIMEOUT_MS });
     try {
       return { tools: await adapter.listTools(), close: () => adapter.close() };
     } catch (err) {
@@ -71,13 +79,50 @@ export class McpToolset {
   private readonly allowPrivate: boolean;
   private readonly owners = new Map<string, OwnerTools>();
 
+  private readonly redirectUrl: string;
+  private readonly oauthFetch?: typeof fetch;
+
   constructor(
     private readonly store: McpServerStore,
     private readonly vault: SecretVault,
+    private readonly oauth: McpOAuthStore,
     options: McpOptions = {},
   ) {
     this.allowPrivate = options.allowPrivate ?? false;
     this.connect = options.connect ?? defaultConnector(this.allowPrivate);
+    this.redirectUrl = options.oauthRedirectUrl ?? "http://localhost:5173/mcp-callback";
+    this.oauthFetch = options.oauthFetch;
+  }
+
+  private provider(owner: string, name: string) {
+    return new StoredOAuthProvider(this.oauth, owner, name, this.redirectUrl);
+  }
+
+  /** Whether an OAuth server's owner is signed in. */
+  signedIn(owner: string, name: string): Promise<boolean> {
+    return this.oauth.connected(owner, name);
+  }
+
+  /** Starts signing in to an OAuth server: the provider's URL to send the user to (null: already signed in). */
+  async startSignIn(server: McpServerConfig, owner: string): Promise<string | null> {
+    await assertSafePublicUrl(server.url, { allowPrivate: this.allowPrivate });
+    return (await startOAuth(this.provider(owner, server.name), server.url, this.oauthFetch))?.toString() ?? null;
+  }
+
+  /** Finishes a sign-in the provider sent the user back from; returns the server, whose tools reload. */
+  async finishSignIn(state: string, code: string, iss?: string): Promise<{ owner: string; name: string } | undefined> {
+    const pending = await this.oauth.byState(state);
+    if (!pending) return undefined;
+    const server = await this.store.get(pending.name, pending.owner);
+    if (!server) return undefined;
+    await finishOAuth(this.provider(pending.owner, pending.name), server.url, code, iss, this.oauthFetch);
+    this.invalidate(pending.owner);
+    return pending;
+  }
+
+  /** The owner of a pending sign-in, to check who may finish it. */
+  pendingSignIn(state: string) {
+    return this.oauth.byState(state);
   }
 
   /** Validates a URL before it is saved (throws UnsafeUrlError or SecretUseError). Secrets may appear only after the host. */
@@ -100,12 +145,17 @@ export class McpToolset {
     for (const [k, v] of Object.entries(server.headers)) texts[`h:${k}`] = v;
     const { filled } = await this.vault.fill(texts, { userId: owner, host: templateHost(server.url) });
     const headers = Object.fromEntries(Object.keys(server.headers).map((k) => [k, filled[`h:${k}`]!]));
-    return { name: server.name, url: filled.url!, headers };
+    return { name: server.name, url: filled.url!, headers, auth: server.auth };
   }
 
   private open(server: McpServerConfig, owner: string): Promise<McpConnection> {
     return withTimeout(
-      this.resolve(server, owner).then((s) => this.connect(s)),
+      (async () => {
+        const resolved = await this.resolve(server, owner);
+        if (server.auth !== "oauth") return this.connect(resolved);
+        if (!(await this.oauth.connected(owner, server.name))) throw new McpSignInRequiredError("Nepřihlášeno: přihlas se k serveru v jeho nastavení");
+        return this.connect({ ...resolved, authProvider: this.provider(owner, server.name) });
+      })(),
       CONNECT_TIMEOUT_MS,
     );
   }

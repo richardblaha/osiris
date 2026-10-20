@@ -37,6 +37,8 @@ const schema = z
     GOTENBERG_URL: z.url().optional(),
     // Development only: let MCP servers and http_request use http and private addresses.
     MCP_ALLOW_PRIVATE: bool,
+    // Where the web app runs; OAuth providers of MCP servers send the user back to <PUBLIC_URL>/mcp-callback.
+    PUBLIC_URL: z.url().default("http://localhost:5173").transform((v) => v.replace(/\/$/, "")),
   })
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";

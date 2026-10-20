@@ -20,7 +20,7 @@ import { Files } from "./Files.tsx";
 import { Schedules } from "./Schedules.tsx";
 import { Sites } from "./Sites.tsx";
 import { documentKey, KnowledgeDetail } from "./Knowledge.tsx";
-import { mcpKey, McpServerDetail, McpStatus } from "./McpServers.tsx";
+import { MCP_SIGN_IN, mcpKey, McpServerDetail, McpStatus } from "./McpServers.tsx";
 import { MemoryDetail, memoryKey } from "./Memories.tsx";
 import { Avatar, Profile } from "./Profile.tsx";
 import { ScopeBadge } from "./Scope.tsx";
@@ -176,6 +176,21 @@ function Workspace() {
     history.replaceState(null, "", "/");
     return { linked: params.get("linked") ?? undefined, error: params.get("error") ?? undefined };
   });
+  // Back from an MCP server's OAuth sign-in (/mcp-callback): finished once the tenant it started in is open.
+  const [mcpReturn] = useState(() => {
+    if (location.pathname !== "/mcp-callback") return undefined;
+    const params = new URLSearchParams(location.search);
+    history.replaceState(null, "", "/");
+    let started: { tenant?: string; name?: string; scope?: Scope } = {};
+    try {
+      started = JSON.parse(sessionStorage.getItem(MCP_SIGN_IN) ?? "{}");
+      sessionStorage.removeItem(MCP_SIGN_IN);
+    } catch {
+      // Without it the sign-in still finishes, in the last tenant.
+    }
+    if (started.tenant) store(LAST_TENANT, started.tenant);
+    return { ...started, code: params.get("code"), state: params.get("state"), iss: params.get("iss") ?? undefined, error: params.get("error_description") ?? params.get("error") };
+  });
   const [view, setView] = useState<View>(notice ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
   // The sidebar's tab: tenant-wide or the user's own records, files and settings.
   const [scope, setScope] = useState<Scope>(() => (stored<string>(SCOPE_TAB, "personal") === "tenant" ? "tenant" : "personal"));
@@ -227,6 +242,24 @@ function Workspace() {
     }, (e: Error) => setError(e.message));
 
   useEffect(() => void loadMe(), []);
+  const [mcpDone, setMcpDone] = useState(false);
+  // A problem that doesn't stop the app, shown above the main area until dismissed.
+  const [flash, setFlash] = useState<string>();
+  useEffect(() => {
+    if (!mcpReturn || mcpDone || !tenant || (mcpReturn.tenant && tenant.id !== mcpReturn.tenant)) return;
+    setMcpDone(true);
+    const fail = (message: string) => setFlash(`Přihlášení k MCP serveru se nepodařilo: ${message}`);
+    if (mcpReturn.error || !mcpReturn.code || !mcpReturn.state) return fail(mcpReturn.error ?? "poskytovatel nevrátil kód");
+    api.finishMcpSignIn({ state: mcpReturn.state, code: mcpReturn.code, iss: mcpReturn.iss }).then(
+      async (done) => {
+        await api.testMcpServer(done.name, done.scope).catch(() => {});
+        await refresh("mcp");
+        setScope(done.scope);
+        setView({ kind: "item", section: "mcp", id: mcpKey({ scope: done.scope, name: done.name }) });
+      },
+      (e: Error) => fail(e.message),
+    );
+  }, [tenant, mcpReturn, mcpDone]);
   // Visits per view for GoatCounter (when the gateway added its script): the view's kind and section, never ids.
   const viewPath = view.kind === "list" || view.kind === "item" ? `/${view.section}` : `/${view.kind}`;
   useEffect(() => window.goatcounter?.count?.({ path: viewPath }), [viewPath]);
@@ -364,7 +397,15 @@ function Workspace() {
         </div>
       </aside>
 
-      <main className="h-full min-w-0 flex-1 bg-canvas">
+      <main className="relative h-full min-w-0 flex-1 bg-canvas">
+        {flash && (
+          <div className="notice notice-error absolute inset-x-3 top-3 z-10 flex items-start gap-3 px-3 py-2 text-sm">
+            <span className="flex-1">{flash}</span>
+            <button onClick={() => setFlash(undefined)} aria-label="Zavřít" className="text-fg-secondary">
+              ×
+            </button>
+          </div>
+        )}
         {view.kind === "users" ? (
           <UserAdmin self={me.user.id} tenants={tenants} />
         ) : view.kind === "tenants" ? (

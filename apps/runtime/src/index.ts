@@ -50,7 +50,7 @@ const tenant = openTenant(config.TENANT_ID, db, {
   bundledSkills,
   timezone: config.TIMEZONE,
   secrets: config.TENANT_SECRETS_KEY ? new SecretBox(config.TENANT_SECRETS_KEY) : SecretBox.insecureDev(),
-  mcp: { allowPrivate: config.MCP_ALLOW_PRIVATE },
+  mcp: { allowPrivate: config.MCP_ALLOW_PRIVATE, oauthRedirectUrl: `${config.PUBLIC_URL}/mcp-callback` },
   files,
   gotenbergUrl: config.GOTENBERG_URL,
   features,

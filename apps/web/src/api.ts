@@ -48,6 +48,7 @@ let tenantId: string | undefined;
 export const setTenant = (id: string) => {
   tenantId = id;
 };
+export const getTenant = () => tenantId;
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const token = await getAccessToken();
@@ -115,9 +116,13 @@ export const api = {
     json<Skill>(`/skills/${name}`, { method: "PUT", body: JSON.stringify({ description, instructions, scope }) }),
   deleteSkill: (name: string, scope: Scope) => request(`/skills/${name}?scope=${scope}`, { method: "DELETE" }),
   mcpServers: () => json<McpServer[]>("/mcp-servers"),
-  saveMcpServer: (name: string, body: { url: string; enabled: boolean; headers?: Record<string, string>; scope: Scope }) =>
+  saveMcpServer: (name: string, body: { url: string; enabled: boolean; auth: McpServer["auth"]; headers?: Record<string, string>; scope: Scope }) =>
     request(`/mcp-servers/${name}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteMcpServer: (name: string, scope: Scope) => request(`/mcp-servers/${name}?scope=${scope}`, { method: "DELETE" }),
+  signInMcpServer: (name: string, scope: Scope) =>
+    json<{ authorizationUrl: string | null }>(`/mcp-servers/${encodeURIComponent(name)}/sign-in?scope=${scope}`, { method: "POST" }),
+  finishMcpSignIn: (body: { state: string; code: string; iss?: string }) =>
+    json<{ name: string; scope: Scope }>("/mcp-oauth/callback", { method: "POST", body: JSON.stringify(body) }),
   testMcpServer: (name: string, scope: Scope) =>
     json<McpServerStatus>(`/mcp-servers/${name}/test?scope=${scope}`, { method: "POST" }),
   settings: () => json<UserSettings>("/settings"),

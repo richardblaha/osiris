@@ -4,11 +4,17 @@ import type { SecretBox } from "../secrets.ts";
 
 export const MCP_SERVER_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
+export type McpAuth = "headers" | "oauth";
+
 export interface McpServerConfig {
   name: string;
   url: string;
   headers: Record<string, string>;
+  /** `oauth`: the owner signs in at the provider (see oauth.ts) instead of static headers. */
+  auth: McpAuth;
 }
+
+const authOf = (r: Record<string, unknown>): McpAuth => (r.auth === "oauth" ? "oauth" : "headers");
 
 /** The name is used by another server in the tenant (tool names `<server>_<tool>` must not clash). */
 export class McpNameTakenError extends Error {}
@@ -40,6 +46,7 @@ export class McpServerStore {
         scope,
         url: scope === "tenant" && !showTenantUrls ? "" : String(r.url),
         enabled: Number(r.enabled) === 1,
+        auth: authOf(r),
         headerNames: Object.keys(this.headers(r)),
         updatedAt: String(r.updated_at),
       };
@@ -49,7 +56,7 @@ export class McpServerStore {
   async get(name: string, owner: string): Promise<(McpServerConfig & { enabled: boolean }) | undefined> {
     const { rows } = await this.db.execute({ sql: "SELECT * FROM mcp_servers WHERE owner = ? AND name = ?", args: [owner, name] });
     const r = rows[0];
-    return r && { name, url: String(r.url), headers: this.headers(r), enabled: Number(r.enabled) === 1 };
+    return r && { name, url: String(r.url), headers: this.headers(r), auth: authOf(r), enabled: Number(r.enabled) === 1 };
   }
 
   /** Enabled servers of one owner with decrypted headers, for connecting. */
@@ -58,26 +65,36 @@ export class McpServerStore {
       sql: "SELECT * FROM mcp_servers WHERE owner = ? AND enabled = 1 ORDER BY name",
       args: [owner],
     });
-    return rows.map((r) => ({ name: String(r.name), url: String(r.url), headers: this.headers(r) }));
+    return rows.map((r) => ({ name: String(r.name), url: String(r.url), headers: this.headers(r), auth: authOf(r) }));
   }
 
   /** Creates or updates a server. `headers: undefined` keeps the stored headers; `{}` clears them. */
-  async put(name: string, owner: string, { url, enabled, headers }: { url: string; enabled: boolean; headers?: Record<string, string> }) {
+  async put(
+    name: string,
+    owner: string,
+    { url, enabled, headers, auth = "headers" }: { url: string; enabled: boolean; headers?: Record<string, string>; auth?: McpAuth },
+  ) {
     if (!MCP_SERVER_NAME.test(name)) throw new Error(`Invalid MCP server name "${name}"`);
     const taken = await this.db.execute({ sql: "SELECT 1 FROM mcp_servers WHERE name = ? AND owner <> ?", args: [name, owner] });
     if (taken.rows.length) throw new McpNameTakenError(`Název „${name}“ už ve firmě používá jiný server`);
     const sealed = headers === undefined ? undefined : Object.keys(headers).length ? this.secrets.seal(JSON.stringify(headers)) : null;
     await this.db.execute({
-      sql: `INSERT INTO mcp_servers (owner, name, url, enabled, headers_enc) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (owner, name) DO UPDATE SET url = excluded.url, enabled = excluded.enabled,
+      sql: `INSERT INTO mcp_servers (owner, name, url, enabled, headers_enc, auth) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (owner, name) DO UPDATE SET url = excluded.url, enabled = excluded.enabled, auth = excluded.auth,
               headers_enc = ${sealed === undefined ? "mcp_servers.headers_enc" : "excluded.headers_enc"},
               updated_at = datetime('now')`,
-      args: [owner, name, url, enabled ? 1 : 0, sealed ?? null],
+      args: [owner, name, url, enabled ? 1 : 0, sealed ?? null, auth],
     });
   }
 
   async delete(name: string, owner: string): Promise<boolean> {
-    const r = await this.db.execute({ sql: "DELETE FROM mcp_servers WHERE owner = ? AND name = ?", args: [owner, name] });
-    return r.rowsAffected > 0;
+    const [r] = await this.db.batch(
+      [
+        { sql: "DELETE FROM mcp_servers WHERE owner = ? AND name = ?", args: [owner, name] },
+        { sql: "DELETE FROM mcp_oauth WHERE owner = ? AND name = ?", args: [owner, name] },
+      ],
+      "write",
+    );
+    return (r?.rowsAffected ?? 0) > 0;
   }
 }

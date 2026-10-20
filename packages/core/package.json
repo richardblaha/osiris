@@ -18,6 +18,7 @@
     "@langchain/openai": "^1.6.2",
     "@langchain/textsplitters": "^1.0.2",
     "@libsql/client": "^0.18.0",
+    "@modelcontextprotocol/client": "2.3.1",
     "@osiris/platform": "workspace:*",
     "@osiris/shared": "workspace:*",
     "langchain": "^1.5.16",

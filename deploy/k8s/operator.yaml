@@ -43,6 +43,8 @@ spec:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
             - { name: RUNTIME_ENV_TIMEZONE, value: Europe/Prague }
+            # OAuth sign-ins to MCP servers return to <PUBLIC_URL>/mcp-callback.
+            - { name: RUNTIME_ENV_PUBLIC_URL, value: https://osiris.k6labs.cz }
             # Runtimes send their telemetry to the cluster's collector too (the operator's network policy lets them).
             - { name: RUNTIME_ENV_OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: RUNTIME_ENV_OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }

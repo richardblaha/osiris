@@ -186,6 +186,10 @@ export interface McpServer {
   /** Empty for tenant servers when the viewer isn't an admin (the URL may carry an API key). */
   url: string;
   enabled: boolean;
+  /** `oauth`: signed in at the provider (vas-hosting.cz…), not with static headers. */
+  auth: "headers" | "oauth";
+  /** For OAuth servers: whether the owner has signed in. */
+  signedIn?: boolean;
   headerNames: string[];
   updatedAt: string;
   /** Result of the last connection attempt; absent if not tried yet (or disabled). */

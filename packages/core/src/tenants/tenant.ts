@@ -22,6 +22,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import type { Feature } from "@osiris/shared";
 import type { FeatureSource } from "./features.ts";
 import { UsageStore } from "../agent/usage.ts";
+import { McpOAuthStore } from "../mcp/oauth.ts";
 import { FileIndex } from "../files/index.ts";
 import { FileIndexer, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
@@ -82,7 +83,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const memory = new MemoryStore(db);
   const mcpServers = new McpServerStore(db, deps.secrets);
   const secrets = new SecretVault(db, deps.secrets);
-  const mcp = new McpToolset(mcpServers, secrets, deps.mcp);
+  const mcp = new McpToolset(mcpServers, secrets, new McpOAuthStore(db, deps.secrets), deps.mcp);
   const settings = new UserSettingsStore(db);
   const features = deps.features;
   const usage = new UsageStore(db);
