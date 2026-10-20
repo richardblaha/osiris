@@ -7,12 +7,12 @@ import { attempt, ErrorNotice, Field } from "./Scope.tsx";
  * The assistant's persona at one level (the tenant's, the user's own or a public assistant's). A persona is written
  * by the model from a character and the work it comes from, then edited before saving. Rules are guards (Guards.tsx).
  */
-export function AssistantSettings({ scope, editable, assistant }: { scope: Scope | "public"; editable: boolean; assistant?: string }) {
+export function AssistantSettings({ scope, editable, assistant }: { scope: "personal" | "public"; editable: boolean; assistant?: string }) {
   const [all, setAll] = useState<AssistantProfiles>();
   const [error, setError] = useState<string>();
   useEffect(() => void api.assistant(assistant).then(setAll, (e: Error) => setError(e.message)), []);
   if (!all) return <ErrorNotice error={error} />;
-  const own = (scope === "public" ? all.public : scope === "tenant" ? all.tenant : all.personal) ?? { persona: null };
+  const own = (scope === "public" ? all.public : all.personal) ?? { persona: null };
   return (
     <ProfileForm
       key={scope}
@@ -60,16 +60,12 @@ function ProfileForm({
     });
   };
 
-  const tenantPersona = scope === "personal" ? inherited.tenant.persona : null;
-
   return (
     <form onSubmit={submit} className="mt-4 space-y-4">
       <div>
         <span className="section-header block">Persona</span>
         <p className="mt-1 text-xs text-fg-muted">
           Jak má asistent komunikovat. Zadej postavu a knihu nebo film, asistent z nich připraví popis, který můžeš upravit.
-          {tenantPersona && ` Bez vlastní persony platí firemní: ${tenantPersona.character}.`}
-          {scope === "tenant" && " Uživatelé si ji mohou přepsat vlastní."}
           {scope === "public" && " Platí jen pro tohoto asistenta pro zákazníky."}
         </p>
         <div className="mt-2 flex flex-wrap items-end gap-3">

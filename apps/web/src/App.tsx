@@ -16,7 +16,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { api, setTenant } from "./api.ts";
 import { getAccessToken, login, logout } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
-import { Files } from "./Files.tsx";
+import { Files, OWN_VIEWS } from "./Files.tsx";
 import { Schedules } from "./Schedules.tsx";
 import { Sites } from "./Sites.tsx";
 import { PublicAssistants } from "./PublicAssistant.tsx";
@@ -30,7 +30,8 @@ import { ScopeBadge } from "./Scope.tsx";
 import { SignIn } from "./SignIn.tsx";
 import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
-import { roleLabel, TenantInfo } from "./TenantInfo.tsx";
+import { Members, roleLabel, TenantInfo } from "./TenantInfo.tsx";
+import { SystemSettings } from "./SystemSettings.tsx";
 import { TenantAdmin, TenantLogo } from "./Tenants.tsx";
 import { QuotaMeters } from "./Quotas.tsx";
 import { BuiltinTools } from "./Tools.tsx";
@@ -86,6 +87,7 @@ type View =
   | { kind: "tenants"; initial?: string | null }
   /** The system admin's user administration. */
   | { kind: "users" }
+  | { kind: "settings" }
   | { kind: "files" }
   | { kind: "schedules" }
   | { kind: "sites" }
@@ -111,7 +113,7 @@ const LOADERS: { [S in Section]: () => Promise<Lists[S]> } = {
 };
 
 const SECTIONS: { id: Section; label: string; add: string; icon: string; enabled: (f: TenantFeatures) => boolean }[] = [
-  { id: "knowledge", label: "Znalostní báze", add: "Přidat dokument", icon: "M2 3h5l1 1 1-1h5v10H9l-1 1-1-1H2zM8 4v9", enabled: (f) => f.knowledge },
+  { id: "knowledge", label: "Znalosti", add: "Přidat dokument", icon: "M2 3h5l1 1 1-1h5v10H9l-1 1-1-1H2zM8 4v9", enabled: (f) => f.knowledge },
   { id: "skills", label: "Dovednosti", add: "Přidat dovednost", icon: "M3 4h10M3 8h10M3 12h6", enabled: (f) => f.skills },
   { id: "memory", label: "Paměť", add: "Přidat záznam", icon: "M8 2a4 4 0 0 0-2 7.5V11h4V9.5A4 4 0 0 0 8 2zM6.5 13.5h3", enabled: (f) => f.memory },
   { id: "mcp", label: "Nástroje a MCP", add: "Přidat MCP server", icon: "M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2", enabled: (f) => f.mcp },
@@ -323,7 +325,21 @@ function Workspace() {
   const canAdd = (section: Section) => isAdmin || MEMBERS_WRITE.includes(section);
   /** After a save the record is shown. */
   const showSaved = (section: Section, key: string) => void refresh(section).then(() => setView({ kind: "item", section, id: key }));
-  const hasSettings = !!tenant && (tenant.features.files || sections.length > 0);
+  /** A sidebar link to a section, when the tenant has its feature. */
+  const sectionLink = (id: Section) => {
+    const s = sections.find((x) => x.id === id);
+    return (
+      s && (
+        <NavLink
+          active={(view.kind === "list" || view.kind === "item") && view.section === id}
+          onClick={() => setView({ kind: "list", section: id })}
+          label={s.label}
+          icon={s.icon}
+          count={rows(id, lists).length}
+        />
+      )
+    );
+  };
   const toggleSidebar = () => setCollapsed((c) => (store(SIDEBAR_COLLAPSED, !c), !c));
 
   return (
@@ -374,49 +390,44 @@ function Workspace() {
               {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
             </section>
           )}
-          {hasSettings && (
-            <>
-              <div className="mt-3 border-t border-line" />
-              {tenant?.features.files && (
-                <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />
-              )}
-              {sections.map((s) => (
-                <NavLink
-                  key={s.id}
-                  active={(view.kind === "list" || view.kind === "item") && view.section === s.id}
-                  onClick={() => setView({ kind: "list", section: s.id })}
-                  label={s.label}
-                  icon={s.icon}
-                  count={rows(s.id, lists).length}
-                />
-              ))}
-            </>
+          {tenant && (
+            <NavSection title="Kontext">
+              {sectionLink("knowledge")}
+              {sectionLink("memory")}
+              {tenant.features.files && <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />}
+              {sectionLink("mcp")}
+              {sectionLink("skills")}
+              <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label="Kontroly" icon="M8 1.5 13.5 3.5v4c0 3.2-2.3 5.8-5.5 7-3.2-1.2-5.5-3.8-5.5-7v-4zM5.5 8l2 2 3-3.5" />
+              {sectionLink("secrets")}
+            </NavSection>
           )}
-          {tenant?.features.scheduler && (
-            <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
-          )}
-          {tenant && <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label="Guardy" icon="M8 1.5 13.5 3.5v4c0 3.2-2.3 5.8-5.5 7-3.2-1.2-5.5-3.8-5.5-7v-4zM5.5 8l2 2 3-3.5" />}
-          {tenant?.features.public && (
-            <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Asistenti" icon="M2 4h12v7H6l-3 3V4z" />
-          )}
-          {tenant?.features.sites && (
-            <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Weby" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
-          )}
-          {me.systemAdmin && (
-            <>
+          {tenant && (
+            <NavSection title="Tenant">
+              {tenant.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Asistenti" icon="M2 4h12v7H6l-3 3V4z" />}
               <NavLink
                 active={view.kind === "users"}
-                onClick={() => (void refreshTenants(), setView({ kind: "users" }))}
+                onClick={() => (me.systemAdmin && void refreshTenants(), setView({ kind: "users" }))}
                 label="Uživatelé"
                 icon="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M11 2.5a2.5 2.5 0 0 1 0 4.5M12.5 9.7c1.2.6 2 2 2 3.8"
               />
+              {tenant.features.sites && (
+                <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Weby" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
+              )}
+              {tenant.features.scheduler && (
+                <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
+              )}
+            </NavSection>
+          )}
+          {me.systemAdmin && (
+            <NavSection title="Systém">
+              <NavLink active={view.kind === "tenants"} onClick={() => setView({ kind: "tenants" })} label="Tenanti" icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
               <NavLink
-                active={view.kind === "tenants"}
-                onClick={() => setView({ kind: "tenants" })}
-                label="Tenanti"
-                icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01"
+                active={view.kind === "settings"}
+                onClick={() => setView({ kind: "settings" })}
+                label="Nastavení"
+                icon="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5zM8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"
               />
-            </>
+            </NavSection>
           )}
         </nav>
 
@@ -447,8 +458,10 @@ function Workspace() {
             </button>
           </div>
         )}
-        {view.kind === "users" ? (
-          <UserAdmin self={me.user.id} tenants={tenants} />
+        {view.kind === "settings" ? (
+          me.systemAdmin ? <SystemSettings /> : null
+        ) : view.kind === "users" ? (
+          <TenantUsers key={tenant?.id} me={me} isAdmin={isAdmin} tenants={tenants} />
         ) : view.kind === "tenants" ? (
           <TenantAdmin
             tenants={tenants}
@@ -473,7 +486,9 @@ function Workspace() {
         ) : view.kind === "profile" ? (
           <Profile key={`${tenant?.id}:${connections}`} me={me} notice={notice} features={tenant?.features} />
         ) : !tenant ? null : view.kind === "files" ? (
-          tenant.features.files ? <Files key={tenant.id} /> : null
+          tenant.features.files ? (
+            <Files key={tenant.id} hide={OWN_VIEWS} intro="Dokumenty, šablony a obrázky, se kterými asistent pracuje. Šablony dokumentů patří do složky sablony." />
+          ) : null
         ) : view.kind === "schedules" ? (
           tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
         ) : view.kind === "public" ? (
@@ -591,6 +606,47 @@ function TenantSwitcher({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** A group of sidebar links under a title; collapsed, only a line between groups. */
+function NavSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="mt-4">
+      <h2 className="side-label px-2 pb-1 text-[11px] font-semibold tracking-[0.08em] text-fg-muted uppercase">{title}</h2>
+      <div className="hidden border-t border-line group-data-[collapsed=true]/side:block" />
+      {children}
+    </section>
+  );
+}
+
+/** The tenant's people (its admins manage them); system admins can switch to everyone in Osiris. */
+function TenantUsers({ me, isAdmin, tenants }: { me: MeResponse; isAdmin: boolean; tenants: TenantSummary[] }) {
+  const [all, setAll] = useState(false);
+  return (
+    <div className="flex h-full flex-col">
+      {me.systemAdmin && (
+        <div className="flex gap-1 border-b border-line px-4 py-2 text-sm">
+          <button data-active={!all} onClick={() => setAll(false)} className="list-row px-3 py-1">
+            Tento tenant
+          </button>
+          <button data-active={all} onClick={() => setAll(true)} className="list-row px-3 py-1">
+            Všichni uživatelé (systém)
+          </button>
+        </div>
+      )}
+      <div className="min-h-0 flex-1">
+        {all ? (
+          <UserAdmin self={me.user.id} tenants={tenants} />
+        ) : isAdmin ? (
+          <div className="detail">
+            <Members self={me.user.id} />
+          </div>
+        ) : (
+          <p className="detail text-sm text-fg-secondary">Uživatele tenanta spravuje jeho správce.</p>
+        )}
+      </div>
     </div>
   );
 }

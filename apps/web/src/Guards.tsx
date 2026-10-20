@@ -47,13 +47,13 @@ export function Guards({ isAdmin, systemAdmin }: { isAdmin: boolean; systemAdmin
 
   return (
     <MasterDetail
-      title="Guardy"
+      title="Kontroly"
       top={<p className="px-2 text-xs text-fg-muted">Pravidla, která asistent musí dodržet. Každá zpráva i odpověď se proti nim kontroluje.</p>}
       groups={groups}
       selected={selected}
       onSelect={setSelected}
-      add={{ label: "Přidat pravidlo", onClick: () => setSelected(null) }}
-      placeholder="Vyber pravidlo vlevo."
+      add={{ label: "Přidat kontrolu", onClick: () => setSelected(null) }}
+      placeholder="Vyber kontrolu vlevo."
     >
       {error ? (
         <div className="detail">
@@ -96,7 +96,7 @@ function GuardForm(props: {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const place = props.targets[target]?.place;
-  if (!place) return <p className="detail text-sm text-fg-muted">Nemáš kam pravidlo přidat.</p>;
+  if (!place) return <p className="detail text-sm text-fg-muted">Nemáš kam kontrolu přidat.</p>;
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -108,11 +108,11 @@ function GuardForm(props: {
     });
   };
   const del = () =>
-    window.confirm(`Smazat pravidlo ${name}?`) && void attempt(setBusy, setError, async () => (await remove(place, name), props.onDeleted?.()));
+    window.confirm(`Smazat kontrolu ${name}?`) && void attempt(setBusy, setError, async () => (await remove(place, name), props.onDeleted?.()));
 
   return (
     <form onSubmit={submit} className="detail space-y-4">
-      <h1 className="text-lg font-semibold">{props.guard ? props.guard.name : "Nové pravidlo"}</h1>
+      <h1 className="text-lg font-semibold">{props.guard ? props.guard.name : "Nová kontrola"}</h1>
       {props.guard ? (
         <p className="text-sm text-fg-secondary">
           {LEVEL_LABEL[place.level]}

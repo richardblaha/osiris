@@ -1,21 +1,28 @@
 import { FEATURES, type MeResponse, type TenantInfo as Tenant, type TenantMember } from "@osiris/shared";
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
-import { AssistantSettings } from "./Assistant.tsx";
+import { MasterDetail } from "./MasterDetail.tsx";
 import { InviteForm } from "./Invite.tsx";
 import { attempt, ErrorNotice } from "./Scope.tsx";
 import { FEATURE_LABELS, TenantLogo } from "./Tenants.tsx";
 
 export const roleLabel = (role: Tenant["role"]) => (role === "admin" ? "správce" : "uživatel");
 
-/** The active tenant as the user's claims describe it (switching is in the sidebar's tenant menu); admins set its logo. */
+/** The active tenant: its overview (admins set its logo) and the features it has, each a part of its own. */
 export function TenantInfo({ me, tenant, onChanged }: { me: MeResponse; tenant?: Tenant; onChanged: () => void }) {
+  const [part, setPart] = useState<"overview" | "features">("overview");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  if (!tenant) return <h1 className="detail text-lg font-semibold">Žádný tenant</h1>;
   return (
-    <div className="detail">
-      {tenant ? (
-        <>
+    <MasterDetail
+      title={tenant.name}
+      groups={[{ items: [{ key: "overview", label: "Přehled" }, { key: "features", label: "Funkce" }] }]}
+      selected={part}
+      onSelect={(k) => setPart(k as typeof part)}
+    >
+      {part === "overview" ? (
+        <div className="detail">
           <div className="flex items-center gap-3">
             <TenantLogo tenant={tenant} size={48} />
             <h1 className="min-w-0 flex-1 text-lg font-semibold break-words">{tenant.name}</h1>
@@ -49,30 +56,26 @@ export function TenantInfo({ me, tenant, onChanged }: { me: MeResponse; tenant?:
               <code>{me.systemAdmin ? "role=osiris-admin" : `${tenant.role === "admin" ? "tenant-admin" : "tenant"}=${tenant.id}`}</code>
             </dd>
           </dl>
-
-          <h2 className="section-header mt-8">Funkce</h2>
-          <ul className="mt-2 space-y-1 text-sm">
+        </div>
+      ) : (
+        <div className="detail">
+          <h1 className="text-lg font-semibold">Funkce</h1>
+          <ul className="mt-3 space-y-1 text-sm">
             {FEATURES.map((f) => (
               <li key={f} className={tenant.features[f] ? "" : "text-fg-muted line-through"}>
                 {FEATURE_LABELS[f].label} <span className="text-fg-muted">· {FEATURE_LABELS[f].hint}</span>
               </li>
             ))}
           </ul>
-          <p className="mt-1 text-xs text-fg-muted">Funkce zapíná a vypíná správce systému.</p>
-          <h2 className="section-header mt-8">Persona asistenta pro firmu</h2>
-          {tenant.role !== "admin" && <p className="mt-1 text-xs text-fg-muted">Nastavuje správce tenanta.</p>}
-          <AssistantSettings key={tenant.id} scope="tenant" editable={tenant.role === "admin"} />
-          {tenant.role === "admin" && <Members key={tenant.id} self={me.user.id} />}
-        </>
-      ) : (
-        <h1 className="text-lg font-semibold">Žádný tenant</h1>
+          <p className="mt-2 text-xs text-fg-muted">Funkce zapíná a vypíná správce systému.</p>
+        </div>
       )}
-    </div>
+    </MasterDetail>
   );
 }
 
 /** A tenant admin's view of the tenant's people: roles, removal, invitations and new sign-in links. */
-function Members({ self }: { self: string }) {
+export function Members({ self }: { self: string }) {
   const [members, setMembers] = useState<TenantMember[]>();
   const [link, setLink] = useState<{ who: string; url: string }>();
   const [busy, setBusy] = useState(false);
@@ -82,8 +85,8 @@ function Members({ self }: { self: string }) {
   const act = (action: () => Promise<unknown>) => attempt(setBusy, setError, async () => (await action(), await load()));
 
   return (
-    <section className="mt-8">
-      <h2 className="section-header">Lidé v tenantovi</h2>
+    <section>
+      <h1 className="text-lg font-semibold">Uživatelé tenanta</h1>
       <ul className="mt-2 divide-y divide-line">
         {members?.map((m) => (
           <li key={m.userId} className="flex flex-wrap items-center justify-between gap-3 py-2 text-sm">

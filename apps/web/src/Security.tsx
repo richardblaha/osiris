@@ -43,7 +43,12 @@ function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void 
  * How the user signs in: passkeys, password, linked Google/Facebook/Microsoft/Seznam accounts and the authenticator app
  * as a second factor. `notice` comes back from linking a social account (`?linked=` / `?error=`).
  */
-export function Security({ notice }: { notice?: { linked?: string; error?: string } }) {
+export type SecurityPart = "passkeys" | "password" | "totp" | "linked";
+
+const PART_TITLE: Record<SecurityPart, string> = { passkeys: "Klíče (passkeys)", password: "Heslo", totp: "Dvoufázové přihlašování", linked: "Propojené účty" };
+
+/** One part of the user's sign-in methods: passkeys, the password, the authenticator app or linked accounts. */
+export function Security({ part, notice }: { part: SecurityPart; notice?: { linked?: string; error?: string } }) {
   const [s, setS] = useState<SecurityOverview>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(notice?.error);
@@ -95,16 +100,16 @@ export function Security({ notice }: { notice?: { linked?: string; error?: strin
   };
 
   return (
-    <section className="mt-8 space-y-6">
-      <h2 className="section-header">Přihlášení a zabezpečení</h2>
+    <section className="space-y-6">
+      <h1 className="text-lg font-semibold">{PART_TITLE[part]}</h1>
       {methods === 0 && (
         <p className="notice notice-error px-3 py-2 text-sm">
           Zatím se nemáš jak přihlásit znovu. Přidej si klíč (passkey), nastav heslo, nebo propoj účet Google, Facebook, Microsoft či Seznam.
         </p>
       )}
 
+      {part === "passkeys" && (
       <div className="space-y-2">
-        <span className="section-header block">Klíče (passkeys)</span>
         <p className="text-sm text-fg-secondary">Přihlášení otiskem prstu, obličejem nebo PINem zařízení. Nejbezpečnější a nejrychlejší způsob.</p>
         {s.passkeys.map((p) => (
           <div key={p.id} className="flex items-center gap-3 text-sm">
@@ -124,10 +129,12 @@ export function Security({ notice }: { notice?: { linked?: string; error?: strin
           <p className="text-sm text-fg-muted">Tento prohlížeč klíče nepodporuje.</p>
         )}
       </div>
+      )}
 
-      {s.providers.length > 0 && (
+      {part === "linked" && (
         <div className="space-y-2">
-          <span className="section-header block">Propojené účty</span>
+          <span className="section-header block">Přihlašování účtem</span>
+          {!s.providers.length && <p className="text-sm text-fg-muted">Přihlašování účty Google, Facebook, Microsoft ani Seznam tu není nastavené.</p>}
           {s.providers.map((provider) => {
             const linked = s.social.find((l) => l.provider === provider);
             return (
@@ -151,8 +158,8 @@ export function Security({ notice }: { notice?: { linked?: string; error?: strin
         </div>
       )}
 
+      {part === "password" && (
       <form onSubmit={savePassword} className="space-y-3">
-        <span className="section-header block">Heslo</span>
         <div className="flex flex-wrap gap-3">
           {s.password && (
             <Field label="Současné heslo">
@@ -178,9 +185,10 @@ export function Security({ notice }: { notice?: { linked?: string; error?: strin
           )}
         </div>
       </form>
+      )}
 
+      {part === "totp" && (
       <div className="space-y-3">
-        <span className="section-header block">Dvoufázové ověření</span>
         <p className="text-sm text-fg-secondary">
           Po přihlášení heslem nebo účtem Google/Facebook/Microsoft/Seznam se zeptáme ještě na kód z aplikace v telefonu (Google Authenticator, Microsoft
           Authenticator, 1Password…). Přihlášení klíčem kód nepotřebuje.
@@ -247,6 +255,7 @@ export function Security({ notice }: { notice?: { linked?: string; error?: strin
           </button>
         )}
       </div>
+      )}
 
       {saved && <p className="text-sm text-success">{saved}</p>}
       <ErrorNotice error={error} />

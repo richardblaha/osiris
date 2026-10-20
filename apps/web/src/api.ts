@@ -18,6 +18,7 @@ import type {
   Persona,
   Guard,
   Guards,
+  SystemDefaults,
   PublicAssistantSettings,
   PublishResult,
   RunEvent,
@@ -257,6 +258,8 @@ export const api = {
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
     removeMember: (id: string, userId: string) =>
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+    defaults: () => json<SystemDefaults>("/admin/defaults"),
+    saveDefaults: (d: SystemDefaults) => json<SystemDefaults>("/admin/defaults", { method: "PUT", body: JSON.stringify(d) }),
     guards: () => json<Guard[]>("/admin/guards"),
     saveGuard: ({ name, ...body }: Guard) => json<Guard>(`/admin/guards/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(body) }),
     deleteGuard: (name: string) => request(`/admin/guards/${encodeURIComponent(name)}`, { method: "DELETE" }),

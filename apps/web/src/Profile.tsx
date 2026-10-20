@@ -5,7 +5,8 @@ import { Integrations } from "./Integrations.tsx";
 import { api } from "./api.ts";
 import { logout } from "./auth.ts";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
-import { Security } from "./Security.tsx";
+import { Security, type SecurityPart } from "./Security.tsx";
+import { MasterDetail } from "./MasterDetail.tsx";
 
 const initials = (name: string) =>
   name
@@ -30,7 +31,62 @@ export function Avatar({ user, size = 32 }: { user: MeResponse["user"]; size?: n
   );
 }
 
+type Part = "account" | SecurityPart | "personalization";
+
+/**
+ * The user's own: their account, each sign-in method, linked accounts and how the assistant treats them
+ * (personalization), each a part of its own; signing out at the end.
+ */
 export function Profile({ me, notice, features }: { me: MeResponse; notice?: { linked?: string; error?: string }; features?: TenantFeatures }) {
+  // Back from linking an account: its part.
+  const [part, setPart] = useState<Part>(notice ? "linked" : "account");
+  return (
+    <MasterDetail
+      title={me.user.name ?? me.user.email ?? "Můj profil"}
+      groups={[
+        {
+          items: [
+            { key: "account", label: "Účet" },
+            { key: "passkeys", label: "Klíče (passkeys)" },
+            { key: "password", label: "Změnit heslo" },
+            { key: "totp", label: "Dvoufázové přihlašování" },
+            { key: "linked", label: "Propojené účty" },
+            { key: "personalization", label: "Personalizace" },
+            { key: "logout", label: <span className="text-error">Odhlásit</span> },
+          ],
+        },
+      ]}
+      selected={part}
+      onSelect={(k) => (k === "logout" ? void logout() : setPart(k as Part))}
+    >
+      <div className="detail">
+        {part === "account" ? (
+          <>
+            <div className="flex items-center gap-4">
+              <Avatar user={me.user} size={56} />
+              <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{me.user.name ?? me.user.email ?? "Můj profil"}</h1>
+            </div>
+            <Account />
+          </>
+        ) : part === "personalization" ? (
+          <Personalization />
+        ) : (
+          <>
+            <Security key={part} part={part} notice={part === "linked" ? notice : undefined} />
+            {part === "linked" && features?.integrations && (
+              <div className="mt-8">
+                <Integrations />
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </MasterDetail>
+  );
+}
+
+/** How the assistant treats the user: address, language, signature, own instructions and their persona. */
+function Personalization() {
   const [settings, setSettings] = useState<UserSettings>();
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -42,40 +98,15 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
     setSaved(false);
     setSettings((s) => s && { ...s, [key]: value });
   };
-
-  const submit = async (e: FormEvent) => {
+  const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!settings) return;
-    setBusy(true);
-    setError(undefined);
-    try {
-      setSettings(await api.saveSettings(settings));
-      setSaved(true);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    if (settings) void attempt(setBusy, setError, async () => (setSettings(await api.saveSettings(settings)), setSaved(true)));
   };
 
   return (
-    <div className="detail">
-      <div className="flex items-center gap-4">
-        <Avatar user={me.user} size={56} />
-        <div className="min-w-0 flex-1">
-          <h1 className="truncate text-lg font-semibold">{me.user.name ?? me.user.email ?? "Můj profil"}</h1>
-          <p className="text-sm text-fg-secondary">Jak s tebou má asistent jednat. Platí jen pro tebe.</p>
-        </div>
-        <button onClick={logout} className="btn-secondary shrink-0">
-          Odhlásit
-        </button>
-      </div>
-
-      <Account />
-      <Security notice={notice} />
-      {features?.integrations && <Integrations />}
-
-      <h2 className="section-header mt-8">Asistent</h2>
+    <>
+      <h1 className="text-lg font-semibold">Personalizace</h1>
+      <p className="mt-1 text-sm text-fg-secondary">Jak s tebou má asistent jednat. Platí jen pro tebe, ve všech tvých tenantech zvlášť.</p>
       {settings && (
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="flex flex-wrap gap-6">
@@ -126,11 +157,11 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
           </div>
         </form>
       )}
-      {error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p>}
+      <ErrorNotice error={error} />
 
       <h2 className="section-header mt-8">Persona asistenta</h2>
       <AssistantSettings scope="personal" editable />
-    </div>
+    </>
   );
 }
 
