@@ -51,6 +51,17 @@ const tenant = openTenant(config.TENANT_ID, db, {
   timezone: config.TIMEZONE,
   secrets: config.TENANT_SECRETS_KEY ? new SecretBox(config.TENANT_SECRETS_KEY) : SecretBox.insecureDev(),
   mcp: { allowPrivate: config.MCP_ALLOW_PRIVATE, oauthRedirectUrl: `${config.PUBLIC_URL}/mcp-callback` },
+  integrations: {
+    redirectUrl: `${config.PUBLIC_URL}/integration-callback`,
+    clients: {
+      ...(config.GOOGLE_INTEGRATION_CLIENT_ID && config.GOOGLE_INTEGRATION_CLIENT_SECRET
+        ? { google: { clientId: config.GOOGLE_INTEGRATION_CLIENT_ID, clientSecret: config.GOOGLE_INTEGRATION_CLIENT_SECRET } }
+        : {}),
+      ...(config.MICROSOFT_INTEGRATION_CLIENT_ID && config.MICROSOFT_INTEGRATION_CLIENT_SECRET
+        ? { microsoft: { clientId: config.MICROSOFT_INTEGRATION_CLIENT_ID, clientSecret: config.MICROSOFT_INTEGRATION_CLIENT_SECRET } }
+        : {}),
+    },
+  },
   files,
   gotenbergUrl: config.GOTENBERG_URL,
   features,

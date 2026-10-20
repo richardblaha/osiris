@@ -21,6 +21,7 @@ import { Schedules } from "./Schedules.tsx";
 import { Sites } from "./Sites.tsx";
 import { documentKey, KnowledgeDetail } from "./Knowledge.tsx";
 import { MCP_SIGN_IN, mcpKey, McpServerDetail, McpStatus } from "./McpServers.tsx";
+import { INTEGRATION_RETURN } from "./Integrations.tsx";
 import { MemoryDetail, memoryKey } from "./Memories.tsx";
 import { Avatar, Profile } from "./Profile.tsx";
 import { ScopeBadge } from "./Scope.tsx";
@@ -191,7 +192,22 @@ function Workspace() {
     if (started.tenant) store(LAST_TENANT, started.tenant);
     return { ...started, code: params.get("code"), state: params.get("state"), iss: params.get("iss") ?? undefined, error: params.get("error_description") ?? params.get("error") };
   });
-  const [view, setView] = useState<View>(notice ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
+  // Back from connecting a Google or Microsoft account (/integration-callback), in the tenant it started in.
+  const [integrationReturn] = useState(() => {
+    if (location.pathname !== "/integration-callback") return undefined;
+    const params = new URLSearchParams(location.search);
+    history.replaceState(null, "", "/");
+    let started: { tenant?: string } = {};
+    try {
+      started = JSON.parse(sessionStorage.getItem(INTEGRATION_RETURN) ?? "{}");
+      sessionStorage.removeItem(INTEGRATION_RETURN);
+    } catch {
+      // Without it the connection still finishes, in the last tenant.
+    }
+    if (started.tenant) store(LAST_TENANT, started.tenant);
+    return { ...started, code: params.get("code"), state: params.get("state"), error: params.get("error_description") ?? params.get("error") };
+  });
+  const [view, setView] = useState<View>(notice || integrationReturn ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
   // The sidebar's tab: tenant-wide or the user's own records, files and settings.
   const [scope, setScope] = useState<Scope>(() => (stored<string>(SCOPE_TAB, "personal") === "tenant" ? "tenant" : "personal"));
   const [error, setError] = useState<string>();
@@ -260,6 +276,19 @@ function Workspace() {
       (e: Error) => fail(e.message),
     );
   }, [tenant, mcpReturn, mcpDone]);
+  const [integrationDone, setIntegrationDone] = useState(false);
+  // Bumped when an account got connected, so the profile reloads its list.
+  const [connections, setConnections] = useState(0);
+  useEffect(() => {
+    if (!integrationReturn || integrationDone || !tenant || (integrationReturn.tenant && tenant.id !== integrationReturn.tenant)) return;
+    setIntegrationDone(true);
+    const fail = (message: string) => setFlash(`Propojení účtu se nepodařilo: ${message}`);
+    if (integrationReturn.error || !integrationReturn.code || !integrationReturn.state) return fail(integrationReturn.error ?? "poskytovatel nevrátil kód");
+    api.finishIntegration({ state: integrationReturn.state, code: integrationReturn.code }).then(
+      () => (setConnections((n) => n + 1), setView({ kind: "profile" })),
+      (e: Error) => fail(e.message),
+    );
+  }, [tenant, integrationReturn, integrationDone]);
   // Visits per view for GoatCounter (when the gateway added its script): the view's kind and section, never ids.
   const viewPath = view.kind === "list" || view.kind === "item" ? `/${view.section}` : `/${view.kind}`;
   useEffect(() => window.goatcounter?.count?.({ path: viewPath }), [viewPath]);
@@ -430,7 +459,7 @@ function Workspace() {
             }}
           />
         ) : view.kind === "profile" ? (
-          <Profile key={tenant?.id} me={me} notice={notice} />
+          <Profile key={`${tenant?.id}:${connections}`} me={me} notice={notice} features={tenant?.features} />
         ) : !tenant ? null : view.kind === "files" ? (
           tenant.features.files ? <Files key={`${tenant.id}:${scope}`} scope={scope} isAdmin={isAdmin} /> : null
         ) : view.kind === "schedules" ? (

@@ -36,7 +36,7 @@ export interface MeResponse {
 }
 
 /** What a system admin can switch on or off per tenant. */
-export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites"] as const;
+export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type TenantFeatures = Record<Feature, boolean>;
 
@@ -321,6 +321,14 @@ export interface InviteResult {
 
 /** Tenant files (`/api/files`): shared by the tenant (admins write), the user's own, or one thread's temporary files. */
 export type FileScope = "tenant" | "personal" | "temp";
+
+/** A user's account at Google or Microsoft the assistant may use (`/api/integrations`). */
+export interface Integration {
+  provider: "google" | "microsoft";
+  /** The account's address, when connected. */
+  account: string | null;
+  connected: boolean;
+}
 
 /** Where the tenant's site is published over SFTP (`/api/site-targets`); the password or key is never returned. */
 export interface SiteTarget {

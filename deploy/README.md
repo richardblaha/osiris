@@ -114,6 +114,26 @@ pod logs are not collected a second time.
 3. Sign in at `https://observe.k6labs.cz` with that email and password: streams `default` (logs, traces, metrics).
    A changed collector config needs a bump of the `config/version` annotation to restart it.
 
+## Users' Google and Microsoft accounts
+
+Users connect their own Google or Microsoft account in Můj profil → Propojené účty; the assistant then reads and sends
+their mail, manages their contacts (those on their phone, when synced with the account) and their calendar. Osiris
+needs one OAuth client per provider, whose redirect URI is `https://osiris.k6labs.cz/integration-callback`; runtimes
+get them from the operator's secret (`RUNTIME_SECRET_*`, see Secrets). A provider without a client is not offered.
+
+- **Google Cloud Console:** enable the Gmail API, People API and Google Calendar API; OAuth consent screen with the
+  scopes `openid`, `email`, `…/auth/gmail.modify`, `…/auth/contacts`, `…/auth/calendar.events`; an OAuth client
+  of type *Web application* with the redirect URI above. `.env`: `OSIRIS_GOOGLE_INTEGRATION_CLIENT_ID`,
+  `OSIRIS_GOOGLE_INTEGRATION_CLIENT_SECRET`. Gmail and contacts are *restricted* scopes: while the app is in testing,
+  only the test users listed on the consent screen (up to 100) can connect; publishing it for everyone needs Google's
+  verification including a security assessment (CASA). An internal app of one Workspace organization needs neither.
+- **Microsoft Entra:** App registrations → New, *accounts in any organizational directory and personal Microsoft
+  accounts*, platform Web with the redirect URI above, a client secret, delegated permissions `User.Read`,
+  `Mail.ReadWrite`, `Mail.Send`, `Contacts.ReadWrite`, `Calendars.ReadWrite`, `offline_access`, `openid`, `email`.
+  `.env`: `OSIRIS_MICROSOFT_INTEGRATION_CLIENT_ID`, `OSIRIS_MICROSOFT_INTEGRATION_CLIENT_SECRET`.
+
+Then recreate the `osiris-operator` secret and restart the operator; runtimes pick the clients up on their next start.
+
 ## Visits (GoatCounter)
 
 The web app counts visits with GoatCounter (cookieless, in namespace `goatcounter`): set `GOATCOUNTER_URL` in
@@ -167,7 +187,11 @@ apply osiris-operator \
   --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")" \
   --from-literal=INTERNAL_JWT_PUBLIC_KEY="$(key "$OSIRIS_INTERNAL_JWT_PUBLIC_KEY")" \
   --from-literal=SECRETS_MASTER_KEY="$OSIRIS_SECRETS_MASTER_KEY" \
-  --from-literal=RUNTIME_SECRET_MISTRAL_API_KEY="$MISTRAL_API_KEY"
+  --from-literal=RUNTIME_SECRET_MISTRAL_API_KEY="$MISTRAL_API_KEY" \
+  --from-literal=RUNTIME_SECRET_GOOGLE_INTEGRATION_CLIENT_ID="$OSIRIS_GOOGLE_INTEGRATION_CLIENT_ID" \
+  --from-literal=RUNTIME_SECRET_GOOGLE_INTEGRATION_CLIENT_SECRET="$OSIRIS_GOOGLE_INTEGRATION_CLIENT_SECRET" \
+  --from-literal=RUNTIME_SECRET_MICROSOFT_INTEGRATION_CLIENT_ID="$OSIRIS_MICROSOFT_INTEGRATION_CLIENT_ID" \
+  --from-literal=RUNTIME_SECRET_MICROSOFT_INTEGRATION_CLIENT_SECRET="$OSIRIS_MICROSOFT_INTEGRATION_CLIENT_SECRET"
 
 apply osiris-sites --from-literal=RQLITE_USERNAME=sites --from-literal=RQLITE_PASSWORD="$OSIRIS_RQLITE_SITES_PASSWORD" \
   --from-literal=S3_ENDPOINT="$OSIRIS_S3_ENDPOINT" --from-literal=S3_REGION="$OSIRIS_S3_REGION" --from-literal=S3_BUCKET="$OSIRIS_S3_BUCKET" \

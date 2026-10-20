@@ -19,7 +19,8 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   whatsapp: { label: "WhatsApp", hint: "asistent odpovídá i ve WhatsAppu" },
   files: { label: "Soubory", hint: "úložiště šablon, obrázků a dokumentů, se kterými asistent pracuje" },
   scheduler: { label: "Plánované úlohy", hint: "asistent v nastavený čas sám spustí zadaný úkol" },
-  sites: { label: "Weby", hint: "publikování webu tenanta na vlastní doméně" },
+  sites: { label: "Web", hint: "publikování webu firmy ze složky www na hosting přes SFTP" },
+  integrations: { label: "Google a Microsoft účty", hint: "asistent pracuje s poštou, kontakty a kalendářem uživatelů, kteří si účet propojí" },
 };
 
 /** System admins (claim role=osiris-admin) create tenants here; each tenant's detail is a `TenantPanel`. */

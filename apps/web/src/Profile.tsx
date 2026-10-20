@@ -1,6 +1,7 @@
-import type { MeResponse, UserProfile, UserSettings } from "@osiris/shared";
+import type { MeResponse, TenantFeatures, UserProfile, UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { AssistantSettings } from "./Assistant.tsx";
+import { Integrations } from "./Integrations.tsx";
 import { api } from "./api.ts";
 import { logout } from "./auth.ts";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
@@ -29,7 +30,7 @@ export function Avatar({ user, size = 32 }: { user: MeResponse["user"]; size?: n
   );
 }
 
-export function Profile({ me, notice }: { me: MeResponse; notice?: { linked?: string; error?: string } }) {
+export function Profile({ me, notice, features }: { me: MeResponse; notice?: { linked?: string; error?: string }; features?: TenantFeatures }) {
   const [settings, setSettings] = useState<UserSettings>();
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -72,6 +73,7 @@ export function Profile({ me, notice }: { me: MeResponse; notice?: { linked?: st
 
       <Account />
       <Security notice={notice} />
+      {features?.integrations && <Integrations />}
 
       <h2 className="section-header mt-8">Asistent</h2>
       {settings && (

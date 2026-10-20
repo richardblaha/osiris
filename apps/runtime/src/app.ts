@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileEntry, FileScope, FileSearchHit, McpServer, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
+import type { AssistantProfile, AssistantProfiles, BuiltinTool, Feature, FileEntry, FileScope, FileSearchHit, Integration, McpServer, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
@@ -90,6 +90,7 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/memories", ["memory"]],
   ["/mcp-servers", ["mcp"]],
   ["/mcp-oauth", ["mcp"]],
+  ["/integrations", ["integrations"]],
   ["/secrets", ["http", "mcp"]],
   ["/files", ["files"]],
   ["/site-targets", ["sites", "files"]],
@@ -444,6 +445,34 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const { description, tokens } = await describePersona(tenant.model, character, source);
       await tenant.usage.add(tokens);
       return c.json<Persona>({ character, source, description });
+    })
+
+    // The caller's Google and Microsoft accounts (personal: only they connect and use them).
+    .get("/integrations", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      return c.json<Integration[]>(await tenant.integrations.list(user.sub));
+    })
+    .post("/integrations/:provider/connect", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      const provider = parse(z.enum(["google", "microsoft"]), c.req.param("provider"));
+      if (!tenant.integrations.available().includes(provider)) throw new HTTPException(404, { message: "Propojení s tímto poskytovatelem není v Osirisu nastavené" });
+      return c.json({ authorizationUrl: await tenant.integrations.start(user.sub, provider) });
+    })
+    .delete("/integrations/:provider", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      await tenant.integrations.disconnect(user.sub, parse(z.enum(["google", "microsoft"]), c.req.param("provider")));
+      return c.body(null, 204);
+    })
+    // The provider sent the user back (web app's /integration-callback); only the user who started it finishes it.
+    .post("/integrations/callback", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      const { state, code } = parse(oauthCallbackBody, await c.req.json());
+      const pending = await tenant.integrations.pending(state);
+      if (!pending || pending.owner !== user.sub) throw new HTTPException(400, { message: "Přihlášení vypršelo nebo patří jinému uživateli, zkus to znovu" });
+      const done = await tenant.integrations.finish(state, code).catch((err: Error) => {
+        throw new HTTPException(502, { message: `Propojení se nepodařilo: ${err.message}` });
+      });
+      return c.json({ provider: done.provider, account: done.account });
     })
 
     // How much of its quotas the tenant uses, for the meters above the tenant in the sidebar.

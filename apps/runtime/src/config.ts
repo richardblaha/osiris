@@ -39,6 +39,12 @@ const schema = z
     MCP_ALLOW_PRIVATE: bool,
     // Where the web app runs; OAuth providers of MCP servers send the user back to <PUBLIC_URL>/mcp-callback.
     PUBLIC_URL: z.url().default("http://localhost:5173").transform((v) => v.replace(/\/$/, "")),
+    // Osiris's OAuth clients for users' Google and Microsoft accounts (mail, contacts, calendar); redirect URI
+    // <PUBLIC_URL>/integration-callback. Each provider is on when both are set.
+    GOOGLE_INTEGRATION_CLIENT_ID: z.string().optional(),
+    GOOGLE_INTEGRATION_CLIENT_SECRET: z.string().optional(),
+    MICROSOFT_INTEGRATION_CLIENT_ID: z.string().optional(),
+    MICROSOFT_INTEGRATION_CLIENT_SECRET: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";

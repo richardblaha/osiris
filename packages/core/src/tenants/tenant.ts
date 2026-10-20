@@ -25,6 +25,9 @@ import { UsageStore } from "../agent/usage.ts";
 import { McpOAuthStore } from "../mcp/oauth.ts";
 import { FileIndex } from "../files/index.ts";
 import { SiteTargetStore } from "../sites/sftp.ts";
+import { googleTools } from "../integrations/google.ts";
+import { microsoftTools } from "../integrations/microsoft.ts";
+import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
 import { publishSiteTool } from "../agent/tools/site.ts";
 import { FileIndexer, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
@@ -47,6 +50,8 @@ export interface Tenant {
   fileIndex: FileIndex;
   /** Where the tenant's website is published over SFTP. */
   siteTargets: SiteTargetStore;
+  /** Users' Google and Microsoft accounts. */
+  integrations: IntegrationAccounts;
   /** Run once before serving: moves old database content to files and brings the indexes up to date. */
   init(): Promise<void>;
   /** The built-in tools, each with the feature it belongs to. */
@@ -75,6 +80,8 @@ export interface TenantDeps {
   features: FeatureSource;
   /** Tools beyond the built-in ones (the runtime's schedule and site tools), each tied to a feature. */
   extraTools?: (files: FileStore) => [Feature, StructuredToolInterface][];
+  /** Osiris's OAuth clients at Google and Microsoft, for users' mail, contacts and calendar (none: no such tools). */
+  integrations?: { clients: Partial<Record<IntegrationProvider, IntegrationClient>>; redirectUrl: string; fetch?: typeof fetch };
   /** Gotenberg for converting files to PDF; without it there is no convert_to_pdf tool. */
   gotenbergUrl?: string;
   /** Replaces global fetch for the http_request tool (tests). */
@@ -110,6 +117,13 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   indexer = new FileIndexer(files, fileIndex, knowledge);
   const skills = new SkillStore(files, deps.bundledSkills);
   const siteTargets = new SiteTargetStore(db, deps.secrets);
+  const integrations = new IntegrationAccounts(
+    db,
+    deps.secrets,
+    deps.integrations?.clients ?? {},
+    deps.integrations?.redirectUrl ?? "http://localhost:5173/integration-callback",
+    deps.integrations?.fetch,
+  );
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
   const builtins: [Feature, StructuredToolInterface][] = [
@@ -119,6 +133,8 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ...fileTools(files, gotenberg).map((t): [Feature, StructuredToolInterface] => ["files", t]),
     ["files", searchFilesTool(fileIndex)],
     ["sites", publishSiteTool(files, siteTargets)],
+    ...googleTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
+    ...microsoftTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
     ...(deps.extraTools?.(files) ?? []),
   ];
@@ -129,7 +145,10 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     // Resolved on every step, so switching a feature or a tool applies from the next step.
     dynamicTools: async (ctx) => {
       const [on, off] = await Promise.all([features.get(), features.disabledTools()]);
-      const tools = builtins.filter(([f, t]) => on[f] && !off.includes(t.name)).map(([, t]) => t);
+      // Google and Microsoft tools only for accounts the user connected.
+      const connected = on.integrations ? await integrations.connected(ctx.user_id) : [];
+      const usable = (f: Feature, name: string) => f !== "integrations" || connected.some((p) => name.startsWith(`${p}_`));
+      const tools = builtins.filter(([f, t]) => on[f] && !off.includes(t.name) && usable(f, t.name)).map(([, t]) => t);
       return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id))] : tools;
     },
     features,
@@ -163,6 +182,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     files,
     fileIndex,
     siteTargets,
+    integrations,
     builtinTools: builtins,
     usage,
     profiles,

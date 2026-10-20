@@ -8,6 +8,7 @@ import type {
   FileEntry,
   FileScope,
   FileSearchHit,
+  Integration,
   InviteResult,
   McpServer,
   McpServerStatus,
@@ -154,6 +155,12 @@ export const api = {
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   tools: () => json<BuiltinTool[]>("/tools"),
   usage: () => json<TenantUsage>("/usage"),
+  integrations: () => json<Integration[]>("/integrations"),
+  connectIntegration: (provider: Integration["provider"]) =>
+    json<{ authorizationUrl: string }>(`/integrations/${provider}/connect`, { method: "POST" }),
+  disconnectIntegration: (provider: Integration["provider"]) => request(`/integrations/${provider}`, { method: "DELETE" }),
+  finishIntegration: (body: { state: string; code: string }) =>
+    json<{ provider: Integration["provider"]; account: string | null }>("/integrations/callback", { method: "POST", body: JSON.stringify(body) }),
   assistant: () => json<AssistantProfiles>("/assistant"),
   saveAssistant: (scope: Scope, profile: AssistantProfile) =>
     json<AssistantProfile>(`/assistant?scope=${scope}`, { method: "PUT", body: JSON.stringify(profile) }),
