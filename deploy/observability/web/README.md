@@ -70,10 +70,21 @@ statistics without cookies"). Rotating `SALT_SEED` (a new Secret value) makes ev
    kubectl -n observability exec -i clickhouse-0 -- sh -c 'clickhouse-client --user otel --password "$OTEL_PASSWORD" --multiquery' \
      < deploy/observability/web/schema.sql
    ```
-5. The visitor's IP must reach Traefik: its Service has `externalTrafficPolicy: Local` (otherwise the load balancer's
-   traffic is SNATed and every visitor has a node's address). Traefik is a Helm release, so keep the value there:
-   `helm upgrade traefik traefik/traefik -n traefik --reuse-values --set service.spec.externalTrafficPolicy=Local`.
-   `web_events.private_ip` growing means it doesn't (hashes and countries are then wrong).
+5. The visitor's IP must reach Traefik. Civo's load balancer and Cilium replace it with a cluster address, so the
+   load balancer sends it with the PROXY protocol and Traefik reads it on every entrypoint (Helm release `traefik`):
+   ```bash
+   T='{10.0.0.0/8,192.168.0.0/16}'
+   # First Traefik (it still takes connections without the header), then the load balancer.
+   helm -n traefik upgrade traefik traefik/traefik --version 41.6.1 --reuse-values \
+     --set ports.web.proxyProtocol.trustedIPs=$T --set ports.websecure.proxyProtocol.trustedIPs=$T \
+     --set ports.minecraft.proxyProtocol.trustedIPs=$T --set ports.ssh.proxyProtocol.trustedIPs=$T
+   helm -n traefik upgrade traefik traefik/traefik --version 41.6.1 --reuse-values \
+     --set service.annotations.kubernetes\.civo\.com/loadbalancer-enable-proxy-protocol=send-proxy-v2
+   ```
+   (`service.spec.externalTrafficPolicy=Local` is set too, so a connection isn't forwarded between nodes.) Sites
+   behind Cloudflare reach Traefik from Cloudflare's addresses: web-events then takes `CF-Connecting-IP`, but only
+   when the address is Cloudflare's (`CDN_PROXIES`, its published ranges), so nobody can fake it on a direct site.
+   `web_events.private_ip` growing means the IP doesn't arrive (hashes and countries are then wrong).
 
 The image (`ghcr.io/richardblaha/osiris-web-events`) comes from CI with the rest; it carries DB-IP's free
 IP-to-Country Lite database (CC BY 4.0, https://db-ip.com) of the month it was built, so a rebuild refreshes it.

@@ -25,6 +25,13 @@ const env = z
     WEB_EVENTS_OTLP_URL: z.url().default("http://localhost:4320/v1/logs"),
     /** CIDRs of the ingress pods (comma-separated), whose X-Real-IP is believed. */
     TRUSTED_PROXIES: z.string().default("10.0.0.0/8,127.0.0.1/32"),
+    /** Cloudflare's addresses (https://www.cloudflare.com/ips/), for the sites behind it: CF-Connecting-IP from these. */
+    CDN_PROXIES: z
+      .string()
+      .default(
+        "173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22," +
+          "2400:cb00::/32,2606:4700::/32,2803:f800::/32,2405:b500::/32,2405:8100::/32,2a06:98c0::/29,2c0f:f248::/32",
+      ),
     /** DB-IP Lite or MaxMind GeoLite2 country database; without it, no country. */
     GEOIP_DB: z.string().default("/app/geo/country.mmdb"),
   })
@@ -32,11 +39,14 @@ const env = z
 
 const sites = z.array(z.object({ id: z.string().min(1), hosts: z.array(z.string().min(1)).min(1) })).parse(JSON.parse(env.SITES)) satisfies Site[];
 
-const trustedProxies = new BlockList();
-for (const cidr of env.TRUSTED_PROXIES.split(",").map((c) => c.trim()).filter(Boolean)) {
-  const [net, prefix] = cidr.split("/");
-  trustedProxies.addSubnet(net!, Number(prefix), isIP(net!) === 6 ? "ipv6" : "ipv4");
-}
+const blockList = (cidrs: string) => {
+  const list = new BlockList();
+  for (const cidr of cidrs.split(",").map((c) => c.trim()).filter(Boolean)) {
+    const [net, prefix] = cidr.split("/");
+    list.addSubnet(net!, Number(prefix), isIP(net!) === 6 ? "ipv6" : "ipv4");
+  }
+  return list;
+};
 
 let country = (_ip: string) => "";
 try {
@@ -63,7 +73,8 @@ const app = createWebEventsApp({
   hasher: new VisitorHasher(env.SALT_SEED),
   country,
   emit: (event, attributes) => logger.emit({ body: event, attributes }),
-  trustedProxies,
+  trustedProxies: blockList(env.TRUSTED_PROXIES),
+  cdnProxies: blockList(env.CDN_PROXIES),
   script: readFileSync(new URL("./e.js", import.meta.url), "utf8"),
   count: (outcome: Outcome, privateIp?: boolean) => {
     received.add(1, { outcome });

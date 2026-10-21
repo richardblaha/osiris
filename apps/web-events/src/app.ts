@@ -23,6 +23,8 @@ export interface WebEventsDeps {
   emit: (event: string, attributes: Record<string, string>) => void;
   /** Proxies (the ingress) whose X-Real-IP / X-Forwarded-For is believed. */
   trustedProxies: BlockList;
+  /** A CDN in front of some sites (Cloudflare): when the ingress saw one of its addresses, its CF-Connecting-IP is believed. */
+  cdnProxies: BlockList;
   script: string;
   count: (outcome: Outcome, privateIp?: boolean) => void;
 }
@@ -56,13 +58,22 @@ const plain = (ip: string) => ip.replace(/^::ffff:/, "");
 
 /**
  * The visitor's IP: from the ingress's X-Real-IP (or the last X-Forwarded-For hop it added) when the connection comes
- * from a trusted proxy, otherwise the connection's own address. Used for the hash and the country, never stored.
+ * from a trusted proxy, otherwise the connection's own address; and when that is the CDN's (the site is behind
+ * Cloudflare), its CF-Connecting-IP. Used for the hash and the country, never stored.
  */
-export function clientIp(peer: string, headers: { realIp?: string; forwardedFor?: string }, trusted: BlockList): string {
-  const from = plain(peer);
-  if (!isIP(from) || !trusted.check(from, family(from))) return from;
-  const forwarded = headers.realIp?.trim() || headers.forwardedFor?.split(",").at(-1)?.trim() || "";
-  return isIP(plain(forwarded)) ? plain(forwarded) : from;
+export function clientIp(
+  peer: string,
+  headers: { realIp?: string; forwardedFor?: string; cdnClientIp?: string },
+  trusted: BlockList,
+  cdn: BlockList = new BlockList(),
+): string {
+  let ip = plain(peer);
+  if (isIP(ip) && trusted.check(ip, family(ip))) {
+    const forwarded = plain(headers.realIp?.trim() || headers.forwardedFor?.split(",").at(-1)?.trim() || "");
+    if (isIP(forwarded)) ip = forwarded;
+  }
+  const behind = plain(headers.cdnClientIp?.trim() ?? "");
+  return isIP(ip) && cdn.check(ip, family(ip)) && isIP(behind) ? behind : ip;
 }
 
 export function createWebEventsApp(deps: WebEventsDeps) {
@@ -108,7 +119,12 @@ export function createWebEventsApp(deps: WebEventsDeps) {
       const requestHost = (c.req.header("host") ?? "").split(":")[0]!.toLowerCase();
       if (!hosts || !hosts.includes(url.hostname.toLowerCase()) || !hosts.includes(requestHost)) return done("forbidden", 403);
 
-      const ip = clientIp(c.env?.incoming?.socket?.remoteAddress ?? "", { realIp: c.req.header("x-real-ip"), forwardedFor: c.req.header("x-forwarded-for") }, deps.trustedProxies);
+      const ip = clientIp(
+        c.env?.incoming?.socket?.remoteAddress ?? "",
+        { realIp: c.req.header("x-real-ip"), forwardedFor: c.req.header("x-forwarded-for"), cdnClientIp: c.req.header("cf-connecting-ip") },
+        deps.trustedProxies,
+        deps.cdnProxies,
+      );
       const privateIp = isIP(ip) ? PRIVATE.check(ip, family(ip)) : true;
       const utm = utmOf(url);
       const screen = e.w ?? 0;

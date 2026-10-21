@@ -72,6 +72,15 @@ describe("client IP", () => {
     expect(clientIp("198.51.100.9", { realIp: "203.0.113.5" }, trusted)).toBe("198.51.100.9");
     expect(clientIp("10.42.1.7", { realIp: "nonsense" }, trusted)).toBe("10.42.1.7");
   });
+
+  it("takes the visitor's IP from Cloudflare only when the connection came from Cloudflare", () => {
+    const cdn = new BlockList();
+    cdn.addSubnet("104.16.0.0", 13, "ipv4");
+    expect(clientIp("10.42.1.7", { realIp: "104.23.199.10", cdnClientIp: "2a00:c500:235:d17::1001" }, trusted, cdn)).toBe("2a00:c500:235:d17::1001");
+    // A visitor faking the header on a site not behind Cloudflare.
+    expect(clientIp("10.42.1.7", { realIp: "203.0.113.5", cdnClientIp: "198.51.100.1" }, trusted, cdn)).toBe("203.0.113.5");
+    expect(clientIp("10.42.1.7", { realIp: "104.23.199.10", cdnClientIp: "garbage" }, trusted, cdn)).toBe("104.23.199.10");
+  });
 });
 
 describe("POST /_e", () => {
@@ -86,6 +95,7 @@ describe("POST /_e", () => {
       country: (ip) => (ip === "203.0.113.5" ? "CZ" : ""),
       emit: (event, attributes) => emitted.push({ event, attributes }),
       trustedProxies: trusted,
+      cdnProxies: new BlockList(),
       script: SCRIPT,
       count: (o) => outcomes.push(o),
     });
