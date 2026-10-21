@@ -1,10 +1,14 @@
 import { AIMessage, AIMessageChunk, HumanMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
-import type { MessagePart, RunEvent, ThreadMessage } from "@osiris/shared";
+import type { MessagePart, RunEvent, RunStatus, ThreadMessage } from "@osiris/shared";
 import type { RunContext } from "./context.ts";
 import type { AgentGraph } from "./graph.ts";
 
+/** The graph's nodes as what the user is told the run is doing. */
+const NODE_STATUS: Record<string, RunStatus> = { agent: "thinking", tools: "tools", guard_in: "checking", guard_out: "checking" };
+
 /**
- * Runs one user turn and yields UI events: streamed text tokens, then tool calls/results as each node finishes.
+ * Runs one user turn and yields UI events: what it's doing (each node as it starts), streamed text tokens, a tool
+ * call as soon as the model starts writing it, then its arguments and result as each node finishes.
  * `guarded` (rules apply to the run): the answer is only sent once the output check passed (or replaced it), so no
  * part of an answer breaking the rules ever reaches the user.
  */
@@ -17,11 +21,18 @@ export async function* streamRun(
 ): AsyncGenerator<RunEvent> {
   const stream = await graph.stream(
     { messages: [new HumanMessage(text)] },
-    { configurable: { ...ctx }, streamMode: ["messages", "updates"], signal },
+    { configurable: { ...ctx }, streamMode: ["messages", "updates", "tasks"], signal },
   );
 
   let held = "";
+  const announced = new Set<string>();
   for await (const [mode, data] of stream) {
+    if (mode === "tasks") {
+      // A task's start has no result yet. The rules' nodes pass straight through when there are none.
+      const status = NODE_STATUS[data.name];
+      if (status && !("result" in data) && (guarded || status !== "checking")) yield { type: "status", status };
+      continue;
+    }
     if (guarded && mode === "updates") {
       for (const [node, message] of nodeMessages(data)) {
         if (!AIMessage.isInstance(message) || message.tool_calls?.length) continue;
@@ -31,13 +42,22 @@ export async function* streamRun(
       }
     }
     if (mode === "messages") {
-      if (guarded) continue;
       const [chunk, meta] = data;
+      if (meta?.langgraph_node !== "agent") continue;
+      // A tool call shows as soon as its name comes, long before its arguments (a whole file) are written. Not text,
+      // so it goes out even when the answer waits for the rules check.
+      if (AIMessageChunk.isInstance(chunk)) {
+        for (const call of chunk.tool_call_chunks ?? []) {
+          const id = call.id ?? `pending:${call.index ?? 0}`;
+          if (!call.name || announced.has(id)) continue;
+          announced.add(id);
+          yield { type: "tool-call-start", toolCallId: id, toolName: call.name };
+        }
+      }
+      if (guarded) continue;
       // Streaming models emit AIMessageChunks; non-streaming ones emit the whole AIMessage once.
       const isAi = AIMessageChunk.isInstance(chunk) || AIMessage.isInstance(chunk);
-      if (meta?.langgraph_node === "agent" && isAi && chunk.text) {
-        yield { type: "text-delta", delta: chunk.text };
-      }
+      if (isAi && chunk.text) yield { type: "text-delta", delta: chunk.text };
     } else if (mode === "updates") {
       for (const message of updatedMessages(data)) {
         if (AIMessage.isInstance(message)) {

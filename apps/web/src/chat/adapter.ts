@@ -1,5 +1,5 @@
 import type { ChatModelAdapter, ThreadAssistantMessagePart, ThreadMessageLike } from "@assistant-ui/react";
-import type { ThreadMessage } from "@osiris/shared";
+import type { RunStatus, ThreadMessage } from "@osiris/shared";
 import { api } from "../api.ts";
 
 type Part = ThreadAssistantMessagePart;
@@ -21,6 +21,8 @@ export function createAdapter(
       const threadId = await getThreadId();
 
       let parts: Part[] = [];
+      // What the run is doing now, for the line under the message (`metadata.custom.status`).
+      let status: RunStatus | undefined;
       try {
         for await (const event of stream(threadId, text, abortSignal)) {
           switch (event.type) {
@@ -32,19 +34,30 @@ export function createAdapter(
                   : [...parts, { type: "text", text: event.delta }];
               break;
             }
-            case "tool-call":
-              if (!showTools) break;
-              parts = [
-                ...parts,
-                {
-                  type: "tool-call",
-                  toolCallId: event.toolCallId,
-                  toolName: event.toolName,
-                  args: event.args as never,
-                  argsText: JSON.stringify(event.args),
-                },
-              ];
+            case "status":
+              status = event.status;
               break;
+            case "tool-call-start":
+              if (!showTools || parts.some((p) => p.type === "tool-call" && p.toolCallId === event.toolCallId)) break;
+              // Arguments still being written: shown as a step in progress.
+              parts = [...parts, { type: "tool-call", toolCallId: event.toolCallId, toolName: event.toolName, args: {} as never, argsText: "" }];
+              break;
+            case "tool-call": {
+              if (!showTools) break;
+              const part: Part = {
+                type: "tool-call",
+                toolCallId: event.toolCallId,
+                toolName: event.toolName,
+                args: event.args as never,
+                argsText: JSON.stringify(event.args),
+              };
+              // Its announcement, by id, or (a model without ids in its stream) the first announced one of that tool.
+              const i = parts.findIndex(
+                (p) => p.type === "tool-call" && (p.toolCallId === event.toolCallId || (p.toolCallId.startsWith("pending:") && p.toolName === event.toolName)),
+              );
+              parts = i < 0 ? [...parts, part] : parts.map((p, k) => (k === i ? part : p));
+              break;
+            }
             case "tool-result":
               parts = parts.map((p) => (p.type === "tool-call" && p.toolCallId === event.toolCallId ? { ...p, result: event.result } : p));
               break;
@@ -53,7 +66,7 @@ export function createAdapter(
             case "done":
               break;
           }
-          yield { content: parts };
+          yield { content: parts, metadata: { custom: { status: event.type === "done" ? undefined : status } } };
         }
       } finally {
         onDone();

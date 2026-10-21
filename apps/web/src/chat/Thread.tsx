@@ -2,10 +2,11 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAuiState,
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import type { FileScope } from "@osiris/shared";
+import type { FileScope, RunStatus } from "@osiris/shared";
 import { createContext, useContext, useState } from "react";
 import { api, saveBlob } from "../api.ts";
 
@@ -28,6 +29,13 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   edit_text: (a) => `${a.dry_run ? "Zkouším úpravu" : "Upravuji"} ${file(a)}`,
   convert_to_pdf: (a) => `Převádím do PDF ${file(a)}`,
   resize_image: (a) => `Upravuji obrázek ${file(a)}`,
+  search_files: (a) => `Hledám v souborech: „${String(a.query ?? "")}“`,
+  save_knowledge: (a) => `Ukládám do znalostní báze: ${String(a.title ?? a.id ?? "")}`,
+  schedule_task: (a) => `Plánuji úlohu: ${String(a.title ?? "")}`,
+  list_schedules: () => "Procházím plánované úlohy",
+  cancel_schedule: () => "Ruším plánovanou úlohu",
+  build_vitepress_site: (a) => `Sestavuji web ${String(a.site ?? "")}`,
+  publish_site: (a) => `Publikuji web ${String(a.target ?? a.dir ?? "")}`,
   http_request: (a) => {
     const url = String(a.url ?? "");
     const host = /^https?:\/\/([^/?#]+)/.exec(url)?.[1] ?? url;
@@ -54,20 +62,75 @@ function Download({ scope, path }: { scope: FileScope; path: string }) {
   );
 }
 
-function ToolCall({ toolName, args, result }: ToolCallMessagePartProps) {
+/** A result the tool reports as a failure: a refusal, an error, or a JSON answer with `success: false`. */
+const failed = (result: string) => /^(Nelze|Operace selhala|Chyba|Error)/.test(result) || /^\{"success":false/.test(result);
+
+/** A JSON result or argument, indented; long values cut so a step stays readable. */
+function pretty(value: unknown): string {
+  let text = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+  if (typeof value === "string" && /^[[{]/.test(value)) {
+    try {
+      text = JSON.stringify(JSON.parse(value), null, 2);
+    } catch {
+      // Not JSON after all.
+    }
+  }
+  return text.length > 4000 ? `${text.slice(0, 4000)}\n… (${text.length - 4000} znaků navíc)` : text;
+}
+
+/**
+ * One step of the run, as a coding agent shows it: running, done or failed, what it does, and (opened) the tool, its
+ * arguments and its result.
+ */
+function ToolCall({ toolName, args, argsText, result }: ToolCallMessagePartProps) {
+  const writing = !argsText;
   // Other names are tools of the tenant's MCP servers (`<server>_<tool>`).
-  const label = TOOL_LABELS[toolName]?.(args as Record<string, unknown>) ?? `Nástroj ${toolName}`;
-  const created = result === undefined ? null : CREATED.exec(String(result));
+  const label = writing ? `Připravuji ${toolName}…` : (TOOL_LABELS[toolName]?.(args as Record<string, unknown>) ?? `Nástroj ${toolName}`);
+  const output = result === undefined ? undefined : String(result);
+  const state = output === undefined ? "running" : failed(output) ? "failed" : "done";
+  const created = output === undefined || state === "failed" ? null : CREATED.exec(output);
   return (
-    <div className="notice my-2 px-3 py-2 text-sm text-fg-secondary">
+    <div className="tool-step" data-state={state}>
       <details>
-        <summary className="cursor-pointer">
-          {result === undefined ? "⏳ " : <span className="text-success">✓ </span>}
-          {label}
+        <summary>
+          <span className="tool-step-icon" aria-hidden="true">
+            {state === "running" ? <span className="tool-spinner" /> : state === "done" ? "✓" : "✗"}
+          </span>
+          <span className="min-w-0 flex-1 truncate">{label}</span>
+          <code className="tool-step-name">{toolName}</code>
         </summary>
-        {result !== undefined && <pre className="mt-2 whitespace-pre-wrap text-xs text-fg-muted">{String(result)}</pre>}
+        <div className="tool-step-body">
+          {!writing && (
+            <>
+              <div className="tool-step-heading">Vstup</div>
+              <pre>{pretty(args)}</pre>
+            </>
+          )}
+          {output !== undefined && (
+            <>
+              <div className="tool-step-heading">Výsledek</div>
+              <pre>{pretty(output)}</pre>
+            </>
+          )}
+        </div>
       </details>
       {created && <Download scope={created[1] as FileScope} path={created[2]!} />}
+    </div>
+  );
+}
+
+const STATUS_LABELS: Record<RunStatus, string> = { thinking: "Přemýšlím", tools: "Pracuji", checking: "Kontroluji pravidla" };
+
+/** Under a running answer: what the run is doing now. */
+function RunStatusLine() {
+  const running = useAuiState((s) => s.message.status?.type === "running");
+  const status = useAuiState((s) => s.message.metadata?.custom?.status as RunStatus | undefined);
+  if (!running) return null;
+  return (
+    <div className="run-status" role="status">
+      <span className="tool-spinner" aria-hidden="true" />
+      {STATUS_LABELS[status ?? "thinking"]}
+      <span className="run-status-dots" aria-hidden="true" />
     </div>
   );
 }
@@ -89,6 +152,7 @@ function AssistantMessage() {
         <MessagePrimitive.Parts
           components={{ Text: () => <MarkdownTextPrimitive />, tools: { Fallback: ToolCall } }}
         />
+        <RunStatusLine />
         <MessagePrimitive.Error>
           <p className="notice notice-error mt-2 px-3 py-2 text-sm">Něco se pokazilo. Zkus to znovu.</p>
         </MessagePrimitive.Error>

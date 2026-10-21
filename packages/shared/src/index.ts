@@ -19,8 +19,14 @@ export interface ThreadMessage {
 }
 
 /** Server-sent events emitted by `POST /api/threads/:id/runs`, one JSON object per SSE `data` line. */
+/** What a run is doing now: the model thinking, tools running, or the rules being checked. */
+export type RunStatus = "thinking" | "tools" | "checking";
+
 export type RunEvent =
   | { type: "text-delta"; delta: string }
+  | { type: "status"; status: RunStatus }
+  /** The model has started writing a tool call (its arguments follow in `tool-call`). */
+  | { type: "tool-call-start"; toolCallId: string; toolName: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown> }
   | { type: "tool-result"; toolCallId: string; result: string }
   | { type: "done" }

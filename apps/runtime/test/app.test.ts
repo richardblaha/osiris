@@ -1,4 +1,5 @@
-import { AIMessage } from "@langchain/core/messages";
+import { ChatGenerationChunk } from "@langchain/core/outputs";
+import { AIMessage, AIMessageChunk } from "@langchain/core/messages";
 import { GUARD_REFUSAL } from "@osiris/core/agent/assistant.ts";
 import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import type { RunEvent, ThreadMessage } from "@osiris/shared";
@@ -51,6 +52,32 @@ describe("API", () => {
     expect(await (await as("bob:tenant=acme")("/threads")).json()).toEqual([]);
   });
 
+  it("announces a tool call as soon as the model starts writing it", async () => {
+    const { as, model } = await setup();
+    // A model that streams its tool call in pieces (name first, arguments later), as real ones do.
+    let turn = 0;
+    Object.assign(model, {
+      async *_streamResponseChunks() {
+        const chunks =
+          turn++ === 0
+            ? [
+                new AIMessageChunk({ content: "", tool_call_chunks: [{ type: "tool_call_chunk", id: "call_1", name: "list_files", args: "", index: 0 }] }),
+                new AIMessageChunk({ content: "", tool_call_chunks: [{ type: "tool_call_chunk", args: '{"scope":"tenant"}', index: 0 }] }),
+              ]
+            : [new AIMessageChunk("Hotovo.")];
+        for (const message of chunks) yield new ChatGenerationChunk({ text: message.text, message });
+      },
+    });
+    const alice = as("alice");
+    const { id } = await (await alice("/threads", { method: "POST" })).json();
+    const events = await readEvents(await alice(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Co máme v souborech?" }) }));
+
+    const types = events.map((e) => e.type);
+    expect(events).toContainEqual({ type: "tool-call-start", toolCallId: "call_1", toolName: "list_files" });
+    expect(types.indexOf("tool-call-start")).toBeLessThan(types.indexOf("tool-call"));
+    expect(events.filter((e) => e.type === "tool-call-start")).toHaveLength(1);
+  });
+
   it("streams a run with a tool call and persists the conversation", async () => {
     const { as, model } = await setup([
       new AIMessage({ content: "", tool_calls: [{ id: "call_1", name: "search_knowledge", args: { query: "sazba" } }] }),
@@ -66,6 +93,8 @@ describe("API", () => {
     const events = await readEvents(await alice(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Jaká je sazba?" }) }));
 
     expect(events).toContainEqual({ type: "tool-call", toolCallId: "call_1", toolName: "search_knowledge", args: { query: "sazba" } });
+    // What it's doing, step by step: the model, the tool, the model again.
+    expect(events.flatMap((e) => (e.type === "status" ? [e.status] : []))).toEqual(["thinking", "tools", "thinking"]);
     const result = events.find((e) => e.type === "tool-result");
     expect(result?.type === "tool-result" && result.result).toContain("650 Kč");
     expect(events.filter((e) => e.type === "text-delta").map((e) => e.type === "text-delta" && e.delta).join("")).toBe("Sazba je 650 Kč/h.");
