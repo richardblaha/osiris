@@ -1,0 +1,348 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_CLICKHOUSE",
+      "label": "ClickHouse",
+      "type": "datasource",
+      "pluginId": "grafana-clickhouse-datasource"
+    }
+  ],
+  "title": "Návštěvnost webů",
+  "uid": "web-events",
+  "tags": [
+    "web",
+    "analytics"
+  ],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "refresh": "5m",
+  "templating": {
+    "list": [
+      {
+        "name": "site",
+        "label": "Web",
+        "type": "query",
+        "datasource": {
+          "type": "grafana-clickhouse-datasource",
+          "uid": "${DS_CLICKHOUSE}"
+        },
+        "query": "SELECT DISTINCT site FROM web.stats_daily ORDER BY site",
+        "refresh": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Návštěvníci",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT uniqMerge(visitors) AS visitors FROM web.stats_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}'",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Zobrazení stránek",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT sum(pageviews) AS pageviews FROM web.stats_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}'",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Události",
+      "type": "stat",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 0,
+        "w": 8,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT sum(events) AS events FROM web.stats_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}'",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Návštěvy v čase (po hodinách)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 4,
+        "w": 24,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 0,
+          "rawSql": "SELECT hour AS time, sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors FROM web.stats_hourly WHERE hour BETWEEN $__fromTime AND $__toTime AND site = '${site}' GROUP BY hour ORDER BY hour",
+          "queryType": "timeseries"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Stránky",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT path AS \"Stránky\", '' AS detail, uniqMerge(visitors) AS visitors, sum(pageviews) AS pageviews FROM web.pages_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}' GROUP BY 1, 2 ORDER BY pageviews DESC LIMIT 20",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Zdroje návštěv",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 13,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT referrer_domain AS \"Zdroje návštěv\", referrer_source AS detail, uniqMerge(visitors) AS visitors, sum(pageviews) AS pageviews FROM web.referrers_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}' AND referrer_domain != '' GROUP BY 1, 2 ORDER BY pageviews DESC LIMIT 20",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Kampaně",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 22,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT utm_campaign AS \"Kampaně\", concat(utm_source, ' / ', utm_medium) AS detail, uniqMerge(visitors) AS visitors, sum(pageviews) AS pageviews FROM web.campaigns_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}' GROUP BY 1, 2 ORDER BY pageviews DESC LIMIT 20",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "title": "Země",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 22,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT country AS \"Země\", '' AS detail, uniqMerge(visitors) AS visitors, sum(pageviews) AS pageviews FROM web.countries_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}' GROUP BY 1, 2 ORDER BY pageviews DESC LIMIT 20",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Prohlížeče",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 31,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT browser AS \"Prohlížeče\", '' AS detail, uniqMerge(visitors) AS visitors, sum(pageviews) AS pageviews FROM web.devices_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}' GROUP BY 1, 2 ORDER BY pageviews DESC LIMIT 20",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Zařízení a systémy",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 31,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT device AS \"Zařízení a systémy\", os AS detail, uniqMerge(visitors) AS visitors, sum(pageviews) AS pageviews FROM web.devices_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}' GROUP BY 1, 2 ORDER BY pageviews DESC LIMIT 20",
+          "queryType": "table"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Vlastní události",
+      "type": "table",
+      "datasource": {
+        "type": "grafana-clickhouse-datasource",
+        "uid": "${DS_CLICKHOUSE}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 40,
+        "w": 12,
+        "h": 9
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-clickhouse-datasource",
+            "uid": "${DS_CLICKHOUSE}"
+          },
+          "editorType": "sql",
+          "format": 1,
+          "rawSql": "SELECT event AS \"Vlastní události\", '' AS detail, uniqMerge(visitors) AS visitors, sum(count) AS pageviews FROM web.events_daily WHERE day BETWEEN toDate($__fromTime) AND toDate($__toTime) AND site = '${site}' GROUP BY 1, 2 ORDER BY pageviews DESC LIMIT 20",
+          "queryType": "table"
+        }
+      ]
+    }
+  ]
+}

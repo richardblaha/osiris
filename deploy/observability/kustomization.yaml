@@ -11,3 +11,4 @@ resources:
   - clickhouse.yaml
   - collector.yaml
   - agent.yaml
+  - web-events.yaml

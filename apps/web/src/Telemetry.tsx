@@ -456,7 +456,7 @@ function ticks(max: number, count = 4) {
  * Lines over time, one per series in fixed palette order (at most eight; the server sends the busiest). A crosshair
  * shows every series' value at the nearest time; a legend names them (with two to four also at the line ends).
  */
-function LineChart({ series, unit }: { series: MetricSeries[]; unit: string }) {
+export function LineChart({ series, unit }: { series: MetricSeries[]; unit: string }) {
   const lines = series.slice(0, 8);
   const [hover, setHover] = useState<number>();
   const W = 800;

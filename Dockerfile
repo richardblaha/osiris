@@ -1,4 +1,4 @@
-# One Dockerfile, one image per service: docker build --target <gateway|control|runtime|operator|sites|vitepress> .
+# One Dockerfile, one image per service: docker build --target <gateway|control|runtime|operator|sites|vitepress|web-events> .
 # Every service runs TypeScript with tsx as the unprivileged node user, read-only root filesystem (tsx caches in /tmp).
 
 FROM node:24-slim AS base
@@ -15,6 +15,7 @@ COPY apps/runtime/package.json apps/runtime/
 COPY apps/operator/package.json apps/operator/
 COPY apps/sites/package.json apps/sites/
 COPY apps/vitepress/package.json apps/vitepress/
+COPY apps/web-events/package.json apps/web-events/
 ENV NODE_ENV=production
 EXPOSE 8080
 
@@ -87,3 +88,16 @@ USER node
 # (src/build.ts), so it runs as one process, without the tsx CLI wrapper.
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "--import", "tsx", "src/index.ts"]
+
+# Web analytics (deploy/observability/web-events.yaml). The country database is DB-IP's free IP to Country Lite
+# (CC BY 4.0, https://db-ip.com), this month's or last month's, fetched at build time: the IP never leaves the service.
+FROM base AS web-events
+RUN node -e 'const z=require("zlib"),fs=require("fs");const m=d=>`https://download.db-ip.com/free/dbip-country-lite-${d.toISOString().slice(0,7)}.mmdb.gz`;const now=new Date(),prev=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-1,1));(async()=>{for(const u of [m(now),m(prev)]){const r=await fetch(u);if(r.ok){fs.mkdirSync("/app/geo",{recursive:true});fs.writeFileSync("/app/geo/country.mmdb",z.gunzipSync(Buffer.from(await r.arrayBuffer())));console.log("GeoIP:",u);return}}throw new Error("No DB-IP database")})()'
+RUN pnpm install --frozen-lockfile --prod --filter "@osiris/web-events..." && pnpm store prune
+COPY packages/shared/src packages/shared/src
+COPY packages/platform/src packages/platform/src
+COPY apps/web-events/src apps/web-events/src
+ENV PORT=8080
+WORKDIR /app/apps/web-events
+USER node
+CMD ["node_modules/.bin/tsx", "src/index.ts"]

@@ -33,6 +33,7 @@ import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
 import { Members, roleLabel, TenantInfo } from "./TenantInfo.tsx";
 import { SystemSettings } from "./SystemSettings.tsx";
 import { Logs, Metrics, Traces } from "./Telemetry.tsx";
+import { WebAnalytics } from "./WebAnalytics.tsx";
 import { TenantAdmin, TenantLogo } from "./Tenants.tsx";
 import { QuotaMeters } from "./Quotas.tsx";
 import { BuiltinTools } from "./Tools.tsx";
@@ -447,6 +448,7 @@ function Workspace() {
               <NavLink active={view.kind === "logs"} onClick={() => setView({ kind: "logs" })} label="Logy" icon="M3 3h10M3 6h10M3 9h7M3 12h9" />
               <NavLink active={view.kind === "metrics"} onClick={() => setView({ kind: "metrics" })} label="Metriky" icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
               <NavLink active={view.kind === "traces"} onClick={() => setView({ kind: "traces" })} label="Trasy" icon="M2 4h6M4 8h7M6 12h8" />
+              <NavLink active={view.kind === "web"} onClick={() => setView({ kind: "web" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
               <NavLink
                 active={view.kind === "settings"}
                 onClick={() => setView({ kind: "settings" })}
@@ -490,6 +492,8 @@ function Workspace() {
           me.systemAdmin ? <Logs key={view.traceId ?? ""} traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} /> : null
         ) : view.kind === "metrics" ? (
           me.systemAdmin ? <Metrics /> : null
+        ) : view.kind === "web" ? (
+          me.systemAdmin ? <WebAnalytics /> : null
         ) : view.kind === "traces" ? (
           me.systemAdmin ? (
             <Traces traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} onOpenLogs={(id) => setView({ kind: "logs", traceId: id })} />

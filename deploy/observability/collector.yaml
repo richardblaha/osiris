@@ -49,6 +49,11 @@ data:
       otlp/agents:
         protocols:
           grpc: { endpoint: 0.0.0.0:4319 }
+      # Web analytics from the web-events service only (NetworkPolicy below): pageviews and events as log records,
+      # kept apart from the cluster's telemetry.
+      otlp/web:
+        protocols:
+          http: { endpoint: 0.0.0.0:4320 }
       k8s_cluster:
         collection_interval: 60s
       # Prometheus metrics of pods that ask for it (annotation prometheus.io/scrape: "true"; port and path from
@@ -84,6 +89,7 @@ data:
           - sources: [{ from: connection }]
       # ClickHouse wants few, large inserts.
       batch: { send_batch_size: 5000, timeout: 10s }
+      batch/web: { send_batch_size: 1000, timeout: 5s }
     exporters:
       clickhouse:
         endpoint: tcp://clickhouse.observability.svc.cluster.local:9000?dial_timeout=10s
@@ -92,6 +98,18 @@ data:
         password: ${env:CLICKHOUSE_PASSWORD}
         create_schema: true
         ttl: 720h
+        timeout: 10s
+        sending_queue: { queue_size: 2000 }
+        retry_on_failure: { enabled: true, initial_interval: 5s, max_interval: 30s, max_elapsed_time: 300s }
+      # Web events into their own database; web/schema.sql turns this raw table into web.web_events and aggregates.
+      clickhouse/web:
+        endpoint: tcp://clickhouse.observability.svc.cluster.local:9000?dial_timeout=10s
+        database: web
+        username: otel
+        password: ${env:CLICKHOUSE_PASSWORD}
+        create_schema: true
+        logs_table_name: web_events_raw
+        ttl: 168h
         timeout: 10s
         sending_queue: { queue_size: 2000 }
         retry_on_failure: { enabled: true, initial_interval: 5s, max_interval: 30s, max_elapsed_time: 300s }
@@ -104,6 +122,7 @@ data:
         logs: { receivers: [otlp, k8sobjects], processors: [memory_limiter, k8sattributes, batch], exporters: [clickhouse] }
         logs/agents: { receivers: [otlp/agents], processors: [memory_limiter, batch], exporters: [clickhouse] }
         metrics/agents: { receivers: [otlp/agents, prometheus], processors: [memory_limiter, batch], exporters: [clickhouse] }
+        logs/web: { receivers: [otlp/web], processors: [memory_limiter, batch/web], exporters: [clickhouse/web] }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -118,7 +137,7 @@ spec:
       labels: { app: otel-collector }
       annotations:
         # Restart when the configuration changes.
-        config/version: "2"
+        config/version: "3"
     spec:
       serviceAccountName: otel-collector
       securityContext:
@@ -132,6 +151,7 @@ spec:
             - { name: otlp-grpc, containerPort: 4317 }
             - { name: otlp-http, containerPort: 4318 }
             - { name: otlp-agents, containerPort: 4319 }
+            - { name: otlp-web, containerPort: 4320 }
           env:
             - name: CLICKHOUSE_PASSWORD
               valueFrom: { secretKeyRef: { name: clickhouse-users, key: OTEL_PASSWORD } }
@@ -158,3 +178,18 @@ spec:
     - { name: otlp-grpc, port: 4317, targetPort: otlp-grpc }
     - { name: otlp-http, port: 4318, targetPort: otlp-http }
     - { name: otlp-agents, port: 4319, targetPort: otlp-agents }
+    - { name: otlp-web, port: 4320, targetPort: otlp-web }
+---
+# OTLP from anywhere in the cluster, except the web analytics receiver: only web-events writes there.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: otel-collector
+spec:
+  podSelector: { matchLabels: { app: otel-collector } }
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{ port: 4317, protocol: TCP }, { port: 4318, protocol: TCP }, { port: 4319, protocol: TCP }]
+    - from:
+        - podSelector: { matchLabels: { app: web-events } }
+      ports: [{ port: 4320, protocol: TCP }]

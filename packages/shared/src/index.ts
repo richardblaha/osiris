@@ -104,6 +104,33 @@ export interface SystemDefaults {
   user: UserDefaults;
 }
 
+/** A row of a web analytics breakdown: a page, a referrer, a country… with its pageviews and unique visitors. */
+export interface WebTopRow {
+  key: string;
+  /** A second part of the key (the referrer's source, a campaign's medium…), "" when there is none. */
+  detail: string;
+  pageviews: number;
+  visitors: number;
+}
+
+/** One site's web analytics over a range (System > Návštěvnost, `/api/admin/telemetry/web`). */
+export interface WebStats {
+  sites: string[];
+  totals: { pageviews: number; visitors: number; events: number };
+  /** Hourly up to two days, daily beyond; epoch ms. */
+  step: "hour" | "day";
+  series: { t: number; pageviews: number; visitors: number }[];
+  pages: WebTopRow[];
+  referrers: WebTopRow[];
+  campaigns: WebTopRow[];
+  countries: WebTopRow[];
+  browsers: WebTopRow[];
+  systems: WebTopRow[];
+  devices: WebTopRow[];
+  /** Custom events: `pageviews` is their count. */
+  events: WebTopRow[];
+}
+
 /** The cluster's telemetry in ClickHouse (System > Logy, Metriky, Trasy; `/api/admin/telemetry/*`). */
 export interface TelemetryFacets {
   services: string[];

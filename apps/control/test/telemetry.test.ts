@@ -28,4 +28,33 @@ describe("telemetry from ClickHouse", () => {
     expect((await app.request("/series?name=m&type=gauge&groupBy=a';b")).status).toBe(400);
     expect(await (await app.request("/series?name=m&type=gauge")).json()).toEqual({ step: 60, series: [] });
   });
+
+  it("reads one site's web analytics from the aggregates, the site as a parameter", async () => {
+    const calls: { url: URL; sql: string }[] = [];
+    const fake = (async (url: string, init: RequestInit) => {
+      const sql = String(init.body);
+      calls.push({ url: new URL(url), sql });
+      // UInt64 comes quoted in ClickHouse's JSON.
+      if (sql.includes("DISTINCT site")) return Response.json({ data: [{ site: "k6labs.cz" }, { site: "tras.cz" }] });
+      if (sql.includes("FROM web.stats_daily WHERE")) return Response.json({ data: [{ pageviews: "120", visitors: "40", events: "3" }] });
+      if (sql.includes("FROM web.stats_hourly")) return Response.json({ data: [{ t: "1761091200000", pageviews: "5", visitors: "2" }] });
+      if (sql.includes("FROM web.pages_daily")) return Response.json({ data: [{ key: "/", detail: "", pageviews: "80", visitors: "30" }] });
+      return Response.json({ data: [] });
+    }) as typeof fetch;
+    const app = telemetryRoutes(new Telemetry(new ClickHouse("http://clickhouse:8123", "osiris", "pw", fake)));
+    const now = Date.now();
+    const stats = await (await app.request(`/web?site=k6labs.cz&from=${now - 86_400_000}&to=${now}`)).json();
+    expect(stats).toMatchObject({
+      sites: ["k6labs.cz", "tras.cz"],
+      totals: { pageviews: 120, visitors: 40, events: 3 },
+      step: "hour",
+      series: [{ t: 1761091200000, pageviews: 5, visitors: 2 }],
+      pages: [{ key: "/", detail: "", pageviews: 80, visitors: 30 }],
+      referrers: [],
+    });
+    expect(calls.every((c) => !c.sql.includes("k6labs.cz"))).toBe(true);
+    expect(calls.filter((c) => c.url.searchParams.get("param_site") === "k6labs.cz")).toHaveLength(10);
+    // Over two days: by day.
+    expect((await (await app.request(`/web?from=${now - 30 * 86_400_000}`)).json()).step).toBe("day");
+  });
 });

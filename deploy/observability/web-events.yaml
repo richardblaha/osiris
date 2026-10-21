@@ -1,0 +1,137 @@
+# Web analytics without cookies (see deploy/observability/web/README.md): each site's /_e goes to web-events, which
+# turns a pageview or event into one OTLP log record for the collector's logs/web pipeline (ClickHouse database web).
+# Secret web-events (not in git): SALT_SEED, see the README.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-events
+data:
+  # The sites that may send events: id (data-site) and the hosts they're served on. A new site also needs its
+  # IngressRoute below.
+  SITES: |
+    [
+      { "id": "k6labs.cz", "hosts": ["k6labs.cz", "www.k6labs.cz"] },
+      { "id": "richardblaha.cz", "hosts": ["richardblaha.cz", "www.richardblaha.cz", "richardblaha.eu", "www.richardblaha.eu"] },
+      { "id": "tras.cz", "hosts": ["tras.cz", "www.tras.cz"] }
+    ]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-events
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: web-events }
+  template:
+    metadata:
+      labels: { app: web-events }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      topologySpreadConstraints:
+        - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: { matchLabels: { app: web-events } } }
+      containers:
+        - name: web-events
+          image: ghcr.io/richardblaha/osiris-web-events:main
+          imagePullPolicy: Always
+          ports:
+            - { name: http, containerPort: 8080 }
+          envFrom:
+            - configMapRef: { name: web-events }
+          env:
+            - name: SALT_SEED
+              valueFrom: { secretKeyRef: { name: web-events, key: SALT_SEED } }
+            - { name: WEB_EVENTS_OTLP_URL, value: http://otel-collector.observability.svc.cluster.local:4320/v1/logs }
+            # Pods (Traefik's among them); the NetworkPolicy lets only Traefik connect.
+            - { name: TRUSTED_PROXIES, value: 10.0.0.0/8 }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 20m, memory: 128Mi }
+            limits: { memory: 256Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-events
+spec:
+  selector: { app: web-events }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-events
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: { app: web-events }
+---
+# Only Traefik reaches it (so X-Real-IP is Traefik's), and the collector's web receiver only from it (collector.yaml).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: web-events
+spec:
+  podSelector: { matchLabels: { app: web-events } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
+      ports: [{ port: 8080, protocol: TCP }]
+---
+# Per visitor IP: a burst of events is fine (a SPA, a few custom events), a flood isn't.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: web-events-ratelimit
+spec:
+  rateLimit:
+    average: 5
+    period: 1s
+    burst: 30
+    sourceCriterion:
+      ipStrategy: { depth: 0 }
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: web-events-body
+spec:
+  buffering:
+    maxRequestBodyBytes: 4096
+---
+# /_e on every site, first-party. Traefik takes the certificate from the store by SNI (the site's own Ingress loaded
+# it), so this lives here and the sites' namespaces stay as they are. More specific than the site's "/", so it wins.
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: web-events
+spec:
+  entryPoints: [websecure]
+  routes:
+    - kind: Rule
+      match: (Host(`k6labs.cz`) || Host(`www.k6labs.cz`) || Host(`richardblaha.cz`) || Host(`www.richardblaha.cz`) || Host(`richardblaha.eu`) || Host(`www.richardblaha.eu`) || Host(`tras.cz`) || Host(`www.tras.cz`)) && PathPrefix(`/_e`)
+      middlewares:
+        - { name: web-events-ratelimit }
+        - { name: web-events-body }
+      services:
+        - { name: web-events, port: 80 }
+  tls: {}

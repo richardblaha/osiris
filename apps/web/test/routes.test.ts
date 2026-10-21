@@ -17,6 +17,7 @@ test("every view survives a round trip through its URL", () => {
     [{ kind: "tenants", initial: "acme" }, undefined],
     [{ kind: "traces", traceId: "abc" }, undefined],
     [{ kind: "settings" }, undefined],
+    [{ kind: "web" }, undefined],
   ];
   for (const [view, tenant] of views) deepEqual(fromPath(toPath(view, tenant)!), tenant ? { tenant, view } : { view });
 });

@@ -1,6 +1,6 @@
-# ClickHouse stores the whole cluster's telemetry (database otel: otel_logs, otel_traces, otel_metrics_*), written by
-# the OpenTelemetry Collector (user otel) and read by Osiris control (user osiris, read-only) for System > Logy,
-# Metriky, Trasy. Tuned for a small node: no caches it doesn't need, no system logs. The exporter's TTL (30 days)
+# ClickHouse stores the whole cluster's telemetry (database otel: otel_logs, otel_traces, otel_metrics_*) and the web
+# analytics (database web, see web/schema.sql), written by the OpenTelemetry Collector (user otel) and read by Osiris
+# control (user osiris, read-only) for System > Logy, Metriky, Trasy, Návštěvnost. Tuned for a small node: no caches it doesn't need, no system logs. The exporter's TTL (30 days)
 # expires old data. Secret clickhouse-users (not in git): OTEL_PASSWORD, OSIRIS_PASSWORD; see deploy/README.md.
 apiVersion: v1
 kind: ConfigMap
@@ -54,14 +54,14 @@ data:
           <networks><ip>::/0</ip></networks>
           <profile>default</profile>
           <quota>default</quota>
-          <grants><query>GRANT ALL ON otel.*</query></grants>
+          <grants><query>GRANT ALL ON otel.*</query><query>GRANT ALL ON web.*</query></grants>
         </otel>
         <osiris>
           <password from_env="OSIRIS_PASSWORD"/>
           <networks><ip>::/0</ip></networks>
           <profile>reader</profile>
           <quota>default</quota>
-          <grants><query>GRANT SELECT ON otel.*</query></grants>
+          <grants><query>GRANT SELECT ON otel.*</query><query>GRANT SELECT ON web.*</query></grants>
         </osiris>
       </users>
     </clickhouse>

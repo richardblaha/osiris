@@ -48,6 +48,7 @@ import type {
   ThreadSummary,
   UserProfile,
   UserSettings,
+  WebStats,
 } from "@osiris/shared";
 import type { startRegistration } from "@simplewebauthn/browser";
 import { getAccessToken, login } from "./auth.ts";
@@ -276,6 +277,7 @@ export const api = {
       traces: (q: { from: number; to: number; service?: string; q?: string; minMs?: number; errors?: boolean }) =>
         json<TraceSummary[]>(`/admin/telemetry/traces?${query(strings(q))}`),
       trace: (id: string) => json<SpanRecord[]>(`/admin/telemetry/traces/${id}`),
+      web: (q: { site?: string; from: number; to: number }) => json<WebStats>(`/admin/telemetry/web?${query(strings(q))}`),
       metrics: (q: { from: number; to: number; q?: string }) => json<MetricInfo[]>(`/admin/telemetry/metrics?${query(strings(q))}`),
       series: (q: { from: number; to: number; name: string; type: MetricInfo["type"]; groupBy?: string; service?: string }) =>
         json<{ step: number; series: MetricSeries[] }>(`/admin/telemetry/series?${query(strings(q))}`),

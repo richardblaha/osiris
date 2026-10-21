@@ -23,6 +23,8 @@ export type View =
   /** The cluster's telemetry (system admins); a trace open, or logs of one trace. */
   | { kind: "logs"; traceId?: string }
   | { kind: "metrics" }
+  /** The sites' web analytics (system admins). */
+  | { kind: "web" }
   | { kind: "traces"; traceId?: string }
   | { kind: "files" }
   | { kind: "schedules" }
@@ -42,6 +44,7 @@ export function toPath(view: View, tenant: string | undefined): string | undefin
       return "/profile";
     case "settings":
     case "metrics":
+    case "web":
       return `/system/${view.kind}`;
     case "logs":
     case "traces":
@@ -74,7 +77,7 @@ export function fromPath(path: string): { tenant?: string; view: View } | undefi
   const [top, a, b, c] = parts;
   if (top === "profile" && !a) return { view: { kind: "profile" } };
   if (top === "system") {
-    if ((a === "settings" || a === "metrics") && !b) return { view: { kind: a } };
+    if ((a === "settings" || a === "metrics" || a === "web") && !b) return { view: { kind: a } };
     if ((a === "logs" || a === "traces") && !c) return { view: { kind: a, traceId: b } };
     if (a === "tenants" && !c) return { view: { kind: "tenants", initial: b === "new" ? null : b } };
     return undefined;

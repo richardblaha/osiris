@@ -1,4 +1,4 @@
-import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary } from "@osiris/shared";
+import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, WebStats, WebTopRow } from "@osiris/shared";
 
 /** ClickHouse's HTTP interface with a read-only user; values go in as query parameters (`{name:Type}`), never as SQL. */
 export class ClickHouse {
@@ -37,7 +37,12 @@ export type MetricType = keyof typeof METRIC_TABLES;
 
 /** The cluster's telemetry as the OpenTelemetry Collector's ClickHouse exporter writes it (database otel). */
 export class Telemetry {
-  constructor(private readonly ch: ClickHouse) {}
+  /** The web analytics (database web), over the same connection. */
+  readonly web: WebAnalytics;
+
+  constructor(private readonly ch: ClickHouse) {
+    this.web = new WebAnalytics(ch);
+  }
 
   /** Services and namespaces seen in the range, for the filters. */
   async facets(r: Range): Promise<TelemetryFacets> {
@@ -182,3 +187,67 @@ export class Telemetry {
 
 /** Lowest SeverityNumber of each level (OpenTelemetry log data model). */
 const SEVERITY: Record<string, number> = { debug: 5, info: 9, warn: 13, error: 17, fatal: 21 };
+
+/** A breakdown of the web analytics: an aggregate table of database web, what its key is, and its own filter. */
+const BREAKDOWNS: Record<Exclude<keyof WebStats, "sites" | "totals" | "step" | "series">, { table: string; key: string; detail?: string; where?: string; count?: string }> = {
+  pages: { table: "pages_daily", key: "path" },
+  referrers: { table: "referrers_daily", key: "referrer_domain", detail: "referrer_source", where: "referrer_domain != ''" },
+  campaigns: { table: "campaigns_daily", key: "utm_campaign", detail: "concat(utm_source, ' / ', utm_medium)" },
+  countries: { table: "countries_daily", key: "country" },
+  browsers: { table: "devices_daily", key: "browser" },
+  systems: { table: "devices_daily", key: "os" },
+  devices: { table: "devices_daily", key: "device" },
+  events: { table: "events_daily", key: "event", count: "count" },
+};
+
+/**
+ * Web analytics of one site, from the aggregate tables web/schema.sql keeps (database web): totals, pageviews and
+ * visitors over time, and the top pages, referrers, campaigns, countries, browsers, systems, devices and events.
+ * Visitors are a keyed hash that changes daily, so over several days a visitor counts once per day.
+ */
+export class WebAnalytics {
+  constructor(private readonly ch: ClickHouse) {}
+
+  async stats(site: string | undefined, r: Range): Promise<WebStats> {
+    const sites = (await this.ch.query<{ site: string }>("SELECT DISTINCT site FROM web.stats_daily ORDER BY site")).map((x) => x.site);
+    const chosen = site ?? sites[0] ?? "";
+    const p = { site: chosen, ...range(r) };
+    const hourly = r.to - r.from <= 2 * 86_400_000;
+    const days = "day BETWEEN toDate(toDateTime({from:UInt32}, 'UTC')) AND toDate(toDateTime({to:UInt32}, 'UTC'))";
+    const n = (v: unknown) => Number(v ?? 0);
+    const [totals, series, ...tops] = await Promise.all([
+      this.ch.query<{ pageviews: string; visitors: string; events: string }>(
+        `SELECT sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors, sum(events) AS events FROM web.stats_daily WHERE site = {site:String} AND ${days}`,
+        p,
+      ),
+      hourly
+        ? this.ch.query<{ t: string; pageviews: string; visitors: string }>(
+            `SELECT toUnixTimestamp(hour) * 1000 AS t, sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors FROM web.stats_hourly
+             WHERE site = {site:String} AND hour BETWEEN toStartOfHour(toDateTime({from:UInt32}, 'UTC')) AND toDateTime({to:UInt32}, 'UTC') GROUP BY hour ORDER BY hour`,
+            p,
+          )
+        : this.ch.query<{ t: string; pageviews: string; visitors: string }>(
+            `SELECT toUnixTimestamp(toDateTime(day, 'UTC')) * 1000 AS t, sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors FROM web.stats_daily
+             WHERE site = {site:String} AND ${days} GROUP BY day ORDER BY day`,
+            p,
+          ),
+      ...Object.values(BREAKDOWNS).map((b) =>
+        this.ch.query<{ key: string; detail: string; pageviews: string; visitors: string }>(
+          `SELECT ${b.key} AS key, ${b.detail ?? "''"} AS detail, sum(${b.count ?? "pageviews"}) AS pageviews, uniqMerge(visitors) AS visitors
+           FROM web.${b.table} WHERE site = {site:String} AND ${days}${b.where ? ` AND ${b.where}` : ""}
+           GROUP BY key, detail ORDER BY pageviews DESC LIMIT 20`,
+          p,
+        ),
+      ),
+    ]);
+    const row = (x: { key: string; detail: string; pageviews: string; visitors: string }): WebTopRow => ({ key: x.key, detail: x.detail, pageviews: n(x.pageviews), visitors: n(x.visitors) });
+    const t = totals[0];
+    return {
+      sites,
+      totals: { pageviews: n(t?.pageviews), visitors: n(t?.visitors), events: n(t?.events) },
+      step: hourly ? "hour" : "day",
+      series: series.map((x) => ({ t: n(x.t), pageviews: n(x.pageviews), visitors: n(x.visitors) })),
+      ...(Object.fromEntries(Object.keys(BREAKDOWNS).map((k, i) => [k, tops[i]!.map(row)])) as Pick<WebStats, keyof typeof BREAKDOWNS>),
+    };
+  }
+}

@@ -1,4 +1,4 @@
-import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary } from "@osiris/shared";
+import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, WebStats } from "@osiris/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -76,6 +76,20 @@ export function telemetryRoutes(telemetry?: Telemetry) {
     .get("/metrics", async (c) => {
       const r = parse(rangeQuery, c.req.query());
       return c.json<MetricInfo[]>(await failing(() => t().metrics(r, c.req.query("q")?.slice(0, 200))));
+    })
+    // System > Návštěvnost: web analytics kept for two years.
+    .get("/web", async (c) => {
+      const q = parse(
+        z.object({
+          site: z.string().max(100).optional(),
+          from: z.coerce.number().int().optional(),
+          to: z.coerce.number().int().optional(),
+        }),
+        c.req.query(),
+      );
+      const to = q.to ?? Date.now();
+      const from = Math.max(q.from ?? to - 30 * 24 * HOUR, to - 731 * 24 * HOUR);
+      return c.json<WebStats>(await failing(() => t().web.stats(q.site, { from, to })));
     })
     .get("/series", async (c) => {
       const f = parse(

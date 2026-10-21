@@ -115,6 +115,12 @@ the NetworkPolicy lets only the collector write and control read).
 2. A changed collector or ClickHouse config needs a bump of the `config/version` annotation to restart it.
 3. Ad-hoc SQL: `kubectl -n observability exec -it clickhouse-0 -- clickhouse-client --user otel --password "$OSIRIS_CLICKHOUSE_OTEL_PASSWORD"`.
 
+## Web analytics
+
+Cookieless analytics for the cluster's websites (web-events → collector → ClickHouse `web`, shown in System >
+Návštěvnost): deployment, the snippet, a new site and the move from GoatCounter are in
+[observability/web/README.md](observability/web/README.md).
+
 ## Users' Google and Microsoft accounts
 
 Users connect their own Google or Microsoft account in Můj profil → Propojené účty; the assistant then reads and sends
