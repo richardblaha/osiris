@@ -1,5 +1,6 @@
-# On every node: container logs from /var/log/pods and node/pod/container metrics from the kubelet, over OTLP to the
-# cluster collector (which writes them to ClickHouse). Osiris sends its own logs over OTLP (tied to traces), so its
+# On every node: container logs from /var/log/pods, the node's own logs (Alpine with OpenRC, no systemd journal:
+# /var/log/k3s.log is the k3s agent with the kubelet and containerd, /var/log/messages the syslog with the kernel) and
+# node/pod/container metrics from the kubelet, over OTLP to the cluster collector (which writes them to ClickHouse). Osiris sends its own logs over OTLP (tied to traces), so its
 # namespaces are left out here, as is this one.
 apiVersion: v1
 kind: ConfigMap
@@ -18,6 +19,43 @@ data:
         include_file_path: true
         operators:
           - { type: container, id: container-parser }
+      # k3s: klog lines (I1021 06:30:58.513886 2975 server.go:177] …) and logrus ones (time="…" level=info msg="…").
+      filelog/k3s:
+        include: [/var/log/k3s.log]
+        start_at: end
+        resource: { service.name: k3s }
+        operators:
+          - type: router
+            routes:
+              - output: klog
+                expr: 'body matches "^[IWEF]\\d{4} "'
+              - output: logrus
+                expr: 'body matches "^time="'
+            default: end
+          - id: klog
+            type: regex_parser
+            regex: '^(?P<sev>[IWEF])\d{4} [\d:.]+\s+\d+ (?P<source>[^\]]+)\] (?P<msg>.*)$'
+            severity: { parse_from: attributes.sev, mapping: { info: I, warn: W, error: E, fatal: F } }
+            output: end
+          - id: logrus
+            type: regex_parser
+            regex: 'level=(?P<sev>\w+)'
+            severity: { parse_from: attributes.sev }
+            output: end
+          - id: end
+            type: noop
+      # syslog: "Oct 21 06:03:15 <host> user.notice k3s-cert-monitor: message".
+      filelog/syslog:
+        include: [/var/log/messages, /var/log/node-problem-detector.log]
+        start_at: end
+        resource: { service.name: syslog }
+        operators:
+          - type: regex_parser
+            regex: '^\w{3} +\d+ [\d:]+ \S+ (?P<facility>\w+)\.(?P<sev>\w+) (?P<program>[^:\[]+)(?:\[\d+\])?: '
+            on_error: send_quiet
+            severity:
+              parse_from: attributes.sev
+              mapping: { debug: debug, info: [info, notice], warn: warn, error: err, fatal: [crit, alert, emerg] }
       kubeletstats:
         collection_interval: 60s
         auth_type: serviceAccount
@@ -26,6 +64,11 @@ data:
         metric_groups: [node, pod, container, volume]
     processors:
       memory_limiter: { check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20 }
+      # The node's own logs: which node.
+      resource/node:
+        attributes:
+          - { key: k8s.node.name, value: "${env:K8S_NODE_NAME}", action: upsert }
+          - { key: host.name, value: "${env:K8S_NODE_NAME}", action: upsert }
       k8sattributes:
         filter:
           node_from_env_var: K8S_NODE_NAME
@@ -55,6 +98,7 @@ data:
         logs: { level: warn }
       pipelines:
         logs: { receivers: [filelog], processors: [memory_limiter, k8sattributes, transform/service, batch], exporters: [otlp/collector] }
+        logs/node: { receivers: [filelog/k3s, filelog/syslog], processors: [memory_limiter, resource/node, batch], exporters: [otlp/collector] }
         metrics: { receivers: [kubeletstats], processors: [memory_limiter, k8sattributes, batch], exporters: [otlp/collector] }
 ---
 apiVersion: apps/v1
@@ -68,7 +112,7 @@ spec:
     metadata:
       labels: { app: otel-agent }
       annotations:
-        config/version: "3"
+        config/version: "4"
     spec:
       serviceAccountName: otel-collector
       tolerations:
@@ -93,9 +137,9 @@ spec:
             capabilities: { drop: [ALL], add: [DAC_READ_SEARCH] }
           volumeMounts:
             - { name: config, mountPath: /conf }
-            - { name: pods, mountPath: /var/log/pods, readOnly: true }
+            - { name: logs, mountPath: /var/log, readOnly: true }
       volumes:
         - name: config
           configMap: { name: otel-agent }
-        - name: pods
-          hostPath: { path: /var/log/pods }
+        - name: logs
+          hostPath: { path: /var/log }

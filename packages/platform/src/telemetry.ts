@@ -62,7 +62,7 @@ const duration = metrics.getMeter("osiris-http").createHistogram("http.server.re
 
 /** What the middleware needs of Hono's context (structural, so this package doesn't depend on Hono). */
 interface HttpContext {
-  req: { method: string; raw: Request; matchedRoutes?: { path: string }[] };
+  req: { method: string; path: string; raw: Request; matchedRoutes?: { path: string }[] };
   res: Response;
   error?: Error;
 }
@@ -79,12 +79,13 @@ export function telemetryMiddleware() {
       try {
         await next();
       } finally {
-        // The last route that matched is the handler's (middleware comes first).
-        const last = c.req.matchedRoutes?.at(-1)?.path;
-        const route = last && last !== "/*" && last !== "*" ? last : "unmatched";
+        // The last specific route that matched is the handler's: middleware comes first, and catch-alls (the web
+        // app's static files) match everything after it.
+        const route = c.req.matchedRoutes?.map((r) => r.path).filter((p) => p !== "/*" && p !== "*").at(-1) ?? "unmatched";
         const status = c.res.status;
         span.updateName(`${c.req.method} ${route}`);
-        span.setAttributes({ "http.route": route, "http.response.status_code": status });
+        // The path carries ids, so it's an attribute for finding a request, never the span's name.
+        span.setAttributes({ "http.route": route, "http.response.status_code": status, "url.path": c.req.path });
         if (status >= 500 || c.error) span.setStatus({ code: SpanStatusCode.ERROR, message: c.error?.message });
         if (c.error) span.recordException(c.error);
         span.end();
