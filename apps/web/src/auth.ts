@@ -1,3 +1,4 @@
+import { LAST_PATH } from "./routes.ts";
 import { UserManager, WebStorageStateStore } from "oidc-client-ts";
 
 const devUser = (import.meta.env.VITE_DEV_USER as string | undefined) || undefined;
@@ -51,4 +52,11 @@ export const login = async () => {
   if (!manager) throw new Error("Přihlášení není k dispozici");
   await manager.signinRedirect({ state: { path: `${location.pathname}${location.search}` } satisfies ReturnState });
 };
-export const logout = () => manager?.signoutRedirect();
+export const logout = () => {
+  try {
+    localStorage.removeItem(LAST_PATH);
+  } catch {
+    // Storage unavailable: nothing was remembered.
+  }
+  return manager?.signoutRedirect();
+};

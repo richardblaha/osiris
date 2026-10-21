@@ -39,6 +39,7 @@ import { BuiltinTools } from "./Tools.tsx";
 import { UserAdmin } from "./Users.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
 import { Guards } from "./Guards.tsx";
+import { fromPath, LAST_PATH, toPath, type Section, type View } from "./routes.ts";
 
 export function App() {
   // The sign-in screen, where the identity provider (/auth) sends the browser.
@@ -72,32 +73,6 @@ function Gate() {
   }
   return <Workspace />;
 }
-
-/** Sidebar sections whose records open as a detail form. */
-type Section = "knowledge" | "skills" | "memory" | "mcp" | "secrets";
-
-type View =
-  | { kind: "chat"; threadId: string | null; session: number }
-  /** A section's records in the sidebar tab's scope. */
-  | { kind: "list"; section: Section }
-  /** A record of a section by its key, or `null` for the form of a new one. */
-  | { kind: "item"; section: Section; id: string | null }
-  | { kind: "profile" }
-  | { kind: "tenant" }
-  /** The system admin's tenant administration, opening a tenant (or `null`: the form of a new one). */
-  | { kind: "tenants"; initial?: string | null }
-  /** The system admin's user administration. */
-  | { kind: "users" }
-  | { kind: "settings" }
-  /** The cluster's telemetry (system admins); a trace open, or logs of one trace. */
-  | { kind: "logs"; traceId?: string }
-  | { kind: "metrics" }
-  | { kind: "traces"; traceId?: string }
-  | { kind: "files" }
-  | { kind: "schedules" }
-  | { kind: "sites" }
-  | { kind: "guards" }
-  | { kind: "public" };
 
 interface Lists {
   knowledge: DocumentSummary[];
@@ -222,7 +197,15 @@ function Workspace() {
     return { ...started, code: params.get("code"), state: params.get("state"), error: params.get("error_description") ?? params.get("error") };
   });
   const [collapsed, setCollapsed] = useState(() => stored(SIDEBAR_COLLAPSED, false));
-  const [view, setView] = useState<View>(notice || integrationReturn ? { kind: "profile" } : { kind: "chat", threadId: null, session: 0 });
+  // Where to start: the URL, else (the installed app opens at /) where the user last was in this sign-in.
+  const [route] = useState(() => {
+    if (notice || integrationReturn) return { view: { kind: "profile" } as View };
+    if (mcpReturn) return undefined;
+    const r = fromPath(location.pathname) ?? (location.pathname === "/" ? fromPath(stored(LAST_PATH, "")) : undefined);
+    if (r?.tenant) store(LAST_TENANT, r.tenant);
+    return r;
+  });
+  const [view, setView] = useState<View>(route?.view ?? { kind: "chat", threadId: null, session: 0 });
   const [error, setError] = useState<string>();
 
   const refreshThreads = useCallback(() => api.threads().then(setThreads, (e: Error) => setError(e.message)), []);
@@ -243,7 +226,8 @@ function Workspace() {
       for (const s of SECTIONS) if (s.enabled(t.features)) void refresh(s.id);
     }, (e: Error) => setError(e.message));
 
-  const selectTenant = (id: string) => {
+  /** Opens a tenant; `keep` keeps the view (it came from the URL), otherwise a new chat starts. */
+  const selectTenant = (id: string, keep = false) => {
     setTenant(id);
     store(LAST_TENANT, id);
     setTenantInfo(undefined);
@@ -252,7 +236,7 @@ function Workspace() {
     void loadTenant();
     void refreshUsage();
     // The profile stays open (it may have been opened from a link); everything else starts a new chat.
-    setView((v) => (v.kind === "profile" ? v : { kind: "chat", threadId: null, session: (v.kind === "chat" ? v.session : 0) + 1 }));
+    if (!keep) setView((v) => (v.kind === "profile" ? v : { kind: "chat", threadId: null, session: (v.kind === "chat" ? v.session : 0) + 1 }));
     void refreshThreads();
   };
 
@@ -267,7 +251,7 @@ function Workspace() {
         // A system admin with no tenant yet starts with creating one.
         setTenantInfo(undefined);
         if (m.systemAdmin) setView({ kind: "tenants", initial: null });
-      } else if (pick !== current) selectTenant(pick);
+      } else if (pick !== current) selectTenant(pick, current === undefined && (!route?.tenant || route.tenant === pick));
     }, (e: Error) => setError(e.message));
 
   useEffect(() => void loadMe(), []);
@@ -301,6 +285,33 @@ function Workspace() {
       (e: Error) => fail(e.message),
     );
   }, [tenant, integrationReturn, integrationDone]);
+  // The view in the URL: a new entry per navigation, replaced when a new chat gets its thread.
+  const tenantId = tenant?.id;
+  const shown = useRef<{ path: string; view: View }>(undefined);
+  useEffect(() => {
+    const path = toPath(view, tenantId);
+    if (!path) return;
+    store(LAST_PATH, path);
+    const prev = shown.current;
+    shown.current = { path, view };
+    if (path === location.pathname) return;
+    const sameChat = prev?.view.kind === "chat" && view.kind === "chat" && prev.view.session === view.session;
+    if (!prev || sameChat) history.replaceState(null, "", path);
+    else history.pushState(null, "", path);
+  }, [view, tenantId]);
+  // Back and forward: the URL's view, in its tenant.
+  const current = useRef({ tenantId, selectTenant });
+  current.current = { tenantId, selectTenant };
+  useEffect(() => {
+    const onPop = () => {
+      const r = fromPath(location.pathname);
+      if (!r) return;
+      if (r.tenant && r.tenant !== current.current.tenantId) current.current.selectTenant(r.tenant, true);
+      setView((v) => (r.view.kind === "chat" ? { ...r.view, session: (v.kind === "chat" ? v.session : 0) + 1 } : r.view));
+    };
+    addEventListener("popstate", onPop);
+    return () => removeEventListener("popstate", onPop);
+  }, []);
   // Visits per view for GoatCounter (when the gateway added its script): the view's kind and section, never ids.
   const viewPath = view.kind === "list" || view.kind === "item" ? `/${view.section}` : `/${view.kind}`;
   useEffect(() => window.goatcounter?.count?.({ path: viewPath }), [viewPath]);
