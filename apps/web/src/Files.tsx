@@ -292,7 +292,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
                   </button>
                 )}
               </div>
-              <div className="mt-1 h-1 overflow-hidden rounded bg-line">
+              <div className="mt-1 h-1 overflow-hidden rounded-md bg-line">
                 <div className="h-full bg-primary transition-all" style={{ width: `${(finished / uploads.length) * 100}%` }} />
               </div>
               {failed.map((u) => (

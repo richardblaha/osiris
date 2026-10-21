@@ -13,7 +13,7 @@ function Qr({ text }: { text: string }) {
   const { data, size } = encode(text, { border: 2 });
   const path = data.flatMap((row, y) => row.flatMap((dark, x) => (dark ? [`M${x} ${y}h1v1h-1z`] : []))).join("");
   return (
-    <svg viewBox={`0 0 ${size} ${size}`} className="h-44 w-44 rounded bg-white" shapeRendering="crispEdges" role="img" aria-label="QR kód pro ověřovací aplikaci">
+    <svg viewBox={`0 0 ${size} ${size}`} className="h-44 w-44 rounded-md bg-white" shapeRendering="crispEdges" role="img" aria-label="QR kód pro ověřovací aplikaci">
       <path d={path} fill="#000" />
     </svg>
   );

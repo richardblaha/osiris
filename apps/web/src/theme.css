@@ -19,7 +19,7 @@
   color-scheme: light dark;
 
   --font-ui: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, -apple-system, "Segoe UI", Ubuntu, sans-serif;
-  --radius: 2px;
+  --radius: 6px;
   --shadow-popup: 0 16px 40px rgba(0, 0, 0, 0.5);
   --transition: 0.15s ease;
   --backdrop: rgba(3, 6, 10, 0.55);
@@ -114,7 +114,7 @@
   --font-sans: var(--font-ui);
   --font-mono: var(--font-ui);
 
-  /* Unified minimal rounding: every radius token is 2px. */
+  /* Unified soft rounding: every radius token is --radius (6px). */
   --radius-xs: var(--radius);
   --radius-sm: var(--radius);
   --radius-md: var(--radius);

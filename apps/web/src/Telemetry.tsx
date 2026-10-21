@@ -30,7 +30,7 @@ function Toolbar({ range, setRange, children, onRefresh, busy }: { range: number
   }, [auto]);
   return (
     <div className="flex flex-wrap items-end gap-2 border-b border-line px-6 py-3 text-sm">
-      <div className="flex overflow-hidden rounded border border-line-strong" role="group" aria-label="Časový rozsah">
+      <div className="flex overflow-hidden rounded-md border border-line-strong" role="group" aria-label="Časový rozsah">
         {RANGES.map((r) => (
           <button key={r.ms} type="button" onClick={() => setRange(r.ms)} data-active={range === r.ms} className="list-row border-r border-line px-2 py-1 last:border-r-0">
             {r.label}
@@ -534,7 +534,7 @@ function LineChart({ series, unit }: { series: MetricSeries[]; unit: string }) {
         </svg>
         {hover !== undefined && (
           <div
-            className="pointer-events-none absolute top-2 z-10 rounded border border-line bg-canvas px-2 py-1 text-xs shadow-[var(--shadow-popup)]"
+            className="pointer-events-none absolute top-2 z-10 rounded-md border border-line bg-canvas px-2 py-1 text-xs shadow-[var(--shadow-popup)]"
             style={x(hover) > W / 2 ? { right: `${100 - (x(hover) / W) * 100 + 1}%` } : { left: `${(x(hover) / W) * 100 + 1}%` }}
           >
             <p className="text-fg-secondary">{new Date(hover).toLocaleString("cs-CZ")}</p>
@@ -560,7 +560,7 @@ function LineChart({ series, unit }: { series: MetricSeries[]; unit: string }) {
         <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-secondary">
           {lines.map((s, i) => (
             <li key={s.name} className="flex items-center gap-1">
-              <span className="inline-block h-0.5 w-4 rounded" style={{ background: color(i) }} />
+              <span className="inline-block h-0.5 w-4 rounded-md" style={{ background: color(i) }} />
               {s.name || "—"}
             </li>
           ))}
