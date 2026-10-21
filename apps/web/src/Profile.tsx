@@ -4,7 +4,7 @@ import { AssistantSettings } from "./Assistant.tsx";
 import { Integrations } from "./Integrations.tsx";
 import { api } from "./api.ts";
 import { logout } from "./auth.ts";
-import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
 import { Security, type SecurityPart } from "./Security.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
 
@@ -107,6 +107,7 @@ function Personalization() {
     <>
       <h1 className="text-lg font-semibold">Personalizace</h1>
       <p className="mt-1 text-sm text-fg-secondary">Jak s tebou má asistent jednat. Platí jen pro tebe, ve všech tvých tenantech zvlášť.</p>
+      {!settings && !error && <Pending />}
       {settings && (
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="flex flex-wrap gap-6">
@@ -186,7 +187,7 @@ function Account() {
       if (message) setSaved(message);
     });
 
-  if (!profile) return <ErrorNotice error={error} />;
+  if (!profile) return <Pending error={error} />;
   const challenge = profile.phoneChallenge;
   const waLink = challenge?.whatsappNumber
     ? `https://wa.me/${challenge.whatsappNumber.replace(/\D/g, "")}?text=${encodeURIComponent(`OVERENI ${challenge.code}`)}`

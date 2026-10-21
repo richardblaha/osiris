@@ -1,3 +1,4 @@
+import { Loading } from "./Scope.tsx";
 import type { ReactNode } from "react";
 
 export interface PanelItem {
@@ -29,11 +30,14 @@ export function MasterDetail(props: {
   /** Above the groups, under the title (a filter, a note). */
   top?: ReactNode;
   placeholder?: string;
+  /** The list is on its way: a loading veil over it. */
+  loading?: boolean;
   children?: ReactNode;
 }) {
   return (
     <div className="flex h-full">
-      <nav className="flex w-72 shrink-0 flex-col border-r border-line p-2 text-sm">
+      <nav className="relative flex w-72 shrink-0 flex-col border-r border-line p-2 text-sm">
+        <Loading show={!!props.loading} />
         <h2 className="section-header px-2 py-1">{props.title}</h2>
         {props.top}
         {props.add && (

@@ -2,7 +2,7 @@ import type { DocumentSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
-import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps, Pending } from "./Scope.tsx";
 
 export const documentKey = (d: DocumentSummary) => d.id;
 
@@ -47,7 +47,7 @@ export function KnowledgeDetail({ item, scope, onSaved, onDeleted }: DetailProps
         </Field>
         <div className="mt-4">
           {content === undefined ? (
-            <p className="text-sm text-fg-muted">Načítám…</p>
+            <Pending error={error} className="relative h-[60vh] rounded-md border border-line" />
           ) : (
             <LazyCodeEditor path={item.id.endsWith(".md") ? item.id : `${item.id}.md`} value={content} onChange={setContent} />
           )}

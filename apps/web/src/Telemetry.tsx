@@ -1,7 +1,7 @@
 import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary } from "@osiris/shared";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "./api.ts";
-import { attempt, ErrorNotice } from "./Scope.tsx";
+import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
 
 const RANGES = [
   { label: "15 min", ms: 15 * 60_000 },
@@ -149,39 +149,42 @@ export function Logs({ onOpenTrace, traceId: initialTrace }: { onOpenTrace: (id:
           </button>
         )}
       </Toolbar>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-2">
-        <ErrorNotice error={error} />
-        <ul className="font-mono text-xs">
-          {logs?.map((l, i) => (
-            <li key={`${l.ts}:${i}`} className="border-b border-line">
-              <button onClick={() => setOpen(open === i ? undefined : i)} data-active={open === i} className="list-row flex w-full gap-3 px-1 py-1 text-left">
-                <span className="shrink-0 text-fg-muted">{time(l.ts, range > 24 * 3_600_000)}</span>
-                <span className={`w-12 shrink-0 ${SEVERITY_CLASS(l.severityNumber)}`}>{l.severity || "—"}</span>
-                <span className="w-36 shrink-0 truncate text-fg-secondary" title={l.service}>
-                  {l.service || l.pod}
-                </span>
-                <span className={`min-w-0 flex-1 ${open === i ? "break-all whitespace-pre-wrap" : "truncate"}`}>{l.body}</span>
-              </button>
-              {open === i && (
-                <div className="px-1 pb-2 font-sans">
-                  {l.traceId && (
-                    <button onClick={() => onOpenTrace(l.traceId)} className="btn-link text-xs">
-                      Otevřít trasu {l.traceId}
-                    </button>
-                  )}
-                  <Attributes title="Atributy" values={l.attributes} />
-                  <Attributes title="Zdroj" values={l.resource} />
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-        {logs && !logs.length && <p className="py-4 text-sm text-fg-muted">Žádné záznamy v tomto rozsahu.</p>}
-        {more && (
-          <button onClick={() => void older()} disabled={busy} className="btn-secondary mt-3 text-sm">
-            Načíst starší
-          </button>
-        )}
+      <div className="relative min-h-0 flex-1">
+        <Loading show={busy} />
+        <div className="h-full overflow-y-auto px-6 py-2">
+          <ErrorNotice error={error} />
+          <ul className="font-mono text-xs">
+            {logs?.map((l, i) => (
+              <li key={`${l.ts}:${i}`} className="border-b border-line">
+                <button onClick={() => setOpen(open === i ? undefined : i)} data-active={open === i} className="list-row flex w-full gap-3 px-1 py-1 text-left">
+                  <span className="shrink-0 text-fg-muted">{time(l.ts, range > 24 * 3_600_000)}</span>
+                  <span className={`w-12 shrink-0 ${SEVERITY_CLASS(l.severityNumber)}`}>{l.severity || "—"}</span>
+                  <span className="w-36 shrink-0 truncate text-fg-secondary" title={l.service}>
+                    {l.service || l.pod}
+                  </span>
+                  <span className={`min-w-0 flex-1 ${open === i ? "break-all whitespace-pre-wrap" : "truncate"}`}>{l.body}</span>
+                </button>
+                {open === i && (
+                  <div className="px-1 pb-2 font-sans">
+                    {l.traceId && (
+                      <button onClick={() => onOpenTrace(l.traceId)} className="btn-link text-xs">
+                        Otevřít trasu {l.traceId}
+                      </button>
+                    )}
+                    <Attributes title="Atributy" values={l.attributes} />
+                    <Attributes title="Zdroj" values={l.resource} />
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          {logs && !logs.length && <p className="py-4 text-sm text-fg-muted">Žádné záznamy v tomto rozsahu.</p>}
+          {more && (
+            <button onClick={() => void older()} disabled={busy} className="btn-secondary mt-3 text-sm">
+              Načíst starší
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -225,34 +228,37 @@ export function Traces({ traceId, onOpenTrace, onOpenLogs }: { traceId?: string;
           <input type="checkbox" checked={errors} onChange={(e) => setErrors(e.target.checked)} /> jen chyby
         </label>
       </Toolbar>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-2">
-        <ErrorNotice error={error} />
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs text-fg-muted">
-            <tr>
-              <th className="py-1 font-normal">Čas</th>
-              <th className="py-1 font-normal">Služba</th>
-              <th className="py-1 font-normal">Název</th>
-              <th className="py-1 text-right font-normal">Trvání</th>
-              <th className="py-1 text-right font-normal">Spanů</th>
-            </tr>
-          </thead>
-          <tbody>
-            {list?.map((t) => (
-              <tr key={t.traceId} onClick={() => onOpenTrace(t.traceId)} className="list-row cursor-pointer border-t border-line">
-                <td className="py-1 pr-3 font-mono text-xs whitespace-nowrap text-fg-muted">{time(t.ts, range > 24 * 3_600_000)}</td>
-                <td className="py-1 pr-3 text-fg-secondary">{t.service}</td>
-                <td className="py-1 pr-3">
-                  {t.error && <span className="mr-1 text-error" aria-label="chyba">●</span>}
-                  {t.name}
-                </td>
-                <td className="py-1 pr-3 text-right font-mono text-xs">{duration(t.durationMs)}</td>
-                <td className="py-1 text-right text-fg-muted">{t.spans}</td>
+      <div className="relative min-h-0 flex-1">
+        <Loading show={busy} />
+        <div className="h-full overflow-y-auto px-6 py-2">
+          <ErrorNotice error={error} />
+          <table className="w-full text-sm">
+            <thead className="text-left text-xs text-fg-muted">
+              <tr>
+                <th className="py-1 font-normal">Čas</th>
+                <th className="py-1 font-normal">Služba</th>
+                <th className="py-1 font-normal">Název</th>
+                <th className="py-1 text-right font-normal">Trvání</th>
+                <th className="py-1 text-right font-normal">Spanů</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-        {list && !list.length && <p className="py-4 text-sm text-fg-muted">Žádné trasy v tomto rozsahu.</p>}
+            </thead>
+            <tbody>
+              {list?.map((t) => (
+                <tr key={t.traceId} onClick={() => onOpenTrace(t.traceId)} className="list-row cursor-pointer border-t border-line">
+                  <td className="py-1 pr-3 font-mono text-xs whitespace-nowrap text-fg-muted">{time(t.ts, range > 24 * 3_600_000)}</td>
+                  <td className="py-1 pr-3 text-fg-secondary">{t.service}</td>
+                  <td className="py-1 pr-3">
+                    {t.error && <span className="mr-1 text-error" aria-label="chyba">●</span>}
+                    {t.name}
+                  </td>
+                  <td className="py-1 pr-3 text-right font-mono text-xs">{duration(t.durationMs)}</td>
+                  <td className="py-1 text-right text-fg-muted">{t.spans}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {list && !list.length && <p className="py-4 text-sm text-fg-muted">Žádné trasy v tomto rozsahu.</p>}
+        </div>
       </div>
     </div>
   );
@@ -304,38 +310,41 @@ function TraceView({ traceId, onBack, onOpenLogs }: { traceId: string; onBack: (
           Logy trasy
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-6 py-2">
-        <ErrorNotice error={error} />
-        <ul className="text-xs">
-          {rows.map(({ span: s, depth }) => (
-            <li key={s.spanId} className="border-b border-line">
-              <button onClick={() => setOpen(open === s.spanId ? undefined : s.spanId)} data-active={open === s.spanId} className="list-row flex w-full items-center gap-3 px-1 py-1 text-left">
-                <span className="w-80 shrink-0 truncate" style={{ paddingLeft: depth * 12 }} title={`${s.service}: ${s.name}`}>
-                  {s.error && <span className="mr-1 text-error" aria-label="chyba">●</span>}
-                  <span className="text-fg-muted">{s.service}</span> {s.name}
-                </span>
-                <span className="relative h-3 min-w-0 flex-1">
-                  <span
-                    className={`absolute top-0 h-3 rounded-sm ${s.error ? "bg-error" : "bg-primary"}`}
-                    style={{ left: `${((s.startMs - start) / total) * 100}%`, width: `max(2px, ${(s.durationMs / total) * 100}%)` }}
-                  />
-                </span>
-                <span className="w-16 shrink-0 text-right font-mono">{duration(s.durationMs)}</span>
-              </button>
-              {open === s.spanId && (
-                <div className="px-1 pb-2">
-                  <p className="text-fg-secondary">
-                    {s.kind} · začátek +{duration(s.startMs - start)}
-                    {s.statusMessage && <span className="text-error"> · {s.statusMessage}</span>}
-                  </p>
-                  <Attributes title="Atributy" values={s.attributes} />
-                  <Attributes title="Zdroj" values={s.resource} />
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-        {spans && !spans.length && <p className="py-4 text-sm text-fg-muted">Trasa nemá žádné spany (možná už vypršela).</p>}
+      <div className="relative min-h-0 flex-1">
+        <Loading show={!spans && !error} />
+        <div className="h-full overflow-y-auto px-6 py-2">
+          <ErrorNotice error={error} />
+          <ul className="text-xs">
+            {rows.map(({ span: s, depth }) => (
+              <li key={s.spanId} className="border-b border-line">
+                <button onClick={() => setOpen(open === s.spanId ? undefined : s.spanId)} data-active={open === s.spanId} className="list-row flex w-full items-center gap-3 px-1 py-1 text-left">
+                  <span className="w-80 shrink-0 truncate" style={{ paddingLeft: depth * 12 }} title={`${s.service}: ${s.name}`}>
+                    {s.error && <span className="mr-1 text-error" aria-label="chyba">●</span>}
+                    <span className="text-fg-muted">{s.service}</span> {s.name}
+                  </span>
+                  <span className="relative h-3 min-w-0 flex-1">
+                    <span
+                      className={`absolute top-0 h-3 rounded-sm ${s.error ? "bg-error" : "bg-primary"}`}
+                      style={{ left: `${((s.startMs - start) / total) * 100}%`, width: `max(2px, ${(s.durationMs / total) * 100}%)` }}
+                    />
+                  </span>
+                  <span className="w-16 shrink-0 text-right font-mono">{duration(s.durationMs)}</span>
+                </button>
+                {open === s.spanId && (
+                  <div className="px-1 pb-2">
+                    <p className="text-fg-secondary">
+                      {s.kind} · začátek +{duration(s.startMs - start)}
+                      {s.statusMessage && <span className="text-error"> · {s.statusMessage}</span>}
+                    </p>
+                    <Attributes title="Atributy" values={s.attributes} />
+                    <Attributes title="Zdroj" values={s.resource} />
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+          {spans && !spans.length && <p className="py-4 text-sm text-fg-muted">Trasa nemá žádné spany (možná už vypršela).</p>}
+        </div>
       </div>
     </div>
   );
@@ -403,24 +412,27 @@ export function Metrics() {
             <input type="checkbox" checked={table} onChange={(e) => setTable(e.target.checked)} /> tabulka
           </label>
         </Toolbar>
-        <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
-          <ErrorNotice error={error} />
-          {!chosen ? (
-            <p className="text-sm text-fg-muted">Vyber metriku vlevo.</p>
-          ) : (
-            <>
-              <h1 className="font-mono text-base font-semibold">{chosen.name}</h1>
-              <p className="text-xs text-fg-secondary">
-                {chosen.description}
-                {chosen.description && " · "}
-                {TYPE_LABEL[chosen.type]}
-                {chosen.unit && ` (${chosen.unit}${chosen.type === "sum" ? "/s" : ""})`}
-                {data && ` · krok ${data.step >= 3600 ? `${data.step / 3600} h` : `${data.step / 60} min`}`}
-              </p>
-              {data && !data.series.length && <p className="mt-4 text-sm text-fg-muted">V tomto rozsahu žádná data.</p>}
-              {data && data.series.length > 0 && (table ? <SeriesTable data={data.series} /> : <LineChart series={data.series} unit={chosen.unit} />)}
-            </>
-          )}
+        <div className="relative min-h-0 flex-1">
+          <Loading show={busy} />
+          <div className="h-full overflow-y-auto px-6 py-4">
+            <ErrorNotice error={error} />
+            {!chosen ? (
+              <p className="text-sm text-fg-muted">Vyber metriku vlevo.</p>
+            ) : (
+              <>
+                <h1 className="font-mono text-base font-semibold">{chosen.name}</h1>
+                <p className="text-xs text-fg-secondary">
+                  {chosen.description}
+                  {chosen.description && " · "}
+                  {TYPE_LABEL[chosen.type]}
+                  {chosen.unit && ` (${chosen.unit}${chosen.type === "sum" ? "/s" : ""})`}
+                  {data && ` · krok ${data.step >= 3600 ? `${data.step / 3600} h` : `${data.step / 60} min`}`}
+                </p>
+                {data && !data.series.length && <p className="mt-4 text-sm text-fg-muted">V tomto rozsahu žádná data.</p>}
+                {data && data.series.length > 0 && (table ? <SeriesTable data={data.series} /> : <LineChart series={data.series} unit={chosen.unit} />)}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

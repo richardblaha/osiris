@@ -1,3 +1,4 @@
+import { Pending } from "./Scope.tsx";
 import { AssistantRuntimeProvider, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
 import type { PublicInfo, ThreadMessage } from "@osiris/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -88,7 +89,7 @@ export function PublicChat({ tenant, assistant = "_" }: { tenant: string; assist
         ) : info && !info.enabled ? (
           <p className="m-6 text-center text-fg-secondary">Asistent teď není dostupný.</p>
         ) : !info || !initial ? (
-          <p className="p-6 text-center text-fg-muted">Načítám…</p>
+          <Pending className="relative h-full" />
         ) : (
           <Chat client={client} threadKey={threadKey} initial={initial} greeting={info.greeting} />
         )}

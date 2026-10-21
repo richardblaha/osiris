@@ -2,7 +2,7 @@ import type { Scope, SkillSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
-import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps, Pending } from "./Scope.tsx";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -49,6 +49,7 @@ export function SkillDetail({ item, isAdmin, onSaved, onDeleted }: DetailProps<S
       <DetailHeader title={item?.name ?? "Nová dovednost"} scope={item ? (item.source === "bundled" ? undefined : item.source) : scope} canEdit={!!own}>
         {item?.source === "bundled" ? "Výchozí dovednost, která je součástí aplikace. Správce ji změní uložením kopie se stejným názvem." : INTRO}
       </DetailHeader>
+      {!loaded && <Pending error={error} />}
       {loaded && (
         <form onSubmit={submit} className="mt-6 space-y-4">
           <Field label="Název">

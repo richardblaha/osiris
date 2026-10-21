@@ -2,7 +2,7 @@ import { FEATURES, type DirectoryUser, type Feature, type Role, type TenantDetai
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { InviteForm } from "./Invite.tsx";
-import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
 import { LoginLink } from "./TenantInfo.tsx";
 import { fileSize } from "./Files.tsx";
 import { QuotaForm } from "./Quotas.tsx";
@@ -110,7 +110,7 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
     }
   };
 
-  if (!tenant) return error ? <p className="notice notice-error px-3 py-2 text-sm">{error}</p> : null;
+  if (!tenant) return <Pending error={error} className="relative h-full" />;
   const memberIds = new Set(tenant.memberList.map((m) => m.userId));
   const candidates = users.filter((u) => !memberIds.has(u.id));
 

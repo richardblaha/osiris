@@ -26,7 +26,7 @@ import { MCP_SIGN_IN, mcpKey, McpServerDetail, McpStatus } from "./McpServers.ts
 import { INTEGRATION_RETURN } from "./Integrations.tsx";
 import { MemoryDetail, memoryKey } from "./Memories.tsx";
 import { Avatar, Profile } from "./Profile.tsx";
-import { ScopeBadge } from "./Scope.tsx";
+import { Loading, Pending, ScopeBadge } from "./Scope.tsx";
 import { SignIn } from "./SignIn.tsx";
 import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
@@ -151,8 +151,11 @@ const store = (key: string, value: unknown) => {
 function Workspace() {
   const [me, setMe] = useState<MeResponse>();
   const [tenant, setTenantInfo] = useState<Tenant>();
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  // Undefined while they load.
+  const [threads, setThreads] = useState<ThreadSummary[]>();
   const [lists, setLists] = useState<Lists>(EMPTY);
+  // Sections whose list has come (the rest show a loading veil).
+  const [loaded, setLoaded] = useState<ReadonlySet<Section>>(new Set());
   // The system admin's tenant administration.
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
   // The active tenant's quotas and their use, shown above it in the sidebar.
@@ -213,6 +216,7 @@ function Workspace() {
     LOADERS[section]().then(
       (items) => {
         setLists((l) => ({ ...l, [section]: items }));
+        setLoaded((l) => new Set(l).add(section));
         return items;
       },
       (e: Error) => setError(e.message),
@@ -232,6 +236,8 @@ function Workspace() {
     store(LAST_TENANT, id);
     setTenantInfo(undefined);
     setLists(EMPTY);
+    setLoaded(new Set());
+    setThreads(undefined);
     setUsage(undefined);
     void loadTenant();
     void refreshUsage();
@@ -335,7 +341,7 @@ function Workspace() {
       </div>
     );
   }
-  if (!me) return null;
+  if (!me) return <Pending className="relative h-full" />;
   const isAdmin = tenant?.role === "admin";
   const sections = tenant ? SECTIONS.filter((s) => s.enabled(tenant.features)) : [];
   const canAdd = (section: Section) => isAdmin || MEMBERS_WRITE.includes(section);
@@ -388,11 +394,12 @@ function Workspace() {
             <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label="Konverzace" icon="M2 4h12v7H9l-3 3v-3H2z" />
           )}
           {tenant && !collapsed && (
-            <section>
+            <section className="relative min-h-16">
+              <Loading show={!threads} />
               <h2 className="section-header flex items-center gap-1 px-2 py-1">
-                Konverzace {threads.length > 0 && <span className="font-normal text-fg-muted">{threads.length}</span>}
+                Konverzace {!!threads?.length && <span className="font-normal text-fg-muted">{threads.length}</span>}
               </h2>
-              {threads.map((t) => (
+              {threads?.map((t) => (
                 <div key={t.id} data-active={view.kind === "chat" && view.threadId === t.id} className="list-row group flex items-center px-2">
                   <button onClick={() => openThread(t.id)} className="flex-1 truncate py-1.5 text-left">
                     {t.channel === "whatsapp" && <span className="mr-1 text-fg-muted">WA</span>}
@@ -403,7 +410,7 @@ function Workspace() {
                   </button>
                 </div>
               ))}
-              {!threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
+              {threads && !threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
             </section>
           )}
           {tenant && (
@@ -512,7 +519,10 @@ function Workspace() {
           />
         ) : view.kind === "profile" ? (
           <Profile key={`${tenant?.id}:${connections}`} me={me} notice={notice} features={tenant?.features} />
-        ) : !tenant ? null : view.kind === "files" ? (
+        ) : !tenant ? (
+          // The tenant is on its way (a system admin without any has nothing to wait for).
+          me.tenants.length ? <Pending className="relative h-full" /> : null
+        ) : view.kind === "files" ? (
           tenant.features.files ? (
             <Files key={tenant.id} hide={OWN_VIEWS} intro="Dokumenty, šablony a obrázky, se kterými asistent pracuje. Šablony dokumentů patří do složky sablony." />
           ) : null
@@ -529,6 +539,7 @@ function Workspace() {
             key={`${tenant.id}:${view.section}`}
             view={view}
             lists={lists}
+            loading={!loaded.has(view.section)}
             canAdd={canAdd(view.section)}
             setView={setView}
             tools={view.section === "mcp" ? <BuiltinTools key={tenant.id} tenantId={tenant.id} systemAdmin={me.systemAdmin} /> : undefined}
@@ -708,6 +719,8 @@ function SectionPanel(props: {
   setView: (v: View) => void;
   /** The MCP section's built-in tools, shown when no server is chosen. */
   tools?: ReactNode;
+  /** The section's list is on its way. */
+  loading: boolean;
   children?: ReactNode;
 }) {
   const { view, setView } = props;
@@ -724,6 +737,7 @@ function SectionPanel(props: {
           : [{ items, empty: "Zatím nic." }]
       }
       selected={selected}
+      loading={props.loading}
       onSelect={(id) => setView(id === BUILTIN_TOOLS ? { kind: "list", section: view.section } : { kind: "item", section: view.section, id })}
       add={props.canAdd ? { label: section.add, onClick: () => setView({ kind: "item", section: view.section, id: null }) } : undefined}
     >

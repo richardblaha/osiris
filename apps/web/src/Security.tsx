@@ -3,7 +3,7 @@ import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/brow
 import { useEffect, useState, type FormEvent } from "react";
 import { encode } from "uqr";
 import { api } from "./api.ts";
-import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
 import { SOCIAL_LABELS } from "./SignIn.tsx";
 
 const date = (iso: string) => new Date(iso).toLocaleDateString("cs-CZ");
@@ -66,7 +66,7 @@ export function Security({ part, notice }: { part: SecurityPart; notice?: { link
       if (message) setSaved(message);
     });
 
-  if (!s) return <ErrorNotice error={error} />;
+  if (!s) return <Pending error={error} />;
   const methods = (s.password ? 1 : 0) + s.passkeys.length + s.social.length;
 
   const addPasskey = () =>

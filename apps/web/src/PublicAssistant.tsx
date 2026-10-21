@@ -12,7 +12,7 @@ import {
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "./api.ts";
 import { AssistantSettings } from "./Assistant.tsx";
-import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { attempt, ErrorNotice, Field, Loading } from "./Scope.tsx";
 import { loadSkills } from "./Skills.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
 
@@ -52,6 +52,7 @@ export function PublicAssistants({ tenantId, isAdmin }: { tenantId: string; isAd
   return (
     <MasterDetail
       title="Asistenti"
+      loading={isAdmin && !list && !error}
       top={<p className="px-2 text-xs text-fg-muted">Asistenti pro zákazníky na webu, bez přihlášení. Každý ví jen to, co mu vyberete.</p>}
       groups={[
         { items: [{ key: INQUIRIES, label: "Poptávky" }] },
@@ -297,7 +298,8 @@ function Inquiries() {
   useEffect(() => void load(), []);
 
   return (
-    <section>
+    <section className="relative min-h-32">
+      <Loading show={!list && !error} />
       <h2 className="section-header">Poptávky</h2>
       <ErrorNotice error={error} />
       {list && !list.length && <p className="mt-2 text-sm text-fg-muted">Zatím žádné.</p>}

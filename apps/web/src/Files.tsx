@@ -2,7 +2,7 @@ import { fileType, type FileEntry, type FileSearchHit } from "@osiris/shared";
 import { useEffect, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { api, saveBlob } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
-import { attempt, ErrorNotice } from "./Scope.tsx";
+import { attempt, ErrorNotice, Loading, Pending } from "./Scope.tsx";
 
 type Editing = { kind: "mkdir" } | { kind: "newfile" } | { kind: "rename"; entry: FileEntry };
 /** A file open on the right: text in the editor (`saved` is what's on disk), an image, or anything else. */
@@ -92,11 +92,13 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
     setEditing(undefined);
     void load();
   }, [dir]);
+  // A file on its way into the editor or the preview.
+  const [opening, setOpening] = useState(false);
   useEffect(() => () => void (open?.kind === "image" && URL.revokeObjectURL(open.url)), [open]);
 
   /** Text files open in the editor, images in the preview, anything else with its download. */
   const openPath = (path: string, size = 0) =>
-    attempt(setBusy, setError, async () => {
+    attempt((b) => (setBusy(b), setOpening(b)), setError, async () => {
       if (open?.kind === "text" && open.text !== open.saved && !window.confirm("Zavřít bez uložení změn?")) return;
       const type = fileType(path);
       if (type?.text) {
@@ -209,6 +211,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
   return (
     <div
       className="relative flex h-full"
+      aria-busy={opening}
       onDragOver={(e) => {
         if (![...e.dataTransfer.types].includes("Files")) return;
         e.preventDefault();
@@ -217,6 +220,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
       onDragLeave={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setDragging(false)}
       onDrop={onDrop}
     >
+      <Loading show={opening} />
       {dragging && (
         <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-[var(--accent-primary-soft)] text-sm font-medium text-primary">
           Pusťte soubory nebo složky sem, nahrají se do {crumbs.length ? crumbs.join("/") : title}
@@ -381,7 +385,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
             ))}
           </ul>
           {entries && !entries.length && <p className="px-2 py-3 text-sm text-fg-muted">Prázdná složka. Přetáhněte sem soubory.</p>}
-          {!entries && !error && <p className="py-3 text-sm text-fg-muted">Načítám…</p>}
+          {!entries && !error && <Pending />}
         </div>
       </div>
 

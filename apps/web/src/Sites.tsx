@@ -39,6 +39,7 @@ export function Sites({ isAdmin }: { isAdmin: boolean }) {
   return (
     <MasterDetail
       title="Weby"
+      loading={(!sites || !targets) && !error}
       top={<p className="px-2 text-xs text-fg-muted">Web je VitePress šablona (stránky v Markdownu). Sestaví se do www/ a publikuje přes SFTP na hosting.</p>}
       groups={[
         { title: "Weby", items: (sites?.sites ?? []).map((n) => ({ key: `site:${n}`, label: n })), empty: "Zatím žádný." },

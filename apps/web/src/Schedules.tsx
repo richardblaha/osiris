@@ -44,6 +44,7 @@ export function Schedules({ isAdmin, onOpenThread }: { isAdmin: boolean; onOpenT
   return (
     <MasterDetail
       title="Plánované úlohy"
+      loading={!list && !error}
       top={
         isAdmin && (
           <label className="flex items-center gap-2 px-2 py-1 text-xs">

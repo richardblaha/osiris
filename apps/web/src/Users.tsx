@@ -2,7 +2,7 @@ import type { AdminUser, Role, TenantSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { Avatar } from "./Profile.tsx";
-import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { attempt, ErrorNotice, Field, Loading } from "./Scope.tsx";
 import { LoginLink, roleLabel } from "./TenantInfo.tsx";
 
 /** The system admin's user administration: everyone on the left, the chosen user's detail or a new user on the right. */
@@ -16,7 +16,8 @@ export function UserAdmin({ self, tenants }: { self: string; tenants: TenantSumm
 
   return (
     <div className="flex h-full">
-      <nav className="flex w-72 shrink-0 flex-col border-r border-line p-2 text-sm">
+      <nav className="relative flex w-72 shrink-0 flex-col border-r border-line p-2 text-sm">
+        <Loading show={!users && !error} />
         <h2 className="section-header px-2 py-1">Správa uživatelů</h2>
         <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
           + Přidat uživatele

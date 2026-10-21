@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "./api.ts";
 import { MasterDetail } from "./MasterDetail.tsx";
 import { InviteForm } from "./Invite.tsx";
-import { attempt, ErrorNotice } from "./Scope.tsx";
+import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
 import { FEATURE_LABELS, TenantLogo } from "./Tenants.tsx";
 
 export const roleLabel = (role: Tenant["role"]) => (role === "admin" ? "správce" : "uživatel");
@@ -85,7 +85,8 @@ export function Members({ self }: { self: string }) {
   const act = (action: () => Promise<unknown>) => attempt(setBusy, setError, async () => (await action(), await load()));
 
   return (
-    <section>
+    <section className="relative">
+      <Loading show={!members && !error} />
       <h1 className="text-lg font-semibold">Uživatelé tenanta</h1>
       <ul className="mt-2 divide-y divide-line">
         {members?.map((m) => (

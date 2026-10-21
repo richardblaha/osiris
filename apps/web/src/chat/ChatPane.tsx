@@ -1,3 +1,4 @@
+import { Pending } from "../Scope.tsx";
 import { AssistantRuntimeProvider, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
@@ -23,7 +24,7 @@ export function ChatPane({ threadId, onThreadCreated, onRunFinished }: Props) {
   }, []);
 
   if (error) return <p className="notice notice-error m-6 px-3 py-2">{error}</p>;
-  if (!initial) return <p className="p-6 text-fg-muted">Načítám…</p>;
+  if (!initial) return <Pending className="relative h-full" />;
   return <Chat threadId={threadId} initial={initial} onThreadCreated={onThreadCreated} onRunFinished={onRunFinished} />;
 }
 

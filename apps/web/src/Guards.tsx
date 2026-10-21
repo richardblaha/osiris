@@ -48,6 +48,7 @@ export function Guards({ isAdmin, systemAdmin }: { isAdmin: boolean; systemAdmin
   return (
     <MasterDetail
       title="Kontroly"
+      loading={!list && !error}
       top={<p className="px-2 text-xs text-fg-muted">Pravidla, která asistent musí dodržet. Každá zpráva i odpověď se proti nim kontroluje.</p>}
       groups={groups}
       selected={selected}

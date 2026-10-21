@@ -1,7 +1,7 @@
 import { FEATURES, type Persona, type SystemDefaults, type TenantQuotas, type UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
 import { FEATURE_LABELS } from "./Tenants.tsx";
 
 const QUOTAS: { key: keyof TenantQuotas; label: string }[] = [
@@ -18,7 +18,7 @@ export function SystemSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   useEffect(() => void api.admin.defaults().then(setD, (e: Error) => setError(e.message)), []);
-  if (!d) return <div className="detail"><ErrorNotice error={error} /></div>;
+  if (!d) return <Pending error={error} className="detail relative" />;
 
   const tenant = (change: Partial<SystemDefaults["tenant"]>) => (setSaved(false), setD({ ...d, tenant: { ...d.tenant, ...change } }));
   const user = (change: Partial<SystemDefaults["user"]>) => (setSaved(false), setD({ ...d, user: { ...d.user, ...change } }));

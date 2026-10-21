@@ -1,7 +1,7 @@
 import type { Integration } from "@osiris/shared";
 import { useEffect, useState } from "react";
 import { api, getTenant } from "./api.ts";
-import { attempt, ErrorNotice } from "./Scope.tsx";
+import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
 
 const LABELS: Record<Integration["provider"], { name: string; what: string }> = {
   google: { name: "Google", what: "Gmail, Google kontakty (v telefonu s Androidem) a Google kalendář" },
@@ -36,7 +36,8 @@ export function Integrations() {
 
   if (list && !list.length) return null;
   return (
-    <section className="mt-8">
+    <section className="relative mt-8 min-h-24">
+      <Loading show={!list && !error} />
       <h2 className="section-header">Propojené účty pro asistenta</h2>
       <p className="mt-1 text-xs text-fg-muted">
         Asistent pak umí číst a odesílat tvoji poštu, hledat a upravovat kontakty a plánovat v kalendáři. Odesílá a mění jen na tvůj výslovný pokyn.

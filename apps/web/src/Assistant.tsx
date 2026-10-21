@@ -1,7 +1,7 @@
 import type { AssistantProfile, AssistantProfiles, Scope } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, ErrorNotice, Field } from "./Scope.tsx";
+import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
 
 /**
  * The assistant's persona at one level (the tenant's, the user's own or a public assistant's). A persona is written
@@ -11,7 +11,7 @@ export function AssistantSettings({ scope, editable, assistant }: { scope: "pers
   const [all, setAll] = useState<AssistantProfiles>();
   const [error, setError] = useState<string>();
   useEffect(() => void api.assistant(assistant).then(setAll, (e: Error) => setError(e.message)), []);
-  if (!all) return <ErrorNotice error={error} />;
+  if (!all) return <Pending error={error} />;
   const own = (scope === "public" ? all.public : all.personal) ?? { persona: null };
   return (
     <ProfileForm

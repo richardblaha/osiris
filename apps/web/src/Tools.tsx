@@ -1,7 +1,7 @@
 import { FEATURES, type BuiltinTool } from "@osiris/shared";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";
-import { attempt, ErrorNotice } from "./Scope.tsx";
+import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
 import { FEATURE_LABELS } from "./Tenants.tsx";
 
 /** The Google and Microsoft tools (`<provider>_<area>_<action>`) are split by service. */
@@ -83,7 +83,8 @@ export function BuiltinTools({ tenantId, systemAdmin }: { tenantId: string; syst
     });
 
   return (
-    <section className="mt-6">
+    <section className="relative mt-6 min-h-32">
+      <Loading show={!tools && !error} />
       <h2 className="section-header">Interní nástroje</h2>
       <p className="mt-1 text-xs text-fg-muted">
         {systemAdmin ? "Vypnutý nástroj asistent nepoužije. Změna se projeví do půl minuty." : "Nástroje, které asistent má. Zapíná a vypíná je správce systému."}
