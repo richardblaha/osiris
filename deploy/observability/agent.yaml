@@ -30,10 +30,19 @@ data:
         filter:
           node_from_env_var: K8S_NODE_NAME
         extract:
-          metadata: [k8s.namespace.name, k8s.pod.name, k8s.node.name, k8s.deployment.name, k8s.statefulset.name]
+          metadata: [k8s.namespace.name, k8s.pod.name, k8s.node.name, k8s.deployment.name, k8s.statefulset.name, k8s.daemonset.name]
         pod_association:
           - sources: [{ from: resource_attribute, name: k8s.pod.uid }]
           - sources: [{ from: resource_attribute, name: k8s.pod.name }, { from: resource_attribute, name: k8s.namespace.name }]
+      # Pod logs have no service.name: the deployment's, statefulset's or daemonset's name, else the container's.
+      transform/service:
+        log_statements:
+          - context: resource
+            statements:
+              - set(attributes["service.name"], attributes["k8s.deployment.name"]) where attributes["service.name"] == nil and attributes["k8s.deployment.name"] != nil
+              - set(attributes["service.name"], attributes["k8s.statefulset.name"]) where attributes["service.name"] == nil and attributes["k8s.statefulset.name"] != nil
+              - set(attributes["service.name"], attributes["k8s.daemonset.name"]) where attributes["service.name"] == nil and attributes["k8s.daemonset.name"] != nil
+              - set(attributes["service.name"], attributes["k8s.container.name"]) where attributes["service.name"] == nil
       batch: {}
     exporters:
       otlp/collector:
@@ -45,7 +54,7 @@ data:
       telemetry:
         logs: { level: warn }
       pipelines:
-        logs: { receivers: [filelog], processors: [memory_limiter, k8sattributes, batch], exporters: [otlp/collector] }
+        logs: { receivers: [filelog], processors: [memory_limiter, k8sattributes, transform/service, batch], exporters: [otlp/collector] }
         metrics: { receivers: [kubeletstats], processors: [memory_limiter, k8sattributes, batch], exporters: [otlp/collector] }
 ---
 apiVersion: apps/v1
@@ -59,7 +68,7 @@ spec:
     metadata:
       labels: { app: otel-agent }
       annotations:
-        config/version: "2"
+        config/version: "3"
     spec:
       serviceAccountName: otel-collector
       tolerations:
