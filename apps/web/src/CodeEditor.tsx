@@ -150,8 +150,9 @@ export default function CodeEditor({
     const query = window.matchMedia?.("(prefers-color-scheme: dark)");
     const follow = () => setTheme(themeName(query.matches));
     query?.addEventListener("change", follow);
-    // Monaco measures the font once: again when Fira Code has loaded, or ligatures and the cursor drift.
-    void document.fonts?.ready.then(() => monaco.editor.remeasureFonts());
+    // Monaco measures the font once: load Fira Code (a font is only fetched once something uses it) and measure again,
+    // or the cursor and the ligatures drift.
+    void document.fonts?.load('13px "Fira Code"').then(() => monaco.editor.remeasureFonts(), () => {});
     return () => query?.removeEventListener("change", follow);
   }, []);
   // The frame has the height, Monaco fills it (a percentage of a frame without one was 0).
