@@ -13,7 +13,7 @@ import type { McpConnector } from "@osiris/core/mcp/toolset.ts";
 import { openTenant, type Tenant, type TenantDeps } from "@osiris/core/tenants/tenant.ts";
 import type { FeatureSource } from "@osiris/core/tenants/features.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
-import { FEATURES, NO_QUOTAS, type Feature, type Guard, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type Feature, type Guard, type TenantFeatures, type TenantQuotas, type UserDefaults } from "@osiris/shared";
 import { accessFromClaims, membershipsFromClaims, isAuthorized } from "@osiris/platform/claims.ts";
 import { generateInternalKeys, InternalSigner, InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
 import { Activity } from "../src/activity.ts";
@@ -55,6 +55,12 @@ export class StaticFeatures implements FeatureSource {
 
   async systemGuards() {
     return this.guards;
+  }
+
+  defaults: Partial<UserDefaults> = {};
+
+  async userDefaults() {
+    return this.defaults;
   }
 
   async set(changes: Partial<TenantFeatures>) {

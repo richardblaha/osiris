@@ -96,7 +96,15 @@ const defaultsBody = z.object({
     idleMinutes: z.number().int().min(0).max(24 * 60),
     storageGb: z.number().int().min(1).max(500),
   }),
-  user: z.object({ address: z.enum(["auto", "ty", "vy"]), language: z.enum(["auto", "cs", "sk"]) }),
+  user: z.object({
+    address: z.enum(["auto", "ty", "vy"]),
+    language: z.enum(["auto", "cs", "sk"]),
+    signature: z.string().trim().max(1000),
+    instructions: z.string().trim().max(4000),
+    persona: z
+      .object({ character: z.string().trim().min(1).max(100), source: z.string().trim().max(150), description: z.string().trim().min(1).max(2000) })
+      .nullable(),
+  }),
 });
 const roleBody = z.object({ role: z.enum(["admin", "member"]) });
 const personName = z.string().trim().max(50);

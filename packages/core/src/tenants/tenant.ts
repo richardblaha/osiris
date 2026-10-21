@@ -108,7 +108,11 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const mcpServers = new McpServerStore(db, deps.secrets);
   const secrets = new SecretVault(db, deps.secrets);
   const mcp = new McpToolset(mcpServers, secrets, new McpOAuthStore(db, deps.secrets), deps.mcp);
-  const settings = new UserSettingsStore(db, async () => (await deps.features.userDefaults?.()) ?? {});
+  const userDefaults = async () => (await deps.features.userDefaults?.()) ?? {};
+  const settings = new UserSettingsStore(db, async () => {
+    const { persona: _, ...defaults } = await userDefaults();
+    return defaults;
+  });
   const features = deps.features;
   const usage = new UsageStore(db);
   const profiles = new AssistantProfileStore(db);
@@ -199,7 +203,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     persona: async (ctx) =>
       ctx.channel === "public"
         ? (await profiles.get(publicProfile(ctx.assistant ?? ""))).persona
-        : (await profiles.get(ctx.user_id)).persona,
+        : ((await profiles.get(ctx.user_id)).persona ?? (await userDefaults()).persona ?? null),
     publicPrompt: async (ctx) => {
       const a = await publicAssistants.get(ctx.assistant);
       if (!a) throw new Error(`No public assistant ${ctx.assistant}`);

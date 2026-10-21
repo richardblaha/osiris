@@ -269,7 +269,8 @@ describe("assistant persona and rules", () => {
   };
 
   it("writes a persona, the user's own only, and puts it in the prompt", async () => {
-    const { as, model } = await setup([new AIMessage("Mluv stručně a s klidem mistra Jedi."), new AIMessage("Ahoj.")]);
+    const { as, model, tenants } = await setup([new AIMessage("Mluv stručně a s klidem mistra Jedi."), new AIMessage("Ahoj."), new AIMessage("Dobrý den.")]);
+    (await tenants.get("acme")).features.defaults = { persona: { character: "Švejk", source: "", description: "Výchozí persona systému." } };
     const admin = as("acme");
     const bob = as("bob:tenant=acme");
 
@@ -286,6 +287,11 @@ describe("assistant persona and rules", () => {
     expect(prompt).toContain("# PERSONA");
     expect(prompt).toContain("Mluv jako Yoda, upravené.");
     expect(prompt).not.toContain("# ZÁVAZNÁ PRAVIDLA");
+
+    // Without their own persona, a user gets the system's default.
+    await run(admin, "Ahoj");
+    expect(model.calls.at(-1)![0]!.text).toContain("Výchozí persona systému.");
+    expect(prompt).not.toContain("Výchozí persona systému.");
   });
 
   it("refuses messages and replaces answers that break the system's and the tenant's rules", async () => {

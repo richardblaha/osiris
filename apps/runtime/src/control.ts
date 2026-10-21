@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { NO_QUOTAS, type Feature, type Guard, type UserSettings, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
+import { NO_QUOTAS, type Feature, type Guard, type UserDefaults, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
 import type { FeatureSource } from "@osiris/core/tenants/features.ts";
 import { callJson, ServiceError } from "@osiris/platform/http.ts";
 
@@ -44,7 +44,7 @@ export class ControlClient {
       counts: { members: number; schedules: number };
       /** A string from a control older than guard files. */
       systemGuards: Guard[] | string;
-      userDefaults?: Partial<UserSettings>;
+      userDefaults?: Partial<UserDefaults>;
     }>("/tenant");
   }
 
@@ -170,5 +170,5 @@ interface TenantPolicy {
   quotas: TenantQuotas;
   counts: { members: number; schedules: number };
   systemGuards: Guard[];
-  userDefaults: Partial<UserSettings>;
+  userDefaults: Partial<UserDefaults>;
 }

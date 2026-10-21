@@ -1,4 +1,4 @@
-import { FEATURES, type SystemDefaults, type TenantQuotas, type UserSettings } from "@osiris/shared";
+import { FEATURES, type Persona, type SystemDefaults, type TenantQuotas, type UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
@@ -22,9 +22,19 @@ export function SystemSettings() {
 
   const tenant = (change: Partial<SystemDefaults["tenant"]>) => (setSaved(false), setD({ ...d, tenant: { ...d.tenant, ...change } }));
   const user = (change: Partial<SystemDefaults["user"]>) => (setSaved(false), setD({ ...d, user: { ...d.user, ...change } }));
+  const persona = d.user.persona ?? { character: "", source: "", description: "" };
+  const setPersona = (change: Partial<Persona>) => {
+    const next = { ...persona, ...change };
+    user({ persona: next.character || next.source || next.description ? next : null });
+  };
+  const generate = () =>
+    attempt(setBusy, setError, async () => setPersona({ description: (await api.generatePersona(persona.character, persona.source)).description }));
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    void attempt(setBusy, setError, async () => (setD(await api.admin.saveDefaults(d)), setSaved(true)));
+    const p = d.user.persona;
+    if (p && !p.description.trim()) return setError("Persona potřebuje popis (tlačítko Nastavit), nebo ji celou vymaž.");
+    const body = { ...d, user: { ...d.user, persona: p && { ...p, character: p.character.trim() || "Vlastní" } } };
+    void attempt(setBusy, setError, async () => (setD(await api.admin.saveDefaults(body)), setSaved(true)));
   };
 
   return (
@@ -70,7 +80,7 @@ export function SystemSettings() {
 
       <section className="space-y-4">
         <h2 className="section-header">Nový uživatel</h2>
-        <p className="text-sm text-fg-secondary">Jak s uživatelem asistent jedná, dokud si v Personalizaci nenastaví vlastní.</p>
+        <p className="text-sm text-fg-secondary">Personalizace, se kterou uživatel začíná, dokud si v Personalizaci nenastaví vlastní.</p>
         <div className="flex flex-wrap gap-6">
           <Field label="Oslovení">
             <select value={d.user.address} onChange={(e) => user({ address: e.target.value as UserSettings["address"] })} className="field w-auto">
@@ -86,6 +96,42 @@ export function SystemSettings() {
               <option value="sk">slovenčina</option>
             </select>
           </Field>
+        </div>
+        <Field label="Podpis">
+          <textarea value={d.user.signature} onChange={(e) => user({ signature: e.target.value })} maxLength={1000} rows={3} className="field" />
+        </Field>
+        <Field label="Pokyny pro asistenta">
+          <textarea
+            value={d.user.instructions}
+            onChange={(e) => user({ instructions: e.target.value })}
+            placeholder="Např. Ceny uváděj vždy s DPH."
+            maxLength={4000}
+            rows={4}
+            className="field"
+          />
+        </Field>
+        <div>
+          <span className="text-sm font-medium">Persona</span>
+          <p className="text-xs text-fg-muted">Platí, dokud si uživatel nenastaví vlastní. Prázdná = bez persony.</p>
+          <div className="mt-2 flex flex-wrap items-end gap-3">
+            <Field label="Postava">
+              <input value={persona.character} onChange={(e) => setPersona({ character: e.target.value })} maxLength={100} placeholder="např. Sherlock Holmes" className="field w-56" />
+            </Field>
+            <Field label="Z knihy nebo filmu">
+              <input value={persona.source} onChange={(e) => setPersona({ source: e.target.value })} maxLength={150} placeholder="např. Pes baskervillský" className="field w-64" />
+            </Field>
+            <button type="button" disabled={busy || !persona.character.trim()} onClick={() => void generate()} className="btn-secondary">
+              Nastavit
+            </button>
+          </div>
+          <textarea
+            value={persona.description}
+            onChange={(e) => setPersona({ description: e.target.value })}
+            placeholder="Popis persony (vygeneruje se tlačítkem Nastavit, nebo ho napiš sám)"
+            maxLength={2000}
+            rows={5}
+            className="field mt-2"
+          />
         </div>
       </section>
 

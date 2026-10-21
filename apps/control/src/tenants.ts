@@ -90,7 +90,7 @@ export class TenantStore {
         features: withDefaults(stored.tenant?.features ?? {}),
         quotas: { ...NO_QUOTAS, ...stored.tenant?.quotas },
       },
-      user: { address: "auto", language: "auto", ...stored.user },
+      user: { address: "auto", language: "auto", signature: "", instructions: "", persona: null, ...stored.user },
     };
   }
 

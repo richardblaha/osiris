@@ -94,8 +94,8 @@ export interface Guards {
 /** What new tenants and users start with (system admins, System > Nastavení, `/api/admin/defaults`). */
 export interface SystemDefaults {
   tenant: { features: TenantFeatures; quotas: TenantQuotas; idleMinutes: number; storageGb: number };
-  /** A user's assistant settings until they save their own. */
-  user: Pick<UserSettings, "address" | "language">;
+  /** A user's personalization until they save their own (the persona until they set one). */
+  user: UserDefaults;
 }
 
 /** The cluster's telemetry in ClickHouse (System > Logy, Metriky, Trasy; `/api/admin/telemetry/*`). */
@@ -307,6 +307,9 @@ export interface UserSettings {
   /** The user's own standing instructions for the agent. */
   instructions: string;
 }
+
+/** The system's default personalization for users (System > Nastavení). */
+export type UserDefaults = UserSettings & { persona: Persona | null };
 
 /** A secret without its value: values are write-only and never leave the server. */
 export interface SecretSummary {

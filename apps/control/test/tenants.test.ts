@@ -73,14 +73,15 @@ describe("control API", () => {
     defaults.tenant.features.mcp = false;
     defaults.tenant.quotas.tokensPerMonth = 100_000;
     defaults.tenant.idleMinutes = 10;
-    defaults.user = { address: "vy", language: "cs" };
+    const persona = { character: "Holmes", source: "Pes baskervillský", description: "Stručně a dedukcí." };
+    defaults.user = { address: "vy", language: "cs", signature: "Jan", instructions: "S DPH.", persona };
     expect((await asUser("alice", [{ tenantId: "acme", role: "admin" }])("/admin/defaults", { method: "PUT", ...json(defaults) })).status).toBe(403);
     expect((await root("/admin/defaults", { method: "PUT", ...json(defaults) })).status).toBe(200);
     expect((await root("/admin/tenants", { method: "POST", ...json({ id: "novak", name: "Novák", features: { http: false } }) })).status).toBe(201);
     const detail = await (await root("/admin/tenants/novak")).json();
     expect(detail).toMatchObject({ idleMinutes: 10, quotas: { tokensPerMonth: 100_000 } });
     expect(detail.features).toMatchObject({ mcp: false, http: false, knowledge: true });
-    expect(await (await asRuntime("novak")("/tenant")).json()).toMatchObject({ userDefaults: { address: "vy", language: "cs" } });
+    expect(await (await asRuntime("novak")("/tenant")).json()).toMatchObject({ userDefaults: { address: "vy", language: "cs", signature: "Jan", persona } });
   });
 
   it("lets only system admins manage tenants", async () => {

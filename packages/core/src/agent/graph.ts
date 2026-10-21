@@ -40,7 +40,7 @@ export interface AgentDeps {
   usage?: UsageStore;
   /** The rules (system, tenant, user) for a run: in the prompt, and every message and answer is checked against them. */
   rules?: (ctx: RunContext) => Promise<GuardRules>;
-  /** The persona for a run: the user's own, or the tenant's. */
+  /** The persona for a run: the user's own, or the system's default. */
   persona?: (ctx: RunContext) => Promise<Persona | null>;
   /** Runs on the `public` channel (the tenant's customers) get this prompt instead, and their own token quota. */
   publicPrompt?: (ctx: RunContext) => Promise<string>;
