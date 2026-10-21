@@ -32,6 +32,7 @@ import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
 import { Members, roleLabel, TenantInfo } from "./TenantInfo.tsx";
 import { SystemSettings } from "./SystemSettings.tsx";
+import { Logs, Metrics, Traces } from "./Telemetry.tsx";
 import { TenantAdmin, TenantLogo } from "./Tenants.tsx";
 import { QuotaMeters } from "./Quotas.tsx";
 import { BuiltinTools } from "./Tools.tsx";
@@ -88,6 +89,10 @@ type View =
   /** The system admin's user administration. */
   | { kind: "users" }
   | { kind: "settings" }
+  /** The cluster's telemetry (system admins); a trace open, or logs of one trace. */
+  | { kind: "logs"; traceId?: string }
+  | { kind: "metrics" }
+  | { kind: "traces"; traceId?: string }
   | { kind: "files" }
   | { kind: "schedules" }
   | { kind: "sites" }
@@ -421,6 +426,9 @@ function Workspace() {
           {me.systemAdmin && (
             <NavSection title="Systém">
               <NavLink active={view.kind === "tenants"} onClick={() => setView({ kind: "tenants" })} label="Tenanti" icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
+              <NavLink active={view.kind === "logs"} onClick={() => setView({ kind: "logs" })} label="Logy" icon="M3 3h10M3 6h10M3 9h7M3 12h9" />
+              <NavLink active={view.kind === "metrics"} onClick={() => setView({ kind: "metrics" })} label="Metriky" icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
+              <NavLink active={view.kind === "traces"} onClick={() => setView({ kind: "traces" })} label="Trasy" icon="M2 4h6M4 8h7M6 12h8" />
               <NavLink
                 active={view.kind === "settings"}
                 onClick={() => setView({ kind: "settings" })}
@@ -460,6 +468,14 @@ function Workspace() {
         )}
         {view.kind === "settings" ? (
           me.systemAdmin ? <SystemSettings /> : null
+        ) : view.kind === "logs" ? (
+          me.systemAdmin ? <Logs key={view.traceId ?? ""} traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} /> : null
+        ) : view.kind === "metrics" ? (
+          me.systemAdmin ? <Metrics /> : null
+        ) : view.kind === "traces" ? (
+          me.systemAdmin ? (
+            <Traces traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} onOpenLogs={(id) => setView({ kind: "logs", traceId: id })} />
+          ) : null
         ) : view.kind === "users" ? (
           <TenantUsers key={tenant?.id} me={me} isAdmin={isAdmin} tenants={tenants} />
         ) : view.kind === "tenants" ? (

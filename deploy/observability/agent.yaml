@@ -1,5 +1,6 @@
-# On every node: container logs from /var/log/pods and node/pod/container metrics from the kubelet, to OpenObserve.
-# Osiris sends its own logs over OTLP (tied to traces), so its namespaces are left out here, as is this one.
+# On every node: container logs from /var/log/pods and node/pod/container metrics from the kubelet, over OTLP to the
+# cluster collector (which writes them to ClickHouse). Osiris sends its own logs over OTLP (tied to traces), so its
+# namespaces are left out here, as is this one.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -35,17 +36,17 @@ data:
           - sources: [{ from: resource_attribute, name: k8s.pod.name }, { from: resource_attribute, name: k8s.namespace.name }]
       batch: {}
     exporters:
-      otlphttp/openobserve:
-        endpoint: http://openobserve.observability.svc.cluster.local:5080/api/default
-        headers:
-          Authorization: Basic ${env:O2_AUTH}
-          stream-name: default
+      otlp/collector:
+        endpoint: otel-collector.observability.svc.cluster.local:4319
+        tls: { insecure: true }
+        sending_queue: { queue_size: 2000 }
+        retry_on_failure: { enabled: true }
     service:
       telemetry:
         logs: { level: warn }
       pipelines:
-        logs: { receivers: [filelog], processors: [memory_limiter, k8sattributes, batch], exporters: [otlphttp/openobserve] }
-        metrics: { receivers: [kubeletstats], processors: [memory_limiter, k8sattributes, batch], exporters: [otlphttp/openobserve] }
+        logs: { receivers: [filelog], processors: [memory_limiter, k8sattributes, batch], exporters: [otlp/collector] }
+        metrics: { receivers: [kubeletstats], processors: [memory_limiter, k8sattributes, batch], exporters: [otlp/collector] }
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -58,7 +59,7 @@ spec:
     metadata:
       labels: { app: otel-agent }
       annotations:
-        config/version: "1"
+        config/version: "2"
     spec:
       serviceAccountName: otel-collector
       tolerations:
@@ -72,8 +73,6 @@ spec:
               valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
             - name: K8S_NODE_IP
               valueFrom: { fieldRef: { fieldPath: status.hostIP } }
-            - name: O2_AUTH
-              valueFrom: { secretKeyRef: { name: openobserve-root, key: O2_AUTH } }
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { memory: 384Mi }

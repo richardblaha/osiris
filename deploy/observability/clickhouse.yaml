@@ -1,0 +1,154 @@
+# ClickHouse stores the whole cluster's telemetry (database otel: otel_logs, otel_traces, otel_metrics_*), written by
+# the OpenTelemetry Collector (user otel) and read by Osiris control (user osiris, read-only) for System > Logy,
+# Metriky, Trasy. Tuned for a small node: no caches it doesn't need, no system logs. The exporter's TTL (30 days)
+# expires old data. Secret clickhouse-users (not in git): OTEL_PASSWORD, OSIRIS_PASSWORD; see deploy/README.md.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clickhouse
+data:
+  server.xml: |
+    <clickhouse>
+      <listen_host>0.0.0.0</listen_host>
+      <logger><level>warning</level><console>1</console></logger>
+      <max_server_memory_usage_to_ram_ratio>0.8</max_server_memory_usage_to_ram_ratio>
+      <mark_cache_size>134217728</mark_cache_size>
+      <index_mark_cache_size>33554432</index_mark_cache_size>
+      <uncompressed_cache_size>0</uncompressed_cache_size>
+      <max_concurrent_queries>32</max_concurrent_queries>
+      <query_log remove="1"/>
+      <query_thread_log remove="1"/>
+      <query_views_log remove="1"/>
+      <part_log remove="1"/>
+      <trace_log remove="1"/>
+      <text_log remove="1"/>
+      <metric_log remove="1"/>
+      <asynchronous_metric_log remove="1"/>
+      <processors_profile_log remove="1"/>
+      <opentelemetry_span_log remove="1"/>
+      <session_log remove="1"/>
+      <error_log remove="1"/>
+      <latency_log remove="1"/>
+      <query_metric_log remove="1"/>
+      <blob_storage_log remove="1"/>
+      <background_schedule_pool_log remove="1"/>
+    </clickhouse>
+  users.xml: |
+    <clickhouse>
+      <profiles>
+        <default>
+          <max_memory_usage>536870912</max_memory_usage>
+        </default>
+        <reader>
+          <readonly>2</readonly>
+          <max_memory_usage>402653184</max_memory_usage>
+          <max_execution_time>20</max_execution_time>
+          <max_result_rows>20000</max_result_rows>
+          <result_overflow_mode>break</result_overflow_mode>
+        </reader>
+      </profiles>
+      <users>
+        <default remove="remove"/>
+        <otel>
+          <password from_env="OTEL_PASSWORD"/>
+          <networks><ip>::/0</ip></networks>
+          <profile>default</profile>
+          <quota>default</quota>
+          <grants><query>GRANT ALL ON otel.*</query></grants>
+        </otel>
+        <osiris>
+          <password from_env="OSIRIS_PASSWORD"/>
+          <networks><ip>::/0</ip></networks>
+          <profile>reader</profile>
+          <quota>default</quota>
+          <grants><query>GRANT SELECT ON otel.*</query></grants>
+        </osiris>
+      </users>
+    </clickhouse>
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels: { app: clickhouse }
+  template:
+    metadata:
+      labels: { app: clickhouse }
+      annotations:
+        config/version: "1"
+    spec:
+      securityContext:
+        runAsUser: 101
+        runAsGroup: 101
+        fsGroup: 101
+        runAsNonRoot: true
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:26.3.57.12
+          env:
+            - { name: CLICKHOUSE_SKIP_USER_SETUP, value: "1" }
+            - name: OTEL_PASSWORD
+              valueFrom: { secretKeyRef: { name: clickhouse-users, key: OTEL_PASSWORD } }
+            - name: OSIRIS_PASSWORD
+              valueFrom: { secretKeyRef: { name: clickhouse-users, key: OSIRIS_PASSWORD } }
+          ports:
+            - { name: http, containerPort: 8123 }
+            - { name: native, containerPort: 9000 }
+          readinessProbe:
+            httpGet: { path: /ping, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /ping, port: http }
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 100m, memory: 768Mi }
+            limits: { memory: 1536Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/clickhouse }
+            - { name: config, mountPath: /etc/clickhouse-server/config.d/osiris.xml, subPath: server.xml }
+            - { name: config, mountPath: /etc/clickhouse-server/users.d/osiris.xml, subPath: users.xml }
+      volumes:
+        - name: config
+          configMap: { name: clickhouse }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: civo-volume
+        resources: { requests: { storage: 20Gi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clickhouse
+spec:
+  selector: { app: clickhouse }
+  ports:
+    - { name: http, port: 8123, targetPort: http }
+    - { name: native, port: 9000, targetPort: native }
+---
+# Only the collector writes and only Osiris control reads.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: clickhouse
+spec:
+  podSelector: { matchLabels: { app: clickhouse } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: otel-collector } }
+      ports: [{ port: 9000, protocol: TCP }]
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: osiris } }
+          podSelector: { matchLabels: { app: control } }
+      ports: [{ port: 8123, protocol: TCP }]

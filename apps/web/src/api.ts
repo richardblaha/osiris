@@ -18,6 +18,12 @@ import type {
   Persona,
   Guard,
   Guards,
+  LogRecord,
+  MetricInfo,
+  MetricSeries,
+  SpanRecord,
+  TelemetryFacets,
+  TraceSummary,
   SystemDefaults,
   PublicAssistantSettings,
   PublishResult,
@@ -93,6 +99,10 @@ export interface FileRef {
 }
 
 const docPath = (id: string) => id.split("/").map(encodeURIComponent).join("/");
+
+/** Query values as strings, empty ones left out. */
+const strings = (q: Record<string, string | number | boolean | undefined>) =>
+  Object.fromEntries(Object.entries(q).flatMap(([k, v]) => (v === undefined || v === "" || v === false ? [] : [[k, String(v)]])));
 
 const query = (params: Record<string, string | undefined>) =>
   new URLSearchParams(Object.entries(params).filter((e): e is [string, string] => e[1] !== undefined)).toString();
@@ -258,6 +268,18 @@ export const api = {
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
     removeMember: (id: string, userId: string) =>
       request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+    /** The cluster's telemetry in ClickHouse; times in epoch ms. */
+    telemetry: {
+      facets: (q: { from: number; to: number }) => json<TelemetryFacets>(`/admin/telemetry/facets?${query(strings(q))}`),
+      logs: (q: { from: number; to: number; service?: string; namespace?: string; severity?: string; q?: string; traceId?: string; limit?: number }) =>
+        json<LogRecord[]>(`/admin/telemetry/logs?${query(strings(q))}`),
+      traces: (q: { from: number; to: number; service?: string; q?: string; minMs?: number; errors?: boolean }) =>
+        json<TraceSummary[]>(`/admin/telemetry/traces?${query(strings(q))}`),
+      trace: (id: string) => json<SpanRecord[]>(`/admin/telemetry/traces/${id}`),
+      metrics: (q: { from: number; to: number; q?: string }) => json<MetricInfo[]>(`/admin/telemetry/metrics?${query(strings(q))}`),
+      series: (q: { from: number; to: number; name: string; type: MetricInfo["type"]; groupBy?: string; service?: string }) =>
+        json<{ step: number; series: MetricSeries[] }>(`/admin/telemetry/series?${query(strings(q))}`),
+    },
     defaults: () => json<SystemDefaults>("/admin/defaults"),
     saveDefaults: (d: SystemDefaults) => json<SystemDefaults>("/admin/defaults", { method: "PUT", body: JSON.stringify(d) }),
     guards: () => json<Guard[]>("/admin/guards"),

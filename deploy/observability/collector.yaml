@@ -1,5 +1,5 @@
-# The cluster's OpenTelemetry Collector: OTLP from applications (gRPC 4317, HTTP 4318), cluster metrics
-# (k8s_cluster) and Kubernetes events, enriched with pod metadata and sent to OpenObserve.
+# The cluster's OpenTelemetry Collector: OTLP from applications (gRPC 4317, HTTP 4318) and from the node agents,
+# cluster metrics (k8s_cluster) and Kubernetes events, enriched with pod metadata and written to ClickHouse.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -45,8 +45,32 @@ data:
         protocols:
           grpc: { endpoint: 0.0.0.0:4317 }
           http: { endpoint: 0.0.0.0:4318 }
+      # The node agents: already enriched with their pods' metadata, so it isn't looked up again here.
+      otlp/agents:
+        protocols:
+          grpc: { endpoint: 0.0.0.0:4319 }
       k8s_cluster:
         collection_interval: 60s
+      # Prometheus metrics of pods that ask for it (annotation prometheus.io/scrape: "true"; port and path from
+      # prometheus.io/port and prometheus.io/path): Traefik, Cilium and the like.
+      prometheus:
+        config:
+          scrape_configs:
+            - job_name: kubernetes-pods
+              scrape_interval: 60s
+              kubernetes_sd_configs: [{ role: pod }]
+              relabel_configs:
+                - { source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape], action: keep, regex: "true" }
+                - { source_labels: [__meta_kubernetes_pod_phase], action: drop, regex: "Pending|Succeeded|Failed" }
+                - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+                  action: replace
+                  regex: '([^:]+)(?::\d+)?;(\d+)'
+                  replacement: '$$1:$$2'
+                  target_label: __address__
+                - { source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path], action: replace, regex: (.+), target_label: __metrics_path__ }
+                - { source_labels: [__meta_kubernetes_namespace], target_label: k8s_namespace_name }
+                - { source_labels: [__meta_kubernetes_pod_name], target_label: k8s_pod_name }
+                - { source_labels: [__meta_kubernetes_pod_node_name], target_label: k8s_node_name }
       k8sobjects:
         objects:
           - { name: events, mode: watch, group: events.k8s.io }
@@ -58,20 +82,28 @@ data:
         pod_association:
           - sources: [{ from: resource_attribute, name: k8s.pod.ip }]
           - sources: [{ from: connection }]
-      batch: {}
+      # ClickHouse wants few, large inserts.
+      batch: { send_batch_size: 5000, timeout: 10s }
     exporters:
-      otlphttp/openobserve:
-        endpoint: http://openobserve.observability.svc.cluster.local:5080/api/default
-        headers:
-          Authorization: Basic ${env:O2_AUTH}
-          stream-name: default
+      clickhouse:
+        endpoint: tcp://clickhouse.observability.svc.cluster.local:9000?dial_timeout=10s
+        database: otel
+        username: otel
+        password: ${env:CLICKHOUSE_PASSWORD}
+        create_schema: true
+        ttl: 720h
+        timeout: 10s
+        sending_queue: { queue_size: 2000 }
+        retry_on_failure: { enabled: true, initial_interval: 5s, max_interval: 30s, max_elapsed_time: 300s }
     service:
       telemetry:
         logs: { level: warn }
       pipelines:
-        traces: { receivers: [otlp], processors: [memory_limiter, k8sattributes, batch], exporters: [otlphttp/openobserve] }
-        metrics: { receivers: [otlp, k8s_cluster], processors: [memory_limiter, k8sattributes, batch], exporters: [otlphttp/openobserve] }
-        logs: { receivers: [otlp, k8sobjects], processors: [memory_limiter, k8sattributes, batch], exporters: [otlphttp/openobserve] }
+        traces: { receivers: [otlp], processors: [memory_limiter, k8sattributes, batch], exporters: [clickhouse] }
+        metrics: { receivers: [otlp, k8s_cluster], processors: [memory_limiter, k8sattributes, batch], exporters: [clickhouse] }
+        logs: { receivers: [otlp, k8sobjects], processors: [memory_limiter, k8sattributes, batch], exporters: [clickhouse] }
+        logs/agents: { receivers: [otlp/agents], processors: [memory_limiter, batch], exporters: [clickhouse] }
+        metrics/agents: { receivers: [otlp/agents, prometheus], processors: [memory_limiter, batch], exporters: [clickhouse] }
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -86,7 +118,7 @@ spec:
       labels: { app: otel-collector }
       annotations:
         # Restart when the configuration changes.
-        config/version: "1"
+        config/version: "2"
     spec:
       serviceAccountName: otel-collector
       securityContext:
@@ -99,9 +131,10 @@ spec:
           ports:
             - { name: otlp-grpc, containerPort: 4317 }
             - { name: otlp-http, containerPort: 4318 }
+            - { name: otlp-agents, containerPort: 4319 }
           env:
-            - name: O2_AUTH
-              valueFrom: { secretKeyRef: { name: openobserve-root, key: O2_AUTH } }
+            - name: CLICKHOUSE_PASSWORD
+              valueFrom: { secretKeyRef: { name: clickhouse-users, key: OTEL_PASSWORD } }
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { memory: 512Mi }
@@ -124,3 +157,4 @@ spec:
   ports:
     - { name: otlp-grpc, port: 4317, targetPort: otlp-grpc }
     - { name: otlp-http, port: 4318, targetPort: otlp-http }
+    - { name: otlp-agents, port: 4319, targetPort: otlp-agents }

@@ -23,6 +23,8 @@ import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
+import type { Telemetry } from "./telemetry/clickhouse.ts";
+import { telemetryRoutes } from "./telemetry/routes.ts";
 import { z } from "zod";
 import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, TENANT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, InternalAuthError, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
@@ -58,6 +60,8 @@ export interface ControlDeps {
   snapshot: (tenant: string) => Promise<void>;
   /** Sign-in: the OIDC provider's state, credentials and the sign-in screens' API. */
   auth: AuthDeps;
+  /** The cluster's telemetry in ClickHouse, for system admins; without it those pages say it isn't set up. */
+  telemetry?: Telemetry;
 }
 
 type Env = { Variables: { call: VerifiedCall & { user: NonNullable<VerifiedCall["user"]> }; tenant: TenantRow; role: Role; runtimeTenant: string } };
@@ -418,6 +422,7 @@ export function createControlApp(deps: ControlDeps) {
       await deps.snapshot(c.req.param("id"));
       return c.body(null, 202);
     })
+    .route("/telemetry", telemetryRoutes(deps.telemetry))
     .get("/defaults", async (c) => c.json<SystemDefaults>(await tenants.defaults()))
     .put("/defaults", async (c) => {
       const d = parse(defaultsBody, await json(c));

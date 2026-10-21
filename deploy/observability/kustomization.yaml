@@ -1,12 +1,13 @@
 # kubectl apply -k deploy/observability
-# Telemetry for the whole abydos cluster: OpenObserve stores and shows logs, metrics and traces; the OpenTelemetry
-# Collector takes OTLP from applications (Osiris services and runtimes) and collects pod logs, node/pod metrics and
-# Kubernetes events. Secret openobserve-root (not in git) is created from .env; see deploy/README.md.
+# Telemetry for the whole abydos cluster, stored in ClickHouse and shown in Osiris (System > Logy, Metriky, Trasy):
+# the OpenTelemetry Collector takes OTLP from applications (Osiris services and runtimes) and from the node agents
+# (pod logs, node/pod metrics) plus cluster metrics and Kubernetes events. Secret clickhouse-users (not in git) is
+# created from .env; see deploy/README.md.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: observability
 resources:
   - namespace.yaml
-  - openobserve.yaml
+  - clickhouse.yaml
   - collector.yaml
   - agent.yaml

@@ -1,8 +1,8 @@
 # Sign-in (the OpenID Connect provider at https://osiris.k6labs.cz/auth), users, tenants, schedules, WhatsApp, domains,
 # site publishing and backups. Writes Tenant objects only.
 # Secret osiris-control: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, AUTH_SIGNING_KEY, AUTH_SECRET, EMAILIT_API_KEY,
-# GOOGLE_*/FACEBOOK_*/MICROSOFT_*/SEZNAM_* (optional), RQLITE_USERNAME, RQLITE_PASSWORD, S3_*, WHATSAPP_*, SITES_INGRESS_IPS
-# (see deploy/README.md).
+# GOOGLE_*/FACEBOOK_*/MICROSOFT_*/SEZNAM_* (optional), RQLITE_USERNAME, RQLITE_PASSWORD, S3_*, WHATSAPP_*, SITES_INGRESS_IPS,
+# CLICKHOUSE_PASSWORD (the read-only user osiris; see deploy/README.md).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -43,6 +43,7 @@ spec:
             - { name: MAIL_FROM, value: "Osiris <auth@k6labs.cz>" }
             - { name: TIMEZONE, value: Europe/Prague }
             - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
+            - { name: CLICKHOUSE_URL, value: http://clickhouse.observability.svc.cluster.local:8123 }
           envFrom:
             - secretRef: { name: osiris-control }
           securityContext:

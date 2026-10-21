@@ -98,6 +98,67 @@ export interface SystemDefaults {
   user: Pick<UserSettings, "address" | "language">;
 }
 
+/** The cluster's telemetry in ClickHouse (System > Logy, Metriky, Trasy; `/api/admin/telemetry/*`). */
+export interface TelemetryFacets {
+  services: string[];
+  namespaces: string[];
+}
+
+export interface LogRecord {
+  /** Epoch ms. */
+  ts: number;
+  severity: string;
+  severityNumber: number;
+  service: string;
+  namespace: string;
+  pod: string;
+  body: string;
+  traceId: string;
+  spanId: string;
+  attributes: Record<string, string>;
+  resource: Record<string, string>;
+}
+
+/** A trace by its root span. */
+export interface TraceSummary {
+  ts: number;
+  traceId: string;
+  service: string;
+  name: string;
+  durationMs: number;
+  error: boolean;
+  spans: number;
+}
+
+export interface SpanRecord {
+  spanId: string;
+  parentSpanId: string;
+  service: string;
+  name: string;
+  kind: string;
+  /** Epoch ms, with fractions. */
+  startMs: number;
+  durationMs: number;
+  error: boolean;
+  statusMessage: string;
+  attributes: Record<string, string>;
+  resource: Record<string, string>;
+}
+
+export interface MetricInfo {
+  name: string;
+  type: "gauge" | "sum" | "histogram";
+  unit: string;
+  description: string;
+}
+
+export interface MetricSeries {
+  /** The group's value ('' without grouping). */
+  name: string;
+  /** [epoch ms, value]. */
+  points: [number, number][];
+}
+
 /** Guard names, also their file names: kebab-case. */
 export const GUARD_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 

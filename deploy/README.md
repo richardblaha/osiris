@@ -92,27 +92,28 @@ signature, stores the message and answers at once; a worker runs it in the sende
 Scheduled results go to WhatsApp only within 24 hours of the user's last message (Meta's rule for free-form messages);
 otherwise they stay in the web chat and the task shows a note.
 
-## Observability (OpenObserve, OTLP)
+## Observability (ClickHouse, OTLP)
 
-`deploy/observability` (namespace `observability`, for the whole cluster) runs OpenObserve at
-`https://observe.k6labs.cz` and the OpenTelemetry Collector: `otel-collector` takes OTLP from applications
-(`otel-collector.observability.svc.cluster.local:4318`), cluster metrics and Kubernetes events; the `otel-agent`
-DaemonSet reads pod logs and kubelet metrics on every node. Osiris services and runtimes send traces, metrics and logs
-over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set (`@osiris/platform/telemetry.ts`; the manifests set it), so their
-pod logs are not collected a second time.
+`deploy/observability` (namespace `observability`, for the whole cluster) runs ClickHouse and the OpenTelemetry
+Collector. `otel-collector` takes OTLP from applications (`otel-collector.observability.svc.cluster.local:4318`, gRPC
+4317), cluster metrics and Kubernetes events; the `otel-agent` DaemonSet reads pod logs and kubelet metrics on every
+node and sends them to the collector (port 4319, without a second pod lookup). The collector alone writes to ClickHouse
+(database `otel`, tables `otel_logs`, `otel_traces`, `otel_metrics_*`, created by its exporter, 30 days TTL). Osiris
+services and runtimes send traces, metrics and logs over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
+(`@osiris/platform/telemetry.ts`; the manifests set it), so their pod logs are not collected a second time. System
+admins read it all in Osiris: System > Logy, Metriky, Trasy (control queries ClickHouse as the read-only user `osiris`;
+the NetworkPolicy lets only the collector write and control read).
 
-1. DNS: `observe.k6labs.cz` → the Traefik load balancer (as `osiris.k6labs.cz`).
-2. `.env`: `OSIRIS_O2_EMAIL`, `OSIRIS_O2_PASSWORD` (OpenObserve refuses to start without a lowercase and an uppercase
-   letter, a digit and a special character: e.g. `"$(openssl rand -base64 24 | tr -d '/+=')Aa7-_"`), then:
+1. `.env`: `OSIRIS_CLICKHOUSE_OTEL_PASSWORD`, `OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD` (`openssl rand -hex 24` each), then:
    ```bash
    kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
-   kubectl -n observability create secret generic openobserve-root --dry-run=client -o yaml \
-     --from-literal=ZO_ROOT_USER_EMAIL="$OSIRIS_O2_EMAIL" --from-literal=ZO_ROOT_USER_PASSWORD="$OSIRIS_O2_PASSWORD" \
-     --from-literal=O2_AUTH="$(printf '%s:%s' "$OSIRIS_O2_EMAIL" "$OSIRIS_O2_PASSWORD" | base64 -w0)" | kubectl apply -f -
+   kubectl -n observability create secret generic clickhouse-users --dry-run=client -o yaml \
+     --from-literal=OTEL_PASSWORD="$OSIRIS_CLICKHOUSE_OTEL_PASSWORD" --from-literal=OSIRIS_PASSWORD="$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD" | kubectl apply -f -
+   kubectl -n osiris patch secret osiris-control --type merge -p "{\"stringData\":{\"CLICKHOUSE_PASSWORD\":\"$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD\"}}"
    kubectl apply -k deploy/observability
    ```
-3. Sign in at `https://observe.k6labs.cz` with that email and password: streams `default` (logs, traces, metrics).
-   A changed collector config needs a bump of the `config/version` annotation to restart it.
+2. A changed collector or ClickHouse config needs a bump of the `config/version` annotation to restart it.
+3. Ad-hoc SQL: `kubectl -n observability exec -it clickhouse-0 -- clickhouse-client --user otel --password "$OSIRIS_CLICKHOUSE_OTEL_PASSWORD"`.
 
 ## Users' Google and Microsoft accounts
 

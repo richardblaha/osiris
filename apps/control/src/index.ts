@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { InternalSigner, InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
 import { FsObjectStore, S3ObjectStore, type ObjectStore } from "@osiris/platform/objects.ts";
 import { LocalDb, migrate, RqliteDb, type Db } from "@osiris/platform/rqlite.ts";
+import { ClickHouse, Telemetry } from "./telemetry/clickhouse.ts";
 import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";
 import { startLoop } from "@osiris/platform/worker.ts";
@@ -107,6 +108,7 @@ const app = createControlApp({
   phones,
   snapshot,
   auth,
+  telemetry: config.CLICKHOUSE_URL ? new Telemetry(new ClickHouse(config.CLICKHOUSE_URL, config.CLICKHOUSE_USER, config.CLICKHOUSE_PASSWORD ?? "")) : undefined,
   whatsapp: whatsappClient
     ? { inbox, verifyToken: config.WHATSAPP_VERIFY_TOKEN!, appSecret: config.WHATSAPP_APP_SECRET!, displayNumber: config.WHATSAPP_DISPLAY_NUMBER }
     : undefined,

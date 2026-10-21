@@ -55,6 +55,10 @@ const schema = z
 
     // PocketID admin API, only for the one-off import of its users (`pnpm users import-pocketid`).
     POCKETID_URL: z.url().optional(),
+    // The cluster's telemetry (System > Logy, Metriky, Trasy): ClickHouse's HTTP interface with a read-only user.
+    CLICKHOUSE_URL: z.url().optional(),
+    CLICKHOUSE_USER: z.string().default("osiris"),
+    CLICKHOUSE_PASSWORD: z.string().optional(),
     POCKETID_API_KEY: headerToken,
 
     // How tenant runtimes run: Kubernetes (Tenant custom resources, operator) or local child processes (development).
