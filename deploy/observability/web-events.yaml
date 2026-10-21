@@ -27,8 +27,11 @@ spec:
     metadata:
       labels: { app: web-events }
     spec:
+      # The private ghcr.io images, as in namespace osiris (secret ghcr-pull, see deploy/README.md).
+      imagePullSecrets: [{ name: ghcr-pull }]
       securityContext:
         runAsNonRoot: true
+        runAsUser: 1000
         seccompProfile: { type: RuntimeDefault }
       topologySpreadConstraints:
         - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: { matchLabels: { app: web-events } } }

@@ -60,15 +60,17 @@ statistics without cookies"). Rotating `SALT_SEED` (a new Secret value) makes ev
    kubectl -n observability create secret generic web-events --dry-run=client -o yaml \
      --from-literal=SALT_SEED="$OSIRIS_WEB_EVENTS_SALT_SEED" | kubectl apply -f -
    ```
-2. `kubectl apply -k deploy/observability` (ClickHouse users, the collector's pipeline, web-events, the IngressRoute).
+2. The pull secret for the private images, copied from namespace osiris:
+   `kubectl -n osiris get secret ghcr-pull -o json | jq '.metadata = {name: "ghcr-pull", namespace: "observability"}' | kubectl apply -f -`.
+3. `kubectl apply -k deploy/observability` (ClickHouse users, the collector's pipeline, web-events, the IngressRoute).
    The ClickHouse users file is mounted with `subPath`, so a change needs `kubectl -n observability rollout restart
    statefulset/clickhouse`.
-3. Once the collector has created `web.web_events_raw` (on its start), the schema:
+4. Once the collector has created `web.web_events_raw` (on its start), the schema:
    ```bash
    kubectl -n observability exec -i clickhouse-0 -- sh -c 'clickhouse-client --user otel --password "$OTEL_PASSWORD" --multiquery' \
      < deploy/observability/web/schema.sql
    ```
-4. The visitor's IP must reach Traefik: its Service has `externalTrafficPolicy: Local` (otherwise the load balancer's
+5. The visitor's IP must reach Traefik: its Service has `externalTrafficPolicy: Local` (otherwise the load balancer's
    traffic is SNATed and every visitor has a node's address). Traefik is a Helm release, so keep the value there:
    `helm upgrade traefik traefik/traefik -n traefik --reuse-values --set service.spec.externalTrafficPolicy=Local`.
    `web_events.private_ip` growing means it doesn't (hashes and countries are then wrong).
