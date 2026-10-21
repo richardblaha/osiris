@@ -26,7 +26,7 @@ import { MCP_SIGN_IN, mcpKey, McpServerDetail, McpStatus } from "./McpServers.ts
 import { INTEGRATION_RETURN } from "./Integrations.tsx";
 import { MemoryDetail, memoryKey } from "./Memories.tsx";
 import { Avatar, Profile } from "./Profile.tsx";
-import { Loading, Pending, ScopeBadge } from "./Scope.tsx";
+import { Loading, Pending, ScopeBadge, Splash } from "./Scope.tsx";
 import { SignIn } from "./SignIn.tsx";
 import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
@@ -55,7 +55,7 @@ function Gate() {
   const [loginError, setLoginError] = useState<string>();
   useEffect(() => void getAccessToken().then((t) => setLoggedIn(!!t)), []);
 
-  if (loggedIn === undefined) return null;
+  if (loggedIn === undefined) return <Splash />;
   if (!loggedIn) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-4 bg-canvas px-4">
@@ -341,7 +341,7 @@ function Workspace() {
       </div>
     );
   }
-  if (!me) return <Pending className="relative h-full" />;
+  if (!me) return <Splash />;
   const isAdmin = tenant?.role === "admin";
   const sections = tenant ? SECTIONS.filter((s) => s.enabled(tenant.features)) : [];
   const canAdd = (section: Section) => isAdmin || MEMBERS_WRITE.includes(section);

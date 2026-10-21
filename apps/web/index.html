@@ -11,9 +11,28 @@
     <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
     <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1117" />
     <title>Osiris</title>
+    <!-- The splash shows before the app's code has loaded (React replaces it), and again while the app signs in. It fades
+         in after a moment, so a quick load (or a customer's chat widget) doesn't flash it. -->
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+      .splash {
+        display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+        font-family: "Fira Code", ui-monospace, monospace; color: #1f2328;
+        background: radial-gradient(ellipse at 50% 52%, #ffffff, #e9eef5 75%);
+        animation: splash-in 0.3s ease 0.3s both;
+      }
+      .splash img { width: 150px; height: 150px; filter: drop-shadow(0 0 14px rgba(0, 212, 255, 0.18)); }
+      .splash strong { margin-left: 0.35em; font-size: 18px; font-weight: 500; letter-spacing: 0.35em; }
+      @media (prefers-color-scheme: dark) {
+        .splash { color: #dce6f5; background: radial-gradient(ellipse at 50% 52%, #27314e, #11182b 75%); }
+      }
+      @keyframes splash-in { from { opacity: 0; } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="splash" role="status" aria-label="Načítám Osiris"><img src="/splash.svg" alt="" /><strong>OSIRIS</strong></div>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

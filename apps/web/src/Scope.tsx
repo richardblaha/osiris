@@ -1,5 +1,5 @@
 import type { Scope } from "@osiris/shared";
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 
 /** What every detail form gets. Settings records are the tenant's. */
 export interface DetailProps<T> {
@@ -51,17 +51,60 @@ export const Field = ({ label, children }: { label: string; children: ReactNode 
 export const ErrorNotice = ({ error }: { error?: string }) =>
   error ? <p className="notice notice-error mt-3 px-3 py-2 text-sm">{error}</p> : null;
 
+/** The OSIRIS orbit loader: the pyramid breathing, two orbits in its base plane; in the theme's text colour. */
+function OrbitLogo() {
+  const id = useId();
+  const orbits = (
+    <>
+      <ellipse className="orbit orbit-a" cx="100" cy="140" rx="90" ry="33.75" />
+      <ellipse className="orbit orbit-b" cx="100" cy="140" rx="82" ry="30.75" />
+    </>
+  );
+  return (
+    <svg className="orbit-logo" viewBox="0 0 200 200" aria-hidden="true">
+      <defs>
+        <clipPath id={`${id}r`}>
+          <rect width="200" height="140" />
+        </clipPath>
+        <clipPath id={`${id}f`}>
+          <rect y="140" width="200" height="60" />
+        </clipPath>
+      </defs>
+      <g className="rear" clipPath={`url(#${id}r)`}>
+        {orbits}
+      </g>
+      <g className="pyramid">
+        <polygon points="100,30 20,130 100,170" />
+        <polygon points="100,30 180,130 100,170" />
+        <polygon className="shade" points="20,130 100,170 180,130 100,110" />
+        <line className="axis" x1="100" y1="30" x2="100" y2="170" strokeWidth="2" />
+      </g>
+      <g clipPath={`url(#${id}f)`}>{orbits}</g>
+    </svg>
+  );
+}
+
 /**
- * A veil with a running bar over its nearest positioned parent (give it `relative`) while data loads. It fades in after
- * a moment, so quick loads don't flash.
+ * A blurred veil with the orbit loader over its nearest positioned parent (give it `relative`) while data loads. It
+ * fades in after a moment, so quick loads don't flash.
  */
 export const Loading = ({ show }: { show: boolean }) =>
   show ? (
     <div role="status" aria-label="Načítám" className="loading-overlay">
-      <div className="loading-bar" />
-      <div className="loading-spinner" />
+      <span className="orbit-loader">
+        <OrbitLogo />
+        <span className="loader-caption">NAČÍTÁNÍ...</span>
+      </span>
     </div>
   ) : null;
+
+/** The app's splash (the same as index.html's, before the code loads), while it signs in and loads the user. */
+export const Splash = () => (
+  <div className="splash" role="status" aria-label="Načítám Osiris">
+    <img src="/splash.svg" alt="" />
+    <strong>OSIRIS</strong>
+  </div>
+);
 
 /** In place of a part whose data hasn't come yet: the loading veil, or the error that stopped it. */
 export const Pending = ({ error, className = "relative min-h-32" }: { error?: string; className?: string }) => (

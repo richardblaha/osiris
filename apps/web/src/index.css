@@ -41,42 +41,66 @@ body,
     padding: 1.5rem;
   }
 
-  /* Loading veil over a part whose data is on the way (Scope.tsx `Loading`): a running bar on top and a spinner. */
+  /* Loading veil over a part whose data is on the way (Scope.tsx `Loading`): the orbit loader, monochrome. */
   .loading-overlay {
     position: absolute;
     inset: 0;
     z-index: 20;
+    display: grid;
+    place-items: center;
     cursor: progress;
-    background: color-mix(in srgb, var(--bg-editor) 65%, transparent);
+    border-radius: inherit;
+    color: color-mix(in srgb, var(--text-primary) 50%, transparent);
+    background: color-mix(in srgb, var(--bg-editor) 69%, transparent);
+    backdrop-filter: blur(3px);
     animation: loading-in 0.2s ease 0.15s both;
   }
-  .loading-bar {
-    position: absolute;
-    inset-inline: 0;
-    top: 0;
-    height: 2px;
-    overflow: hidden;
-    background: var(--accent-primary-soft);
+  .orbit-loader {
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
-  .loading-bar::before {
-    content: "";
-    position: absolute;
-    inset-block: 0;
-    width: 40%;
-    background: linear-gradient(90deg, var(--accent-primary), var(--accent-secondary));
-    animation: loading-slide 1.1s ease-in-out infinite;
+  /* Twice the caption's line. */
+  .orbit-logo {
+    height: 40px;
+    width: 40px;
+    flex: none;
+    overflow: visible;
+    fill: currentColor;
+    stroke: currentColor;
   }
-  .loading-spinner {
-    position: absolute;
-    top: min(50%, 8rem);
-    left: 50%;
-    height: 1.5rem;
-    width: 1.5rem;
-    margin: -0.75rem 0 0 -0.75rem;
-    border: 2px solid var(--accent-primary-soft);
-    border-top-color: var(--accent-primary);
-    border-radius: 50%;
-    animation: loading-spin 0.8s linear infinite;
+  .orbit-logo .pyramid {
+    stroke: none;
+    transform-origin: 100px 140px;
+    animation: orbit-breathe 2.7s ease-in-out infinite;
+  }
+  .orbit-logo .shade {
+    fill: #000;
+    opacity: 0.12;
+  }
+  .orbit-logo .axis {
+    stroke: currentColor;
+  }
+  .orbit-logo .rear {
+    opacity: 0.65;
+  }
+  .orbit-logo .orbit {
+    fill: none;
+    stroke-linecap: round;
+    stroke-width: 2.7;
+    stroke-dasharray: 35 28 16 28;
+    animation: orbit-flow 2.6s linear infinite;
+  }
+  .orbit-logo .orbit-b {
+    stroke-width: 2;
+    stroke-dasharray: 26 24 40 24;
+    animation-duration: 3.5s;
+    animation-direction: reverse;
+  }
+  .loader-caption {
+    font-size: 12px;
+    line-height: 20px;
+    letter-spacing: 0.02em;
   }
 
   /* Square icon-only button (send/stop in the composer). */
@@ -200,22 +224,25 @@ body,
     opacity: 0;
   }
 }
-@keyframes loading-slide {
-  from {
-    left: -40%;
-  }
+@keyframes orbit-flow {
   to {
-    left: 100%;
+    stroke-dashoffset: -300;
   }
 }
-@keyframes loading-spin {
-  to {
-    transform: rotate(360deg);
+@keyframes orbit-breathe {
+  0%,
+  100% {
+    opacity: 0.86;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.025);
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .loading-bar::before,
-  .loading-spinner {
-    animation-duration: 3s;
+  .orbit-logo .orbit,
+  .orbit-logo .pyramid {
+    animation: none;
   }
 }
