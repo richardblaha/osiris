@@ -9,6 +9,8 @@ metadata:
     app: vitepress
 spec:
   replicas: 1
+  # One stateless replica: replaced, not rolled (a full cluster has no room for a second one during a rollout).
+  strategy: { type: Recreate }
   selector:
     matchLabels:
       app: vitepress
