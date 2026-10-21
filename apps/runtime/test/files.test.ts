@@ -156,6 +156,72 @@ describe("file tools", () => {
     expect((await files.read({ scope: "temp", threadId: "t1" }, "n.md")).data.toString()).toBe("# <b>Novák & syn</b>");
   });
 
+  it("refuses a template whose data lacks a key, naming it", async () => {
+    const { files } = store();
+    const tools = byName(files);
+    await files.write(tenant, "sablony/f.md", text("{{klient}} {{#polozky}}{{nazev}} {{cena}}{{/polozky}}{{^poznamka}}-{{/poznamka}}"));
+    const call = (data: object) =>
+      tools.render_template!.invoke({ template_scope: "tenant", template_path: "sablony/f.md", data, output_scope: "temp", output_path: "f.md" }, ctx("member"));
+
+    const refused = JSON.parse(await call({ klient: "Novák", polozky: [{ nazev: "okno" }] }));
+    expect(refused).toMatchObject({ success: false, error_code: "MISSING_KEYS" });
+    expect(refused.message).toContain("cena, poznamka");
+    expect(JSON.parse(await call({ klient: "Novák", polozky: [{ nazev: "okno", cena: "100 Kč" }], poznamka: null }))).toMatchObject({ success: true });
+    expect((await files.read({ scope: "temp", threadId: "t1" }, "f.md")).data.toString()).toBe("Novák okno 100 Kč-");
+    // Not strict: blanks, as Mustache does.
+    await tools.render_template!.invoke(
+      { template_scope: "tenant", template_path: "sablony/f.md", data: { klient: "X" }, output_scope: "temp", output_path: "f.md", strict: false },
+      ctx("member"),
+    );
+    expect((await files.read({ scope: "temp", threadId: "t1" }, "f.md")).data.toString()).toBe("X -");
+  });
+
+  it("edits a text file exactly, by pattern, at a line or by a patch, and refuses what's ambiguous", async () => {
+    const { files } = store();
+    const tools = byName(files);
+    const edit = async (args: object) => JSON.parse(await tools.edit_text!.invoke({ scope: "tenant", path: "c.txt", ...args }, ctx("member")));
+    const content = async () => (await files.read(tenant, "c.txt")).data.toString();
+    await files.write(tenant, "c.txt", text("a = 1\r\nb = 2\r\nb = 2\r\nc = 3\r\n"));
+
+    const ambiguous = await edit({ operation: "replace_exact", search: "b = 2", replacement: "b = 5" });
+    expect(ambiguous).toMatchObject({ success: false, error_code: "AMBIGUOUS_MATCH" });
+    expect(ambiguous.message).toContain("na řádcích 2, 3");
+    expect(await edit({ operation: "replace_exact", search: "x", replacement: "y" })).toMatchObject({ success: false, error_code: "NOT_FOUND" });
+    expect(await edit({ operation: "replace_exact", search: "b = 2", replacement: "b = 5", expected_occurrences: 2, dry_run: true })).toMatchObject({
+      success: true,
+      meta: { lines_changed: 4, dry_run: true },
+    });
+    expect(await content()).toContain("b = 2");
+    const done = await edit({ operation: "replace_exact", search: "a = 1\r\nb = 2", replacement: "a = 1\r\nb = 9" });
+    expect(done).toMatchObject({ success: true, result: expect.stringMatching(/^Uloženo: tenant:c.txt/) });
+    expect(done.meta.diff).toContain("-b = 2\r\n+b = 9");
+
+    expect(await edit({ operation: "replace_regex", pattern: "^(\\w) = 3", flags: "m", replacement: "$1 = 4" })).toMatchObject({ success: true });
+    expect(await edit({ operation: "replace_regex", pattern: "= \\d", replacement: "= 0", max_matches: 2 })).toMatchObject({ error_code: "TOO_MANY_MATCHES" });
+    expect(await edit({ operation: "insert_at", line_number: 1, position: "after", content: "x = 0\n" })).toMatchObject({ success: true });
+    expect(await edit({ operation: "insert_at", line_number: 9, position: "after", content: "y" })).toMatchObject({ error_code: "LINE_OUT_OF_RANGE" });
+    expect(await content()).toBe("a = 1\r\nx = 0\r\nb = 9\r\nb = 2\r\nc = 4\r\n");
+
+    const patch = "--- a\n+++ b\n@@ -4,2 +4,2 @@\n b = 2\n-c = 4\n+c = 5\n";
+    expect(await edit({ operation: "diff_patch", patch })).toMatchObject({ success: true });
+    expect(await content()).toBe("a = 1\r\nx = 0\r\nb = 9\r\nb = 2\r\nc = 5\r\n");
+    const rejected = await edit({ operation: "diff_patch", patch });
+    expect(rejected).toMatchObject({ success: false, error_code: "HUNK_REJECTED" });
+    expect(rejected.message).toContain('patch čeká "c = 4"');
+    expect(await edit({ operation: "diff_patch" })).toMatchObject({ error_code: "MISSING_PARAMETERS" });
+  });
+
+  it("stops a regular expression that runs too long", async () => {
+    const { files } = store();
+    await files.write(tenant, "r.txt", text(`${"a".repeat(40)}!`));
+    const started = Date.now();
+    const out = JSON.parse(
+      await byName(files).edit_text!.invoke({ scope: "tenant", path: "r.txt", operation: "replace_regex", pattern: "(a+)+$", replacement: "" }, ctx("member")),
+    );
+    expect(out).toMatchObject({ success: false, error_code: "REGEX_TIMEOUT" });
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
   it("converts HTML with its images to PDF through Gotenberg", async () => {
     const { files } = store();
     const sent: { url: string; names: string[] }[] = [];

@@ -9,6 +9,7 @@ import { FileError, type FileLocation, type FileStore } from "../../files/store.
 import { extensionOf, fileType } from "@osiris/shared";
 import { getRunContext, type RunContext } from "../context.ts";
 import { isGuardPath } from "../guards.ts";
+import { editText, type EditFailure, type TextEdit } from "./text-edit.ts";
 
 const MAX_READ_CHARS = 50_000;
 const MAX_IMAGE_SIDE = 4000;
@@ -34,6 +35,38 @@ export function locate(s: FileScope, ctx: RunContext): FileLocation {
 /** The tenant's files are everyone's to write, except the guards: the agent never changes its own rules. */
 const canWrite = (s: FileScope, path: string) => s !== "tenant" || !isGuardPath(path);
 const READ_ONLY = "Sem zapisovat nelze (pravidla v guards/ mění jen správce v Osirisu).";
+
+/** Tool answers the model reads as JSON: `success`, then the result or the error with a hint how to fix the call. */
+const answer = (value: object) => JSON.stringify(value);
+const MAX_DIFF_CHARS = 20_000;
+
+/**
+ * Keys a Mustache template uses that its data lacks, followed into sections as Mustache would (lists item by item).
+ * Strict rendering refuses them rather than leaving blanks.
+ */
+export function missingKeys(template: string, data: object): string[] {
+  const missing = new Set<string>();
+  const walk = (tokens: Mustache.TemplateSpans, ctx: Mustache.Context) => {
+    for (const t of tokens) {
+      const [type, name] = t;
+      if (!["name", "&", "{", "#", "^"].includes(type)) continue;
+      const value: unknown = ctx.lookup(name);
+      if (value === undefined) {
+        missing.add(name);
+        continue;
+      }
+      const children = t[4] as Mustache.TemplateSpans | undefined;
+      if (!children) continue;
+      const empty = !value || (Array.isArray(value) && !value.length);
+      if (type === "^") {
+        if (empty) walk(children, ctx);
+      } else if (Array.isArray(value)) for (const item of value) walk(children, ctx.push(item));
+      else if (!empty) walk(children, typeof value === "object" ? ctx.push(value) : ctx);
+    }
+  };
+  walk(Mustache.parse(template), new Mustache.Context(data));
+  return [...missing];
+}
 
 const kb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} kB` : `${(n / 1024 / 1024).toFixed(1)} MB`);
 
@@ -129,30 +162,84 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
   );
 
   const renderTemplate = tool(
-    ({ template_scope, template_path, data, output_scope, output_path }, config) =>
+    ({ template_scope, template_path, data, output_scope, output_path, strict }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
         if (!canWrite(output_scope, output_path)) return READ_ONLY;
         if (!fileType(template_path)?.text) return "Šablona musí být textový soubor (html, md, txt…).";
         if (extensionOf(template_path) !== extensionOf(output_path)) return "Výstup musí mít stejnou příponu jako šablona.";
-        const { data: template } = await files.read(locate(template_scope, ctx), template_path);
+        const template = (await files.read(locate(template_scope, ctx), template_path)).data.toString("utf8");
+        const missing = strict ? missingKeys(template, data) : [];
+        if (missing.length) {
+          return answer({
+            success: false,
+            error_code: "MISSING_KEYS",
+            message: `V datech chybí hodnoty, které šablona používá: ${missing.join(", ")}.`,
+            hint: 'Doplň je do data (prázdný údaj jako "" nebo null, prázdný seznam jako []), nebo se zeptej uživatele. Nevymýšlej je.',
+          });
+        }
         const escape = ESCAPED.has(extensionOf(template_path)) ? Mustache.escape : (v: string) => v;
         // Mustache is logic-less: a template can't run code, and partials are off (no file access from templates).
-        const out = Mustache.render(template.toString("utf8"), data, {}, { escape });
+        const out = Mustache.render(template, data, {}, { escape });
         const entry = await files.write(locate(output_scope, ctx), output_path, Buffer.from(out, "utf8"), { overwrite: true });
-        return `Vytvořeno: ${output_scope}:${entry.path} (${kb(entry.size)}).`;
+        return answer({ success: true, result: `Vytvořeno: ${output_scope}:${entry.path} (${kb(entry.size)}).` });
       }),
     {
       name: "render_template",
       description:
         "Vyplní šablonu (Mustache: {{pole}}, {{#polozky}}…{{/polozky}} pro seznamy) daty a uloží výsledek. " +
-        "Šablony bývají ve složce sablony/ (firemní nebo osobní). Čísla a data předávej už naformátovaná.",
+        "Šablony bývají ve složce sablony/. Čísla a data předávej už naformátovaná. Chybějící hodnotu nástroj odmítne (strict).",
       schema: z.object({
         template_scope: scope,
         template_path: path,
         data: z.record(z.string(), z.unknown()).describe("Hodnoty pro šablonu"),
         output_scope: scope,
         output_path: path,
+        strict: z.boolean().default(true).describe("true = chyba, když v datech chybí hodnota použitá v šabloně"),
+      }),
+    },
+  );
+
+  const editTextFile = tool(
+    (args, config) =>
+      guarded(async () => {
+        const ctx = getRunContext(config);
+        if (!args.dry_run && !canWrite(args.scope, args.path)) return READ_ONLY;
+        if (!fileType(args.path)?.text) return answer({ success: false, error_code: "NOT_TEXT", message: "edit_text upravuje jen textové soubory." });
+        const edit = toEdit(args);
+        if ("success" in edit) return answer(edit);
+        const at = locate(args.scope, ctx);
+        const out = await editText((await files.read(at, args.path)).data.toString("utf8"), edit);
+        if (!out.success) return answer(out);
+        const entry = args.dry_run ? undefined : await files.write(at, args.path, Buffer.from(out.text, "utf8"), { overwrite: true });
+        const diff = out.diff.length > MAX_DIFF_CHARS ? `${out.diff.slice(0, MAX_DIFF_CHARS)}\n… (zkráceno)` : out.diff;
+        return answer({
+          success: true,
+          result: entry ? `Uloženo: ${args.scope}:${entry.path} (${kb(entry.size)}).` : "Náhled změny, soubor zůstal beze změny.",
+          meta: { operation: args.operation, lines_changed: out.lines_changed, diff, dry_run: args.dry_run },
+        });
+      }),
+    {
+      name: "edit_text",
+      description:
+        "Cíleně upraví textový soubor bez přepsání celého obsahu. Operace: replace_exact (search → replacement; search musí být nalezen přesně expected_occurrences×, " +
+        "jinak chyba; přidej do search 1–2 okolní řádky pro jednoznačnost), replace_regex (pattern → replacement, $1 pro skupiny), " +
+        "insert_at (content před/za řádek line_number), diff_patch (unified diff). dry_run vrátí jen diff. Vrací JSON s diffem.",
+      schema: z.object({
+        scope,
+        path,
+        operation: z.enum(["replace_exact", "replace_regex", "insert_at", "diff_patch"]),
+        search: z.string().max(200_000).optional().describe("replace_exact: přesný hledaný text"),
+        replacement: z.string().max(200_000).optional().describe("replace_exact a replace_regex: nový text"),
+        expected_occurrences: z.number().int().min(1).max(1000).default(1).describe("replace_exact: kolikrát se má search vyskytovat"),
+        pattern: z.string().max(2000).optional().describe("replace_regex: regulární výraz (JavaScript)"),
+        flags: z.string().max(4).optional().describe("replace_regex: příznaky i, m, s, u"),
+        max_matches: z.number().int().min(1).optional().describe("replace_regex: víc shod = chyba"),
+        line_number: z.number().int().optional().describe("insert_at: číslo řádku od 1"),
+        position: z.enum(["before", "after"]).optional().describe("insert_at: před nebo za řádek"),
+        content: z.string().max(200_000).optional().describe("insert_at: vkládaný text"),
+        patch: z.string().max(400_000).optional().describe("diff_patch: unified diff"),
+        dry_run: z.boolean().default(false).describe("true = jen ukázat diff, nic neukládat"),
       }),
     },
   );
@@ -190,7 +277,7 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     },
   );
 
-  const tools: StructuredToolInterface[] = [listFiles, readFile, writeFile, deleteFile, moveFile, renderTemplate, resizeImage];
+  const tools: StructuredToolInterface[] = [listFiles, readFile, writeFile, deleteFile, moveFile, renderTemplate, editTextFile, resizeImage];
   if (!gotenberg) return tools;
 
   const convertToPdf = tool(
@@ -236,6 +323,38 @@ async function siblingAssets(files: FileStore, loc: FileLocation, htmlPath: stri
     total += data.length;
   }
   return assets;
+}
+
+type EditArgs = {
+  operation: TextEdit["operation"];
+  search?: string;
+  replacement?: string;
+  expected_occurrences: number;
+  pattern?: string;
+  flags?: string;
+  max_matches?: number;
+  line_number?: number;
+  position?: "before" | "after";
+  content?: string;
+  patch?: string;
+};
+
+/** The operation's own parameters, or what's missing for it. */
+function toEdit(a: EditArgs): TextEdit | EditFailure {
+  const need = (...names: (keyof EditArgs)[]): EditFailure | undefined => {
+    const missing = names.filter((n) => a[n] === undefined);
+    return missing.length ? { success: false, error_code: "MISSING_PARAMETERS", message: `Operace ${a.operation} potřebuje: ${missing.join(", ")}.` } : undefined;
+  };
+  switch (a.operation) {
+    case "replace_exact":
+      return need("search", "replacement") ?? { operation: a.operation, search: a.search!, replacement: a.replacement!, expected_occurrences: a.expected_occurrences };
+    case "replace_regex":
+      return need("pattern", "replacement") ?? { operation: a.operation, pattern: a.pattern!, flags: a.flags, replacement: a.replacement!, max_matches: a.max_matches };
+    case "insert_at":
+      return need("line_number", "position", "content") ?? { operation: a.operation, line_number: a.line_number!, position: a.position!, content: a.content! };
+    case "diff_patch":
+      return need("patch") ?? { operation: a.operation, patch: a.patch! };
+  }
 }
 
 /** Full-text search in the tenant's files and the user's own (not in temp files). */

@@ -25,6 +25,7 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   delete_file: (a) => `Mažu ${file(a)}`,
   move_file: (a) => `Přesouvám ${file(a, "from_scope", "from_path")} → ${file(a, "to_scope", "to_path")}`,
   render_template: (a) => `Vyplňuji šablonu ${file(a, "template_scope", "template_path")}`,
+  edit_text: (a) => `${a.dry_run ? "Zkouším úpravu" : "Upravuji"} ${file(a)}`,
   convert_to_pdf: (a) => `Převádím do PDF ${file(a)}`,
   resize_image: (a) => `Upravuji obrázek ${file(a)}`,
   http_request: (a) => {
