@@ -551,16 +551,18 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       if (!(await ctx.tenant.guards.delete(owner, c.req.param("name")))) throw new HTTPException(404, { message: "Pravidlo neexistuje" });
       return c.body(null, 204);
     })
-    // Writes a persona's description from a character; nothing is saved until the (edited) profile is put.
+    // Expands a persona brief; nothing is saved until the (edited) profile is put.
     .post("/assistant/persona", async (c) => {
       const { tenant, user } = c.get("ctx");
-      const { character, source } = parse(personaBody, await c.req.json());
+      const input = parse(z.union([z.object({ description: z.string().trim().min(1).max(2000) }), personaBody]), await c.req.json());
+      const character = "description" in input ? "Vlastní" : input.character;
+      const source = "description" in input ? "" : input.source;
       const quotas = await tenant.features.quotas();
       if (quotas.tokensPerMonth !== null && (await tenant.usage.tokens()) >= quotas.tokensPerMonth) throw new HTTPException(429, { message: TOKENS_EXHAUSTED });
       if (quotas.tokensPerUserMonth !== null && (await tenant.usage.tokens(Date.now(), { user: user.sub })) >= quotas.tokensPerUserMonth) {
         throw new HTTPException(429, { message: USER_TOKENS_EXHAUSTED });
       }
-      const { description, tokens } = await describePersona(tenant.personaModel, character, source);
+      const { description, tokens } = await describePersona(tenant.personaModel, "description" in input ? input.description : character, "description" in input ? undefined : source);
       await tenant.usage.add(tokens, Date.now(), { user: user.sub });
       return c.json<Persona>({ character, source, description });
     })

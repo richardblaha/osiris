@@ -1,7 +1,26 @@
+import type { View } from "./routes.ts";
 import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary } from "@osiris/shared";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
+
+type DiagnosticView = Extract<View, { kind: "logs" | "metrics" | "traces" }>;
+
+export function Diagnostics({ view, onNavigate }: { view: DiagnosticView; onNavigate: (view: DiagnosticView) => void }) {
+  return <div className="flex h-full flex-col">
+    <nav aria-label="Diagnostika" className="flex shrink-0 items-center gap-2 border-b border-line px-6 py-3">
+      <h1 className="mr-4 font-semibold">Diagnostika</h1>
+      {([ ["logs", "Logy"], ["metrics", "Metriky"], ["traces", "Trasy"] ] as const).map(([kind, label]) =>
+        <button key={kind} type="button" aria-current={view.kind === kind ? "page" : undefined} data-active={view.kind === kind} onClick={() => onNavigate({ kind })} className="list-row rounded px-3 py-1.5 text-sm">{label}</button>
+      )}
+    </nav>
+    <div className="min-h-0 flex-1">
+      {view.kind === "logs" ? <Logs key={view.traceId ?? ""} traceId={view.traceId} onOpenTrace={(traceId) => onNavigate({ kind: "traces", traceId })} />
+        : view.kind === "metrics" ? <Metrics />
+        : <Traces traceId={view.traceId} onOpenTrace={(traceId) => onNavigate({ kind: "traces", traceId })} onOpenLogs={(traceId) => onNavigate({ kind: "logs", traceId })} />}
+    </div>
+  </div>;
+}
 
 const RANGES = [
   { label: "15 min", ms: 15 * 60_000 },

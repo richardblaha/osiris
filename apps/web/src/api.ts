@@ -260,8 +260,8 @@ export const api = {
   assistant: (assistant?: string) => json<AssistantProfiles>(`/assistant${assistant ? `?${query({ assistant })}` : ""}`),
   saveAssistant: (scope: Scope | "public", profile: AssistantProfile, assistant?: string) =>
     json<AssistantProfile>(`/assistant?${query({ scope, assistant })}`, { method: "PUT", body: JSON.stringify(profile) }),
-  generatePersona: (character: string, source: string) =>
-    json<Persona>("/assistant/persona", { method: "POST", body: JSON.stringify({ character, source }) }),
+  generatePersona: (description: string) =>
+    json<Persona>("/assistant/persona", { method: "POST", body: JSON.stringify({ description }) }),
   saveTenantLogo: (image: Blob) => request("/tenant/logo", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
   removePhone: () => request("/me/phone", { method: "DELETE" }),

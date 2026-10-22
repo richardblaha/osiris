@@ -29,8 +29,8 @@
   --bg-sidebar: #f6f8fa;
   --bg-editor: #ffffff;
   --bg-tab-inactive: #eaeef2;
-  --bg-statusbar: #0969da;
-  --bg-statusbar-text: #ffffff;
+  --bg-statusbar: var(--bg-sidebar);
+  --bg-statusbar-text: var(--text-primary);
   --bg-hover: #eaeef2;
   --bg-selection: #dde7f3;
   --bg-input: #ffffff;
@@ -60,8 +60,8 @@
     --bg-sidebar: #161b22;
     --bg-editor: #0d1117;
     --bg-tab-inactive: #161b22;
-    --bg-statusbar: #00f2fe;
-    --bg-statusbar-text: #04151a;
+    --bg-statusbar: var(--bg-sidebar);
+    --bg-statusbar-text: var(--text-primary);
     --bg-hover: #21262d;
     --bg-selection: #21262d;
     --bg-input: #21262d;

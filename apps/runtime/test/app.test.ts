@@ -325,6 +325,19 @@ describe("assistant persona and rules", () => {
     return { text, history };
   };
 
+  it("expands a free-form persona description without saving it", async () => {
+    const { as, model } = await setup([new AIMessage("Mluv stručně, přátelsky a s jemným humorem.")]);
+    const bob = as("bob:tenant=acme");
+    const response = await bob("/assistant/persona", { method: "POST", body: JSON.stringify({ description: "Buď přátelský a stručný, přidej trochu humoru." }) });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ character: "Vlastní", source: "", description: "Mluv stručně, přátelsky a s jemným humorem." });
+    expect(model.calls[0]![1]!.text).toBe("Buď přátelský a stručný, přidej trochu humoru.");
+    expect(model.calls[0]![0]!.text).toContain("nejvýš 120 slov");
+    expect(await (await bob("/assistant")).json()).toEqual({ personal: { persona: null } });
+    expect((await bob("/assistant/persona", { method: "POST", body: JSON.stringify({ description: "   " }) })).status).toBe(400);
+    expect(model.calls).toHaveLength(1);
+  });
+
   it("writes a persona, the user's own only, and puts it in the prompt", async () => {
     const { as, model, tenants } = await setup([new AIMessage("Mluv stručně a s klidem mistra Jedi."), new AIMessage("Ahoj."), new AIMessage("Dobrý den.")]);
     (await tenants.get("acme")).features.defaults = { persona: { character: "Švejk", source: "", description: "Výchozí persona systému." } };

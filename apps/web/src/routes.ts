@@ -1,3 +1,6 @@
+export const SETTINGS_PARTS = ["features", "quotas", "runtime", "personalization", "persona"] as const;
+export type SettingsPart = (typeof SETTINGS_PARTS)[number];
+
 /**
  * The workspace's views as URLs, so the browser's back and forward, reloads and links work:
  * `/t/<tenant>[/chat/<thread>|/<section>[/<id>|/new]|/files|...]`, `/profile` and `/system/<view>[/<id>]`.
@@ -19,7 +22,7 @@ export type View =
   | { kind: "tenants"; initial?: string | null }
   /** The system admin's user administration. */
   | { kind: "users" }
-  | { kind: "settings" }
+  | { kind: "settings"; part?: SettingsPart }
   /** The cluster's telemetry (system admins); a trace open, or logs of one trace. */
   | { kind: "logs"; traceId?: string }
   | { kind: "metrics" }
@@ -48,6 +51,7 @@ export function toPath(view: View, tenant: string | undefined): string | undefin
     case "profile":
       return "/profile";
     case "settings":
+      return `/system/settings${view.part ? `/${view.part}` : ""}`;
     case "metrics":
       return `/system/${view.kind}`;
     case "sysdash":
@@ -83,7 +87,8 @@ export function fromPath(path: string): { tenant?: string; view: View } | undefi
   const [top, a, b, c] = parts;
   if (top === "profile" && !a) return { view: { kind: "profile" } };
   if (top === "system") {
-    if ((a === "settings" || a === "metrics") && !b) return { view: { kind: a } };
+    if (a === "settings" && !c && (!b || (SETTINGS_PARTS as readonly string[]).includes(b))) return { view: b ? { kind: "settings", part: b as SettingsPart } : { kind: "settings" } };
+    if (a === "metrics" && !b) return { view: { kind: a } };
     if (a === "dashboard" && !b) return { view: { kind: "sysdash" } };
     if ((a === "logs" || a === "traces") && !c) return { view: { kind: a, traceId: b } };
     if (a === "tenants" && !c) return { view: { kind: "tenants", initial: b === "new" ? null : b } };

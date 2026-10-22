@@ -70,13 +70,13 @@ export async function breaksRules(
 }
 
 const PERSONA_PROMPT = `Píšeš popis persony pro firemního asistenta Osiris (pomáhá živnostníkům se zakázkami, termíny, poznámkami a fakturami).
-Dostaneš postavu a dílo, ze kterého pochází. Napiš česky stručný popis (nejvýš 120 slov) toho, jak má asistent komunikovat:
-tón, slovník, typické obraty a způsob jednání, inspirované touto postavou. Piš ve druhé osobě jako pokyn asistentovi ("Mluv...", "Používej...").
+Dostaneš uživatelův návrh persony, případně postavu a dílo, ze kterého pochází. Napiš česky stručný popis (nejvýš 120 slov) toho, jak má asistent komunikovat:
+tón, slovník, typické obraty a způsob jednání, podle uživatelova návrhu. Pokud uvádí postavu, inspiruj se jejím stylem. Piš ve druhé osobě jako pokyn asistentovi ("Mluv...", "Používej...").
 Asistent zůstává věcný a užitečný: persona mění jen styl, ne fakta ani pravidla. Nepiš nic o tom, že je to hra nebo napodobování,
 necituj delší pasáže z díla a nepřidávej nadpis ani úvod.`;
 
-/** Writes the persona's description from a character and the work it comes from; the user can edit it before saving. */
-export async function describePersona(model: BaseChatModel, character: string, source: string): Promise<{ description: string; tokens: number }> {
-  const response = await model.invoke([new SystemMessage(PERSONA_PROMPT), new HumanMessage(`Postava: ${character}\nDílo: ${source || "neuvedeno"}`)]);
+/** Expands a free-form persona brief; optional source preserves the older character/work API. */
+export async function describePersona(model: BaseChatModel, description: string, source?: string): Promise<{ description: string; tokens: number }> {
+  const response = await model.invoke([new SystemMessage(PERSONA_PROMPT), new HumanMessage(source === undefined ? description : `Postava: ${description}\nDílo: ${source || "neuvedeno"}`)]);
   return { description: response.text.trim(), tokens: response.usage_metadata?.total_tokens ?? 0 };
 }
