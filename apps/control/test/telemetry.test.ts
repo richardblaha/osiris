@@ -29,7 +29,7 @@ describe("telemetry from ClickHouse", () => {
     expect(await (await app.request("/series?name=m&type=gauge")).json()).toEqual({ step: 60, series: [] });
   });
 
-  it("reads one site's web analytics from the aggregates, the site as a parameter", async () => {
+  it("reads one of a tenant's sites' web analytics from the aggregates, the site as a parameter", async () => {
     const calls: { url: URL; sql: string }[] = [];
     const fake = (async (url: string, init: RequestInit) => {
       const sql = String(init.body);
@@ -41,11 +41,13 @@ describe("telemetry from ClickHouse", () => {
       if (sql.includes("FROM web.pages_daily")) return Response.json({ data: [{ key: "/", detail: "", pageviews: "80", visitors: "30" }] });
       return Response.json({ data: [] });
     }) as typeof fetch;
-    const app = telemetryRoutes(new Telemetry(new ClickHouse("http://clickhouse:8123", "osiris", "pw", fake)));
+    const web = new Telemetry(new ClickHouse("http://clickhouse:8123", "osiris", "pw", fake)).web;
     const now = Date.now();
-    const stats = await (await app.request(`/web?site=k6labs.cz&from=${now - 86_400_000}&to=${now}`)).json();
+    const day = { from: now - 86_400_000, to: now };
+    // A site the tenant wasn't given is never read: its own comes instead.
+    const stats = await web.stats("tras.cz", day, ["k6labs.cz", "jinde.cz"]);
     expect(stats).toMatchObject({
-      sites: ["k6labs.cz", "tras.cz"],
+      sites: ["k6labs.cz"],
       totals: { pageviews: 120, visitors: 40, events: 3 },
       step: "hour",
       series: [{ t: 1761091200000, pageviews: 5, visitors: 2 }],
@@ -55,6 +57,6 @@ describe("telemetry from ClickHouse", () => {
     expect(calls.every((c) => !c.sql.includes("k6labs.cz"))).toBe(true);
     expect(calls.filter((c) => c.url.searchParams.get("param_site") === "k6labs.cz")).toHaveLength(10);
     // Over two days: by day.
-    expect((await (await app.request(`/web?from=${now - 30 * 86_400_000}`)).json()).step).toBe("day");
+    expect((await web.stats(undefined, { from: now - 30 * 86_400_000, to: now })).step).toBe("day");
   });
 });

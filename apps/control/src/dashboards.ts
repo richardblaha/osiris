@@ -8,6 +8,7 @@ import {
   type PanelSource,
   type ReportedUsage,
   type TenantQuotas,
+  type WebStats,
   type WebSummary,
 } from "@osiris/shared";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
@@ -174,6 +175,20 @@ const ch = (deps: DashboardDeps) => {
 };
 
 /** A tenant's dashboards (its admins edit, members see) and its sites' web analytics. Mounted at /api/dashboards. */
+/**
+ * Tenant > Návštěvnost: one of the tenant's sites at a time (the sites of its domains and those a system admin gave
+ * it), kept for two years. Mounted at /api/analytics.
+ */
+export function tenantAnalyticsRoutes(deps: DashboardDeps, tenant: (c: Context) => string) {
+  return new Hono().get("/", async (c) => {
+    const q = parse(z.object({ site: name, from: z.coerce.number().int().optional(), to: z.coerce.number().int().optional() }), c.req.query());
+    const to = q.to ?? Date.now();
+    const from = Math.max(q.from ?? to - 30 * 24 * HOUR, to - 731 * 24 * HOUR);
+    const allowed = (await deps.tenants.webSites()).get(tenant(c)) ?? [];
+    return c.json<WebStats>(await ch(deps).web.stats(q.site, { from, to }, allowed));
+  });
+}
+
 export function tenantDashboardRoutes(deps: DashboardDeps, ctx: (c: Context) => { tenant: string; role: string; user: string; quotas: TenantQuotas }) {
   return new Hono()
     .get("/data/web", async (c) => {

@@ -32,6 +32,10 @@ describe("dashboards", () => {
     expect(await (await admin("/dashboards")).json()).toEqual([]);
     // Without its domains or sites a tenant's web analytics are empty, with no ClickHouse needed.
     expect((await (await member("/dashboards/data/web")).json()).sites).toEqual([]);
+    // Návštěvnost is the tenant's (feature sites); without ClickHouse it says so.
+    expect((await member("/analytics")).status).toBe(503);
+    await directory.update("acme", { features: { sites: false } });
+    expect((await member("/analytics")).status).toBe(403);
   });
 
   it("gives system admins the system's dashboards and every tenant's state and use", async () => {

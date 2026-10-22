@@ -24,7 +24,7 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import type { Telemetry } from "./telemetry/clickhouse.ts";
-import { DashboardStore, systemDashboardRoutes, tenantDashboardRoutes } from "./dashboards.ts";
+import { DashboardStore, systemDashboardRoutes, tenantAnalyticsRoutes, tenantDashboardRoutes } from "./dashboards.ts";
 import { telemetryRoutes } from "./telemetry/routes.ts";
 import { z } from "zod";
 import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, TENANT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
@@ -282,6 +282,11 @@ export function createControlApp(deps: ControlDeps) {
   // --- the active tenant --------------------------------------------------------------------------------------------
   const tenant = new Hono<Env>()
     .use(inTenant)
+    .use("/analytics", requireFeature("sites"))
+    .route(
+      "/analytics",
+      tenantAnalyticsRoutes(dashboardDeps, (c) => (c as Context<Env>).get("tenant").id),
+    )
     .route(
       "/dashboards",
       tenantDashboardRoutes(dashboardDeps, (c) => {

@@ -23,8 +23,8 @@ export type View =
   /** The cluster's telemetry (system admins); a trace open, or logs of one trace. */
   | { kind: "logs"; traceId?: string }
   | { kind: "metrics" }
-  /** The sites' web analytics (system admins). */
-  | { kind: "web" }
+  /** The tenant's sites' web analytics. */
+  | { kind: "analytics" }
   | { kind: "traces"; traceId?: string }
   | { kind: "files" }
   | { kind: "schedules" }
@@ -38,7 +38,7 @@ export type View =
   | { kind: "public" };
 
 /** Views of the active tenant without a record of their own. */
-const TENANT_PAGES = ["dashboard", "files", "schedules", "database", "sites", "guards", "public", "users", "tenant"] as const;
+const TENANT_PAGES = ["dashboard", "analytics", "files", "schedules", "database", "sites", "guards", "public", "users", "tenant"] as const;
 
 const seg = encodeURIComponent;
 
@@ -49,7 +49,6 @@ export function toPath(view: View, tenant: string | undefined): string | undefin
       return "/profile";
     case "settings":
     case "metrics":
-    case "web":
       return `/system/${view.kind}`;
     case "sysdash":
       return "/system/dashboard";
@@ -84,7 +83,7 @@ export function fromPath(path: string): { tenant?: string; view: View } | undefi
   const [top, a, b, c] = parts;
   if (top === "profile" && !a) return { view: { kind: "profile" } };
   if (top === "system") {
-    if ((a === "settings" || a === "metrics" || a === "web") && !b) return { view: { kind: a } };
+    if ((a === "settings" || a === "metrics") && !b) return { view: { kind: a } };
     if (a === "dashboard" && !b) return { view: { kind: "sysdash" } };
     if ((a === "logs" || a === "traces") && !c) return { view: { kind: a, traceId: b } };
     if (a === "tenants" && !c) return { view: { kind: "tenants", initial: b === "new" ? null : b } };

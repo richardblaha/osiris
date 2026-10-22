@@ -440,6 +440,9 @@ function Workspace() {
                 {tenant.features.database && (
                   <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label="Databáze" icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
                 )}
+                {tenant.features.sites && (
+                  <NavLink active={view.kind === "analytics"} onClick={() => setView({ kind: "analytics" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
+                )}
                 {tenant.features.scheduler && (
                   <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
                 )}
@@ -457,7 +460,6 @@ function Workspace() {
             {me.systemAdmin && (
               <NavSection title="Systém">
                 <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
-                <NavLink active={view.kind === "web"} onClick={() => setView({ kind: "web" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
                 <NavLink active={view.kind === "logs"} onClick={() => setView({ kind: "logs" })} label="Logy" icon="M3 3h10M3 6h10M3 9h7M3 12h9" />
                 <NavLink active={view.kind === "metrics"} onClick={() => setView({ kind: "metrics" })} label="Metriky" icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
                 <NavLink active={view.kind === "traces"} onClick={() => setView({ kind: "traces" })} label="Trasy" icon="M2 4h6M4 8h7M6 12h8" />
@@ -506,8 +508,6 @@ function Workspace() {
             me.systemAdmin ? <Logs key={view.traceId ?? ""} traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} /> : null
           ) : view.kind === "metrics" ? (
             me.systemAdmin ? <Metrics /> : null
-          ) : view.kind === "web" ? (
-            me.systemAdmin ? <WebAnalytics /> : null
           ) : view.kind === "traces" ? (
             me.systemAdmin ? (
               <Traces traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} onOpenLogs={(id) => setView({ kind: "logs", traceId: id })} />
@@ -548,6 +548,8 @@ function Workspace() {
             tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
           ) : view.kind === "dashboard" ? (
             <Dashboards key={tenant.id} system={false} canEdit={isAdmin} me={me.user} />
+          ) : view.kind === "analytics" ? (
+            tenant.features.sites ? <WebAnalytics key={tenant.id} /> : null
           ) : view.kind === "database" ? (
             tenant.features.database ? <Database key={tenant.id} isAdmin={isAdmin} /> : null
           ) : view.kind === "public" ? (

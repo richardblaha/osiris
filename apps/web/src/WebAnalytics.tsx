@@ -21,7 +21,7 @@ const flag = (code: string) => (/^[A-Z]{2}$/.test(code) ? String.fromCodePoint(.
 const n = (v: number) => v.toLocaleString("cs-CZ");
 
 /**
- * System > Návštěvnost: the sites' web analytics (web-events → ClickHouse), without cookies. Visitors are counted once
+ * Tenant > Návštěvnost: the tenant's sites' web analytics (web-events → ClickHouse), without cookies. Visitors are counted once
  * per day (the hash changes daily), so over a longer range they're visits by day rather than people.
  */
 export function WebAnalytics() {
@@ -34,7 +34,7 @@ export function WebAnalytics() {
   useEffect(() => {
     const to = Date.now();
     void attempt(setBusy, setError, async () => {
-      const s = await api.admin.telemetry.web({ site, from: to - range, to });
+      const s = await api.analytics({ site, from: to - range, to });
       setStats(s);
       if (!site && s.sites[0]) setSite(s.sites[0]);
     });
@@ -63,7 +63,7 @@ export function WebAnalytics() {
           </div>
         </div>
         <ErrorNotice error={error} />
-        {stats && !stats.sites.length && <p className="text-sm text-fg-muted">Zatím žádná data. Weby začnou posílat návštěvy po vložení skriptu /_e/e.js.</p>}
+        {stats && !stats.sites.length && <p className="text-sm text-fg-muted">Zatím žádná data. Návštěvy webu se tu ukážou, až bude mít firma web s měřením návštěvnosti (skript /_e/e.js) přiřazený správcem Osirisu.</p>}
         {stats && !!stats.sites.length && (
           <>
             <div className="grid gap-3 sm:grid-cols-3">

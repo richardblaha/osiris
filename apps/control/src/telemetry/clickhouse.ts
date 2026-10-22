@@ -319,9 +319,11 @@ export async function webSummary(ch: ClickHouse, sites: string[] | null, r: Rang
 export class WebAnalytics {
   constructor(private readonly ch: ClickHouse) {}
 
-  async stats(site: string | undefined, r: Range): Promise<WebStats> {
-    const sites = (await this.ch.query<{ site: string }>("SELECT DISTINCT site FROM web.stats_daily ORDER BY site")).map((x) => x.site);
-    const chosen = site ?? sites[0] ?? "";
+  /** One site's stats; `allowed` limits which sites there are to choose from (a tenant's own). */
+  async stats(site: string | undefined, r: Range, allowed?: string[]): Promise<WebStats> {
+    const known = (await this.ch.query<{ site: string }>("SELECT DISTINCT site FROM web.stats_daily ORDER BY site")).map((x) => x.site);
+    const sites = allowed ? known.filter((s) => allowed.includes(s)) : known;
+    const chosen = site && sites.includes(site) ? site : (sites[0] ?? "");
     const p = { site: chosen, ...range(r) };
     const hourly = r.to - r.from <= 2 * 86_400_000;
     const days = "day BETWEEN toDate(toDateTime({from:UInt32}, 'UTC')) AND toDate(toDateTime({to:UInt32}, 'UTC'))";
