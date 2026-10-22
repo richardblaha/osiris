@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
-import type { InboundMessage } from "./cloud-api.ts";
+import type { deliveryStatuses, InboundMessage } from "./cloud-api.ts";
 
 export interface InboxMessage extends InboundMessage {
   attempts: number;
@@ -36,7 +36,7 @@ export class Inbox {
           m.from,
           m.phoneNumberId,
           m.type,
-          m.text ?? null,
+          m.media ? JSON.stringify({ media: m.media, text: m.text }) : m.text ?? null,
           now,
           now,
         ),
@@ -65,7 +65,7 @@ export class Inbox {
     ]);
     const [row] = await this.db.query<Row>("SELECT * FROM wa_inbox WHERE claim = ?", [claim], { fresh: true });
     return row
-      ? { id: row.message_id, from: row.from_number, phoneNumberId: row.phone_number_id, type: row.type, text: row.text ?? undefined, attempts: Number(row.attempts) }
+      ? { id: row.message_id, from: row.from_number, phoneNumberId: row.phone_number_id, type: row.type, text: row.type === "image" || row.type === "document" || row.type === "audio" ? undefined : row.text ?? undefined, ...(row.text && ["image", "document", "audio"].includes(row.type) ? JSON.parse(row.text) : {}), attempts: Number(row.attempts) }
       : null;
   }
 
@@ -80,6 +80,19 @@ export class Inbox {
     ]);
   }
 
+  async sent(id: string, phone: string, to: string) {
+    await this.db.execute([run("INSERT INTO wa_deliveries(message_id,phone_number_id,recipient,status,status_at) VALUES(?,?,?,'accepted',?) ON CONFLICT(message_id) DO NOTHING", id, phone, to, Date.now())]);
+  }
+  async statuses(statuses: ReturnType<typeof deliveryStatuses>) {
+    if (!statuses.length) return;
+    await this.db.execute(statuses.map(s => run(`INSERT INTO wa_deliveries(message_id,phone_number_id,recipient,status,status_at,error_code) VALUES(?,?,?,?,?,?)
+      ON CONFLICT(message_id) DO UPDATE SET status=excluded.status,status_at=MAX(excluded.status_at,wa_deliveries.status_at),error_code=excluded.error_code
+      WHERE (excluded.status='failed' AND wa_deliveries.status IN ('accepted','sent') AND excluded.status_at>=wa_deliveries.status_at)
+        OR (excluded.status!='failed' AND wa_deliveries.status!='failed' AND
+          CASE excluded.status WHEN 'read' THEN 3 WHEN 'delivered' THEN 2 WHEN 'sent' THEN 1 ELSE 0 END >=
+          CASE wa_deliveries.status WHEN 'read' THEN 3 WHEN 'delivered' THEN 2 WHEN 'sent' THEN 1 ELSE 0 END)`, s.id, s.phoneNumberId, s.recipient, s.status, s.at, s.error ?? null)));
+  }
+
   /** The business number a user last wrote to, for messages we start (scheduled results). */
   async lastPhoneNumberId(from: string): Promise<{ phoneNumberId: string; at: number } | null> {
     const [row] = await this.db.query<{ phone_number_id: string; received_at: number }>(
@@ -90,6 +103,7 @@ export class Inbox {
   }
 
   async cleanup(olderThanMs = 7 * 24 * 60 * 60_000, now = Date.now()) {
+    await this.db.execute([run("DELETE FROM wa_deliveries WHERE status_at < ?", now - olderThanMs)]);
     await this.db.execute([run("DELETE FROM wa_inbox WHERE status IN ('done', 'failed') AND received_at < ?", now - olderThanMs)]);
   }
 }

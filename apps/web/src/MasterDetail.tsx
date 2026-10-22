@@ -40,11 +40,6 @@ export function MasterDetail(props: {
         <Loading show={!!props.loading} />
         <h2 className="section-header px-2 py-1">{props.title}</h2>
         {props.top}
-        {props.add && (
-          <button onClick={props.add.onClick} data-active={props.selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
-            + {props.add.label}
-          </button>
-        )}
         <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
           {props.groups.map((g, i) => (
             <div key={g.title ?? i} className={g.title ? "mt-3 first:mt-0" : ""}>
@@ -66,6 +61,11 @@ export function MasterDetail(props: {
               {!g.items.length && g.empty && <p className="px-2 py-1.5 text-fg-muted">{g.empty}</p>}
             </div>
           ))}
+          {props.add && (
+            <button onClick={props.add.onClick} data-active={props.selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
+              + {props.add.label}
+            </button>
+          )}
         </div>
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto">

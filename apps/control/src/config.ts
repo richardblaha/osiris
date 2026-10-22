@@ -16,6 +16,12 @@ const schema = z
   .object({
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     PORT: z.coerce.number().int().default(3002),
+    WHATSAPP_FLOWS_JSON: z.string().default("[]").transform((raw, ctx) => {
+      try { return z.array(z.object({ id: z.string().regex(/^\d+$/), screen: z.string().min(1), fields: z.array(z.object({ name: z.string(), type: z.enum(["text", "number", "date", "select", "multiselect", "boolean"]) })).min(1).max(12) })).parse(JSON.parse(raw)); }
+      catch { ctx.addIssue({ code: "custom", message: "Invalid WhatsApp Flow mappings JSON" }); return z.NEVER; }
+    }),
+    WHATSAPP_NOTIFICATION_TEMPLATE: z.string().optional(),
+    WHATSAPP_TEMPLATE_LANGUAGE: z.string().default("cs"),
     TIMEZONE: z.string().default("Europe/Prague"),
 
     // rqlite (any node); without it a local SQLite file (development only).

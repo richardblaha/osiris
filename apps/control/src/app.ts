@@ -277,7 +277,7 @@ export function createControlApp(deps: ControlDeps) {
       await phones.remove(c.get("call").user.sub);
       return c.body(null, 204);
     })
-    .route("/security", securityRoutes(deps.auth, (c) => (c as Context<Env>).get("call").user.sub));
+    .route("/security", securityRoutes(deps.auth, (c) => (c as Context<Env>).get("call").user.sub, (c) => (c as Context<Env>).get("call").sessionUid));
 
   // --- the active tenant --------------------------------------------------------------------------------------------
   const tenant = new Hono<Env>()
@@ -520,6 +520,7 @@ export function createControlApp(deps: ControlDeps) {
       const { token } = parse(z.object({ token: z.string().min(1).max(4096) }), await json(c));
       const access = await deps.auth.provider.AccessToken.find(token);
       if (!access || access.isExpired || access.clientId !== WEB_CLIENT_ID || !access.accountId) throw new HTTPException(401, { message: "Invalid token" });
+      if (access.sessionUid) await deps.auth.activity.touch(access.sessionUid);
       const user = await users.get(access.accountId).catch(() => null);
       if (!user || user.disabled) throw new HTTPException(401, { message: "Invalid token" });
       return c.json({
@@ -530,6 +531,7 @@ export function createControlApp(deps: ControlDeps) {
         picture: user.picture,
         claims: { [CLAIMS.role]: user.claims[CLAIMS.role], [CLAIMS.tenant]: user.claims[CLAIMS.tenant], [CLAIMS.tenantAdmin]: user.claims[CLAIMS.tenantAdmin] },
         expiresAt: (access.exp ?? 0) * 1000,
+        sessionUid: access.sessionUid,
       });
     })
     .get("/tenants/:id/endpoint", async (c) => {

@@ -1,3 +1,5 @@
+import { Attachments } from "./Attachments.tsx";
+import { Question } from "./Question.tsx";
 import {
   ComposerPrimitive,
   MessagePrimitive,
@@ -84,11 +86,16 @@ function pretty(value: unknown): string {
  */
 function ToolCall({ toolName, args, argsText, result }: ToolCallMessagePartProps) {
   const writing = !argsText;
+  if (toolName === "ask_user" && result) {
+    try { const parsed = JSON.parse(String(result)); if (parsed.question) return <Question initial={parsed.question} />; } catch { /* A failed tool uses the normal display. */ }
+  }
   // Other names are tools of the tenant's MCP servers (`<server>_<tool>`).
   const label = writing ? `Připravuji ${toolName}…` : (TOOL_LABELS[toolName]?.(args as Record<string, unknown>) ?? `Nástroj ${toolName}`);
   const output = result === undefined ? undefined : String(result);
   const state = output === undefined ? "running" : failed(output) ? "failed" : "done";
   const created = output === undefined || state === "failed" ? null : CREATED.exec(output);
+  let offered: { scope: FileScope; path: string } | undefined;
+  if (toolName === "send_chat_file" && output) { try { offered = JSON.parse(output).file; } catch { /* Tool failure. */ } }
   return (
     <div className="tool-step" data-state={state}>
       <details>
@@ -115,6 +122,7 @@ function ToolCall({ toolName, args, argsText, result }: ToolCallMessagePartProps
         </div>
       </details>
       {created && <Download scope={created[1] as FileScope} path={created[2]!} />}
+      {offered && <Download scope={offered.scope} path={offered.path} />}
     </div>
   );
 }
@@ -136,10 +144,14 @@ function RunStatusLine() {
 }
 
 function UserMessage() {
+  const text = useAuiState(s => s.message.content.filter(p => p.type === "text").map(p => p.text).join(""));
+  const submitted = text.startsWith("@osiris-answer:");
+  const attachment = text.startsWith("@osiris-attachments:");
+
   return (
     <MessagePrimitive.Root className="flex justify-end py-2">
       <div className="max-w-[80%] rounded-sm border border-line-strong bg-selection px-4 py-2 whitespace-pre-wrap">
-        <MessagePrimitive.Parts />
+        {submitted ? "Odpověď na otázku odeslána." : attachment ? "Odeslané přílohy." : <MessagePrimitive.Parts />}
       </div>
     </MessagePrimitive.Root>
   );
@@ -202,6 +214,7 @@ export function Thread({ greeting = "S čím ti můžu pomoct?", placeholder = "
                 </ComposerPrimitive.Cancel>
               </ThreadPrimitive.If>
             </div>
+            <Attachments />
           </ComposerPrimitive.Root>
         </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>

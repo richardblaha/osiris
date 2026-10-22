@@ -9,6 +9,8 @@ const pem = z.string().transform((v) => v.replace(/\\n/g, "\n"));
 const schema = z
   .object({
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
+    TRUSTED_PROXIES: z.string().default("10.0.0.0/8,127.0.0.1/32,::1/128"),
+    CDN_PROXIES: z.string().default(""),
     PORT: z.coerce.number().int().default(3001),
     CORS_ORIGIN: z.string().default("http://localhost:5173"),
     // Built web app (apps/web/dist); unset in development, where Vite serves it.

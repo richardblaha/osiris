@@ -13,7 +13,7 @@ consent banner.
                        ClickHouse web.web_events_raw (exporter's table, 7 days)
                                  └─ web_events_mv → web.web_events (typed, 2 years)
                                        └─ *_mv → stats_hourly, stats_daily, pages_daily, referrers_daily,
-                                                 campaigns_daily, countries_daily, devices_daily, events_daily
+                                                 campaigns_daily, countries_daily, locations_daily, networks_daily, devices_daily, events_daily
                                                  │
                        Osiris System > Návštěvnost (control → /api/admin/telemetry/web)  ·  grafana-dashboard.json
 ```
@@ -28,7 +28,7 @@ consent banner.
   Host are both among that site's hosts, the body is at most 4 kB, and it matches the schema. Bots (User-Agent
   patterns, none at all) and `DNT: 1` / `Sec-GPC: 1` are dropped. Each event gets the browser, OS and device (from the
   User-Agent), the referrer's domain and kind (search, social, referral, email, direct; the site's own pages count as
-  direct), the UTM parameters, the country and the visitor hash, then goes out as one OTLP log record (batched).
+  direct), the UTM parameters, the country, approximate region/city, ASN/network and the visitor hash, then goes out as one OTLP log record (batched).
   Metrics: `web_events.received{outcome}` and `web_events.private_ip` (see below), in Osiris System > Metriky.
 - **Collector**: its own receiver (`otlp/web`, port 4320, only web-events may connect: NetworkPolicy) and pipeline
   (`logs/web`: memory_limiter, batch) to a second ClickHouse exporter writing database `web`. Web events never mix with
@@ -48,7 +48,7 @@ data; what is stored can't identify a person:
 - The **visitor hash** is HMAC-SHA256 of site, IP and User-Agent with a salt that changes every day (derived from the
   `SALT_SEED` Secret and the date, so both replicas agree; only today's is in memory). It can't be reversed, and the
   same person gets a new hash every day and on every site, so visits can't be linked across days or sites.
-- The country is the only location (no city), and the User-Agent is kept only as browser, OS and device type.
+- Location is stored as country, approximate region/city and ASN/provider, without coordinates or raw IPs. User-Agent is kept only as browser, OS and device type. These records are not linked to signed-in user accounts.
 
 This is the same model as Plausible or Fathom. Mention it in the site's privacy policy anyway ("anonymous visit
 statistics without cookies"). Rotating `SALT_SEED` (a new Secret value) makes even the current day's hashes unlinkable.
@@ -131,3 +131,24 @@ attributes, and a `traceparent` on the beacon to tie a page view to the backend'
    `stats.*` go with it; remove their DNS records). Export its data first if the history is wanted
    (GoatCounter: Settings → Export, CSV): its rows can be inserted into `web.web_events` (path, time, referrer,
    browser, system, screen size, location) with `visitor_hash` 0, which the aggregates then include.
+
+
+## GeoIP enrichment upgrade
+
+`packages/platform/src/geoip.ts` is shared with control's account security history. Control and web-events
+images include DB-IP City/ASN Lite databases; `GEOIP_DIR` (default `/tmp/osiris-geo`) is a writable cache.
+At startup and daily the updater checks for the current month's release, validates MMDB before replacing
+files, and retains the previous in-memory database if a download fails. Monthly ready markers avoid
+repeated downloads. Set `GEOIP_AUTO_UPDATE=false` to manage databases externally; `GEOIP_BUNDLED_DIR`
+(default `/app/geo`) supplies read-only fallback files. Legacy `GEOIP_DB` country files remain supported.
+Downloads contain public database files only, never visitor IPs. Both UIs attribute DB-IP (CC BY 4.0).
+
+Before rolling out these images, apply the updated `schema.sql` to ClickHouse using the command at its top.
+It adds the location/network columns and aggregates and replaces the raw ingestion materialized view.
+Old events retain empty fields; no location backfill is possible because raw IPs were never retained.
+Apply during a quiet period: replacing the materialized view briefly pauses enrichment of incoming raw rows.
+Existing browser/device, referrer, page and UTM breakdowns continue unchanged.
+
+Production manifests currently set `GEOIP_AUTO_UPDATE=false` to avoid the memory peak of loading
+a replacement database while the bundled one is still resident. Rebuild and redeploy control and
+web-events monthly to refresh the bundled City/ASN data.

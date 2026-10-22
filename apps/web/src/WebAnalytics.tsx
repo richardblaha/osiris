@@ -87,6 +87,9 @@ export function WebAnalytics() {
               <Top title="Zdroje návštěv" rows={stats.referrers} detail={(d) => SOURCES[d] ?? d} empty="Jen přímé návštěvy." />
               <Top title="Kampaně (UTM)" rows={stats.campaigns} detail={(d) => d} empty="Žádné odkazy s UTM." />
               <Top title="Země" rows={stats.countries} label={(k) => (k ? `${flag(k)} ${k}` : "neznámá")} />
+              <Top title="Regiony" rows={stats.regions ?? []} detail={(v) => v} />
+              <Top title="Města (orientačně)" rows={stats.cities ?? []} detail={(v) => v} />
+              <Top title="Poskytovatelé připojení" rows={stats.networks ?? []} detail={(v) => v} />
               <Top title="Prohlížeče" rows={stats.browsers} />
               <Top title="Systémy" rows={stats.systems} />
               <Top title="Zařízení" rows={stats.devices} label={(k) => DEVICES[k] ?? k} />
@@ -94,6 +97,7 @@ export function WebAnalytics() {
             </div>
           </>
         )}
+        <p className="text-xs text-fg-muted">Poloha je orientační. <a href="https://db-ip.com" target="_blank" rel="noreferrer" className="btn-link">IP Geolocation by DB-IP</a></p>
       </div>
     </div>
   );

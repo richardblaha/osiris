@@ -17,6 +17,8 @@ const verifier = config.AUTH_DEV_BYPASS ? createDevVerifier() : createControlVer
 
 const app = createGatewayApp({
   verifier,
+  trustedProxies: config.TRUSTED_PROXIES,
+  cdnProxies: config.CDN_PROXIES,
   signer,
   control,
   controlUrl: config.CONTROL_URL,

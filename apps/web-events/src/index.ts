@@ -5,7 +5,7 @@ import { metrics } from "@opentelemetry/api";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
-import { Reader, type CountryResponse } from "mmdb-lib";
+import { createGeoIp } from "@osiris/platform/geoip.ts";
 import { z } from "zod";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 import { createWebEventsApp, type Outcome, type Site } from "./app.ts";
@@ -48,13 +48,8 @@ const blockList = (cidrs: string) => {
   return list;
 };
 
-let country = (_ip: string) => "";
-try {
-  const reader = new Reader<CountryResponse>(readFileSync(env.GEOIP_DB));
-  country = (ip) => reader.get(ip)?.country?.iso_code ?? "";
-} catch {
-  console.warn(`No GeoIP database at ${env.GEOIP_DB}: events go without a country`);
-}
+const geo = createGeoIp();
+const country = (ip: string) => geo.lookup(ip).country;
 
 // Web events: one OTLP log record each, batched, to their own receiver.
 const provider = new LoggerProvider({
@@ -72,6 +67,7 @@ const app = createWebEventsApp({
   sites,
   hasher: new VisitorHasher(env.SALT_SEED),
   country,
+  geo: geo.lookup,
   emit: (event, attributes) => logger.emit({ body: event, attributes }),
   trustedProxies: blockList(env.TRUSTED_PROXIES),
   cdnProxies: blockList(env.CDN_PROXIES),

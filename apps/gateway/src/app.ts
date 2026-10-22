@@ -1,3 +1,5 @@
+import { getConnInfo } from "@hono/node-server/conninfo";
+import { blockList, clientIp as resolveClientIp } from "@osiris/platform/client-ip.ts";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { serveStatic } from "@hono/node-server/serve-static";
@@ -17,6 +19,8 @@ import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
 export interface GatewayDeps {
   verifier: TokenVerifier;
+  trustedProxies?: string;
+  cdnProxies?: string;
   signer: InternalSigner;
   control: ControlDirectory;
   controlUrl: string;
@@ -74,9 +78,6 @@ const describeUser = (user: Identity) => ({
 
 const plainUser = (u: Identity): InternalUser => ({ sub: u.sub, name: u.name, email: u.email, phone: u.phone, picture: u.picture });
 
-/** The browser's address: the first of X-Forwarded-For, which Traefik sets. */
-const clientIp = (c: Context) => c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-
 /**
  * The only entry point from the internet for osiris.k6labs.cz. Passes sign-in (`/auth`) to control, which is the
  * OpenID Connect provider. For the API it has control identify the access token, works out the user's tenants from
@@ -85,6 +86,13 @@ const clientIp = (c: Context) => c.req.header("x-forwarded-for")?.split(",")[0]?
  * an access token, and network policies let only the gateway reach them.
  */
 export function createGatewayApp(deps: GatewayDeps) {
+  const trusted = blockList(deps.trustedProxies ?? "");
+  const cdn = blockList(deps.cdnProxies ?? "");
+  const clientIp = (c: Context) => {
+    let peer = "";
+    try { peer = getConnInfo(c).remote.address ?? ""; } catch { /* In-memory tests have no socket. */ }
+    return resolveClientIp(peer, { realIp: c.req.header("x-real-ip"), forwardedFor: c.req.header("x-forwarded-for"), cdnClientIp: c.req.header("cf-connecting-ip") }, trusted, cdn) || "unknown";
+  };
   const { verifier, signer, control, runtimes, web } = deps;
   const stats = web?.goatcounter ? new URL(web.goatcounter).origin : "";
   const csp = [
@@ -159,7 +167,7 @@ export function createGatewayApp(deps: GatewayDeps) {
 
   const toControl = async (c: Context<Env>) => {
     const { user, memberships, systemAdmin } = c.get("auth");
-    const authorization = await signer.header(CONTROL_AUDIENCE, { user: plainUser(user), memberships, systemAdmin, claimKeys: user.claimKeys });
+    const authorization = await signer.header(CONTROL_AUDIENCE, { user: plainUser(user), memberships, systemAdmin, claimKeys: user.claimKeys, sessionUid: user.sessionUid });
     const url = new URL(c.req.url);
     const res = await fetchFn(`${deps.controlUrl}${url.pathname}${url.search}`, {
       method: c.req.method,

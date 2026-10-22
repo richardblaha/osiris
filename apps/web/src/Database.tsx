@@ -119,9 +119,6 @@ function TableView({ table, tables, isAdmin, onChanged }: { table: DbTable; tabl
           <h1 className="text-lg font-semibold">{table.name}</h1>
           {table.description && <p className="text-sm text-fg-secondary">{table.description}</p>}
         </div>
-        <button onClick={() => (setStructure(false), setEditing("new"))} className="btn-primary text-sm">
-          + Řádek
-        </button>
         <button disabled={busy} onClick={() => void exportCsv()} className="btn-secondary text-sm">
           Export CSV
         </button>
@@ -204,6 +201,9 @@ function TableView({ table, tables, isAdmin, onChanged }: { table: DbTable; tabl
           )}
         </>
       )}
+      <button onClick={() => (setStructure(false), setEditing("new"))} className="btn-primary text-sm">
+        + Řádek
+      </button>
     </div>
   );
 }

@@ -1,3 +1,5 @@
+import type { ChatQuestion } from "@osiris/shared";
+import type { AccountActivity } from "@osiris/shared";
 import type {
   AdminUser,
   AssistantProfile,
@@ -266,6 +268,9 @@ export const api = {
   startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
   removePhone: () => request("/me/phone", { method: "DELETE" }),
   security: {
+    whatsappDeliveries: () => json<{ status: string; at: number; errorCode: string | null }[]>("/me/security/whatsapp-deliveries"),
+    activity: () => json<AccountActivity>("/me/security/activity"),
+    revokeSession: (id: string) => request(`/me/security/sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
     get: () => json<SecurityOverview>("/me/security"),
     setPassword: (password: string, current?: string) =>
       json<SecurityOverview>("/me/security/password", { method: "PUT", body: JSON.stringify({ password, current }) }),
@@ -358,6 +363,8 @@ export const api = {
   },
 
   /** Starts a run and yields its server-sent events. */
+  threadState: (thread: string) => json<{ busy: boolean; messages: ThreadMessage[] }>(`/threads/${encodeURIComponent(thread)}/state`),
+  question: (thread: string, id: string) => json<ChatQuestion>(`/threads/${encodeURIComponent(thread)}/questions/${encodeURIComponent(id)}`),
   async *run(threadId: string, message: string, signal: AbortSignal): AsyncGenerator<RunEvent> {
     yield* readEvents(await request(`/threads/${threadId}/runs`, { method: "POST", body: JSON.stringify({ message }), signal }));
   },

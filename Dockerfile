@@ -36,7 +36,12 @@ WORKDIR /app/apps/gateway
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
 
+# Local GeoIP databases shared by control and analytics; lookups never send client IPs out.
+FROM base AS geo-data
+RUN node -e 'const z=require("zlib"),fs=require("fs");(async()=>{fs.mkdirSync("/app/geo",{recursive:true});for(const kind of ["city","asn"]){let ok=false;for(const d of [new Date(),new Date(new Date().getUTCFullYear(),new Date().getUTCMonth()-1,1)]){const url=`https://download.db-ip.com/free/dbip-${kind}-lite-${d.toISOString().slice(0,7)}.mmdb.gz`;const r=await fetch(url);if(r.ok){fs.writeFileSync(`/app/geo/${kind}.mmdb`,z.gunzipSync(Buffer.from(await r.arrayBuffer())));ok=true;break}}if(!ok)throw new Error(`Missing GeoIP ${kind}`)}})()'
+
 FROM base AS control
+COPY --from=geo-data /app/geo /app/geo
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/control..." && pnpm store prune
 COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src
@@ -89,10 +94,9 @@ USER node
 ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["node", "--import", "tsx", "src/index.ts"]
 
-# Web analytics (deploy/observability/web-events.yaml). The country database is DB-IP's free IP to Country Lite
-# (CC BY 4.0, https://db-ip.com), this month's or last month's, fetched at build time: the IP never leaves the service.
+# DB-IP Lite (CC BY 4.0, https://db-ip.com); runtime refreshes monthly releases in /tmp.
 FROM base AS web-events
-RUN node -e 'const z=require("zlib"),fs=require("fs");const m=d=>`https://download.db-ip.com/free/dbip-country-lite-${d.toISOString().slice(0,7)}.mmdb.gz`;const now=new Date(),prev=new Date(Date.UTC(now.getUTCFullYear(),now.getUTCMonth()-1,1));(async()=>{for(const u of [m(now),m(prev)]){const r=await fetch(u);if(r.ok){fs.mkdirSync("/app/geo",{recursive:true});fs.writeFileSync("/app/geo/country.mmdb",z.gunzipSync(Buffer.from(await r.arrayBuffer())));console.log("GeoIP:",u);return}}throw new Error("No DB-IP database")})()'
+COPY --from=geo-data /app/geo /app/geo
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/web-events..." && pnpm store prune
 COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src

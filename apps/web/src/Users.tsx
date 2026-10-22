@@ -19,9 +19,6 @@ export function UserAdmin({ self, tenants }: { self: string; tenants: TenantSumm
       <nav className="relative flex w-72 shrink-0 flex-col border-r border-line p-2 text-sm">
         <Loading show={!users && !error} />
         <h2 className="section-header px-2 py-1">Správa uživatelů</h2>
-        <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
-          + Přidat uživatele
-        </button>
         <ErrorNotice error={error} />
         <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
           {users?.map((u) => (
@@ -34,6 +31,9 @@ export function UserAdmin({ self, tenants }: { self: string; tenants: TenantSumm
               {u.systemAdmin && <span className="badge badge-accent">správce</span>}
             </button>
           ))}
+          <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
+            + Přidat uživatele
+          </button>
         </div>
       </nav>
       <div className="min-w-0 flex-1">

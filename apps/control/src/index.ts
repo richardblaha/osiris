@@ -83,7 +83,11 @@ const sites = new SitePublisher(db, objects);
 const backups = new Backups(db, objects, config.BACKUP_RETENTION_DAYS);
 const phones = new PhoneVerification(db, users);
 const inbox = new Inbox(db);
-const whatsappClient = config.WHATSAPP_ACCESS_TOKEN ? new WhatsAppClient(config.WHATSAPP_ACCESS_TOKEN) : undefined;
+const whatsappClient = config.WHATSAPP_ACCESS_TOKEN ? new WhatsAppClient(config.WHATSAPP_ACCESS_TOKEN, fetch, {
+  flows: config.WHATSAPP_FLOWS_JSON,
+  onSent: (id, phone, to) => inbox.sent(id, phone, to),
+  notificationTemplate: config.WHATSAPP_NOTIFICATION_TEMPLATE ? { name: config.WHATSAPP_NOTIFICATION_TEMPLATE, language: config.WHATSAPP_TEMPLATE_LANGUAGE } : undefined,
+}) : undefined;
 if (!whatsappClient) console.log("WhatsApp is not configured: /webhooks/whatsapp answers 404.");
 
 /** Asks a runtime to snapshot itself now; it streams the snapshot back to /internal/runtime/backups. */
@@ -124,7 +128,7 @@ const loops = [
   })()),
   ...(whatsappClient
     ? [startLoop("WhatsApp inbox", 1_000, (() => {
-        const router = new WhatsAppRouter({ db, inbox, users, tenants: store, phones, client: whatsappClient, runtimes, signer });
+        const router = new WhatsAppRouter({ db, inbox, users, tenants: store, phones, client: whatsappClient, runtimes, signer, publicUrl: config.PUBLIC_URL });
         return () => router.step();
       })())]
     : []),
@@ -136,6 +140,7 @@ const loops = [
     await backups.prune();
     await inbox.cleanup();
     await auth.credentials.cleanup();
+    await auth.activity.cleanup();
     return false;
   }),
 ];

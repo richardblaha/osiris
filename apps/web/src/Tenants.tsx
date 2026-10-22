@@ -317,9 +317,6 @@ export function TenantAdmin({
     <div className="flex h-full">
       <nav className="flex w-60 shrink-0 flex-col border-r border-line p-2 text-sm">
         <h2 className="section-header px-2 py-1">Tenanti</h2>
-        <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
-          + Založit tenanta
-        </button>
         <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
           {tenants.map((t) => (
             <button key={t.id} onClick={() => setSelected(t.id)} data-active={selected === t.id} className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left">
@@ -330,6 +327,9 @@ export function TenantAdmin({
             </button>
           ))}
           {!tenants.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádní.</p>}
+          <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
+            + Založit tenanta
+          </button>
         </div>
       </nav>
       <div className="min-w-0 flex-1">

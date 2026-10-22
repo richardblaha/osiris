@@ -71,8 +71,8 @@ describe("runtime internal routes", () => {
     const { as, model } = await setup([new AIMessage("Ahoj"), new AIMessage("Druhá"), new AIMessage("Nová")]);
     const control = await as("control", { user, tenant: "acme", role: "member", channel: "whatsapp" });
     const send = (messageId: string, text: string) => control("/internal/whatsapp/message", { method: "POST", body: JSON.stringify({ messageId, text }) });
-    expect(await (await send("m1", "ahoj")).json()).toEqual({ reply: "Ahoj" });
-    expect(await (await send("m1", "ahoj")).json()).toEqual({ reply: "Ahoj" });
+    expect(await (await send("m1", "ahoj")).json()).toMatchObject({ reply: "Ahoj" });
+    expect(await (await send("m1", "ahoj")).json()).toMatchObject({ reply: "Ahoj" });
     await send("m2", "dál");
     // The second message saw the first (same thread).
     expect(model.calls[1]!.map((m) => m.text)).toContain("ahoj");
@@ -120,5 +120,27 @@ describe("snapshots", () => {
     const restored = createDb(`file:${dbPath(target)}`);
     expect((await restored.execute("SELECT v FROM t")).rows[0]?.v).toBe("ahoj");
     expect(readFileSync(join(target, "files", "tenant", "sablony", "a.html"), "utf8")).toBe("<p>x</p>");
+  });
+});
+
+describe("WhatsApp file delivery authorization", () => {
+  it("returns only current-turn offered files to the thread owner", async () => {
+    const { as, tenant } = await setup([
+      new AIMessage({ content: "", tool_calls: [{ id: "file1", name: "send_chat_file", args: { scope: "tenant", path: "offered.txt" } }] }),
+      new AIMessage("Posílám soubor."),
+      new AIMessage("Další odpověď."),
+    ]);
+    await tenant.files.write({ scope: "tenant" }, "offered.txt", Buffer.from("Nabídka"));
+    await tenant.files.write({ scope: "tenant" }, "other.txt", Buffer.from("Jiný soubor"));
+    const control = as("control", { user, tenant: "acme", role: "member", channel: "whatsapp" });
+    const send = (id: string) => control("/internal/whatsapp/message", { method: "POST", body: JSON.stringify({ messageId: id, text: "Pošli soubor" }) });
+    const result = await (await send("offer1")).json();
+    expect(result.files).toEqual([{ scope: "tenant", path: "offered.txt", mime: "text/plain" }]);
+    const read = (path: string, who = control) => who("/internal/whatsapp/file", { method: "POST", body: JSON.stringify({ threadId: result.threadId, scope: "tenant", path }) });
+    expect(Buffer.from((await (await read("offered.txt")).json()).data, "base64").toString()).toBe("Nabídka");
+    expect((await read("other.txt")).status).toBe(404);
+    expect((await read("offered.txt", as("control", { user: { ...user, sub: "u2" }, tenant: "acme", role: "member", channel: "whatsapp" }))).status).toBe(404);
+    await send("offer2");
+    expect((await read("offered.txt")).status).toBe(404);
   });
 });

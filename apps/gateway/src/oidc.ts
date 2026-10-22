@@ -2,6 +2,7 @@ import { accessFromClaims, type Access } from "@osiris/platform/claims.ts";
 
 /** Everything we know about a user, as control (the identity provider) has it. */
 export interface Identity {
+  sessionUid?: string;
   sub: string;
   email: string | null;
   name: string | null;
@@ -22,6 +23,7 @@ export interface TokenVerifier {
 
 /** What control answers for a token: the user and the claims that grant access. */
 export interface TokenOwner {
+  sessionUid?: string;
   sub: string;
   email: string | null;
   name: string | null;
@@ -50,6 +52,7 @@ export function createControlVerifier(lookup: (token: string) => Promise<TokenOw
       const owner = await lookup(token);
       const identity: Identity = {
         sub: owner.sub,
+        sessionUid: owner.sessionUid,
         email: owner.email,
         name: owner.name,
         phone: owner.phone,

@@ -1,3 +1,6 @@
+import { clientIp } from "@osiris/platform/client-ip.ts";
+export { clientIp } from "@osiris/platform/client-ip.ts";
+import type { GeoLocation } from "@osiris/platform/geoip.ts";
 import { BlockList, isIP } from "node:net";
 import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
@@ -19,6 +22,7 @@ export interface WebEventsDeps {
   hasher: VisitorHasher;
   /** The country (ISO code) of an IP, or "". */
   country: (ip: string) => string;
+  geo?: (ip: string) => GeoLocation;
   /** Sends one event on (an OTLP log record); never given the IP. */
   emit: (event: string, attributes: Record<string, string>) => void;
   /** Proxies (the ingress) whose X-Real-IP / X-Forwarded-For is believed. */
@@ -56,25 +60,6 @@ PRIVATE.addSubnet("::1", 128, "ipv6");
 const family = (ip: string) => (isIP(ip) === 6 ? "ipv6" : "ipv4");
 const plain = (ip: string) => ip.replace(/^::ffff:/, "");
 
-/**
- * The visitor's IP: from the ingress's X-Real-IP (or the last X-Forwarded-For hop it added) when the connection comes
- * from a trusted proxy, otherwise the connection's own address; and when that is the CDN's (the site is behind
- * Cloudflare), its CF-Connecting-IP. Used for the hash and the country, never stored.
- */
-export function clientIp(
-  peer: string,
-  headers: { realIp?: string; forwardedFor?: string; cdnClientIp?: string },
-  trusted: BlockList,
-  cdn: BlockList = new BlockList(),
-): string {
-  let ip = plain(peer);
-  if (isIP(ip) && trusted.check(ip, family(ip))) {
-    const forwarded = plain(headers.realIp?.trim() || headers.forwardedFor?.split(",").at(-1)?.trim() || "");
-    if (isIP(forwarded)) ip = forwarded;
-  }
-  const behind = plain(headers.cdnClientIp?.trim() ?? "");
-  return isIP(ip) && cdn.check(ip, family(ip)) && isIP(behind) ? behind : ip;
-}
 
 export function createWebEventsApp(deps: WebEventsDeps) {
   const hostsOf = new Map(deps.sites.map((s) => [s.id, s.hosts.map((h) => h.toLowerCase())]));
@@ -128,13 +113,15 @@ export function createWebEventsApp(deps: WebEventsDeps) {
       const privateIp = isIP(ip) ? PRIVATE.check(ip, family(ip)) : true;
       const utm = utmOf(url);
       const screen = e.w ?? 0;
+      const location = privateIp ? undefined : deps.geo?.(ip);
       deps.emit(e.e, {
         site: e.s,
         event: e.e,
         path: url.pathname.slice(0, 500),
         ...referrerOf(e.r ?? "", hosts, utm),
         ...utm,
-        country: privateIp ? "" : deps.country(ip),
+        ...location,
+        country: privateIp ? "" : location?.country ?? deps.country(ip),
         ...parseUserAgent(userAgent, screen),
         screen: String(screen),
         lang: (e.l ?? "").toLowerCase().slice(0, 10),

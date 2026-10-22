@@ -22,6 +22,11 @@ export const FILE_TYPES: Record<string, { mime: string; text: boolean }> = {
   gif: { mime: "image/gif", text: false },
   webp: { mime: "image/webp", text: false },
   ico: { mime: "image/x-icon", text: false },
+  ogg: { mime: "audio/ogg", text: false },
+  mp3: { mime: "audio/mpeg", text: false },
+  wav: { mime: "audio/wav", text: false },
+  webm: { mime: "audio/webm", text: false },
+  m4a: { mime: "audio/mp4", text: false },
   pdf: { mime: "application/pdf", text: false },
   docx: { mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", text: false },
   xlsx: { mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", text: false },
@@ -40,6 +45,11 @@ const MAGIC: Record<string, number[][]> = {
   gif: [[0x47, 0x49, 0x46, 0x38]],
   webp: [[0x52, 0x49, 0x46, 0x46]],
   ico: [[0x00, 0x00, 0x01, 0x00]],
+  ogg: [[0x4f, 0x67, 0x67, 0x53]],
+  mp3: [[0x49, 0x44, 0x33], [0xff, 0xfb], [0xff, 0xf3], [0xff, 0xf2]],
+  wav: [[0x52, 0x49, 0x46, 0x46]],
+  webm: [[0x1a, 0x45, 0xdf, 0xa3]],
+  m4a: [],
   pdf: [[0x25, 0x50, 0x44, 0x46, 0x2d]],
   // Office Open XML and OpenDocument are zip archives.
   docx: [[0x50, 0x4b, 0x03, 0x04]],
@@ -75,6 +85,8 @@ export function contentMatches(path: string, data: Uint8Array): boolean {
       return false;
     }
   }
+  if (ext === "m4a") return data.length >= 12 && String.fromCharCode(...data.slice(4, 8)) === "ftyp" && ["M4A ", "isom", "mp42"].includes(String.fromCharCode(...data.slice(8, 12)));
+  if (ext === "wav" && String.fromCharCode(...data.slice(8, 12)) !== "WAVE") return false;
   const signatures = MAGIC[ext];
   if (!signatures) return false;
   return signatures.some((sig) => sig.every((byte, i) => data[i] === byte));

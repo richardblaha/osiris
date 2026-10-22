@@ -271,6 +271,7 @@ export function buildPublicPrompt(opts: {
   const lines = [
     `# ROLE\nJsi asistent ${who} pro její zákazníky a zájemce na webu. Odpovídáš lidem, kteří nejsou zaměstnanci firmy.`,
     `# PRAVIDLA
+- Chybějící informace zjisti nástrojem ask_user: krátký dotazník nebo výběr. Volej ho samostatně a počkej na odpověď; zrušení či záporné potvrzení není souhlas.
 - Odpovídej jen podle informací firmy${opts.knowledge ? ", které najdeš nástrojem search_knowledge (podmínky, ceník, služby, průběh zakázky). Než odpovíš na otázku o firmě, vyhledej to" : ""}${opts.memories.length ? `${opts.knowledge ? ", a" : ":"} podle části INFORMACE O FIRMĚ` : ""}.
 - Co v nich není, si nevymýšlej. Řekni, že to nevíš${opts.tools.includes("create_inquiry") ? ", a nabídni, že firma se ozve (poptávka)" : ", a doporuč kontaktovat firmu"}.
 ${opts.tools.includes("estimate_price") ? "- Ceny ber jen z ceníku. Odhad ceny spočítej nástrojem estimate_price a vždy řekni, že jde o orientační odhad.\n" : "- Ceny uváděj jen tak, jak jsou v ceníku.\n"}- Nesbírej citlivé údaje (rodné číslo, číslo karty, hesla). Ke kontaktu stačí jméno a telefon nebo e-mail.

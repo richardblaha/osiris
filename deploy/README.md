@@ -304,3 +304,35 @@ and does not delete mail; IMAP reading does not mark messages read. DAV updates 
 the ETag returned by reading, so concurrent changes return HTTP 412 instead of being overwritten.
 Mail attachments and deletion are not currently exposed. Outgoing SMTP also requires
 that the hosting provider permits the selected port (see the Civo SMTP restriction above).
+
+
+### Account activity, session revocation and GeoIP
+
+Control migration `009_auth_activity.sql` creates user-scoped login events, session metadata and revocation
+tombstones. Profile > Aktivita a relace shows up to 100 events from the last 90 days and active OIDC sessions.
+Successful sign-ins and failed password/second-factor attempts of known accounts are recorded; unknown
+accounts and unidentifiable passkey/social failures are not attached to a user. Metadata is IP, approximate
+country/region/city, ASN/provider and parsed browser/OS/device, never passwords, codes or raw User-Agent.
+This security history is independent of anonymous website analytics. The cleanup loop physically deletes
+records after 90 days; expired events disappear from the API immediately at the retention boundary.
+
+Revocation checks ownership, tombstones the session UID and removes its tokens and grants. Adapter reads and
+writes refuse revoked session UIDs, including in-flight token issuance. Gateway token identity caching means
+revocation can take up to 60 seconds to affect normal API requests. Session activity writes are throttled to
+one per five minutes. Existing sessions without metadata show an unknown location until observed again.
+
+Gateway derives the client IP from its socket and only accepts forwarded headers from `TRUSTED_PROXIES`.
+Set this to actual ingress CIDRs; the production default is the cluster's private 10/8 range plus loopback.
+For Cloudflare, configure its CIDRs in `CDN_PROXIES`; `CF-Connecting-IP` is used only after verifying the
+preceding CDN hop. Control trusts the canonical header supplied by the gateway and must remain private.
+GeoIP uses local DB-IP City/ASN databases and monthly updates; see `deploy/observability/web/README.md`
+for cache settings and the ClickHouse schema upgrade required before the analytics rollout.
+
+
+### Interactive PWA and WhatsApp chat
+
+See `deploy/whatsapp/README.md` for durable agent questions/forms, media processing, published Meta Flow
+mappings and approved notification templates. Tenant migration 019 and control migration 010 run at startup.
+No live Flow or template is created by deploying these images. Without configured Meta assets, simple choices
+use native buttons/lists, questionnaires link to PWA and out-of-window scheduled replies remain in web chat.
+Runtime OCR/transcription uses `MISTRAL_API_KEY`, `OCR_MODEL` and `AUDIO_MODEL`; configure them at system level.

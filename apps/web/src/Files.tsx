@@ -231,32 +231,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
           <h1 className="text-lg font-semibold">{title}</h1>
           {intro && <p className="mt-1 text-sm text-fg-secondary">{intro}</p>}
 
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={() => pickFiles.current?.click()} disabled={busy} className="btn-primary text-sm">
-              Nahrát soubory
-            </button>
-            <button onClick={() => pickFolder.current?.click()} disabled={busy} className="btn-secondary text-sm">
-              Nahrát složku
-            </button>
-            <button onClick={() => startEdit({ kind: "newfile" })} disabled={busy} className="btn-secondary text-sm">
-              Nový soubor
-            </button>
-            <button onClick={() => startEdit({ kind: "mkdir" })} disabled={busy} className="btn-secondary text-sm">
-              Nová složka
-            </button>
-            <input ref={pickFiles} type="file" multiple hidden onChange={(e) => void upload([...(e.target.files ?? [])].map((file) => ({ path: file.name, file }))).finally(() => (e.target.value = ""))} />
-            <input
-              ref={pickFolder}
-              type="file"
-              hidden
-              {...{ webkitdirectory: "" }}
-              onChange={(e) =>
-                void upload([...(e.target.files ?? [])].filter((f) => !f.webkitRelativePath.split("/").some((s) => s.startsWith("."))).map((file) => ({ path: file.webkitRelativePath || file.name, file }))).finally(
-                  () => (e.target.value = ""),
-                )
-              }
-            />
-          </div>
+
           <p className="mt-1 text-xs text-fg-muted">Soubory i celé složky můžete sem přetáhnout, obrázek vložit ze schránky (Ctrl+V).</p>
 
           {editing && (
@@ -386,6 +361,32 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
           </ul>
           {entries && !entries.length && <p className="px-2 py-3 text-sm text-fg-muted">Prázdná složka. Přetáhněte sem soubory.</p>}
           {!entries && !error && <Pending />}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button onClick={() => pickFiles.current?.click()} disabled={busy} className="btn-primary text-sm">
+              Nahrát soubory
+            </button>
+            <button onClick={() => pickFolder.current?.click()} disabled={busy} className="btn-secondary text-sm">
+              Nahrát složku
+            </button>
+            <button onClick={() => startEdit({ kind: "newfile" })} disabled={busy} className="btn-secondary text-sm">
+              Nový soubor
+            </button>
+            <button onClick={() => startEdit({ kind: "mkdir" })} disabled={busy} className="btn-secondary text-sm">
+              Nová složka
+            </button>
+            <input ref={pickFiles} type="file" multiple hidden onChange={(e) => void upload([...(e.target.files ?? [])].map((file) => ({ path: file.name, file }))).finally(() => (e.target.value = ""))} />
+            <input
+              ref={pickFolder}
+              type="file"
+              hidden
+              {...{ webkitdirectory: "" }}
+              onChange={(e) =>
+                void upload([...(e.target.files ?? [])].filter((f) => !f.webkitRelativePath.split("/").some((s) => s.startsWith("."))).map((file) => ({ path: file.webkitRelativePath || file.name, file }))).finally(
+                  () => (e.target.value = ""),
+                )
+              }
+            />
+          </div>
         </div>
       </div>
 

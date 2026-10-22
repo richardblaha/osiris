@@ -38,6 +38,8 @@ describe("telemetry from ClickHouse", () => {
       if (sql.includes("DISTINCT site")) return Response.json({ data: [{ site: "k6labs.cz" }, { site: "tras.cz" }] });
       if (sql.includes("FROM web.stats_daily WHERE")) return Response.json({ data: [{ pageviews: "120", visitors: "40", events: "3" }] });
       if (sql.includes("FROM web.stats_hourly")) return Response.json({ data: [{ t: "1761091200000", pageviews: "5", visitors: "2" }] });
+      if (sql.includes("FROM web.locations_daily") && sql.includes("city AS key")) return Response.json({ data: [{ key: "Prague", detail: "Prague, CZ", pageviews: "12", visitors: "5" }] });
+      if (sql.includes("FROM web.networks_daily")) return Response.json({ data: [{ key: "Example ISP", detail: "AS123", pageviews: "10", visitors: "4" }] });
       if (sql.includes("FROM web.pages_daily")) return Response.json({ data: [{ key: "/", detail: "", pageviews: "80", visitors: "30" }] });
       return Response.json({ data: [] });
     }) as typeof fetch;
@@ -53,9 +55,11 @@ describe("telemetry from ClickHouse", () => {
       series: [{ t: 1761091200000, pageviews: 5, visitors: 2 }],
       pages: [{ key: "/", detail: "", pageviews: 80, visitors: 30 }],
       referrers: [],
+      cities: [{ key: "Prague", detail: "Prague, CZ", pageviews: 12, visitors: 5 }],
+      networks: [{ key: "Example ISP", detail: "AS123", pageviews: 10, visitors: 4 }],
     });
     expect(calls.every((c) => !c.sql.includes("k6labs.cz"))).toBe(true);
-    expect(calls.filter((c) => c.url.searchParams.get("param_site") === "k6labs.cz")).toHaveLength(10);
+    expect(calls.filter((c) => c.url.searchParams.get("param_site") === "k6labs.cz")).toHaveLength(13);
     // Over two days: by day.
     expect((await web.stats(undefined, { from: now - 30 * 86_400_000, to: now })).step).toBe("day");
   });

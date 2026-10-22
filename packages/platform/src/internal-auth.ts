@@ -15,6 +15,8 @@ export interface InternalUser {
 }
 
 export interface InternalClaims {
+  /** OIDC session UID, supplied only by the gateway after token verification. */
+  sessionUid?: string;
   /** The user the call is made for; absent for system calls (operator, control housekeeping). */
   user?: InternalUser;
   /** The tenant the call is about, with the user's role in it. */

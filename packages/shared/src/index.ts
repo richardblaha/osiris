@@ -124,6 +124,9 @@ export interface WebStats {
   referrers: WebTopRow[];
   campaigns: WebTopRow[];
   countries: WebTopRow[];
+  regions: WebTopRow[];
+  cities: WebTopRow[];
+  networks: WebTopRow[];
   browsers: WebTopRow[];
   systems: WebTopRow[];
   devices: WebTopRow[];
@@ -690,4 +693,35 @@ export interface ReportedUsage {
   month: string;
   tables: number;
   database: number;
+}
+
+
+export interface LoginEvent {
+  id: string;
+  at: number;
+  success: boolean;
+  method: string;
+  ip: string;
+  country: string;
+  region: string;
+  city: string;
+  asn: string;
+  network: string;
+  browser: string;
+  os: string;
+  device: string;
+}
+export interface LoginSession extends Omit<LoginEvent, "success" | "method"> {
+  current: boolean;
+  lastSeenAt: number;
+  expiresAt: number;
+}
+export interface AccountActivity { events: LoginEvent[]; sessions: LoginSession[] }
+
+export interface ChatQuestion {
+  id: string;
+  title: string;
+  fields: { name: string; label: string; type: "text" | "number" | "date" | "select" | "multiselect" | "boolean"; required: boolean; options?: { value: string; label: string }[] }[];
+  state: "open" | "answered" | "cancelled" | "expired";
+  expiresAt: number;
 }

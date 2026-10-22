@@ -44,6 +44,8 @@ spec:
           envFrom:
             - configMapRef: { name: web-events }
           env:
+            # Use bundled GeoIP data; automatic refresh temporarily exceeds the memory budget.
+            - { name: GEOIP_AUTO_UPDATE, value: "false" }
             - name: SALT_SEED
               valueFrom: { secretKeyRef: { name: web-events, key: SALT_SEED } }
             - { name: WEB_EVENTS_OTLP_URL, value: http://otel-collector.observability.svc.cluster.local:4320/v1/logs }
@@ -57,8 +59,8 @@ spec:
             httpGet: { path: /healthz, port: http }
             periodSeconds: 30
           resources:
-            requests: { cpu: 20m, memory: 128Mi }
-            limits: { memory: 256Mi }
+            requests: { cpu: 20m, memory: 256Mi }
+            limits: { memory: 768Mi }
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

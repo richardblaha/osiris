@@ -1,3 +1,5 @@
+import { createGeoIp, type GeoLocation } from "@osiris/platform/geoip.ts";
+import { AuthActivity } from "./activity.ts";
 import { createHash, createPrivateKey, generateKeyPairSync, hkdfSync } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
@@ -47,6 +49,7 @@ export interface AuthOptions {
   socialClients?: Partial<Record<SocialProviderId, SocialClient>>;
   mailer?: Mailer;
   fetchFn?: typeof fetch;
+  geo?: (ip: string) => GeoLocation;
 }
 
 /** Sign-in for Osiris: the OIDC provider and everything its screens need. */
@@ -61,7 +64,16 @@ export async function createAuthDeps(o: AuthOptions): Promise<AuthDeps> {
     cookieKeys: [derive(o.secret, "osiris-oidc-cookies")],
     webOrigins: [origin, ...(o.extraOrigins ?? [])],
   });
+  const activity = new AuthActivity(o.db, o.geo);
+  provider.use(async (ctx, next) => {
+    await next();
+    const session = ctx.oidc?.entities.Session;
+    if (session?.accountId && session.uid && !session.destroyed) {
+      await activity.observe(session.accountId, session.uid, ctx.get("x-forwarded-for"), ctx.get("user-agent"));
+    }
+  });
   return {
+    activity,
     db: o.db,
     provider,
     users: o.users,
@@ -88,6 +100,7 @@ export async function createAuth(config: Config, db: Db, users: UserDirectory): 
   return createAuthDeps({
     db,
     users,
+    geo: createGeoIp().lookup,
     publicUrl: config.PUBLIC_URL,
     extraOrigins: config.AUTH_EXTRA_ORIGINS,
     secret: config.AUTH_SECRET ?? createHash("sha256").update("osiris-dev-auth").digest("base64"),

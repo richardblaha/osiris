@@ -38,12 +38,12 @@ export function createAdapter(
               status = event.status;
               break;
             case "tool-call-start":
-              if (!showTools || parts.some((p) => p.type === "tool-call" && p.toolCallId === event.toolCallId)) break;
+              if ((!showTools && event.toolName !== "ask_user") || parts.some((p) => p.type === "tool-call" && p.toolCallId === event.toolCallId)) break;
               // Arguments still being written: shown as a step in progress.
               parts = [...parts, { type: "tool-call", toolCallId: event.toolCallId, toolName: event.toolName, args: {} as never, argsText: "" }];
               break;
             case "tool-call": {
-              if (!showTools) break;
+              if (!showTools && event.toolName !== "ask_user") break;
               const part: Part = {
                 type: "tool-call",
                 toolCallId: event.toolCallId,

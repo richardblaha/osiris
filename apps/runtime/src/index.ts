@@ -1,3 +1,4 @@
+import { MediaReader } from "@osiris/core/agent/attachments.ts";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { serve } from "@hono/node-server";
@@ -54,6 +55,7 @@ const models = await createAgentModels({
 const tenant = openTenant(config.TENANT_ID, db, {
   model: models.agent,
   models,
+  media: new MediaReader(config.MISTRAL_API_KEY, config.AUDIO_MODEL, config.OCR_MODEL),
   embeddings: createEmbeddings(config.EMBEDDING_MODEL),
   embeddingModel: config.EMBEDDING_MODEL,
   bundledSkills,

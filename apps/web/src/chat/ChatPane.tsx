@@ -1,5 +1,6 @@
+import { UploadContext } from "./Attachments.tsx";
 import { Pending } from "../Scope.tsx";
-import { AssistantRuntimeProvider, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
+import { AssistantRuntimeProvider, ExportedMessageRepository, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { createAdapter, toInitialMessages } from "./adapter.ts";
@@ -33,26 +34,63 @@ function Chat({ threadId, initial, onThreadCreated, onRunFinished }: Props & { i
   const callbacks = useRef({ onThreadCreated, onRunFinished });
   callbacks.current = { onThreadCreated, onRunFinished };
 
+  const creating = useRef<Promise<string> | null>(null);
+  const getThreadId = async () => {
+    if (idRef.current) return idRef.current;
+    creating.current ??= api.createThread().then(({ id }) => {
+      idRef.current = id;
+      callbacks.current.onThreadCreated(id);
+      return id;
+    }).finally(() => { creating.current = null; });
+    return creating.current;
+  };
   const adapter = useMemo(
     () =>
       createAdapter(
-        async () => {
-          if (!idRef.current) {
-            idRef.current = (await api.createThread()).id;
-            callbacks.current.onThreadCreated(idRef.current);
-          }
-          return idRef.current;
-        },
+        getThreadId,
         () => callbacks.current.onRunFinished(),
       ),
     [],
   );
   const runtime = useLocalRuntime(adapter, { initialMessages: initial });
+  useEffect(() => {
+    let disposed = false;
+    let pending = false;
+    let last = "";
+    const sync = async () => {
+      const id = idRef.current;
+      if (!id || pending || document.visibilityState === "hidden" || runtime.thread.getState().isRunning) return;
+      pending = true;
+      try {
+        const snapshot = await api.threadState(id);
+        if (disposed || snapshot.busy || runtime.thread.getState().isRunning) return;
+        if (snapshot.messages.length < runtime.thread.getState().messages.length) return;
+        const signature = JSON.stringify(snapshot.messages);
+        if (signature !== last) {
+          runtime.thread.import(ExportedMessageRepository.fromArray(toInitialMessages(snapshot.messages)));
+          last = signature;
+          callbacks.current.onRunFinished();
+        }
+      } catch { /* A transient reconnect leaves the visible history intact. */ }
+      finally { pending = false; }
+    };
+    const timer = setInterval(() => void sync(), 5000);
+    const focus = () => void sync();
+    window.addEventListener("focus", focus);
+    return () => { disposed = true; clearInterval(timer); window.removeEventListener("focus", focus); };
+  }, [runtime]);
+  const upload = async (file: File) => {
+    const id = await getThreadId();
+    const name = file.name.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "").slice(-120) || "priloha.txt";
+    const path = `${crypto.randomUUID()}-${name}`;
+    await api.uploadFile({ scope: "temp", path, thread: id }, file);
+    return path;
+  };
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadIdContext.Provider value={() => idRef.current}>
-        <Thread />
+        <UploadContext.Provider value={upload}><Thread /></UploadContext.Provider>
       </ThreadIdContext.Provider>
     </AssistantRuntimeProvider>
   );

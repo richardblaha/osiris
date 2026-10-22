@@ -14,7 +14,7 @@ afterEach(() => {
 });
 
 /** A browser: follows nothing on its own, keeps cookies by path, and talks to control as if through the gateway. */
-async function browser(control: Awaited<ReturnType<typeof createTestControl>>) {
+async function browser(control: Awaited<ReturnType<typeof createTestControl>>, network: Record<string, string> = {}) {
   const server = createServer(controlListener(control.app, control.auth.provider));
   servers.push(server);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
@@ -27,7 +27,7 @@ async function browser(control: Awaited<ReturnType<typeof createTestControl>>) {
     const res = await fetch(`${base}${url.pathname}${url.search}`, {
       ...init,
       redirect: "manual",
-      headers: { "x-forwarded-host": url.host, "x-forwarded-proto": "http", ...(cookie ? { cookie } : {}), ...(init.headers as Record<string, string>) },
+      headers: { "x-forwarded-host": url.host, "x-forwarded-proto": "http", ...network, ...(cookie ? { cookie } : {}), ...(init.headers as Record<string, string>) },
     });
     for (const line of res.headers.getSetCookie()) {
       const [pair, ...attrs] = line.split(";");
@@ -318,5 +318,61 @@ describe("emailitMailer", () => {
 
     status = 402;
     await expect(mailer.send({ to: "alice@firma.cz", subject: "x", text: "y" })).rejects.toThrow("402");
+  });
+});
+
+
+describe("account activity and sessions", () => {
+  it("records successes and failures, isolates users and revokes a whole browser session", async () => {
+    const control = await createTestControl({ users: [alice, { ...alice, id: "bob", email: "bob@firma.cz" }] });
+    await control.auth.credentials.setPassword("alice", "correct-password-123");
+    const first = await browser(control, { "x-forwarded-for": "8.8.8.8", "user-agent": "Mozilla/5.0 (Windows NT 10.0) Chrome/123.0" });
+    const second = await browser(control, { "x-forwarded-for": "1.1.1.1", "user-agent": "Mozilla/5.0 (iPhone) Version/17.0 Safari/605.1" });
+    const login = async (b: typeof first, fail = false) => {
+      const url = await b.authorize();
+      const path = `/auth/interaction/${url.searchParams.get("uid")}/password`;
+      if (fail) expect((await b.post(path, { email: alice.email, password: "wrong" })).status).toBe(401);
+      const result = await (await b.post(path, { email: alice.email, password: "correct-password-123" })).json();
+      const tokens = await b.exchange(await b.follow(result.redirectTo));
+      expect(tokens.status).toBe(200);
+      return tokens.body;
+    };
+    const a = await login(first, true);
+    const b = await login(second);
+    const who = await (await identify(control, b.access_token!)).json();
+    expect(who.sessionUid).toBeTruthy();
+    const me = async (path: string, method = "GET", user = "alice") => control.app.request(`/api/me/security${path}`, {
+      method, headers: { authorization: await gateway.header(CONTROL_AUDIENCE, {
+        user: { sub: user, name: user, email: null, phone: null, picture: null }, sessionUid: who.sessionUid,
+      }) },
+    });
+    const activity = await (await me("/activity")).json();
+    expect(activity.events).toHaveLength(3);
+    expect(activity.events.every((e: { country: string }) => e.country === "")).toBe(true);
+    expect(activity.events.filter((e: { success: boolean }) => !e.success)).toHaveLength(1);
+    expect(activity.events).toEqual(expect.arrayContaining([expect.objectContaining({ ip: "8.8.8.8", browser: "Chrome", success: true })]));
+    expect(activity.sessions).toHaveLength(2);
+    expect(activity.sessions.filter((e: { current: boolean }) => e.current)).toHaveLength(1);
+    const other = activity.sessions.find((e: { current: boolean }) => !e.current);
+    expect(other.browser).toBe("Chrome");
+    expect(other.ip).toBe("8.8.8.8");
+    expect((await me(`/sessions/${other.id}`, "DELETE", "bob")).status).toBe(404);
+    expect(await (await me("/activity", "GET", "bob")).json()).toEqual({ events: [], sessions: [] });
+    expect((await me(`/sessions/${other.id}`, "DELETE")).status).toBe(204);
+    expect((await identify(control, a.access_token!)).status).toBe(401);
+    expect((await first.token({ grant_type: "refresh_token", refresh_token: a.refresh_token! })).status).toBe(400);
+    expect((await identify(control, b.access_token!)).status).toBe(200);
+    expect((await (await me("/activity")).json()).sessions).toHaveLength(1);
+    expect((await first.authorize()).pathname).toBe("/login");
+    expect((await me(`/sessions/${other.id}`, "DELETE")).status).toBe(404);
+    // Revocation tombstones also reject a late write of a session with the same UID.
+    const resurrected = new control.auth.provider.Session();
+    resurrected.accountId = "alice";
+    resurrected.uid = other.id;
+    await resurrected.save(3600);
+    expect(await control.auth.provider.Session.findByUid(other.id)).toBeUndefined();
+    await control.auth.activity.cleanup(Date.now() + 91 * 86_400_000);
+    expect(await control.auth.activity.history("alice")).toEqual([]);
+    expect(await control.db.query("SELECT * FROM auth_events")).toEqual([]);
   });
 });

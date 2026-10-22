@@ -27,6 +27,9 @@ const schema = z
     // This tenant's key for sealing secrets (derived by the operator from the master key), 32 bytes base64.
     TENANT_SECRETS_KEY: z.string().optional(),
 
+    AUDIO_MODEL: z.string().default("voxtral-mini-latest"),
+    OCR_MODEL: z.string().default("mistral-ocr-latest"),
+    MISTRAL_API_KEY: z.string().optional(),
     LLM_MODEL: z.string().default("mistralai:mistral-small-2603"),
     LLM_AGENT_MODEL: z.string().optional(),
     LLM_TOOLS_MODEL: z.string().optional(),

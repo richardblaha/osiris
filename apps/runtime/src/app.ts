@@ -1,3 +1,5 @@
+import { AttachmentError, attachmentInput, attachmentMessage } from "@osiris/core/agent/attachments.ts";
+import { QuestionError } from "@osiris/core/agent/questions.ts";
 import { standardAccountSchema } from "@osiris/core/integrations/standard.ts";
 import { randomUUID } from "node:crypto";
 import type { AssistantProfile, AssistantProfiles, BuiltinTool, Guard, Guards, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UsageBreakdown, UserSettings } from "@osiris/shared";
@@ -33,7 +35,7 @@ import { databaseRoutes } from "./database.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
 
-const runBody = z.object({ message: z.string().trim().min(1).max(20_000) });
+const runBody = z.object({ message: z.string().trim().min(1).max(60_000).refine(v => v.length <= 20_000 || v.startsWith("@osiris-answer:"), "Zpráva je příliš dlouhá") });
 // Everything is the tenant's; "personal" is gone (only the user's profile is theirs).
 const scope = z.literal("tenant").default("tenant");
 const documentBody = z.object({
@@ -161,16 +163,26 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     if (activeRuns.has(runKey)) throw new HTTPException(409, { message: "A run is already in progress for this thread" });
 
     activeRuns.add(runKey);
+    let paths: string[] = [];
+    try {
+      const decoded = attachmentInput(message); paths = decoded.paths;
+      if (paths.length && !(await tenant.features.get()).files) throw new HTTPException(403, { message: "Soubory nejsou povolené" });
+      message = await tenant.questions.prepare(user.sub, id, decoded.text);
+    }
+    catch (err) { activeRuns.delete(runKey); if (err instanceof QuestionError || err instanceof AttachmentError) throw new HTTPException(400, { message: err.message }); throw err; }
     activity.activeRuns++;
-    await threads.touchThread(tenant.db, id, message);
     const abort = new AbortController();
     return streamSSE(c, async (sse) => {
       sse.onAbort(() => abort.abort());
       try {
+        await threads.touchThread(tenant.db, id, message);
         const runCtx = { thread_id: id, tenant_id: tenant.id, user_id: user.sub, role, channel, assistant, user_name: user.name ?? undefined };
         // With rules, the answer is sent only after the output check (the public assistant's rules too).
         const guarded = channel === "public" ? true : hasRules(await tenant.rules(user.sub));
-        for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal, { guarded })) {
+        const quota = await tenant.features.quotas();
+        if (paths.length && ((quota.tokensPerMonth !== null && await tenant.usage.tokens() >= quota.tokensPerMonth) || (quota.tokensPerUserMonth !== null && await tenant.usage.tokens(Date.now(), { user: user.sub }) >= quota.tokensPerUserMonth))) throw new Error("Limit tokenů vyčerpán");
+        const input = paths.length ? await attachmentMessage(tenant.files, tenant.media, id, message, paths, n => tenant.usage.add(n, Date.now(), { user: user.sub })) : undefined;
+        for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal, { guarded, input })) {
           await sse.writeSSE({ data: JSON.stringify(event) });
         }
       } catch (err) {
@@ -287,11 +299,19 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const state = await tenant.graph.getState({ configurable: { thread_id: c.req.param("id") } });
       return c.json<ThreadMessage[]>(toThreadMessages(state.values.messages ?? []));
     })
+    .get("/:assistant/threads/:id/questions/:question", async (c) => {
+      await requirePublic(c.req.param("assistant"));
+      const ctx = c.get("ctx");
+      await requireThread(ctx, c.req.param("id"));
+      const q = await tenant.questions.get(ctx.user.sub, c.req.param("id"), c.req.param("question"));
+      if (!q) throw new HTTPException(404);
+      return c.json(q);
+    })
     .post("/:assistant/threads/:id/runs", async (c) => {
       const a = await requirePublic(c.req.param("assistant"));
       const ctx = c.get("ctx");
       await requireThread(ctx, c.req.param("id"));
-      const { message } = parse(z.object({ message: z.string().trim().min(1).max(2000) }), await c.req.json());
+      const { message } = parse(z.object({ message: z.string().trim().min(1).max(60_000).refine(v => v.length <= 2000 || v.startsWith("@osiris-answer:")) }), await c.req.json());
       return runThread(c, ctx, c.req.param("id"), message, a.name);
     });
 
@@ -330,6 +350,21 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       await requireThread(ctx, id);
       const state = await ctx.tenant.graph.getState({ configurable: { thread_id: id } });
       return c.json(toThreadMessages(state.values.messages ?? []));
+    })
+
+    .get("/threads/:id/state", async (c) => {
+      const ctx = c.get("ctx");
+      const id = c.req.param("id");
+      await requireThread(ctx, id);
+      const state = await tenant.graph.getState({ configurable: { thread_id: id } });
+      return c.json({ busy: activeRuns.has(`${tenant.id}/${id}`), messages: toThreadMessages(state.values.messages ?? []) });
+    })
+    .get("/threads/:id/questions/:question", async (c) => {
+      const ctx = c.get("ctx");
+      await requireThread(ctx, c.req.param("id"));
+      const question = await tenant.questions.get(ctx.user.sub, c.req.param("id"), c.req.param("question"));
+      if (!question) throw new HTTPException(404, { message: "Otázka neexistuje" });
+      return c.json(question);
     })
 
     .delete("/threads/:id", async (c) => {

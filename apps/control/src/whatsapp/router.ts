@@ -1,4 +1,4 @@
-import type { Role } from "@osiris/shared";
+import type { ChatQuestion, Role } from "@osiris/shared";
 import { accessibleTenants, isAuthorized, type Membership } from "@osiris/platform/claims.ts";
 import { isUnreachable, ServiceError } from "@osiris/platform/http.ts";
 import { tenantAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
@@ -6,13 +6,13 @@ import { run, type Db } from "@osiris/platform/rqlite.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import type { TenantStore } from "../tenants.ts";
 import type { UserDirectory } from "../users.ts";
-import type { WhatsAppClient } from "./cloud-api.ts";
+import { WhatsAppApiError, type WhatsAppClient } from "./cloud-api.ts";
 import type { Inbox, InboxMessage } from "./inbox.ts";
 import { userByPhone, VERIFY_MESSAGE, type PhoneVerification } from "./phones.ts";
 
 const NOT_REGISTERED = "Tohle číslo nemá v Osirisu účet. Ověř si ho v profilu (Můj profil → Telefon), nebo požádej správce.";
 const NO_TENANT = "Nejsi přiřazený k žádnému tenantovi. Obrať se na správce.";
-const TEXT_ONLY = "Zatím rozumím jen textovým zprávám.";
+const TEXT_ONLY = "Podporuji text, obrázky, dokumenty a hlasové zprávy.";
 const FAILED = "Omlouvám se, něco se pokazilo. Zkus to prosím znovu.";
 const NEW_THREAD = "Dobře, začínáme novou konverzaci.";
 const VERIFIED = "Číslo je ověřené. Teď mi můžeš psát.";
@@ -22,6 +22,7 @@ const HELP = [
   "• /tenant – tvoji tenanti a který je aktivní",
   "• /tenant <zkratka> – přepne na jiného tenanta",
   "• /nova – začne novou konverzaci",
+  "• /zrusit – zruší otevřenou otázku nebo dotazník",
 ].join("\n");
 
 const MAX_ATTEMPTS = 3;
@@ -44,6 +45,7 @@ export class WhatsAppRouter {
       client: WhatsAppClient;
       runtimes: RuntimeClient;
       signer: InternalSigner;
+      publicUrl?: string;
     },
   ) {}
 
@@ -55,7 +57,7 @@ export class WhatsAppRouter {
       await this.handle(message);
       await this.deps.inbox.finish(message.id, "done");
     } catch (err) {
-      const retryable = isUnreachable(err) || (err instanceof ServiceError && err.status >= 500);
+      const retryable = isUnreachable(err) || (err instanceof WhatsAppApiError && (err.status >= 500 || err.status === 429)) || (err instanceof ServiceError && (err.status >= 500 || err.status === 409));
       if (retryable && message.attempts < MAX_ATTEMPTS) {
         await this.deps.inbox.retry(message.id, 30_000 * message.attempts, String(err));
       } else {
@@ -83,9 +85,9 @@ export class WhatsAppRouter {
     const active = (await this.deps.tenants.list()).map((t) => t.id);
     const memberships = accessibleTenants(user.access, active).filter((m) => active.includes(m.tenantId));
     if (!memberships.length) return this.reply(message, NO_TENANT);
-    if (message.type !== "text" || !text) return this.reply(message, TEXT_ONLY);
+    if (!(["text", "interactive", "button"].includes(message.type) && text) && !message.media) return this.reply(message, TEXT_ONLY);
 
-    const command = /^\/(tenant|nova|pomoc)\b\s*(.*)$/isu.exec(text);
+    const command = /^\/(tenant|nova|pomoc)\b\s*(.*)$/isu.exec(text ?? "");
     const name = command?.[1]!.toLowerCase();
     if (name === "tenant") return this.reply(message, await this.switchTenant(user, memberships, command![2]!.trim()));
     if (name === "pomoc") return this.reply(message, HELP);
@@ -102,8 +104,23 @@ export class WhatsAppRouter {
     }
     // Best effort: a failed read receipt must not stop the reply.
     await this.deps.client.markRead(message.phoneNumberId, message.id).catch(() => {});
-    const { reply } = await this.call<{ reply: string }>(selected.tenantId, "/internal/whatsapp/message", headers, { messageId: message.id, text });
-    if (reply) await this.reply(message, reply);
+    let attachment: { name: string; mime: string; data: string } | undefined;
+    if (message.media) {
+      const media = await this.deps.client.downloadMedia(message.media.id);
+      attachment = { name: message.media.filename ?? `whatsapp-${message.id.replace(/[^a-zA-Z0-9]/g, "").slice(-30)}`, mime: media.mime, data: media.data.toString("base64") };
+    }
+    try {
+      const { reply, question, threadId, files } = await this.call<{ reply: string; question?: ChatQuestion; threadId: string; files?: { scope: string; path: string }[] }>(selected.tenantId, "/internal/whatsapp/message", headers, { messageId: message.id, text: text ?? message.media?.caption ?? "Přikládám soubor.", attachment });
+      if (reply) await this.reply(message, reply);
+      for (const offer of files ?? []) {
+        const file = await this.call<{ data: string; mime: string; name: string }>(selected.tenantId, "/internal/whatsapp/file", headers, { threadId, ...offer });
+        await this.deps.client.sendFile(message.phoneNumberId, message.from, { ...file, data: Buffer.from(file.data, "base64") });
+      }
+      if (question?.state === "open") await this.deps.client.sendQuestion(message.phoneNumberId, message.from, question, `${this.deps.publicUrl ?? "https://osiris.k6labs.cz"}/t/${encodeURIComponent(selected.tenantId)}/chat/${encodeURIComponent(threadId)}`);
+    } catch (err) {
+      if (err instanceof ServiceError && err.status === 400) return this.reply(message, "Odpověď není platná nebo otázka vypršela. Vyplň formulář znovu, případně pošli /zrusit.");
+      throw err;
+    }
   }
 
   private async headers(user: InternalUser, m: Membership) {

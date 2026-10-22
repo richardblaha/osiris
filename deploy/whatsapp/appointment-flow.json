@@ -1,0 +1,27 @@
+{
+  "version": "7.3",
+  "screens": [{
+    "id": "FORM",
+    "title": "Dotazník",
+    "terminal": true,
+    "success": true,
+    "data": {
+      "title": { "type": "string", "__example__": "Domluvit termín" },
+      "name_label": { "type": "string", "__example__": "Jméno" },
+      "date_label": { "type": "string", "__example__": "Datum" }
+    },
+    "layout": {
+      "type": "SingleColumnLayout",
+      "children": [{
+        "type": "Form",
+        "name": "details",
+        "children": [
+          { "type": "TextHeading", "text": "${data.title}" },
+          { "type": "TextInput", "name": "name", "label": "${data.name_label}", "input-type": "text", "required": true },
+          { "type": "DatePicker", "name": "date", "label": "${data.date_label}", "required": true },
+          { "type": "Footer", "label": "Odeslat", "on-click-action": { "name": "complete", "payload": { "name": "${form.name}", "date": "${form.date}" } } }
+        ]
+      }]
+    }
+  }]
+}

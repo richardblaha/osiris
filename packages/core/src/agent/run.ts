@@ -1,3 +1,4 @@
+import { displayUserText } from "./questions.ts";
 import { AIMessage, AIMessageChunk, HumanMessage, ToolMessage, type BaseMessage } from "@langchain/core/messages";
 import type { MessagePart, RunEvent, RunStatus, ThreadMessage } from "@osiris/shared";
 import type { RunContext } from "./context.ts";
@@ -17,10 +18,10 @@ export async function* streamRun(
   ctx: RunContext,
   text: string,
   signal?: AbortSignal,
-  { guarded = false } = {},
+  { guarded = false, input }: { guarded?: boolean; input?: HumanMessage } = {},
 ): AsyncGenerator<RunEvent> {
   const stream = await graph.stream(
-    { messages: [new HumanMessage(text)] },
+    { messages: [input ?? new HumanMessage({ content: text, additional_kwargs: { display_text: displayUserText(text) } })] },
     { configurable: { ...ctx }, streamMode: ["messages", "updates", "tasks"], signal },
   );
 
@@ -99,7 +100,7 @@ export function toThreadMessages(messages: BaseMessage[]): ThreadMessage[] {
 
   for (const m of messages) {
     if (HumanMessage.isInstance(m)) {
-      out.push({ id: m.id ?? crypto.randomUUID(), role: "user", content: [{ type: "text", text: m.text }] });
+      out.push({ id: m.id ?? crypto.randomUUID(), role: "user", content: [{ type: "text", text: typeof m.additional_kwargs.display_text === "string" ? m.additional_kwargs.display_text : m.text }] });
     } else if (AIMessage.isInstance(m)) {
       // Consecutive model turns (text → tool call → text) render as one assistant message.
       let target = out.at(-1);

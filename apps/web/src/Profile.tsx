@@ -1,3 +1,4 @@
+import { AccountActivity } from "./AccountActivity.tsx";
 import type { MeResponse, TenantFeatures, UserProfile, UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { AssistantSettings } from "./Assistant.tsx";
@@ -31,7 +32,7 @@ export function Avatar({ user, size = 32 }: { user: MeResponse["user"]; size?: n
   );
 }
 
-type Part = "account" | SecurityPart | "personalization";
+type Part = "account" | SecurityPart | "personalization" | "activity";
 
 /**
  * The user's own: their account, each sign-in method, linked accounts and how the assistant treats them
@@ -52,6 +53,7 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
             { key: "totp", label: "Dvoufázové přihlašování" },
             { key: "linked", label: "Propojené účty" },
             { key: "personalization", label: "Personalizace" },
+            { key: "activity", label: "Aktivita a relace" },
             { key: "logout", label: <span className="text-error">Odhlásit</span> },
           ],
         },
@@ -68,6 +70,8 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
             </div>
             <Account />
           </>
+        ) : part === "activity" ? (
+          <AccountActivity />
         ) : part === "personalization" ? (
           <Personalization />
         ) : (

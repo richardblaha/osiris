@@ -10,6 +10,10 @@ metadata:
   labels: { app: control }
 spec:
   replicas: 2
+  # Keep updates within cluster capacity while one replica remains available.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxSurge: 0, maxUnavailable: 1 }
   selector:
     matchLabels: { app: control }
   template:
@@ -33,6 +37,8 @@ spec:
           ports:
             - { name: http, containerPort: 3002 }
           env:
+            # Use bundled GeoIP data; automatic refresh temporarily exceeds the memory budget.
+            - { name: GEOIP_AUTO_UPDATE, value: "false" }
             - { name: NODE_ENV, value: production }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
@@ -58,8 +64,8 @@ spec:
             initialDelaySeconds: 20
             periodSeconds: 30
           resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { memory: 512Mi }
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 768Mi }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
       volumes:

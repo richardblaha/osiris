@@ -1,10 +1,11 @@
 import { Pending } from "./Scope.tsx";
 import { AssistantRuntimeProvider, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
-import type { PublicInfo, ThreadMessage } from "@osiris/shared";
+import type { ChatQuestion, PublicInfo, ThreadMessage } from "@osiris/shared";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { readEvents } from "./api.ts";
 import { createAdapter, toInitialMessages } from "./chat/adapter.ts";
-import { Thread } from "./chat/Thread.tsx";
+import { QuestionLoaderContext } from "./chat/Question.tsx";
+import { Thread, ThreadIdContext } from "./chat/Thread.tsx";
 
 /** Per-browser conveniences only: without storage every visit is a new conversation. */
 const remember = (key: string, make?: () => string) => {
@@ -41,6 +42,7 @@ function publicApi(tenant: string, assistant: string) {
     return res;
   };
   return {
+    question: async (thread: string, id: string) => (await (await call(`/threads/${thread}/questions/${id}`)).json()) as ChatQuestion,
     info: async () => (await (await call("/info")).json()) as PublicInfo,
     createThread: async () => ((await (await call("/threads", { method: "POST" })).json()) as { id: string }).id,
     messages: async (id: string) => (await (await call(`/threads/${id}/messages`)).json()) as ThreadMessage[],
@@ -122,7 +124,11 @@ function Chat({ client, threadKey, initial, greeting }: { client: ReturnType<typ
   const runtime = useLocalRuntime(adapter, { initialMessages: initial });
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <Thread greeting={greeting || "Dobrý den, s čím vám můžu pomoct?"} placeholder="Napište zprávu…" />
+      <ThreadIdContext.Provider value={() => id.current}>
+        <QuestionLoaderContext.Provider value={client.question}>
+          <Thread greeting={greeting || "Dobrý den, s čím vám můžu pomoct?"} placeholder="Napište zprávu…" />
+        </QuestionLoaderContext.Provider>
+      </ThreadIdContext.Provider>
     </AssistantRuntimeProvider>
   );
 }

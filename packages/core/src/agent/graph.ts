@@ -1,3 +1,4 @@
+import type { QuestionStore } from "./questions.ts";
 import type { AgentModels } from "./model.ts";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
@@ -21,6 +22,8 @@ export interface AgentDeps {
   /** The tenant this graph serves; runs carrying another `tenant_id` are refused. */
   tenantId: string;
   model: BaseChatModel;
+  questions?: QuestionStore;
+  images?: (thread: string, paths: string[]) => Promise<{ type: "image_url"; image_url: { url: string } }[]>;
   /** System-selected models for agent steps, tool follow-ups and guard checks. */
   models?: AgentModels;
   /** Tools bound to this tenant's stores. */
@@ -137,7 +140,19 @@ export function createAgentGraph(deps: AgentDeps) {
     );
     const selected = deps.models ? (ToolMessage.isInstance(state.messages.at(-1)) ? deps.models.tools : deps.models.agent) : model;
     if (!selected.bindTools) throw new Error("Selected model does not support tool calling");
-    const response = await selected.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);
+    // Image bytes are request-only: checkpoints retain references, so temp-file expiry also removes the image.
+    const messages = [...state.messages];
+    const latest = messages.findLastIndex(m => HumanMessage.isInstance(m));
+    const human = messages[latest];
+    const paths = human?.additional_kwargs.image_paths;
+    if (HumanMessage.isInstance(human) && Array.isArray(paths) && paths.length && deps.images) {
+      const images = await deps.images(ctx.thread_id, paths as string[]);
+      messages[latest] = new HumanMessage({ id: human.id, content: [...(typeof human.content === "string" ? [{ type: "text" as const, text: human.content }] : human.content), ...images], additional_kwargs: human.additional_kwargs });
+    }
+    const question = await deps.questions?.latest(ctx.user_id, ctx.thread_id);
+    const prompt = question && (question.state === "expired" || question.state === "cancelled")
+      ? new SystemMessage(`${system.text}\n\nPoslední strukturovaná otázka má stav ${question.state}. Nepovažuj odpovědi na tuto starou otázku za potvrzení. Pokud je potvrzení dál potřeba, polož novou otázku nástrojem ask_user.`) : system;
+    const response = await selected.bindTools!(await allTools(ctx)).invoke([prompt, ...messages], config);
     await count(ctx, response.usage_metadata?.total_tokens ?? 0);
     return { messages: [response] };
   };
@@ -146,15 +161,23 @@ export function createAgentGraph(deps: AgentDeps) {
   return new StateGraph(MessagesAnnotation)
     .addNode("guard_in", guardInput)
     .addNode("agent", callModel)
-    .addNode("tools", async (state: typeof MessagesAnnotation.State, config: RunnableConfig) =>
-      new ToolNode(await allTools(getRunContext(config))).invoke(state, config),
-    )
+    .addNode("tools", async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
+      const last = state.messages.at(-1) as AIMessage;
+      const ask = last.tool_calls?.find(c => c.name === "ask_user");
+      if (ask && ((last.tool_calls?.length ?? 0) !== 1 || await check(config, "output", JSON.stringify(ask.args)))) {
+        return { messages: last.tool_calls!.map(c => new ToolMessage({ tool_call_id: c.id!, content: "Otázku je nutné položit samostatně a musí respektovat pravidla. Žádná akce nebyla provedena." })) };
+      }
+      return new ToolNode(await allTools(getRunContext(config))).invoke(state, config);
+    })
     .addNode("guard_out", guardOutput)
     .addEdge(START, "guard_in")
     // A refused message ends the turn; otherwise the agent answers.
     .addConditionalEdges("guard_in", (state) => (lastIsAi(state) ? END : "agent"), ["agent", END])
     .addConditionalEdges("agent", (state) => ((state.messages.at(-1) as AIMessage).tool_calls?.length ? "tools" : "guard_out"), ["tools", "guard_out"])
-    .addEdge("tools", "agent")
+    .addConditionalEdges("tools", async (_, config) => {
+      const ctx = getRunContext(config);
+      return (await deps.questions?.get(ctx.user_id, ctx.thread_id))?.state === "open" ? END : "agent";
+    }, [END, "agent"])
     .addEdge("guard_out", END)
     .compile({ checkpointer });
 }

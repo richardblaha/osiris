@@ -72,7 +72,7 @@ describe("public assistants", () => {
     const anna = visitor("anna-visitor-123456");
     const { id, text: answer } = await chat(anna, "Kolik stojí zásuvka?", "eshop");
     expect(answer).toBe("Dobrý den.");
-    expect(bound[0]!.sort()).toEqual(["estimate_price", "load_skill", "search_knowledge"]);
+    expect(bound[0]!.sort()).toEqual(["ask_user", "estimate_price", "load_skill", "search_knowledge"]);
     const prompt = model.calls[0]![0]!.text;
     expect(prompt).toContain("asistent firmy Elektro Novák pro její zákazníky");
     expect(prompt).toContain("Otevřeno Po–Pá 8–16.");
@@ -82,7 +82,7 @@ describe("public assistants", () => {
 
     // The other assistant has nothing of that.
     await chat(anna, "Ahoj", "servis");
-    expect(bound[1]).toEqual([]);
+    expect(bound[1]).toEqual(["ask_user"]);
     expect(model.calls[1]![0]!.text).toContain("asistent firmy Servis");
     expect(model.calls[1]![0]!.text).not.toContain("Otevřeno");
 

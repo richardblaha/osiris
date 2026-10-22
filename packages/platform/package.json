@@ -25,6 +25,7 @@
     "@opentelemetry/sdk-node": "0.223.0",
     "@osiris/shared": "workspace:*",
     "jose": "6.2.12",
+    "mmdb-lib": "^3.0.3",
     "zod": "4.6.5"
   },
   "devDependencies": {

@@ -1,3 +1,6 @@
+import { chatFileTool } from "../agent/tools/chat-file.ts";
+import { MediaReader } from "../agent/attachments.ts";
+import { QuestionStore } from "../agent/questions.ts";
 import { StandardAccounts } from "../integrations/standard.ts";
 import { mailTools } from "../integrations/mail.ts";
 import { davTools } from "../integrations/dav.ts";
@@ -26,6 +29,7 @@ import { fileTools, searchFilesTool } from "../agent/tools/files.ts";
 import { GotenbergClient } from "../files/gotenberg.ts";
 import { FileStore, type FileStoreOptions } from "../files/store.ts";
 import type { StructuredToolInterface } from "@langchain/core/tools";
+import { fileType } from "@osiris/shared";
 import type { Feature, Inquiry } from "@osiris/shared";
 import type { FeatureSource } from "./features.ts";
 import { UsageStore } from "../agent/usage.ts";
@@ -86,10 +90,13 @@ export interface Tenant {
   model: BaseChatModel;
   personaModel: BaseChatModel;
   graph: AgentGraph;
+  questions: QuestionStore;
+  media: MediaReader;
 }
 
 /** Shared, tenant-independent dependencies. */
 export interface TenantDeps {
+  media?: MediaReader;
   model: BaseChatModel;
   models?: AgentModels;
   embeddings: EmbeddingsInterface;
@@ -187,6 +194,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ...memoryTools(memory).map((t): [Feature, StructuredToolInterface] => ["memory", t]),
     ...fileTools(files, gotenberg).map((t): [Feature, StructuredToolInterface] => ["files", t]),
     ["files", searchFilesTool(fileIndex)],
+    ["files", chatFileTool(files)],
     ["sites", publishSiteTool(files, siteTargets)],
     ...(vitepress ? [["sites", buildVitepressTool(files, vitepress)] as [Feature, StructuredToolInterface]] : []),
     ["integrations", tool(async (_, config) => JSON.stringify(await standardAccounts.list(getRunContext(config).user_id)), {
@@ -199,11 +207,20 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
     ...(deps.extraTools?.(files) ?? []),
   ];
+  const questions = new QuestionStore(db);
   const graph = createAgentGraph({
+    questions,
+    images: async (threadId, paths) => {
+      if (!(await features.get()).files) return [];
+      return Promise.all(paths.map(async path => {
+        const { data } = await files.read({ scope: "temp", threadId }, path);
+        return { type: "image_url" as const, image_url: { url: `data:${fileType(path)!.mime};base64,${data.toString("base64")}` } };
+      }));
+    },
     tenantId: id,
     model: deps.model,
     models: deps.models,
-    tools: [],
+    tools: [questions.tool()],
     // Resolved on every step, so switching a feature or a tool applies from the next step.
     dynamicTools: async (ctx) => {
       if (ctx.channel === "public") {
@@ -304,6 +321,8 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     model: deps.models?.agent ?? deps.model,
     personaModel: deps.models?.persona ?? deps.model,
     graph,
+    questions,
+    media: deps.media ?? new MediaReader(undefined),
     init,
   };
 }

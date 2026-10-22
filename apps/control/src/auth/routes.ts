@@ -1,3 +1,5 @@
+import { userByPhone } from "../whatsapp/phones.ts";
+import type { AuthActivity } from "./activity.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SecurityOverview, SignInState, SocialProvider } from "@osiris/shared";
 import { Hono, type Context } from "hono";
@@ -17,6 +19,7 @@ import { SOCIAL_PROVIDERS, SocialLoginError, type SocialLogin, type SocialProvid
 
 export interface AuthDeps {
   db: Db;
+  activity: AuthActivity;
   provider: Provider;
   users: UserDirectory;
   credentials: Credentials;
@@ -111,6 +114,7 @@ export function authRoutes(deps: AuthDeps) {
     const [req, res] = nodePair(c);
     const returnTo = await provider.interactionResult(req, res, { login: { accountId: userId, amr, remember: true } }, { mergeWithLastSubmission: false });
     await deps.db.execute([run("UPDATE users SET last_login_at = ? WHERE id = ?", Date.now(), userId)]);
+    await deps.activity.record(userId, true, amr.join("+"), clientIp(c), c.req.header("user-agent") ?? "");
     return relative(returnTo);
   };
 
@@ -180,6 +184,8 @@ export function authRoutes(deps: AuthDeps) {
         const userId = await credentials.checkPassword(input.email, input.password);
         if (!userId) {
           limiter.fail(keys);
+          const account = (await deps.db.query<{ id: string }>("SELECT id FROM users WHERE lower(email)=?", [input.email.toLowerCase()]))[0];
+          if (account) await deps.activity.record(account.id, false, "pwd", clientIp(c), c.req.header("user-agent") ?? "");
           throw new SignInError(401, { message: "Nesprávný e-mail nebo heslo" });
         }
         limiter.reset([keys[1]!]);
@@ -198,6 +204,7 @@ export function authRoutes(deps: AuthDeps) {
         const ok = /^\d{6}$/.test(digits) ? await credentials.checkTotp(pending.userId, digits) : await credentials.useRecoveryCode(pending.userId, input.code);
         if (!ok) {
           limiter.fail(keys);
+          await deps.activity.record(pending.userId, false, "otp", clientIp(c), c.req.header("user-agent") ?? "");
           throw new SignInError(401, { message: "Kód nesouhlasí" });
         }
         // Only one request gets past the second factor.
@@ -356,7 +363,7 @@ export function authRoutes(deps: AuthDeps) {
 }
 
 /** The signed-in user's sign-in methods (`/api/me/security`, behind the gateway). */
-export function securityRoutes(deps: AuthDeps, me: (c: Context) => string) {
+export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessionUid: (c: Context) => string | undefined = () => undefined) {
   const { users, credentials, passkeys, social } = deps;
   const iso = (ms: number) => new Date(ms).toISOString();
 
@@ -381,6 +388,19 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string) {
 
   return new Hono()
     .get("/", async (c) => c.json(await overview(me(c))))
+    .get("/whatsapp-deliveries", async (c) => {
+      const user = await users.get(me(c));
+      const phone = user.claims.phone_number;
+      if (typeof phone !== "string" || (await userByPhone(users, phone))?.sub !== user.id) return c.json([]);
+      const rows = await deps.db.query<{ status: string; status_at: number; error_code: string | null }>("SELECT status,status_at,error_code FROM wa_deliveries WHERE recipient=? ORDER BY status_at DESC LIMIT 50", [phone.replace(/\D/g, "")]);
+      return c.json(rows.map(r => ({ status: r.status, at: Number(r.status_at), errorCode: r.error_code })));
+    })
+    .get("/activity", async (c) => c.json({ events: await deps.activity.history(me(c)), sessions: await deps.activity.sessions(me(c), sessionUid(c)) }))
+    .delete("/sessions/:id", async (c) => {
+      const id = parse(z.string().min(1).max(200), c.req.param("id"));
+      if (!(await deps.activity.revoke(me(c), id))) throw new HTTPException(404, { message: "Relace neexistuje" });
+      return c.body(null, 204);
+    })
 
     .put("/password", async (c) => {
       const userId = me(c);

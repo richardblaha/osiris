@@ -36,6 +36,13 @@ PARTITION BY toYYYYMM(timestamp)
 ORDER BY (site, toDate(timestamp), event, path)
 TTL toDateTime(timestamp) + INTERVAL 2 YEAR;
 
+-- Existing installations: add fields before replacing the ingestion view. Historical rows stay unknown.
+ALTER TABLE web.web_events ADD COLUMN IF NOT EXISTS region LowCardinality(String) DEFAULT '';
+ALTER TABLE web.web_events ADD COLUMN IF NOT EXISTS city LowCardinality(String) DEFAULT '';
+ALTER TABLE web.web_events ADD COLUMN IF NOT EXISTS asn LowCardinality(String) DEFAULT '';
+ALTER TABLE web.web_events ADD COLUMN IF NOT EXISTS network LowCardinality(String) DEFAULT '';
+DROP VIEW IF EXISTS web.web_events_mv;
+
 CREATE MATERIALIZED VIEW IF NOT EXISTS web.web_events_mv TO web.web_events AS
 SELECT
     Timestamp AS timestamp,
@@ -50,6 +57,10 @@ SELECT
     LogAttributes['utm_content'] AS utm_content,
     LogAttributes['utm_term'] AS utm_term,
     LogAttributes['country'] AS country,
+    LogAttributes['region'] AS region,
+    LogAttributes['city'] AS city,
+    LogAttributes['asn'] AS asn,
+    LogAttributes['network'] AS network,
     LogAttributes['browser'] AS browser,
     LogAttributes['os'] AS os,
     LogAttributes['device'] AS device,
@@ -206,3 +217,27 @@ TTL day + INTERVAL 2 YEAR;
 CREATE MATERIALIZED VIEW IF NOT EXISTS web.events_daily_mv TO web.events_daily AS
 SELECT site, toDate(timestamp) AS day, event, count() AS count, uniqState(visitor_hash) AS visitors
 FROM web.web_events WHERE event != 'pageview' GROUP BY site, day, event;
+
+
+CREATE TABLE IF NOT EXISTS web.locations_daily
+(
+    site LowCardinality(String), day Date,
+    country LowCardinality(String), region LowCardinality(String), city LowCardinality(String),
+    pageviews SimpleAggregateFunction(sum, UInt64), visitors AggregateFunction(uniq, UInt64)
+)
+ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(day) ORDER BY (site, day, country, region, city)
+TTL day + INTERVAL 2 YEAR;
+CREATE MATERIALIZED VIEW IF NOT EXISTS web.locations_daily_mv TO web.locations_daily AS
+SELECT site, toDate(timestamp) AS day, country, region, city, count() AS pageviews, uniqState(visitor_hash) AS visitors
+FROM web.web_events WHERE event='pageview' GROUP BY site, day, country, region, city;
+
+CREATE TABLE IF NOT EXISTS web.networks_daily
+(
+    site LowCardinality(String), day Date, asn LowCardinality(String), network LowCardinality(String),
+    pageviews SimpleAggregateFunction(sum, UInt64), visitors AggregateFunction(uniq, UInt64)
+)
+ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(day) ORDER BY (site, day, asn, network)
+TTL day + INTERVAL 2 YEAR;
+CREATE MATERIALIZED VIEW IF NOT EXISTS web.networks_daily_mv TO web.networks_daily AS
+SELECT site, toDate(timestamp) AS day, asn, network, count() AS pageviews, uniqState(visitor_hash) AS visitors
+FROM web.web_events WHERE event='pageview' GROUP BY site, day, asn, network;

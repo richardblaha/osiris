@@ -386,18 +386,18 @@ function Workspace() {
               </svg>
             </button>
           </div>
-          {tenant &&
-            (collapsed ? (
-              <button onClick={() => openThread(null)} className="btn-primary mx-auto mt-3 flex h-10 w-10 items-center justify-center p-0" aria-label="Nový chat" title="Nový chat">
-                <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
-                  <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" />
-                </svg>
-              </button>
-            ) : (
-              <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
-                + Nový chat
-              </button>
-            ))}
+          {tenant && collapsed && (
+            <button onClick={() => openThread(null)} className="btn-primary mx-auto mt-3 flex h-10 w-10 items-center justify-center p-0" aria-label="Nový chat" title="Nový chat">
+              <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
+                <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" />
+              </svg>
+            </button>
+          )}
+          {tenant && !collapsed && (
+            <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
+              + Nový chat
+            </button>
+          )}
           <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
             {tenant && collapsed && (
               <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label="Konverzace" icon="M2 4h12v7H9l-3 3v-3H2z" />

@@ -334,7 +334,7 @@ export class SchedulerWorker {
       });
       if (!res.ok) throw new ServiceError(`Runtime: ${res.status} ${(await res.text()).slice(0, 300)}`, res.status);
       const { threadId, reply } = (await res.json()) as { threadId: string; reply: string };
-      const warning = s.delivery === "whatsapp" ? await this.sendWhatsApp(owner.claims[PHONE_CLAIM], s.title, reply, now) : null;
+      const warning = s.delivery === "whatsapp" ? await this.sendWhatsApp(owner.claims[PHONE_CLAIM], s.title, reply, `t/${encodeURIComponent(s.tenantId)}/chat/${encodeURIComponent(threadId)}`, now) : null;
       await this.deps.schedules.finish(s, { status: "done", threadId, error: warning }, now);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -346,10 +346,11 @@ export class SchedulerWorker {
   }
 
   /** Sends the result; returns a warning when WhatsApp can't be used (the result stays in the web thread). */
-  private async sendWhatsApp(phone: string | undefined, title: string, reply: string, now: number): Promise<string | null> {
+  private async sendWhatsApp(phone: string | undefined, title: string, reply: string, detailPath: string, now: number): Promise<string | null> {
     if (!this.deps.whatsapp) return "WhatsApp není nastavený, výsledek je jen ve webovém chatu";
     if (!phone) return "Uživatel nemá ověřené telefonní číslo, výsledek je jen ve webovém chatu";
     const last = await this.deps.whatsapp.inbox.lastPhoneNumberId(phoneKey(phone));
+    if (last && now - last.at > WHATSAPP_WINDOW_MS && await this.deps.whatsapp.client.sendNotification(last.phoneNumberId, phoneKey(phone), title, detailPath)) return null;
     if (!last || now - last.at > WHATSAPP_WINDOW_MS) {
       return "WhatsApp dovolí poslat zprávu jen do 24 hodin od poslední zprávy uživatele, výsledek je jen ve webovém chatu";
     }

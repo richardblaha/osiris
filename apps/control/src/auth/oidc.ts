@@ -20,7 +20,7 @@ class DbAdapter implements Adapter {
   async upsert(id: string, payload: AdapterPayload, expiresIn: number) {
     await this.db.execute([
       run(
-        `INSERT INTO oidc_store (model, id, payload, grant_id, uid, user_code, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO oidc_store (model, id, payload, grant_id, uid, user_code, expires_at) SELECT ?, ?, ?, ?, ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM auth_session_revocations WHERE uid = ?)
          ON CONFLICT (model, id) DO UPDATE SET payload = excluded.payload, grant_id = excluded.grant_id, uid = excluded.uid,
            user_code = excluded.user_code, expires_at = excluded.expires_at`,
         this.model,
@@ -30,6 +30,7 @@ class DbAdapter implements Adapter {
         payload.uid ?? null,
         payload.userCode ?? null,
         expiresIn ? Date.now() + expiresIn * 1000 : null,
+        this.model === "Session" ? payload.uid ?? "" : payload.sessionUid ?? "",
       ),
     ]);
   }
@@ -40,7 +41,10 @@ class DbAdapter implements Adapter {
       [this.model, value],
     );
     if (!row || (row.expires_at !== null && Number(row.expires_at) < Date.now())) return undefined;
-    return JSON.parse(row.payload) as AdapterPayload;
+    const payload = JSON.parse(row.payload) as AdapterPayload;
+    const uid = this.model === "Session" ? payload.uid : payload.sessionUid;
+    if (uid && (await this.db.query("SELECT uid FROM auth_session_revocations WHERE uid=?", [uid], { fresh: true })).length) return undefined;
+    return payload;
   }
 
   find = (id: string) => this.findWhere("id", id);

@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { inboundMessages, safeEqual, verifySignature } from "./cloud-api.ts";
+import { deliveryStatuses, inboundMessages, safeEqual, verifySignature } from "./cloud-api.ts";
 import type { Inbox } from "./inbox.ts";
 
 export interface WhatsAppWebhookOptions {
@@ -36,6 +36,7 @@ export function whatsappWebhook({ inbox, verifyToken, appSecret }: WhatsAppWebho
         // Stored durably, then answered at once; Meta redelivers anything not acknowledged within a few seconds, and
         // redeliveries are dropped by message id. The inbox worker (any replica) handles the messages.
         await inbox.enqueue(inboundMessages(payload));
+        await inbox.statuses(deliveryStatuses(payload));
         return c.body(null, 200);
       })
   );
