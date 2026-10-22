@@ -58,30 +58,32 @@ const METERS: { key: keyof TenantUsage; label: string; format: (n: number) => st
   { key: "dashboards", label: "Dashboardy", format: String },
 ];
 
-/** The tenant's quotas and how full they are, above the tenant in the sidebar; quotas without a limit are left out. */
-export function QuotaMeters({ usage }: { usage: TenantUsage }) {
-  const shown = METERS.filter((m) => usage[m.key].limit !== null);
-  if (!shown.length) return null;
+/** Shown even without a limit: what everyone wants to see at a glance. */
+const ALWAYS = new Set<keyof TenantUsage>(["storage", "tokens"]);
+
+/**
+ * The bottom status bar: the active tenant and their role on the left, its use on the right (storage and tokens
+ * always, the other quotas when they have a limit). A quota nearly or fully used says so in words, not only by colour.
+ */
+export function StatusBar({ tenant, role, usage }: { tenant?: string; role?: string; usage?: TenantUsage }) {
+  const shown = usage ? METERS.filter((m) => ALWAYS.has(m.key) || usage[m.key].limit !== null) : [];
   return (
-    <div className="space-y-1.5 px-2 pb-2 text-xs">
-      {shown.map((m) => {
-        const { used, limit } = usage[m.key] as Meter & { limit: number };
-        const share = limit > 0 ? Math.min(1, used / limit) : 1;
-        const tone = share >= 1 ? "bg-error" : share >= 0.8 ? "bg-warning" : "bg-primary";
-        return (
-          <div key={m.key}>
-            <div className="flex justify-between text-fg-secondary">
-              <span>{m.label}</span>
-              <span>
-                {m.format(used)} / {m.format(limit)}
-              </span>
-            </div>
-            <div className="mt-0.5 h-1 overflow-hidden rounded-full bg-hover" role="meter" aria-label={m.label} aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used}>
-              <div className={`h-full ${tone}`} style={{ width: `${share * 100}%` }} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
+    <footer className="flex h-[26px] shrink-0 items-center gap-4 overflow-hidden bg-statusbar px-2.5 text-[11.5px] font-medium whitespace-nowrap text-on-statusbar">
+      <span className="truncate">{tenant ? `${tenant}${role ? ` · ${role}` : ""}` : "bez tenanta"}</span>
+      <span className="ml-auto flex min-w-0 items-center gap-4 overflow-hidden">
+        {shown.map((m) => {
+          const { used, limit } = usage![m.key] as Meter;
+          const share = limit === null ? 0 : limit > 0 ? used / limit : 1;
+          const state = share >= 1 ? "vyčerpáno" : share >= 0.8 ? "dochází" : null;
+          return (
+            <span key={m.key} title={state ? `${m.label}: ${state}` : m.label} className={state ? "font-bold" : "opacity-90"}>
+              {state && "⚠ "}
+              {m.label} {m.format(used)}
+              {limit !== null && ` / ${m.format(limit)}`}
+            </span>
+          );
+        })}
+      </span>
+    </footer>
   );
 }

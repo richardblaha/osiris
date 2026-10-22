@@ -37,7 +37,7 @@ import { SystemSettings } from "./SystemSettings.tsx";
 import { Logs, Metrics, Traces } from "./Telemetry.tsx";
 import { WebAnalytics } from "./WebAnalytics.tsx";
 import { TenantAdmin, TenantLogo } from "./Tenants.tsx";
-import { QuotaMeters } from "./Quotas.tsx";
+import { StatusBar } from "./Quotas.tsx";
 import { BuiltinTools } from "./Tools.tsx";
 import { UserAdmin } from "./Users.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
@@ -161,7 +161,7 @@ function Workspace() {
   const [loaded, setLoaded] = useState<ReadonlySet<Section>>(new Set());
   // The system admin's tenant administration.
   const [tenants, setTenants] = useState<TenantSummary[]>([]);
-  // The active tenant's quotas and their use, shown above it in the sidebar.
+  // The active tenant's quotas and their use, shown in the status bar.
   const [usage, setUsage] = useState<TenantUsage>();
   // Not fatal: the meters just stay out.
   const refreshUsage = () => api.usage().then(setUsage, () => setUsage(undefined));
@@ -368,226 +368,228 @@ function Workspace() {
   const toggleSidebar = () => setCollapsed((c) => (store(SIDEBAR_COLLAPSED, !c), !c));
 
   return (
-    <div className="flex h-full">
-      {/* Collapsed: icons only; `side-label` parts hide. */}
-      <aside data-collapsed={collapsed} className={`group/side flex shrink-0 flex-col border-r border-line bg-sidebar text-sm ${collapsed ? "w-16" : "w-72"}`}>
-        <div className={`flex items-center gap-2 pt-3 ${collapsed ? "flex-col px-2" : "px-3"}`}>
-          <img src="/logo.svg" alt="" className="h-8 w-8" />
-          {/* Centred between the logo and the toggle; the letter spacing also follows the last letter, so it's taken back. */}
-          {!collapsed && (
-            <span className="flex flex-1 justify-center text-xl leading-none font-semibold">
-              <span className="-mr-[0.2em] tracking-[0.2em]">OSIRIS</span>
-            </span>
-          )}
-          <button onClick={toggleSidebar} className="list-row p-1.5 text-fg-secondary" aria-label={collapsed ? "Rozbalit panel" : "Sbalit panel"} title={collapsed ? "Rozbalit panel" : "Sbalit panel"}>
-            <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
-              <path d={collapsed ? "M2 3h12v10H2zM6 3v10M8.5 6.5 10 8l-1.5 1.5" : "M2 3h12v10H2zM6 3v10M11 6.5 9.5 8 11 9.5"} fill="none" stroke="currentColor" strokeWidth="1.3" />
-            </svg>
-          </button>
-        </div>
-        {tenant &&
-          (collapsed ? (
-            <button onClick={() => openThread(null)} className="btn-primary mx-auto mt-3 flex h-10 w-10 items-center justify-center p-0" aria-label="Nový chat" title="Nový chat">
+    <div className="flex h-full flex-col">
+      <div className="flex min-h-0 flex-1">
+        {/* Collapsed: icons only; `side-label` parts hide. */}
+        <aside data-collapsed={collapsed} className={`group/side flex shrink-0 flex-col border-r border-line bg-sidebar text-sm ${collapsed ? "w-16" : "w-72"}`}>
+          <div className={`flex items-center gap-2 pt-3 ${collapsed ? "flex-col px-2" : "px-3"}`}>
+            <img src="/logo.svg" alt="" className="h-8 w-8" />
+            {/* Centred between the logo and the toggle; the letter spacing also follows the last letter, so it's taken back. */}
+            {!collapsed && (
+              <span className="flex flex-1 justify-center text-xl leading-none font-semibold">
+                <span className="-mr-[0.2em] tracking-[0.2em]">OSIRIS</span>
+              </span>
+            )}
+            <button onClick={toggleSidebar} className="list-row p-1.5 text-fg-secondary" aria-label={collapsed ? "Rozbalit panel" : "Sbalit panel"} title={collapsed ? "Rozbalit panel" : "Sbalit panel"}>
               <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
-                <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                <path d={collapsed ? "M2 3h12v10H2zM6 3v10M8.5 6.5 10 8l-1.5 1.5" : "M2 3h12v10H2zM6 3v10M11 6.5 9.5 8 11 9.5"} fill="none" stroke="currentColor" strokeWidth="1.3" />
               </svg>
             </button>
-          ) : (
-            <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
-              + Nový chat
-            </button>
-          ))}
-        <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-          {tenant && collapsed && (
-            <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label="Konverzace" icon="M2 4h12v7H9l-3 3v-3H2z" />
-          )}
-          {tenant && !collapsed && (
-            <section className="relative min-h-16">
-              <Loading show={!threads} />
-              <h2 className="section-header flex items-center gap-1 px-2 py-1">
-                Konverzace {!!threads?.length && <span className="font-normal text-fg-muted">{threads.length}</span>}
-              </h2>
-              {threads?.map((t) => (
-                <div key={t.id} data-active={view.kind === "chat" && view.threadId === t.id} className="list-row group flex items-center px-2">
-                  <button onClick={() => openThread(t.id)} className="flex-1 truncate py-1.5 text-left">
-                    {t.channel === "whatsapp" && <span className="mr-1 text-fg-muted">WA</span>}
-                    {t.title ?? "Nový chat"}
-                  </button>
-                  <button onClick={() => removeThread(t.id)} className="hidden px-1 text-fg-muted hover:text-error group-hover:block" aria-label="Smazat">
-                    ×
-                  </button>
-                </div>
-              ))}
-              {threads && !threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
-            </section>
-          )}
-          {tenant && (
-            <NavSection title="Kontext">
-              {sectionLink("knowledge")}
-              {sectionLink("memory")}
-              {tenant.features.files && <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />}
-              {sectionLink("mcp")}
-              {sectionLink("skills")}
-              <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label="Kontroly" icon="M8 1.5 13.5 3.5v4c0 3.2-2.3 5.8-5.5 7-3.2-1.2-5.5-3.8-5.5-7v-4zM5.5 8l2 2 3-3.5" />
-              {sectionLink("secrets")}
-            </NavSection>
-          )}
-          {tenant && (
-            <NavSection title="Tenant">
-              <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
-              {tenant.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Asistenti" icon="M2 4h12v7H6l-3 3V4z" />}
-              {tenant.features.database && (
-                <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label="Databáze" icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
-              )}
-              {tenant.features.scheduler && (
-                <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
-              )}
-              <NavLink
-                active={view.kind === "users"}
-                onClick={() => (me.systemAdmin && void refreshTenants(), setView({ kind: "users" }))}
-                label="Uživatelé"
-                icon="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M11 2.5a2.5 2.5 0 0 1 0 4.5M12.5 9.7c1.2.6 2 2 2 3.8"
-              />
-              {tenant.features.sites && (
-                <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Weby" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
-              )}
-            </NavSection>
-          )}
-          {me.systemAdmin && (
-            <NavSection title="Systém">
-              <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
-              <NavLink active={view.kind === "web"} onClick={() => setView({ kind: "web" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
-              <NavLink active={view.kind === "logs"} onClick={() => setView({ kind: "logs" })} label="Logy" icon="M3 3h10M3 6h10M3 9h7M3 12h9" />
-              <NavLink active={view.kind === "metrics"} onClick={() => setView({ kind: "metrics" })} label="Metriky" icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
-              <NavLink active={view.kind === "traces"} onClick={() => setView({ kind: "traces" })} label="Trasy" icon="M2 4h6M4 8h7M6 12h8" />
-              <NavLink active={view.kind === "tenants"} onClick={() => setView({ kind: "tenants" })} label="Tenanti" icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
-              <NavLink
-                active={view.kind === "settings"}
-                onClick={() => setView({ kind: "settings" })}
-                label="Nastavení"
-                icon="M12.83 6.72L14.51 6.92L14.51 9.08L12.83 9.28L12.32 10.51L13.37 11.84L11.84 13.37L10.51 12.32L9.28 12.83L9.08 14.51L6.92 14.51L6.72 12.83L5.49 12.32L4.16 13.37L2.63 11.84L3.68 10.51L3.17 9.28L1.49 9.08L1.49 6.92L3.17 6.72L3.68 5.49L2.63 4.16L4.16 2.63L5.49 3.68L6.72 3.17L6.92 1.49L9.08 1.49L9.28 3.17L10.51 3.68L11.84 2.63L13.37 4.16L12.32 5.49zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"
-              />
-            </NavSection>
-          )}
-        </nav>
+          </div>
+          {tenant &&
+            (collapsed ? (
+              <button onClick={() => openThread(null)} className="btn-primary mx-auto mt-3 flex h-10 w-10 items-center justify-center p-0" aria-label="Nový chat" title="Nový chat">
+                <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
+                  <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                </svg>
+              </button>
+            ) : (
+              <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
+                + Nový chat
+              </button>
+            ))}
+          <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+            {tenant && collapsed && (
+              <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label="Konverzace" icon="M2 4h12v7H9l-3 3v-3H2z" />
+            )}
+            {tenant && !collapsed && (
+              <section className="relative min-h-16">
+                <Loading show={!threads} />
+                <h2 className="section-header flex items-center gap-1 px-2 py-1">
+                  Konverzace {!!threads?.length && <span className="font-normal text-fg-muted">{threads.length}</span>}
+                </h2>
+                {threads?.map((t) => (
+                  <div key={t.id} data-active={view.kind === "chat" && view.threadId === t.id} className="list-row group flex items-center px-2">
+                    <button onClick={() => openThread(t.id)} className="flex-1 truncate py-1.5 text-left">
+                      {t.channel === "whatsapp" && <span className="mr-1 text-fg-muted">WA</span>}
+                      {t.title ?? "Nový chat"}
+                    </button>
+                    <button onClick={() => removeThread(t.id)} className="hidden px-1 text-fg-muted hover:text-error group-hover:block" aria-label="Smazat">
+                      ×
+                    </button>
+                  </div>
+                ))}
+                {threads && !threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
+              </section>
+            )}
+            {tenant && (
+              <NavSection title="Kontext">
+                {sectionLink("knowledge")}
+                {sectionLink("memory")}
+                {tenant.features.files && <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />}
+                {sectionLink("mcp")}
+                {sectionLink("skills")}
+                <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label="Kontroly" icon="M8 1.5 13.5 3.5v4c0 3.2-2.3 5.8-5.5 7-3.2-1.2-5.5-3.8-5.5-7v-4zM5.5 8l2 2 3-3.5" />
+                {sectionLink("secrets")}
+              </NavSection>
+            )}
+            {tenant && (
+              <NavSection title="Tenant">
+                <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
+                {tenant.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Asistenti" icon="M2 4h12v7H6l-3 3V4z" />}
+                {tenant.features.database && (
+                  <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label="Databáze" icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
+                )}
+                {tenant.features.scheduler && (
+                  <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
+                )}
+                <NavLink
+                  active={view.kind === "users"}
+                  onClick={() => (me.systemAdmin && void refreshTenants(), setView({ kind: "users" }))}
+                  label="Uživatelé"
+                  icon="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M11 2.5a2.5 2.5 0 0 1 0 4.5M12.5 9.7c1.2.6 2 2 2 3.8"
+                />
+                {tenant.features.sites && (
+                  <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Weby" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
+                )}
+              </NavSection>
+            )}
+            {me.systemAdmin && (
+              <NavSection title="Systém">
+                <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
+                <NavLink active={view.kind === "web"} onClick={() => setView({ kind: "web" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
+                <NavLink active={view.kind === "logs"} onClick={() => setView({ kind: "logs" })} label="Logy" icon="M3 3h10M3 6h10M3 9h7M3 12h9" />
+                <NavLink active={view.kind === "metrics"} onClick={() => setView({ kind: "metrics" })} label="Metriky" icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
+                <NavLink active={view.kind === "traces"} onClick={() => setView({ kind: "traces" })} label="Trasy" icon="M2 4h6M4 8h7M6 12h8" />
+                <NavLink active={view.kind === "tenants"} onClick={() => setView({ kind: "tenants" })} label="Tenanti" icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
+                <NavLink
+                  active={view.kind === "settings"}
+                  onClick={() => setView({ kind: "settings" })}
+                  label="Nastavení"
+                  icon="M12.83 6.72L14.51 6.92L14.51 9.08L12.83 9.28L12.32 10.51L13.37 11.84L11.84 13.37L10.51 12.32L9.28 12.83L9.08 14.51L6.92 14.51L6.72 12.83L5.49 12.32L4.16 13.37L2.63 11.84L3.68 10.51L3.17 9.28L1.49 9.08L1.49 6.92L3.17 6.72L3.68 5.49L2.63 4.16L4.16 2.63L5.49 3.68L6.72 3.17L6.92 1.49L9.08 1.49L9.28 3.17L10.51 3.68L11.84 2.63L13.37 4.16L12.32 5.49zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"
+                />
+              </NavSection>
+            )}
+          </nav>
 
-        <div className="border-t border-line p-2">
-          {tenant && usage && !collapsed && <QuotaMeters usage={usage} />}
-          <TenantSwitcher me={me} tenant={tenant} active={view.kind === "tenant"} onOpen={() => setView({ kind: "tenant" })} onSelect={selectTenant} />
-          <button
-            onClick={() => setView({ kind: "profile" })}
-            data-active={view.kind === "profile"}
-            title={collapsed ? (me.user.name ?? me.user.email ?? undefined) : undefined}
-            className="list-row flex w-full items-center gap-3 px-2 py-2 text-left"
-          >
-            <Avatar user={me.user} />
-            <span className="side-label min-w-0 flex-1">
-              <span className="block truncate font-medium">{me.user.name ?? me.user.email}</span>
-              {me.user.name && me.user.email && <span className="block truncate text-xs text-fg-muted">{me.user.email}</span>}
-            </span>
-          </button>
-        </div>
-      </aside>
-
-      <main className="relative h-full min-w-0 flex-1 bg-canvas">
-        {flash && (
-          <div className="notice notice-error absolute inset-x-3 top-3 z-10 flex items-start gap-3 px-3 py-2 text-sm">
-            <span className="flex-1">{flash}</span>
-            <button onClick={() => setFlash(undefined)} aria-label="Zavřít" className="text-fg-secondary">
-              ×
+          <div className="border-t border-line p-2">
+            <TenantSwitcher me={me} tenant={tenant} active={view.kind === "tenant"} onOpen={() => setView({ kind: "tenant" })} onSelect={selectTenant} />
+            <button
+              onClick={() => setView({ kind: "profile" })}
+              data-active={view.kind === "profile"}
+              title={collapsed ? (me.user.name ?? me.user.email ?? undefined) : undefined}
+              className="list-row flex w-full items-center gap-3 px-2 py-2 text-left"
+            >
+              <Avatar user={me.user} />
+              <span className="side-label min-w-0 flex-1">
+                <span className="block truncate font-medium">{me.user.name ?? me.user.email}</span>
+                {me.user.name && me.user.email && <span className="block truncate text-xs text-fg-muted">{me.user.email}</span>}
+              </span>
             </button>
           </div>
-        )}
-        {view.kind === "sysdash" ? (
-          me.systemAdmin ? <Dashboards key="system" system canEdit me={me.user} /> : null
-        ) : view.kind === "settings" ? (
-          me.systemAdmin ? <SystemSettings /> : null
-        ) : view.kind === "logs" ? (
-          me.systemAdmin ? <Logs key={view.traceId ?? ""} traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} /> : null
-        ) : view.kind === "metrics" ? (
-          me.systemAdmin ? <Metrics /> : null
-        ) : view.kind === "web" ? (
-          me.systemAdmin ? <WebAnalytics /> : null
-        ) : view.kind === "traces" ? (
-          me.systemAdmin ? (
-            <Traces traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} onOpenLogs={(id) => setView({ kind: "logs", traceId: id })} />
-          ) : null
-        ) : view.kind === "users" ? (
-          <TenantUsers key={tenant?.id} me={me} isAdmin={isAdmin} tenants={tenants} />
-        ) : view.kind === "tenants" ? (
-          <TenantAdmin
-            tenants={tenants}
-            initial={view.initial}
-            onChanged={() => {
-              void refreshTenants();
-              void loadMe(tenant?.id);
-              // The current tenant's name, logo or features may have changed.
-              if (tenant) void loadTenant();
-            }}
-          />
-        ) : view.kind === "tenant" ? (
-          <TenantInfo
-            me={me}
-            tenant={tenant}
-            onChanged={() => {
-              void loadTenant();
-              void loadMe(tenant?.id);
-              if (me.systemAdmin) void refreshTenants();
-            }}
-          />
-        ) : view.kind === "profile" ? (
-          <Profile key={`${tenant?.id}:${connections}`} me={me} notice={notice} features={tenant?.features} />
-        ) : !tenant ? (
-          // The tenant is on its way (a system admin without any has nothing to wait for).
-          me.tenants.length ? <Pending className="relative h-full" /> : null
-        ) : view.kind === "files" ? (
-          tenant.features.files ? (
-            <Files key={tenant.id} hide={OWN_VIEWS} intro="Dokumenty, šablony a obrázky, se kterými asistent pracuje. Šablony dokumentů patří do složky sablony." />
-          ) : null
-        ) : view.kind === "schedules" ? (
-          tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
-        ) : view.kind === "dashboard" ? (
-          <Dashboards key={tenant.id} system={false} canEdit={isAdmin} me={me.user} />
-        ) : view.kind === "database" ? (
-          tenant.features.database ? <Database key={tenant.id} isAdmin={isAdmin} /> : null
-        ) : view.kind === "public" ? (
-          tenant.features.public ? <PublicAssistants key={tenant.id} tenantId={tenant.id} isAdmin={isAdmin} /> : null
-        ) : view.kind === "guards" ? (
-          <Guards key={tenant.id} isAdmin={isAdmin} systemAdmin={me.systemAdmin} />
-        ) : view.kind === "sites" ? (
-          tenant.features.sites ? <Sites key={tenant.id} isAdmin={isAdmin} /> : null
-        ) : view.kind === "list" || view.kind === "item" ? (
-          <SectionPanel
-            key={`${tenant.id}:${view.section}`}
-            view={view}
-            lists={lists}
-            loading={!loaded.has(view.section)}
-            canAdd={canAdd(view.section)}
-            setView={setView}
-            tools={view.section === "mcp" ? <BuiltinTools key={tenant.id} tenantId={tenant.id} systemAdmin={me.systemAdmin} /> : undefined}
-          >
-            {view.kind === "item" && (
-              <Detail
-                key={`${tenant.id}:${view.section}:${view.id ?? "new"}`}
-                section={view.section}
-                id={view.id}
-                lists={lists}
-                scope="tenant"
-                isAdmin={isAdmin}
-                onSaved={(key) => showSaved(view.section, key)}
-                onDeleted={() => void refresh(view.section).then(() => setView({ kind: "list", section: view.section }))}
-              />
-            )}
-          </SectionPanel>
-        ) : (
-          <ChatPane
-            key={`${tenant.id}:${view.session}`}
-            threadId={view.threadId}
-            onThreadCreated={(id) => setView((v) => (v.kind === "chat" ? { ...v, threadId: id } : v))}
-            onRunFinished={() => (void refreshThreads(), void refreshUsage())}
-          />
-        )}
-      </main>
+        </aside>
+
+        <main className="relative h-full min-w-0 flex-1 bg-canvas">
+          {flash && (
+            <div className="notice notice-error absolute inset-x-3 top-3 z-10 flex items-start gap-3 px-3 py-2 text-sm">
+              <span className="flex-1">{flash}</span>
+              <button onClick={() => setFlash(undefined)} aria-label="Zavřít" className="text-fg-secondary">
+                ×
+              </button>
+            </div>
+          )}
+          {view.kind === "sysdash" ? (
+            me.systemAdmin ? <Dashboards key="system" system canEdit me={me.user} /> : null
+          ) : view.kind === "settings" ? (
+            me.systemAdmin ? <SystemSettings /> : null
+          ) : view.kind === "logs" ? (
+            me.systemAdmin ? <Logs key={view.traceId ?? ""} traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} /> : null
+          ) : view.kind === "metrics" ? (
+            me.systemAdmin ? <Metrics /> : null
+          ) : view.kind === "web" ? (
+            me.systemAdmin ? <WebAnalytics /> : null
+          ) : view.kind === "traces" ? (
+            me.systemAdmin ? (
+              <Traces traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} onOpenLogs={(id) => setView({ kind: "logs", traceId: id })} />
+            ) : null
+          ) : view.kind === "users" ? (
+            <TenantUsers key={tenant?.id} me={me} isAdmin={isAdmin} tenants={tenants} />
+          ) : view.kind === "tenants" ? (
+            <TenantAdmin
+              tenants={tenants}
+              initial={view.initial}
+              onChanged={() => {
+                void refreshTenants();
+                void loadMe(tenant?.id);
+                // The current tenant's name, logo or features may have changed.
+                if (tenant) void loadTenant();
+              }}
+            />
+          ) : view.kind === "tenant" ? (
+            <TenantInfo
+              me={me}
+              tenant={tenant}
+              onChanged={() => {
+                void loadTenant();
+                void loadMe(tenant?.id);
+                if (me.systemAdmin) void refreshTenants();
+              }}
+            />
+          ) : view.kind === "profile" ? (
+            <Profile key={`${tenant?.id}:${connections}`} me={me} notice={notice} features={tenant?.features} />
+          ) : !tenant ? (
+            // The tenant is on its way (a system admin without any has nothing to wait for).
+            me.tenants.length ? <Pending className="relative h-full" /> : null
+          ) : view.kind === "files" ? (
+            tenant.features.files ? (
+              <Files key={tenant.id} hide={OWN_VIEWS} intro="Dokumenty, šablony a obrázky, se kterými asistent pracuje. Šablony dokumentů patří do složky sablony." />
+            ) : null
+          ) : view.kind === "schedules" ? (
+            tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
+          ) : view.kind === "dashboard" ? (
+            <Dashboards key={tenant.id} system={false} canEdit={isAdmin} me={me.user} />
+          ) : view.kind === "database" ? (
+            tenant.features.database ? <Database key={tenant.id} isAdmin={isAdmin} /> : null
+          ) : view.kind === "public" ? (
+            tenant.features.public ? <PublicAssistants key={tenant.id} tenantId={tenant.id} isAdmin={isAdmin} /> : null
+          ) : view.kind === "guards" ? (
+            <Guards key={tenant.id} isAdmin={isAdmin} systemAdmin={me.systemAdmin} />
+          ) : view.kind === "sites" ? (
+            tenant.features.sites ? <Sites key={tenant.id} isAdmin={isAdmin} /> : null
+          ) : view.kind === "list" || view.kind === "item" ? (
+            <SectionPanel
+              key={`${tenant.id}:${view.section}`}
+              view={view}
+              lists={lists}
+              loading={!loaded.has(view.section)}
+              canAdd={canAdd(view.section)}
+              setView={setView}
+              tools={view.section === "mcp" ? <BuiltinTools key={tenant.id} tenantId={tenant.id} systemAdmin={me.systemAdmin} /> : undefined}
+            >
+              {view.kind === "item" && (
+                <Detail
+                  key={`${tenant.id}:${view.section}:${view.id ?? "new"}`}
+                  section={view.section}
+                  id={view.id}
+                  lists={lists}
+                  scope="tenant"
+                  isAdmin={isAdmin}
+                  onSaved={(key) => showSaved(view.section, key)}
+                  onDeleted={() => void refresh(view.section).then(() => setView({ kind: "list", section: view.section }))}
+                />
+              )}
+            </SectionPanel>
+          ) : (
+            <ChatPane
+              key={`${tenant.id}:${view.session}`}
+              threadId={view.threadId}
+              onThreadCreated={(id) => setView((v) => (v.kind === "chat" ? { ...v, threadId: id } : v))}
+              onRunFinished={() => (void refreshThreads(), void refreshUsage())}
+            />
+          )}
+        </main>
+      </div>
+      <StatusBar tenant={tenant?.name} role={tenant ? roleLabel(tenant.role) : undefined} usage={tenant ? usage : undefined} />
     </div>
   );
 }
