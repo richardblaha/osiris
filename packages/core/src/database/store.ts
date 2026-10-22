@@ -195,6 +195,12 @@ export class DataStore {
     return Promise.all((await this.names()).map((n) => this.describe(n)));
   }
 
+  /** How many tables there are (the quota), without describing them. */
+  async tableCount(): Promise<number> {
+    await this.init();
+    return (await this.names()).length;
+  }
+
   async table(name: string): Promise<DbTable> {
     await this.init();
     if (!(await this.names()).includes(name)) throw new DataError(`Tabulka ${name} neexistuje.`, "not_found");

@@ -24,6 +24,7 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import type { Telemetry } from "./telemetry/clickhouse.ts";
+import { DashboardStore, systemDashboardRoutes, tenantDashboardRoutes } from "./dashboards.ts";
 import { telemetryRoutes } from "./telemetry/routes.ts";
 import { z } from "zod";
 import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, TENANT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
@@ -62,6 +63,7 @@ export interface ControlDeps {
   auth: AuthDeps;
   /** The cluster's telemetry in ClickHouse, for system admins; without it those pages say it isn't set up. */
   telemetry?: Telemetry;
+  dashboards: DashboardStore;
 }
 
 type Env = { Variables: { call: VerifiedCall & { user: NonNullable<VerifiedCall["user"]> }; tenant: TenantRow; role: Role; runtimeTenant: string } };
@@ -79,12 +81,14 @@ const updateTenantBody = z.object({
   idleMinutes: z.number().int().min(0).max(24 * 60).optional(),
   storageGb: z.number().int().min(1).max(500).optional(),
   disabledTools: z.array(z.string().regex(/^[a-z0-9_]{1,64}$/)).max(200).optional(),
+  webSites: z.array(z.string().trim().min(1).max(253)).max(100).optional(),
   quotas: z
     .object({
       storageMb: z.number().int().min(1).max(500 * 1024).nullable(),
       tokensPerMonth: z.number().int().min(0).max(1e12).nullable(),
       members: z.number().int().min(1).max(100_000).nullable(),
       schedules: z.number().int().min(0).max(100_000).nullable(),
+      dashboards: z.number().int().min(0).max(1000).nullable(),
       tokensPerUserMonth: z.number().int().min(0).max(1e12).nullable(),
       tables: z.number().int().min(0).max(10_000).nullable(),
       databaseMb: z.number().int().min(1).max(500 * 1024).nullable(),
@@ -178,6 +182,7 @@ const iso = (ms: number) => new Date(ms).toISOString();
 export function createControlApp(deps: ControlDeps) {
   const { verifier, runtimeIdentity, directory, users, orchestrator, schedules, domains, sites, backups, phones } = deps;
   const tenants = directory.store;
+  const dashboardDeps = { store: deps.dashboards, tenants, directory, schedules, backups, orchestrator, telemetry: deps.telemetry };
 
   /** A user call relayed by the gateway. */
   const fromGateway = createMiddleware<Env>(async (c, next) => {
@@ -226,6 +231,7 @@ export function createControlApp(deps: ControlDeps) {
       storageGb: t.storageGb,
       disabledTools: t.disabledTools,
       quotas: t.quotas,
+      webSites: t.webSites,
       backups: (await backups.list(t.id)).slice(0, 10).map((b) => ({ key: b.key, bytes: b.bytes, reason: b.reason, createdAt: iso(b.createdAt) })),
     };
   };
@@ -276,6 +282,13 @@ export function createControlApp(deps: ControlDeps) {
   // --- the active tenant --------------------------------------------------------------------------------------------
   const tenant = new Hono<Env>()
     .use(inTenant)
+    .route(
+      "/dashboards",
+      tenantDashboardRoutes(dashboardDeps, (c) => {
+        const x = c as Context<Env>;
+        return { tenant: x.get("tenant").id, role: x.get("role"), user: x.get("call").user.sub, quotas: x.get("tenant").quotas };
+      }),
+    )
     .get("/tenant", (c) => {
       const t = c.get("tenant");
       return c.json<TenantInfo>({ id: t.id, name: t.name, role: c.get("role"), features: t.features, logo: t.logo });
@@ -434,6 +447,7 @@ export function createControlApp(deps: ControlDeps) {
       return c.body(null, 202);
     })
     .route("/telemetry", telemetryRoutes(deps.telemetry))
+    .route("/dashboards", systemDashboardRoutes(dashboardDeps, (c) => (c as Context<Env>).get("call").user.sub))
     .get("/defaults", async (c) => c.json<SystemDefaults>(await tenants.defaults()))
     .put("/defaults", async (c) => {
       const d = parse(defaultsBody, await json(c));
@@ -554,10 +568,19 @@ export function createControlApp(deps: ControlDeps) {
         disabledTools: t.disabledTools,
         quotas: t.quotas,
         // What the runtime shows next to the quotas it doesn't count itself.
-        counts: { members: await directory.memberCount(t.id), schedules: (await schedules.list(t.id)).length },
+        counts: { members: await directory.memberCount(t.id), schedules: (await schedules.list(t.id)).length, dashboards: await deps.dashboards.count(t.id) },
         systemGuards: await tenants.systemGuards(),
         userDefaults: (await tenants.defaults()).user,
       });
+    })
+    // The runtime's use (files, tokens this month, tables, database), sent when it changes; for System > Dashboard.
+    .put("/usage", async (c) => {
+      const usage = parse(
+        z.object({ storage: z.number().min(0), tokens: z.number().min(0), month: z.string().regex(/^\d{4}-\d{2}$/), tables: z.number().int().min(0), database: z.number().min(0) }),
+        await json(c),
+      );
+      await tenants.reportUsage(c.get("runtimeTenant"), usage);
+      return c.body(null, 204);
     })
     .put("/backups", async (c) => {
       const body = c.req.raw.body;

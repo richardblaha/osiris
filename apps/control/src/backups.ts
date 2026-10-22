@@ -50,6 +50,15 @@ export class Backups {
     return rows.map((r) => ({ key: r.key, bytes: Number(r.bytes), reason: r.reason, createdAt: Number(r.created_at) }));
   }
 
+  /** Every tenant's newest backup, by tenant. */
+  async newest(): Promise<Map<string, BackupInfo>> {
+    const rows = await this.db.query<{ tenant_id: string; key: string; bytes: number; reason: string; created_at: number }>(
+      `SELECT b.tenant_id, b.key, b.bytes, b.reason, b.created_at FROM backups b
+       JOIN (SELECT tenant_id, MAX(created_at) AS m FROM backups GROUP BY tenant_id) x ON x.tenant_id = b.tenant_id AND x.m = b.created_at`,
+    );
+    return new Map(rows.map((r) => [r.tenant_id, { key: r.key, bytes: Number(r.bytes), reason: r.reason, createdAt: Number(r.created_at) }]));
+  }
+
   async latest(tenantId: string): Promise<{ info: BackupInfo; body: Readable } | null> {
     for (const info of await this.list(tenantId)) {
       const obj = await this.objects.get(info.key);

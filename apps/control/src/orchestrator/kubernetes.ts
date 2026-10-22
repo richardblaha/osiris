@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { TENANT_NAMESPACE_PREFIX } from "@osiris/platform/runtime-identity.ts";
-import type { Orchestrator, TenantSpec } from "./types.ts";
+import type { Orchestrator, TenantSpec, TenantStatus } from "./types.ts";
 
 export const TENANT_GROUP = "osiris.k6labs.cz";
 export const TENANT_VERSION = "v1alpha1";
@@ -50,6 +50,23 @@ export class KubernetesOrchestrator implements Orchestrator {
 
   wake(id: string) {
     return this.serverSideApply(id, "osiris-control-wake", { wakeRequestedAt: new Date().toISOString() });
+  }
+
+  async statuses() {
+    const token = (await readFile(this.options.tokenPath ?? "/var/run/secrets/kubernetes.io/serviceaccount/token", "utf8")).trim();
+    const api = this.options.apiServer ?? "https://kubernetes.default.svc";
+    const res = await (this.options.fetchFn ?? fetch)(`${api}/apis/${TENANT_GROUP}/${TENANT_VERSION}/namespaces/${this.options.namespace}/tenants`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`Listing Tenants failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    const { items } = (await res.json()) as { items: { metadata: { name: string }; status?: { phase?: string; lastActivity?: string; message?: string } }[] };
+    return new Map(
+      items.map((t): [string, TenantStatus] => [
+        t.metadata.name,
+        { phase: (["Running", "Sleeping", "Suspended"].includes(t.status?.phase ?? "") ? t.status!.phase : "Unknown") as TenantStatus["phase"], lastActivity: t.status?.lastActivity, message: t.status?.message },
+      ]),
+    );
   }
 
   endpoint(id: string) {

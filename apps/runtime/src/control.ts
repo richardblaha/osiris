@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { NO_QUOTAS, type Feature, type Guard, type UserDefaults, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
+import { NO_QUOTAS, type ReportedUsage, type Feature, type Guard, type UserDefaults, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
 import type { FeatureSource } from "@osiris/core/tenants/features.ts";
 import { callJson, ServiceError } from "@osiris/platform/http.ts";
 
@@ -41,7 +41,7 @@ export class ControlClient {
       features: TenantFeatures;
       disabledTools: string[];
       quotas: TenantQuotas;
-      counts: { members: number; schedules: number };
+      counts?: { members: number; schedules: number; dashboards?: number };
       /** A string from a control older than guard files. */
       systemGuards: Guard[] | string;
       userDefaults?: Partial<UserDefaults>;
@@ -58,6 +58,16 @@ export class ControlClient {
     } as RequestInit);
     if (!res.ok) throw new ServiceError(`Backup upload failed: ${res.status} ${await res.text()}`, res.status);
     return (await res.json()) as { key: string; bytes: number };
+  }
+
+  /** Tells control what the tenant uses (System > Dashboard > Využití). */
+  async reportUsage(usage: ReportedUsage): Promise<void> {
+    const res = await this.fetchFn(`${this.baseUrl}/internal/runtime/usage`, {
+      method: "PUT",
+      headers: await this.headers({ "content-type": "application/json" }),
+      body: JSON.stringify(usage),
+    });
+    if (!res.ok) throw new ServiceError(`Usage report failed: ${res.status} ${await res.text()}`, res.status);
   }
 
   /** The newest snapshot of this tenant, or null for a new tenant. */
@@ -121,7 +131,7 @@ export class RemoteFeatures implements FeatureSource {
             features: t.features,
             disabledTools: t.disabledTools ?? [],
             quotas: { ...NO_QUOTAS, ...t.quotas },
-            counts: t.counts ?? { members: 0, schedules: 0 },
+            counts: { members: 0, schedules: 0, dashboards: 0, ...t.counts },
             userDefaults: t.userDefaults ?? {},
             systemGuards: Array.isArray(t.systemGuards) ? t.systemGuards : t.systemGuards ? [{ name: "pravidla", description: "", rule: t.systemGuards }] : [],
           }),
@@ -168,7 +178,7 @@ interface TenantPolicy {
   features: TenantFeatures;
   disabledTools: string[];
   quotas: TenantQuotas;
-  counts: { members: number; schedules: number };
+  counts: { members: number; schedules: number; dashboards: number };
   systemGuards: Guard[];
   userDefaults: Partial<UserDefaults>;
 }

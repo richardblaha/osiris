@@ -1,4 +1,5 @@
 import { mkdirSync } from "node:fs";
+import { DashboardStore } from "./dashboards.ts";
 import { dirname, join } from "node:path";
 import { createServer } from "node:http";
 import { InternalSigner, InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
@@ -108,6 +109,7 @@ const app = createControlApp({
   phones,
   snapshot,
   auth,
+  dashboards: new DashboardStore(db),
   telemetry: config.CLICKHOUSE_URL ? new Telemetry(new ClickHouse(config.CLICKHOUSE_URL, config.CLICKHOUSE_USER, config.CLICKHOUSE_PASSWORD ?? "")) : undefined,
   whatsapp: whatsappClient
     ? { inbox, verifyToken: config.WHATSAPP_VERIFY_TOKEN!, appSecret: config.WHATSAPP_APP_SECRET!, displayNumber: config.WHATSAPP_DISPLAY_NUMBER }

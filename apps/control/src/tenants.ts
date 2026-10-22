@@ -1,4 +1,4 @@
-import { FEATURES, NO_QUOTAS, type AdminUser, type Guard, type SystemDefaults, type DirectoryUser, type TenantQuotas, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type ReportedUsage, type AdminUser, type Guard, type SystemDefaults, type DirectoryUser, type TenantQuotas, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
 import { CLAIMS, claimList, isAuthorized, SYSTEM_ADMIN_ROLE, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
 import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
@@ -19,6 +19,10 @@ export interface TenantRow {
   /** Built-in tools switched off for the tenant, by name. */
   disabledTools: string[];
   quotas: TenantQuotas;
+  /** Web analytics sites the tenant sees besides those of its domains (system admins choose). */
+  webSites: string[];
+  /** What its runtime last reported of its use, and when (epoch ms). */
+  usage: (ReportedUsage & { at: number }) | null;
 }
 
 export class TenantExistsError extends Error {}
@@ -41,6 +45,9 @@ interface Row {
   logo: string | null;
   disabled_tools: string;
   quotas: string;
+  web_sites: string | null;
+  usage: string | null;
+  usage_at: number | null;
 }
 
 const logoKey = (id: string, version: string) => `tenant-logos/${id}/${version}`;
@@ -56,6 +63,8 @@ const toTenant = (r: Row, publicUrl = ""): TenantRow => ({
   logo: r.logo ? `${publicUrl}/auth/tenant-logos/${r.id}/${r.logo}` : null,
   disabledTools: JSON.parse(r.disabled_tools ?? "[]") as string[],
   quotas: { ...NO_QUOTAS, ...(JSON.parse(r.quotas ?? "{}") as Partial<TenantQuotas>) },
+  webSites: JSON.parse(r.web_sites ?? "[]") as string[],
+  usage: r.usage ? { ...(JSON.parse(r.usage) as ReportedUsage), at: Number(r.usage_at) } : null,
 });
 
 /** Tenants in the central database. Members are not stored here: they are the users whose claims name the tenant. */
@@ -199,17 +208,19 @@ export class TenantStore {
       storageGb?: number;
       disabledTools?: string[];
       quotas?: Partial<TenantQuotas>;
+      webSites?: string[];
     },
   ) {
     const tenant = await this.active(id);
     const features = changes.features ? { ...tenant.features, ...changes.features } : tenant.features;
     await this.db.execute([
       run(
-        "UPDATE tenants SET name = ?, features = ?, quotas = ?, disabled_tools = ?, idle_minutes = ?, storage_gb = ?, updated_at = ? WHERE id = ?",
+        "UPDATE tenants SET name = ?, features = ?, quotas = ?, disabled_tools = ?, web_sites = ?, idle_minutes = ?, storage_gb = ?, updated_at = ? WHERE id = ?",
         changes.name ?? tenant.name,
         JSON.stringify(features),
         JSON.stringify({ ...tenant.quotas, ...changes.quotas }),
         JSON.stringify([...new Set(changes.disabledTools ?? tenant.disabledTools)].sort()),
+        JSON.stringify([...new Set(changes.webSites ?? tenant.webSites)].sort()),
         changes.idleMinutes ?? tenant.idleMinutes,
         // A volume can grow but not shrink.
         Math.max(tenant.storageGb, changes.storageGb ?? tenant.storageGb),
@@ -218,6 +229,19 @@ export class TenantStore {
       ),
     ]);
     return (await this.get(id, { fresh: true }))!;
+  }
+
+  /** What the runtime reports of its use; it reports only changes, so this writes only then. */
+  async reportUsage(id: string, usage: ReportedUsage) {
+    await this.db.execute([run("UPDATE tenants SET usage = ?, usage_at = ? WHERE id = ?", JSON.stringify(usage), Date.now(), id)]);
+  }
+
+  /** Each tenant's analytics sites: the ones a system admin gave it and those of its domains (without www.). */
+  async webSites(): Promise<Map<string, string[]>> {
+    const [tenants, domains] = await Promise.all([this.list(), this.db.query<{ domain: string; tenant_id: string }>("SELECT domain, tenant_id FROM domains")]);
+    const by = new Map(tenants.map((t) => [t.id, new Set(t.webSites)]));
+    for (const d of domains) by.get(d.tenant_id)?.add(d.domain.replace(/^www\./, ""));
+    return new Map([...by].map(([id, sites]) => [id, [...sites].sort()]));
   }
 
   async archive(id: string) {

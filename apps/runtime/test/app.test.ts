@@ -267,6 +267,7 @@ describe("tenant features", () => {
       userTokens: { used: 100, limit: null },
       tables: { used: 0, limit: null },
       database: { used: expect.any(Number), limit: null },
+      dashboards: { used: 0, limit: null },
     });
   });
 
@@ -285,6 +286,11 @@ describe("tenant features", () => {
     expect(await chat("eve:tenant=acme")).toContain("Ahoj.");
     expect(model.calls).toHaveLength(2);
     expect(await acme.usage.byUser()).toEqual({ "dev:bob": 100, "dev:eve": 100 });
+    const breakdown = async (user: string) => (await as(user)("/usage/breakdown")).json();
+    expect((await breakdown("bob:tenant=acme")).users).toEqual([{ userId: "dev:bob", tokens: 100 }]);
+    const all = await breakdown("acme");
+    expect(all.users.map((u: { userId: string }) => u.userId).sort()).toEqual(["dev:bob", "dev:eve"]);
+    expect(all.months).toEqual([{ month: new Date().toISOString().slice(0, 7), tokens: 200 }]);
   });
 
   it("drops built-in tools a system admin switched off and lists them all with their state", async () => {

@@ -1,4 +1,4 @@
-import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, WebStats, WebTopRow } from "@osiris/shared";
+import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, WebStats, WebSummary, WebTopRow } from "@osiris/shared";
 
 /** ClickHouse's HTTP interface with a read-only user; values go in as query parameters (`{name:Type}`), never as SQL. */
 export class ClickHouse {
@@ -40,7 +40,7 @@ export class Telemetry {
   /** The web analytics (database web), over the same connection. */
   readonly web: WebAnalytics;
 
-  constructor(private readonly ch: ClickHouse) {
+  constructor(readonly ch: ClickHouse) {
     this.web = new WebAnalytics(ch);
   }
 
@@ -80,6 +80,62 @@ export class Telemetry {
       params,
     );
     return rows.map((r) => ({ ...r, ts: Number(r.ts), severityNumber: Number(r.severityNumber) }));
+  }
+
+  /** Log records at or above a severity per service (Dashboard). */
+  async logCounts(f: Range & { severity?: string; namespace?: string }): Promise<{ service: string; count: number }[]> {
+    const rows = await this.ch.query<{ service: string; count: string }>(
+      `SELECT if(ServiceName = '', '(bez služby)', ServiceName) AS service, count() AS count FROM otel_logs
+       WHERE Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9) AND SeverityNumber >= {severity:UInt8}
+         AND ({namespace:String} = '' OR ${NS} = {namespace:String})
+       GROUP BY service ORDER BY count DESC LIMIT 20`,
+      { ...range(f), severity: SEVERITY[f.severity ?? "error"] ?? 0, namespace: f.namespace ?? "" },
+    );
+    return rows.map((r) => ({ service: r.service, count: Number(r.count) }));
+  }
+
+  /**
+   * Pods that aren't well now (Dashboard): their latest phase (k8s_cluster's k8s.pod.phase: 1 pending, 2 running,
+   * 3 succeeded, 4 failed, 5 unknown) in the last 15 minutes isn't running or done, or their containers restarted in the range.
+   */
+  async podProblems(r: Range): Promise<{ namespace: string; pod: string; phase: number | null; restarts: number }[]> {
+    const pod = `ResourceAttributes['k8s.pod.name']`;
+    const [phases, restarts] = await Promise.all([
+      this.ch.query<{ namespace: string; pod: string; phase: number }>(
+        `SELECT ${NS} AS namespace, ${pod} AS pod, argMax(Value, TimeUnix) AS phase FROM otel_metrics_gauge
+         WHERE MetricName = 'k8s.pod.phase' AND TimeUnix >= now() - INTERVAL 15 MINUTE GROUP BY namespace, pod HAVING phase NOT IN (2, 3)`,
+      ),
+      this.ch.query<{ namespace: string; pod: string; restarts: number }>(
+        `SELECT ${NS} AS namespace, ${pod} AS pod, sum(d) AS restarts FROM (
+           SELECT ${NS}, ${pod}, ResourceAttributes['k8s.container.name'], max(Value) - min(Value) AS d FROM otel_metrics_gauge
+           WHERE MetricName = 'k8s.container.restarts' AND TimeUnix BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)
+           GROUP BY 1, 2, 3)
+         GROUP BY namespace, pod HAVING restarts > 0`,
+        range(r),
+      ),
+    ]);
+    const by = new Map<string, { namespace: string; pod: string; phase: number | null; restarts: number }>();
+    for (const p of phases) by.set(`${p.namespace}/${p.pod}`, { namespace: p.namespace, pod: p.pod, phase: Number(p.phase), restarts: 0 });
+    for (const x of restarts) {
+      const key = `${x.namespace}/${x.pod}`;
+      by.set(key, { ...(by.get(key) ?? { namespace: x.namespace, pod: x.pod, phase: null }), restarts: Number(x.restarts) });
+    }
+    return [...by.values()].sort((a, b) => b.restarts - a.restarts || a.pod.localeCompare(b.pod)).slice(0, 50);
+  }
+
+  /** Kubernetes events of type Warning (k8sobjects, watch mode: the body is {type, object}), newest first. */
+  async warningEvents(r: Range): Promise<{ ts: number; namespace: string; object: string; reason: string; note: string; count: number }[]> {
+    const rows = await this.ch.query<{ ts: string; namespace: string; object: string; reason: string; note: string; count: string }>(
+      `SELECT toUnixTimestamp64Milli(max(Timestamp)) AS ts, JSONExtractString(Body, 'object', 'regarding', 'namespace') AS namespace,
+              concat(JSONExtractString(Body, 'object', 'regarding', 'kind'), '/', JSONExtractString(Body, 'object', 'regarding', 'name')) AS object,
+              JSONExtractString(Body, 'object', 'reason') AS reason, any(JSONExtractString(Body, 'object', 'note')) AS note, count() AS count
+       FROM otel_logs
+       WHERE Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9) AND ServiceName = ''
+         AND JSONExtractString(Body, 'object', 'type') = 'Warning'
+       GROUP BY namespace, object, reason ORDER BY ts DESC LIMIT 50`,
+      range(r),
+    );
+    return rows.map((x) => ({ ...x, ts: Number(x.ts), count: Number(x.count) }));
   }
 
   /** Root spans (one per trace) matching the filters, newest first, with how many spans their trace has. */
@@ -199,6 +255,61 @@ const BREAKDOWNS: Record<Exclude<keyof WebStats, "sites" | "totals" | "step" | "
   devices: { table: "devices_daily", key: "device" },
   events: { table: "events_daily", key: "event", count: "count" },
 };
+
+/**
+ * Web analytics of several sites together (null: all of them): each site's totals, the sum over time, and the top
+ * pages (with their site), referrers and countries.
+ */
+export async function webSummary(ch: ClickHouse, sites: string[] | null, r: Range, owner: (site: string) => string | null = () => null): Promise<WebSummary> {
+  // An Array(String) parameter goes in as ClickHouse's literal.
+  const list = `[${(sites ?? []).map((x) => `'${x.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}'`).join(",")}]`;
+  const p = { sites: list, all: sites === null ? 1 : 0, ...range(r) };
+  const these = "({all:UInt8} = 1 OR has({sites:Array(String)}, site))";
+  const days = "day BETWEEN toDate(toDateTime({from:UInt32}, 'UTC')) AND toDate(toDateTime({to:UInt32}, 'UTC'))";
+  const hourly = r.to - r.from <= 2 * 86_400_000;
+  const n = (v: unknown) => Number(v ?? 0);
+  const top = (table: string, key: string, where = "") =>
+    ch.query<{ key: string; detail: string; pageviews: string; visitors: string }>(
+      `SELECT ${key} AS key, '' AS detail, sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors
+       FROM web.${table} WHERE ${these} AND ${days}${where} GROUP BY key ORDER BY pageviews DESC LIMIT 15`,
+      p,
+    );
+  const [perSite, totals, series, pages, referrers, countries] = await Promise.all([
+    ch.query<{ site: string; pageviews: string; visitors: string }>(
+      `SELECT site, sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors FROM web.stats_daily WHERE ${these} AND ${days} GROUP BY site ORDER BY pageviews DESC`,
+      p,
+    ),
+    ch.query<{ pageviews: string; visitors: string; events: string }>(
+      `SELECT sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors, sum(events) AS events FROM web.stats_daily WHERE ${these} AND ${days}`,
+      p,
+    ),
+    hourly
+      ? ch.query<{ t: string; pageviews: string; visitors: string }>(
+          `SELECT toUnixTimestamp(hour) * 1000 AS t, sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors FROM web.stats_hourly
+           WHERE ${these} AND hour BETWEEN toStartOfHour(toDateTime({from:UInt32}, 'UTC')) AND toDateTime({to:UInt32}, 'UTC') GROUP BY hour ORDER BY hour`,
+          p,
+        )
+      : ch.query<{ t: string; pageviews: string; visitors: string }>(
+          `SELECT toUnixTimestamp(toDateTime(day, 'UTC')) * 1000 AS t, sum(pageviews) AS pageviews, uniqMerge(visitors) AS visitors FROM web.stats_daily
+           WHERE ${these} AND ${days} GROUP BY day ORDER BY day`,
+          p,
+        ),
+    top("pages_daily", "concat(site, path)"),
+    top("referrers_daily", "referrer_domain", " AND referrer_domain != ''"),
+    top("countries_daily", "country"),
+  ]);
+  const row = (x: { key: string; detail: string; pageviews: string; visitors: string }): WebTopRow => ({ key: x.key, detail: x.detail, pageviews: n(x.pageviews), visitors: n(x.visitors) });
+  const t = totals[0];
+  return {
+    sites: perSite.map((x) => ({ site: x.site, tenant: owner(x.site), pageviews: n(x.pageviews), visitors: n(x.visitors) })),
+    totals: { pageviews: n(t?.pageviews), visitors: n(t?.visitors), events: n(t?.events) },
+    step: hourly ? "hour" : "day",
+    series: series.map((x) => ({ t: n(x.t), pageviews: n(x.pageviews), visitors: n(x.visitors) })),
+    pages: pages.map(row),
+    referrers: referrers.map(row),
+    countries: countries.map(row),
+  };
+}
 
 /**
  * Web analytics of one site, from the aggregate tables web/schema.sql keeps (database web): totals, pageviews and

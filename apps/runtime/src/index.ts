@@ -17,6 +17,8 @@ import { ControlClient, RemoteFeatures } from "./control.ts";
 import { dataDbPath, dbPath, filesDir, hasDatabase, restoreSnapshot, withSnapshot } from "./snapshot.ts";
 import { controlTools } from "./tools.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
+import { monthOf } from "@osiris/core/agent/usage.ts";
+import type { ReportedUsage } from "@osiris/shared";
 
 const config = loadConfig();
 startTelemetry("osiris-runtime", { "osiris.tenant": config.TENANT_ID });
@@ -72,7 +74,26 @@ const tenant = openTenant(config.TENANT_ID, db, {
 });
 
 const activity = new Activity();
-const snapshot = (reason: string) => withSnapshot(db, config.DATA_DIR, tenant.data.db, (archive) => control.uploadBackup(archive, reason));
+// What the tenant uses goes to control for System > Dashboard, only when it changed (control writes on every report).
+let reported = "";
+const reportUsage = async () => {
+  const usage: ReportedUsage = {
+    storage: await tenant.files.usage(),
+    tokens: await tenant.usage.tokens(),
+    month: monthOf(),
+    tables: await tenant.data.tableCount(),
+    database: await tenant.data.size(),
+  };
+  const json = JSON.stringify(usage);
+  if (json === reported) return;
+  await control.reportUsage(usage);
+  reported = json;
+};
+const report = () => reportUsage().catch((err) => console.error("Usage report failed", err));
+const snapshot = async (reason: string) => {
+  if (reason === "sleep") await report();
+  return withSnapshot(db, config.DATA_DIR, tenant.data.db, (archive) => control.uploadBackup(archive, reason));
+};
 
 const app = createRuntimeApp({
   tenant,
@@ -87,6 +108,9 @@ const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) =>
   console.log(`Runtime of ${config.TENANT_ID} listening on http://localhost:${port}`),
 );
 
+const usageTimer = setInterval(() => void (activity.sleeping || report()), 5 * 60_000);
+void report();
+
 // Tenants that never sleep (or rarely) still get a daily snapshot.
 const daily = setInterval(() => {
   if (!activity.sleeping) snapshot("daily").catch((err) => console.error("Daily snapshot failed", err));
@@ -94,6 +118,7 @@ const daily = setInterval(() => {
 
 const shutdown = async () => {
   clearInterval(daily);
+  clearInterval(usageTimer);
   activity.sleeping = true;
   server.close();
   await tenant.mcp.close();

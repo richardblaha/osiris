@@ -1,4 +1,5 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { DashboardStore } from "../src/dashboards.ts";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,7 +11,7 @@ import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { devRuntimeVerifier } from "@osiris/platform/runtime-identity.ts";
 import { createControlApp } from "../src/app.ts";
 import { Backups } from "../src/backups.ts";
-import type { Orchestrator, TenantSpec } from "../src/orchestrator/types.ts";
+import type { Orchestrator, TenantSpec, TenantStatus } from "../src/orchestrator/types.ts";
 import { ScheduleStore } from "../src/scheduler.ts";
 import { DomainStore, type DnsLookup } from "../src/sites/domains.ts";
 import { SitePublisher } from "../src/sites/publisher.ts";
@@ -47,6 +48,9 @@ export class FakeOrchestrator implements Orchestrator {
   }
   endpoint(id: string) {
     return `http://runtime-${id}`;
+  }
+  async statuses() {
+    return new Map([...this.applied.values()].map((s): [string, TenantStatus] => [s.id, { phase: s.suspended ? "Suspended" : this.woken.includes(s.id) ? "Running" : "Sleeping" }]));
   }
 }
 
@@ -134,6 +138,7 @@ export async function createTestControl(
     phones,
     snapshot: async (t) => void snapshots.push(t),
     auth,
+    dashboards: new DashboardStore(db),
     whatsapp: { inbox, verifyToken: "verify-me", appSecret: "app-secret", displayNumber: "+420 600 000 000" },
   });
 

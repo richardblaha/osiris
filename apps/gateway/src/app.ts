@@ -41,7 +41,7 @@ interface Authenticated {
 type Env = { Variables: { auth: Authenticated } };
 
 /** API paths answered by control; everything else under /api belongs to the active tenant's runtime. */
-const CONTROL_PATHS = /^\/api\/(me|admin|tenant|members|schedules|domains|sites)(\/|$)/;
+const CONTROL_PATHS = /^\/api\/(me|admin|tenant|members|schedules|domains|sites|dashboards)(\/|$)/;
 
 /** Request headers passed on to the services; credentials and hop-by-hop headers are not. */
 const FORWARD_REQUEST = ["content-type", "accept", "x-tenant-id", "x-hub-signature-256"];

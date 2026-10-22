@@ -19,4 +19,14 @@ export interface Orchestrator {
   /** Base URL of the tenant's runtime. */
   endpoint(id: string): string;
   close?(): Promise<void>;
+  /** What runs now, by tenant (the operator's `Tenant` status); tenants missing there are unknown. */
+  statuses(): Promise<Map<string, TenantStatus>>;
+}
+
+export interface TenantStatus {
+  phase: "Running" | "Sleeping" | "Suspended" | "Unknown";
+  /** ISO time. */
+  lastActivity?: string;
+  /** The operator's last problem with it. */
+  message?: string;
 }

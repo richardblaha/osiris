@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AssistantProfile, AssistantProfiles, BuiltinTool, Guard, Guards, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UserSettings } from "@osiris/shared";
+import type { AssistantProfile, AssistantProfiles, BuiltinTool, Guard, Guards, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UsageBreakdown, UserSettings } from "@osiris/shared";
 import { GUARD_NAME, PUBLIC_ASSISTANT_NAME, PUBLIC_TOOLS } from "@osiris/shared";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -141,7 +141,7 @@ export interface RuntimeAppDeps {
   /** Takes a snapshot and uploads it (operator before sleep, control on demand). */
   snapshot: (reason: string) => Promise<{ key: string; bytes: number }>;
   /** Members and scheduled tasks, which control counts, for the quota meters. */
-  counts?: () => Promise<{ members: number; schedules: number }>;
+  counts?: () => Promise<{ members: number; schedules: number; dashboards: number }>;
 }
 
 /**
@@ -637,9 +637,9 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
         tenant.files.quotaInForce(),
         tenant.usage.tokens(),
         tenant.usage.tokens(Date.now(), { user: user.sub }),
-        tenant.data.tables(),
+        tenant.data.tableCount(),
         tenant.data.size(),
-        counts?.() ?? { members: 0, schedules: 0 },
+        counts?.() ?? { members: 0, schedules: 0, dashboards: 0 },
       ]);
       return c.json<TenantUsage>({
         storage: { used: storage, limit: storageLimit },
@@ -647,9 +647,16 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
         members: { used: counted.members, limit: quotas.members },
         schedules: { used: counted.schedules, limit: quotas.schedules },
         userTokens: { used: userTokens, limit: quotas.tokensPerUserMonth },
-        tables: { used: tables.length, limit: quotas.tables },
+        tables: { used: tables, limit: quotas.tables },
         database: { used: database, limit: quotas.databaseMb === null ? null : quotas.databaseMb * 1024 * 1024 },
+        dashboards: { used: counted.dashboards, limit: quotas.dashboards },
       });
+    })
+    // Tokens this month by member and by public assistant, and the tenant's per month; a member sees only themselves.
+    .get("/usage/breakdown", async (c) => {
+      const { tenant, user, role } = c.get("ctx");
+      const b = await tenant.usage.breakdown();
+      return c.json<UsageBreakdown>({ ...b, users: role === "admin" ? b.users : b.users.filter((u) => u.userId === user.sub) });
     })
 
     // The assistant's built-in tools and whether each is available (its feature on, not switched off).

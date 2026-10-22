@@ -210,6 +210,8 @@ export interface TenantQuotas {
   tables: number | null;
   /** The tenant's database, in MB. */
   databaseMb: number | null;
+  /** The tenant's own dashboards (the built-in ones don't count). */
+  dashboards: number | null;
 }
 
 export const NO_QUOTAS: TenantQuotas = {
@@ -220,6 +222,7 @@ export const NO_QUOTAS: TenantQuotas = {
   tokensPerUserMonth: null,
   tables: null,
   databaseMb: null,
+  dashboards: null,
 };
 
 /** One quota's use; `limit` null = no limit. */
@@ -239,6 +242,7 @@ export interface TenantUsage {
   tables: Meter;
   /** The database file, in bytes. */
   database: Meter;
+  dashboards: Meter;
 }
 
 /** A built-in tool of the assistant (`/api/tools`); a system admin can switch each one off per tenant. */
@@ -278,6 +282,8 @@ export interface TenantDetail extends TenantSummary {
   /** Built-in tools switched off for the tenant, by name. */
   disabledTools: string[];
   quotas: TenantQuotas;
+  /** Web analytics sites it sees besides those of its domains. */
+  webSites: string[];
   backups: { key: string; bytes: number; reason: string; createdAt: string }[];
 }
 
@@ -604,4 +610,84 @@ export interface DbQueryResult {
   columns: string[];
   rows: unknown[][];
   truncated: boolean;
+}
+
+/** How far back a dashboard looks. */
+export const DASHBOARD_RANGES = ["1h", "24h", "7d", "30d", "90d"] as const;
+export type DashboardRange = (typeof DASHBOARD_RANGES)[number];
+
+/** How a panel shows its data: tiles of the first row, lines over time (first column), bars, a table, quota meters. */
+export const PANEL_KINDS = ["stat", "line", "bar", "table", "meters"] as const;
+export type PanelKind = (typeof PANEL_KINDS)[number];
+
+/**
+ * Where a panel's data comes from. System dashboards: metric, logs, cluster, web (all sites), usage `tenants`.
+ * Tenant dashboards: web (the tenant's sites), usage (`quotas`, `users`, `assistants`, `months`), database (one SELECT).
+ */
+export type PanelSource =
+  | { type: "metric"; name: string; metricType: "gauge" | "sum" | "histogram"; groupBy?: string; service?: string }
+  | { type: "logs"; view: "by_service" | "list"; severity?: "warn" | "error" | "fatal"; service?: string; namespace?: string; q?: string }
+  | { type: "cluster"; view: "summary" | "tenants" | "pods" | "events" | "backups" }
+  | { type: "web"; view: "totals" | "series" | "sites" | "pages" | "referrers" | "countries" }
+  | { type: "usage"; view: "quotas" | "users" | "assistants" | "months" | "tenants" }
+  | { type: "database"; sql: string };
+
+export interface DashboardPanel {
+  title: string;
+  kind: PanelKind;
+  source: PanelSource;
+  /** Columns of a four-column grid; default 2. */
+  width?: 1 | 2 | 3 | 4;
+}
+
+export interface DashboardDefinition {
+  range: DashboardRange;
+  panels: DashboardPanel[];
+}
+
+/** A dashboard of the system (system admins) or of a tenant (its admins edit, members see). */
+export interface Dashboard {
+  id: string;
+  name: string;
+  definition: DashboardDefinition;
+  /** Shipped with Osiris (Systém, Weby, Využití): can't be changed or deleted, doesn't count for the quota. */
+  builtin?: boolean;
+  updatedAt?: string;
+}
+
+/** A panel's data as a table; `formats` say how to show each column. */
+export interface PanelData {
+  columns: string[];
+  rows: unknown[][];
+  formats?: (PanelFormat | null)[];
+}
+/** `meter` / `meterBytes`: the cell is `{ used, limit }` (limit null = none). `time`: epoch ms. */
+export type PanelFormat = "bytes" | "number" | "time" | "date" | "percent" | "text" | "meter" | "meterBytes";
+
+/** The web analytics of several sites together (Weby dashboards); visitors are unique per day. */
+export interface WebSummary {
+  sites: { site: string; tenant: string | null; pageviews: number; visitors: number }[];
+  totals: { pageviews: number; visitors: number; events: number };
+  step: "hour" | "day";
+  series: { t: number; pageviews: number; visitors: number }[];
+  pages: WebTopRow[];
+  referrers: WebTopRow[];
+  countries: WebTopRow[];
+}
+
+/** Tokens this month by member, by public assistant, and the tenant's per month (`/api/usage/breakdown`). */
+export interface UsageBreakdown {
+  /** By user id; a member sees only themselves. */
+  users: { userId: string; tokens: number }[];
+  assistants: { name: string; tokens: number }[];
+  months: { month: string; tokens: number }[];
+}
+
+/** What a runtime last reported of its use (System > Dashboard > Využití); members, schedules and dashboards are control's. */
+export interface ReportedUsage {
+  storage: number;
+  tokens: number;
+  month: string;
+  tables: number;
+  database: number;
 }

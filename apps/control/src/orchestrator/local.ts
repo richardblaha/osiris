@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import type { Orchestrator, TenantSpec } from "./types.ts";
+import type { Orchestrator, TenantSpec, TenantStatus } from "./types.ts";
 
 /**
  * Development stand-in for the operator: each tenant's runtime is a child process on its own port, started on the
@@ -28,6 +28,13 @@ export class LocalOrchestrator implements Orchestrator {
       this.suspended.add(spec.id);
       this.running.get(spec.id)?.kill();
     } else this.suspended.delete(spec.id);
+  }
+
+  async statuses() {
+    const ids = new Set([...this.running.keys(), ...this.suspended]);
+    return new Map(
+      [...ids].map((id): [string, TenantStatus] => [id, { phase: this.suspended.has(id) ? "Suspended" : this.running.has(id) ? "Running" : "Sleeping" }]),
+    );
   }
 
   async wake(id: string) {
