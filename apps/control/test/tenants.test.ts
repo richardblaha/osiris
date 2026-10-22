@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { NO_QUOTAS } from "@osiris/shared";
 import { createTestControl } from "./helpers.ts";
 
 const admin = { systemAdmin: true };
@@ -154,7 +155,7 @@ describe("control API", () => {
     const json = (body: object) => ({ body: JSON.stringify(body) });
     expect((await root("/admin/tenants/acme", { method: "PATCH", ...json({ quotas: { members: 0 } }) })).status).toBe(400);
     expect((await root("/admin/tenants/acme", { method: "PATCH", ...json({ quotas: { members: 1, schedules: 1, tokensPerMonth: 5000 } }) })).status).toBe(204);
-    expect((await (await root("/admin/tenants/acme")).json()).quotas).toEqual({ storageMb: null, tokensPerMonth: 5000, members: 1, schedules: 1 });
+    expect((await (await root("/admin/tenants/acme")).json()).quotas).toEqual({ ...NO_QUOTAS, tokensPerMonth: 5000, members: 1, schedules: 1 });
 
     // The tenant is full: nobody new joins, but the member's role still changes.
     expect((await root("/admin/tenants/acme/members/eva", { method: "PUT", ...json({ role: "member" }) })).status).toBe(400);

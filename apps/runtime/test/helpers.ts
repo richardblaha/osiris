@@ -77,7 +77,7 @@ export class TestTenants {
 
   constructor(
     private readonly dir: string,
-    private readonly deps: Omit<TenantDeps, "features" | "files">,
+    private readonly deps: Omit<TenantDeps, "features" | "files" | "database">,
   ) {}
 
   get(id: string): Promise<TestTenant> {
@@ -87,7 +87,7 @@ export class TestTenants {
         const db = createDb(`file:${join(this.dir, `${id}.db`)}`);
         await migrate(db);
         const features = new StaticFeatures();
-        const tenant = openTenant(id, db, { ...this.deps, features, files: { dir: join(this.dir, "files", id) } }) as TestTenant;
+        const tenant = openTenant(id, db, { ...this.deps, features, files: { dir: join(this.dir, "files", id) }, database: { path: join(this.dir, `${id}.data.db`) } }) as TestTenant;
         await tenant.init();
         return tenant;
       })();

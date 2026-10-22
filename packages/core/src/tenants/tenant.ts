@@ -34,6 +34,9 @@ import { buildVitepressTool, publishSiteTool } from "../agent/tools/site.ts";
 import { VitepressClient } from "../files/vitepress.ts";
 import { FileIndexer, mergePersonalIntoTenant, moveKnowledgeToDb, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
+import { databaseTools } from "../agent/tools/database.ts";
+import { DataStore } from "../database/store.ts";
+import { createDb } from "../db/client.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
 export interface Tenant {
@@ -49,6 +52,8 @@ export interface Tenant {
   secrets: SecretVault;
   features: FeatureSource;
   files: FileStore;
+  /** The tenant's own database of the assistant's tables (contacts, deals…). */
+  data: DataStore;
   /** Full-text index of the tenant's and users' text files. */
   fileIndex: FileIndex;
   /** Where the tenant's website is published over SFTP. */
@@ -85,6 +90,8 @@ export interface TenantDeps {
   mcp?: McpOptions;
   /** Where the tenant's files live. */
   files: FileStoreOptions & { dir: string };
+  /** The file of the tenant's database (feature `database`), next to the tenant's own. */
+  database: { path: string };
   /** Which features the tenant may use (from control). */
   features: FeatureSource;
   /** Tools beyond the built-in ones (the runtime's schedule and site tools), each tied to a feature. */
@@ -145,6 +152,10 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     onChange: (change) => indexer!.apply(change),
   });
   indexer = new FileIndexer(files, fileIndex);
+  const data = new DataStore(createDb(`file:${deps.database.path}`), deps.database.path, async () => {
+    const q = await features.quotas();
+    return { tables: q.tables, bytes: q.databaseMb === null ? null : q.databaseMb * 1024 * 1024 };
+  });
   const skills = new SkillStore(files, deps.bundledSkills);
   guards = new GuardStore(files);
   const siteTargets = new SiteTargetStore(db, deps.secrets);
@@ -169,6 +180,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ...(vitepress ? [["sites", buildVitepressTool(files, vitepress)] as [Feature, StructuredToolInterface]] : []),
     ...googleTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ...microsoftTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
+    ...databaseTools(data).map((t): [Feature, StructuredToolInterface] => ["database", t]),
     ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
     ...(deps.extraTools?.(files) ?? []),
   ];
@@ -231,6 +243,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     memory,
     settings,
     secrets,
+    database: () => data.tables(),
   });
   // Old tenants' documents and skills move to files once, then the indexes catch up with the files on disk.
   const init = async () => {
@@ -254,6 +267,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     secrets,
     features,
     files,
+    data,
     fileIndex,
     siteTargets,
     integrations,

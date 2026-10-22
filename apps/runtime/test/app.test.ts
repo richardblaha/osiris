@@ -1,8 +1,9 @@
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessage, AIMessageChunk } from "@langchain/core/messages";
 import { GUARD_REFUSAL } from "@osiris/core/agent/assistant.ts";
-import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
+import { TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import type { RunEvent, ThreadMessage } from "@osiris/shared";
+import { NO_QUOTAS } from "@osiris/shared";
 import { describe, expect, it } from "vitest";
 import { createTestApp, createTestTenants } from "./helpers.ts";
 
@@ -220,12 +221,13 @@ describe("API", () => {
 describe("tenant features", () => {
   it("refuses settings of switched-off features and drops their tools", async () => {
     const { as, tenants, model } = await setup([new AIMessage("Ahoj.")]);
-    await (await tenants.get("acme")).features.set({ skills: false, mcp: false, http: false, files: false, scheduler: false, sites: false });
+    await (await tenants.get("acme")).features.set({ skills: false, mcp: false, http: false, files: false, scheduler: false, sites: false, database: false });
     const bob = as("bob:tenant=acme");
 
     expect((await bob("/skills")).status).toBe(403);
     expect((await bob("/mcp-servers")).status).toBe(403);
     expect((await bob("/secrets")).status).toBe(403);
+    expect((await bob("/database/tables")).status).toBe(403);
     expect((await bob("/knowledge/documents")).status).toBe(200);
 
     const bound: string[][] = [];
@@ -246,7 +248,7 @@ describe("tenant features", () => {
     };
 
     // The model's tokens are counted per month; once the quota is used up the model isn't called any more.
-    acme.features.limits = { storageMb: 1, tokensPerMonth: 100, members: 5, schedules: null };
+    acme.features.limits = { ...NO_QUOTAS, storageMb: 1, tokensPerMonth: 100, members: 5 };
     expect(await chat()).toContain("Ahoj.");
     expect(await chat()).toContain(TOKENS_EXHAUSTED);
     expect(model.calls).toHaveLength(1);
@@ -262,13 +264,33 @@ describe("tenant features", () => {
       tokens: { used: 100, limit: 100 },
       members: { used: 0, limit: 5 },
       schedules: { used: 0, limit: null },
+      userTokens: { used: 100, limit: null },
+      tables: { used: 0, limit: null },
+      database: { used: expect.any(Number), limit: null },
     });
+  });
+
+  it("keeps each member to the per-user token quota", async () => {
+    const reply = () => new AIMessage({ content: "Ahoj.", usage_metadata: { input_tokens: 90, output_tokens: 10, total_tokens: 100 } });
+    const { as, tenants, model } = await setup([reply(), reply()]);
+    const acme = await tenants.get("acme");
+    acme.features.limits = { ...NO_QUOTAS, tokensPerUserMonth: 100 };
+    const chat = async (user: string) => {
+      const { id } = await (await as(user)("/threads", { method: "POST" })).json();
+      return (await as(user)(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
+    };
+    expect(await chat("bob:tenant=acme")).toContain("Ahoj.");
+    expect(await chat("bob:tenant=acme")).toContain(USER_TOKENS_EXHAUSTED);
+    // Another member still has their own.
+    expect(await chat("eve:tenant=acme")).toContain("Ahoj.");
+    expect(model.calls).toHaveLength(2);
+    expect(await acme.usage.byUser()).toEqual({ "dev:bob": 100, "dev:eve": 100 });
   });
 
   it("drops built-in tools a system admin switched off and lists them all with their state", async () => {
     const { as, tenants, model } = await setup([new AIMessage("Ahoj.")]);
     const acme = await tenants.get("acme");
-    await acme.features.set({ mcp: false, http: false, files: false, scheduler: false, sites: false });
+    await acme.features.set({ mcp: false, http: false, files: false, scheduler: false, sites: false, database: false });
     acme.features.disabled = ["forget"];
     const bob = as("bob:tenant=acme");
 

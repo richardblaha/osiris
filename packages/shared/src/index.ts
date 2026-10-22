@@ -43,7 +43,7 @@ export interface MeResponse {
 }
 
 /** What a system admin can switch on or off per tenant. */
-export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public"] as const;
+export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public", "database"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type TenantFeatures = Record<Feature, boolean>;
 
@@ -204,9 +204,23 @@ export interface TenantQuotas {
   members: number | null;
   /** Scheduled tasks in the tenant. */
   schedules: number | null;
+  /** Tokens of the language model per calendar month for each member (their runs, scheduled ones too). */
+  tokensPerUserMonth: number | null;
+  /** Tables in the tenant's database. */
+  tables: number | null;
+  /** The tenant's database, in MB. */
+  databaseMb: number | null;
 }
 
-export const NO_QUOTAS: TenantQuotas = { storageMb: null, tokensPerMonth: null, members: null, schedules: null };
+export const NO_QUOTAS: TenantQuotas = {
+  storageMb: null,
+  tokensPerMonth: null,
+  members: null,
+  schedules: null,
+  tokensPerUserMonth: null,
+  tables: null,
+  databaseMb: null,
+};
 
 /** One quota's use; `limit` null = no limit. */
 export interface Meter {
@@ -220,6 +234,11 @@ export interface TenantUsage {
   tokens: Meter;
   members: Meter;
   schedules: Meter;
+  /** The caller's own tokens this calendar month. */
+  userTokens: Meter;
+  tables: Meter;
+  /** The database file, in bytes. */
+  database: Meter;
 }
 
 /** A built-in tool of the assistant (`/api/tools`); a system admin can switch each one off per tenant. */
@@ -546,3 +565,41 @@ export interface FileEntry {
   modifiedAt: string;
 }
 export * from "./files.ts";
+
+/** Column types of the tenant's database; `date` is `YYYY-MM-DD`, `datetime` ISO 8601, `json` any JSON value. */
+export const DB_COLUMN_TYPES = ["text", "integer", "real", "boolean", "date", "datetime", "json"] as const;
+export type DbColumnType = (typeof DB_COLUMN_TYPES)[number];
+
+/** A column of a table in the tenant's database; `id`, `created_at` and `updated_at` are every table's own (`system`). */
+export interface DbColumn {
+  name: string;
+  type: DbColumnType;
+  required: boolean;
+  unique: boolean;
+  /** The table whose `id` it points to. */
+  references: string | null;
+  system?: boolean;
+}
+
+/** A table of the tenant's database (`/api/database/tables`). */
+export interface DbTable {
+  name: string;
+  description: string;
+  columns: DbColumn[];
+  rows: number;
+}
+
+/** A page of a table's rows, values decoded by column type (booleans, JSON). */
+export interface DbRows {
+  table: DbTable;
+  rows: Record<string, unknown>[];
+  /** Rows matching the search. */
+  total: number;
+}
+
+/** A read-only SQL query's answer; `truncated` when more rows matched than were returned. */
+export interface DbQueryResult {
+  columns: string[];
+  rows: unknown[][];
+  truncated: boolean;
+}

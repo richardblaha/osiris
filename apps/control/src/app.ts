@@ -85,6 +85,9 @@ const updateTenantBody = z.object({
       tokensPerMonth: z.number().int().min(0).max(1e12).nullable(),
       members: z.number().int().min(1).max(100_000).nullable(),
       schedules: z.number().int().min(0).max(100_000).nullable(),
+      tokensPerUserMonth: z.number().int().min(0).max(1e12).nullable(),
+      tables: z.number().int().min(0).max(10_000).nullable(),
+      databaseMb: z.number().int().min(1).max(500 * 1024).nullable(),
     })
     .partial()
     .optional(),

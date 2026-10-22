@@ -1,4 +1,4 @@
-import type { Channel, Memory, Persona, SecretSummary, SkillSummary, UserSettings } from "@osiris/shared";
+import type { Channel, DbTable, Memory, Persona, SecretSummary, SkillSummary, UserSettings } from "@osiris/shared";
 import { hasRules, rulesText, type GuardRules } from "./assistant.ts";
 
 const BASE = `# ROLE
@@ -66,6 +66,14 @@ function secretsSection(secrets: Pick<SecretSummary, "name" | "allowedHosts" | "
   return `\n\n# SECRETS\nPřístupové klíče pro nástroj http_request. Vkládej je jen jako zástupný text, hodnotu neznáš a nikdy ji nevypisuj. Každý funguje jen pro uvedené domény.\n${list}`;
 }
 
+function databaseSection(tables: DbTable[] | undefined): string {
+  if (!tables) return "";
+  const list = tables.length
+    ? tables.map((t) => `- ${t.name} (${t.rows} řádků)${t.description ? `: ${t.description}` : ""}`).join("\n")
+    : "(zatím žádné tabulky)";
+  return `\n\n# DATABÁZE\nFirma má databázi pro strukturovaná data (kontakty, zakázky…), společnou pro všechny. Sloupce tabulky zjistíš nástrojem db_schema, čteš nástrojem db_query (SELECT), zapisuješ nástroji db_insert, db_update a db_delete. Strukturu tabulek drž podle dovedností, které je popisují; novou tabulku zakládej jen s rozmyslem.\n${list}`;
+}
+
 function userSection(name: string | undefined, settings: UserSettings | undefined): string {
   const lines: string[] = [];
   if (name) lines.push(`Jméno uživatele: ${name}`);
@@ -98,6 +106,8 @@ export function buildSystemPrompt(opts: {
   rules?: GuardRules;
   /** The user's persona, or the tenant's when the user has none. */
   persona?: Persona | null;
+  /** The tenant database's tables; omitted when the feature is off. */
+  database?: DbTable[];
   now?: Date;
 }): string {
   const now = (opts.now ?? new Date()).toLocaleString("cs-CZ", {
@@ -105,5 +115,5 @@ export function buildSystemPrompt(opts: {
     dateStyle: "full",
     timeStyle: "short",
   });
-  return `${BASE}${opts.knowledge === false ? "" : KNOWLEDGE_RULE}${rulesSection(opts.rules)}\n\n${CHANNEL_FORMAT[opts.channel]}${personaSection(opts.persona)}\n\n# KONTEXT\nAktuální datum a čas: ${now} (${opts.timezone}).${opts.files ? FILES : ""}${skillsSection(opts.skills ?? [])}${opts.memories ? memorySection(opts.memories) : ""}${secretsSection(opts.secrets ?? [])}${userSection(opts.userName, opts.settings)}`;
+  return `${BASE}${opts.knowledge === false ? "" : KNOWLEDGE_RULE}${rulesSection(opts.rules)}\n\n${CHANNEL_FORMAT[opts.channel]}${personaSection(opts.persona)}\n\n# KONTEXT\nAktuální datum a čas: ${now} (${opts.timezone}).${opts.files ? FILES : ""}${skillsSection(opts.skills ?? [])}${opts.memories ? memorySection(opts.memories) : ""}${secretsSection(opts.secrets ?? [])}${databaseSection(opts.database)}${userSection(opts.userName, opts.settings)}`;
 }

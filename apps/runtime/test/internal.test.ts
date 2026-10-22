@@ -106,7 +106,7 @@ describe("snapshots", () => {
     writeFileSync(join(dir, "files", "tenant", "sablony", "a.html"), "<p>x</p>");
 
     const chunks: Buffer[] = [];
-    await withSnapshot(db, dir, async (archive: Readable) => {
+    await withSnapshot(db, dir, undefined, async (archive: Readable) => {
       for await (const c of archive) chunks.push(Buffer.from(c as Uint8Array));
     });
     db.close();

@@ -4,7 +4,7 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { END, MessagesAnnotation, START, StateGraph, type BaseCheckpointSaver } from "@langchain/langgraph";
 import { ToolNode } from "@langchain/langgraph/prebuilt";
-import type { Persona } from "@osiris/shared";
+import type { DbTable, Persona } from "@osiris/shared";
 import { breaksRules, GUARD_REFUSAL, hasRules, type GuardRules } from "./assistant.ts";
 import { getRunContext, type RunContext } from "./context.ts";
 import type { MemoryStore } from "./memory.ts";
@@ -45,6 +45,8 @@ export interface AgentDeps {
   /** Runs on the `public` channel (the tenant's customers) get this prompt instead, and their own token quota. */
   publicPrompt?: (ctx: RunContext) => Promise<string>;
   publicLimit?: (ctx: RunContext) => Promise<number | null>;
+  /** The tenant database's tables, listed in the prompt while the feature is on. */
+  database?: () => Promise<DbTable[]>;
 }
 
 /** What a customer gets when the public assistant's (or the tenant's) quota is used up. */
@@ -52,21 +54,30 @@ export const PUBLIC_UNAVAILABLE = "Omlouvám se, asistent teď nemůže odpovíd
 
 export const TOKENS_EXHAUSTED = "Měsíční limit využití asistenta pro tuto firmu je vyčerpaný. Obrať se na správce.";
 
+export const USER_TOKENS_EXHAUSTED = "Tvůj měsíční limit využití asistenta je vyčerpaný. Obrať se na správce firmy.";
+
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
 export function createAgentGraph(deps: AgentDeps) {
-  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage, rules, persona, publicPrompt, publicLimit } =
+  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage, rules, persona, publicPrompt, publicLimit, database } =
     deps;
   if (!model.bindTools) throw new Error("Chat model does not support tool calling");
   const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
 
-  const exhausted = async (ctx?: RunContext) => {
-    const limit = (await features?.quotas())?.tokensPerMonth ?? null;
-    if (usage && limit !== null && (await usage.tokens()) >= limit) return true;
-    if (ctx?.channel !== "public") return false;
-    const own = (await publicLimit?.(ctx)) ?? null;
-    return !!usage && own !== null && (await usage.tokens(Date.now(), { public: ctx.assistant })) >= own;
+  /** Which quota is used up: the tenant's, or the run's own (the member's, or the public assistant's); null for none. */
+  const exhausted = async (ctx?: RunContext): Promise<string | null> => {
+    if (!usage) return null;
+    const quotas = await features?.quotas();
+    const limit = quotas?.tokensPerMonth ?? null;
+    if (limit !== null && (await usage.tokens()) >= limit) return ctx?.channel === "public" ? PUBLIC_UNAVAILABLE : TOKENS_EXHAUSTED;
+    if (ctx?.channel === "public") {
+      const own = (await publicLimit?.(ctx)) ?? null;
+      return own !== null && (await usage.tokens(Date.now(), { public: ctx.assistant })) >= own ? PUBLIC_UNAVAILABLE : null;
+    }
+    const perUser = quotas?.tokensPerUserMonth ?? null;
+    return ctx && perUser !== null && (await usage.tokens(Date.now(), { user: ctx.user_id })) >= perUser ? USER_TOKENS_EXHAUSTED : null;
   };
-  const count = (ctx: RunContext, tokens: number) => usage?.add(tokens, Date.now(), { public: ctx.channel === "public" ? ctx.assistant : undefined });
+  const count = (ctx: RunContext, tokens: number) =>
+    usage?.add(tokens, Date.now(), ctx.channel === "public" ? { public: ctx.assistant } : { user: ctx.user_id });
   const noRules: GuardRules = { system: "", tenant: "", user: "" };
 
   /** Checks a message against the rules; null when there are none to check (or the quota is used up). */
@@ -92,7 +103,7 @@ export function createAgentGraph(deps: AgentDeps) {
   /** A final answer breaking the rules is replaced (same id) by a refusal, in the history too. */
   const guardOutput = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const last = state.messages.at(-1);
-    if (!AIMessage.isInstance(last) || last.text === TOKENS_EXHAUSTED || last.text === PUBLIC_UNAVAILABLE || !(await check(config, "output", last.text))) return {};
+    if (!AIMessage.isInstance(last) || [TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED, PUBLIC_UNAVAILABLE].includes(last.text) || !(await check(config, "output", last.text))) return {};
     return { messages: [new AIMessage({ id: last.id, content: GUARD_REFUSAL })] };
   };
 
@@ -100,7 +111,8 @@ export function createAgentGraph(deps: AgentDeps) {
     const ctx = getRunContext(config);
     if (ctx.tenant_id !== tenantId) throw new Error(`Run for tenant ${ctx.tenant_id} sent to graph of ${tenantId}`);
     const on = (await features?.get()) ?? DEFAULT_FEATURES;
-    if (await exhausted(ctx)) return { messages: [new AIMessage(ctx.channel === "public" ? PUBLIC_UNAVAILABLE : TOKENS_EXHAUSTED)] };
+    const used = await exhausted(ctx);
+    if (used) return { messages: [new AIMessage(used)] };
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.
     const system = new SystemMessage(
       ctx.channel === "public" && publicPrompt ? await publicPrompt(ctx) : buildSystemPrompt({
@@ -113,6 +125,7 @@ export function createAgentGraph(deps: AgentDeps) {
         userName: ctx.user_name,
         settings: await settings?.get(ctx.user_id),
         secrets: on.http || on.mcp ? await secrets?.list(ctx.user_id) : undefined,
+        database: on.database ? await database?.() : undefined,
         rules: await rules?.(ctx),
         persona: await persona?.(ctx),
       }),

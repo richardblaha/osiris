@@ -8,18 +8,16 @@ const FIELDS: { key: keyof TenantQuotas; label: string }[] = [
   { key: "tokensPerMonth", label: "AI tokeny za měsíc" },
   { key: "members", label: "Uživatelé" },
   { key: "schedules", label: "Plánované úlohy" },
+  { key: "tokensPerUserMonth", label: "AI tokeny za měsíc na uživatele" },
+  { key: "tables", label: "Tabulky databáze" },
+  { key: "databaseMb", label: "Databáze (MB)" },
 ];
 
 /** The system admin's quotas of a tenant; an empty field is no limit (storage: 80 % of the disk). */
 export function QuotaForm({ quotas, busy, onSave }: { quotas: TenantQuotas; busy: boolean; onSave: (q: TenantQuotas) => void }) {
   const [values, setValues] = useState(() => Object.fromEntries(FIELDS.map((f) => [f.key, quotas[f.key]?.toString() ?? ""])) as Record<keyof TenantQuotas, string>);
   const parse = (v: string) => (v.trim() === "" ? null : Number(v));
-  const parsed: TenantQuotas = {
-    storageMb: parse(values.storageMb),
-    tokensPerMonth: parse(values.tokensPerMonth),
-    members: parse(values.members),
-    schedules: parse(values.schedules),
-  };
+  const parsed = Object.fromEntries(FIELDS.map((f) => [f.key, parse(values[f.key])])) as unknown as TenantQuotas;
   const changed = FIELDS.some((f) => parsed[f.key] !== quotas[f.key]);
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -31,7 +29,7 @@ export function QuotaForm({ quotas, busy, onSave }: { quotas: TenantQuotas; busy
         <Field key={f.key} label={f.label}>
           <input
             type="number"
-            min={f.key === "members" || f.key === "storageMb" ? 1 : 0}
+            min={f.key === "members" || f.key === "storageMb" || f.key === "databaseMb" ? 1 : 0}
             placeholder="bez limitu"
             value={values[f.key]}
             onChange={(e) => setValues({ ...values, [f.key]: e.target.value })}
@@ -53,6 +51,9 @@ const METERS: { key: keyof TenantUsage; label: string; format: (n: number) => st
   { key: "tokens", label: "AI tento měsíc", format: (n) => compact.format(n) },
   { key: "members", label: "Uživatelé", format: String },
   { key: "schedules", label: "Úlohy", format: String },
+  { key: "userTokens", label: "Moje AI tento měsíc", format: (n) => compact.format(n) },
+  { key: "tables", label: "Tabulky", format: String },
+  { key: "database", label: "Databáze", format: fileSize },
 ];
 
 /** The tenant's quotas and how full they are, above the tenant in the sidebar; quotas without a limit are left out. */

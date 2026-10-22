@@ -9,6 +9,9 @@ const QUOTAS: { key: keyof TenantQuotas; label: string }[] = [
   { key: "tokensPerMonth", label: "Tokeny modelu za měsíc" },
   { key: "members", label: "Uživatelé" },
   { key: "schedules", label: "Plánované úlohy" },
+  { key: "tokensPerUserMonth", label: "Tokeny modelu za měsíc na uživatele" },
+  { key: "tables", label: "Tabulky databáze" },
+  { key: "databaseMb", label: "Databáze (MB)" },
 ];
 
 /** What new tenants and users start with (system admins); existing ones keep what they have. */

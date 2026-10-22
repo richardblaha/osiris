@@ -13,7 +13,7 @@ import { isGuardPath, type GuardOwner } from "@osiris/core/agent/guards.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
 import { DOCUMENT_ID } from "@osiris/core/rag/store.ts";
-import { TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
+import { TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import { SKILL_NAME } from "@osiris/core/agent/skills.ts";
 import { FileError, type FileErrorCode, type FileLocation } from "@osiris/core/files/store.ts";
 import { streamRun, toThreadMessages } from "@osiris/core/agent/run.ts";
@@ -28,6 +28,7 @@ import { SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import type { Activity } from "./activity.ts";
 import { publicAuth, userAuth, type AuthEnv, type RequestContext } from "./auth.ts";
 import { createInternalRoutes } from "./internal.ts";
+import { databaseRoutes } from "./database.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 
 
@@ -118,6 +119,7 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/files", ["files"]],
   ["/site-targets", ["sites", "files"]],
   ["/vitepress-sites", ["sites"]],
+  ["/database", ["database"]],
 ];
 
 const FILE_ERROR_STATUS: Record<FileErrorCode, 400 | 404 | 409 | 413 | 415 | 507> = {
@@ -307,6 +309,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       }
       await next();
     })
+    .route("/database", databaseRoutes())
 
     .get("/threads", async (c) => {
       const { tenant, user } = c.get("ctx");
@@ -549,12 +552,15 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     })
     // Writes a persona's description from a character; nothing is saved until the (edited) profile is put.
     .post("/assistant/persona", async (c) => {
-      const { tenant } = c.get("ctx");
+      const { tenant, user } = c.get("ctx");
       const { character, source } = parse(personaBody, await c.req.json());
-      const limit = (await tenant.features.quotas()).tokensPerMonth;
-      if (limit !== null && (await tenant.usage.tokens()) >= limit) throw new HTTPException(429, { message: TOKENS_EXHAUSTED });
+      const quotas = await tenant.features.quotas();
+      if (quotas.tokensPerMonth !== null && (await tenant.usage.tokens()) >= quotas.tokensPerMonth) throw new HTTPException(429, { message: TOKENS_EXHAUSTED });
+      if (quotas.tokensPerUserMonth !== null && (await tenant.usage.tokens(Date.now(), { user: user.sub })) >= quotas.tokensPerUserMonth) {
+        throw new HTTPException(429, { message: USER_TOKENS_EXHAUSTED });
+      }
       const { description, tokens } = await describePersona(tenant.model, character, source);
-      await tenant.usage.add(tokens);
+      await tenant.usage.add(tokens, Date.now(), { user: user.sub });
       return c.json<Persona>({ character, source, description });
     })
 
@@ -624,12 +630,15 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     // How much of its quotas the tenant uses, for the meters above the tenant in the sidebar.
     .get("/usage", async (c) => {
-      const { tenant } = c.get("ctx");
-      const [quotas, storage, storageLimit, tokens, counted] = await Promise.all([
+      const { tenant, user } = c.get("ctx");
+      const [quotas, storage, storageLimit, tokens, userTokens, tables, database, counted] = await Promise.all([
         tenant.features.quotas(),
         tenant.files.usage(),
         tenant.files.quotaInForce(),
         tenant.usage.tokens(),
+        tenant.usage.tokens(Date.now(), { user: user.sub }),
+        tenant.data.tables(),
+        tenant.data.size(),
         counts?.() ?? { members: 0, schedules: 0 },
       ]);
       return c.json<TenantUsage>({
@@ -637,6 +646,9 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
         tokens: { used: tokens, limit: quotas.tokensPerMonth },
         members: { used: counted.members, limit: quotas.members },
         schedules: { used: counted.schedules, limit: quotas.schedules },
+        userTokens: { used: userTokens, limit: quotas.tokensPerUserMonth },
+        tables: { used: tables.length, limit: quotas.tables },
+        database: { used: database, limit: quotas.databaseMb === null ? null : quotas.databaseMb * 1024 * 1024 },
       });
     })
 

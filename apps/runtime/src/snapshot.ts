@@ -11,10 +11,12 @@ import * as tar from "tar";
  * database (`VACUUM INTO`) and the files as they are; a runtime starting on an empty volume restores the newest one.
  */
 export const dbPath = (dataDir: string) => join(dataDir, "db", "tenant.db");
+/** The tenant's own tables (feature `database`), a file of its own so the agent never reaches the tenant's database. */
+export const dataDbPath = (dataDir: string) => join(dataDir, "db", "data.db");
 export const filesDir = (dataDir: string) => join(dataDir, "files");
 
 /** Builds a snapshot and hands its stream to `consume` (an upload); the staging copy is removed afterwards. */
-export async function withSnapshot<T>(db: Client, dataDir: string, consume: (archive: Readable) => Promise<T>): Promise<T> {
+export async function withSnapshot<T>(db: Client, dataDir: string, data: Client | undefined, consume: (archive: Readable) => Promise<T>): Promise<T> {
   const staging = join(dataDir, ".snapshot");
   await rm(staging, { recursive: true, force: true });
   await mkdir(join(staging, "db"), { recursive: true });
@@ -22,6 +24,10 @@ export async function withSnapshot<T>(db: Client, dataDir: string, consume: (arc
   try {
     const copy = join(staging, "db", "tenant.db");
     await db.execute(`VACUUM INTO '${copy.replace(/'/g, "''")}'`);
+    if (data) {
+      const dataCopy = join(staging, "db", "data.db");
+      await data.execute(`VACUUM INTO '${dataCopy.replace(/'/g, "''")}'`);
+    }
     // The files go in through a link that tar follows; the file store itself never creates links.
     await symlink(filesDir(dataDir), join(staging, "files"));
     const archive = Readable.from(tar.c({ gzip: true, cwd: staging, follow: true, portable: true }, ["db", "files"]));

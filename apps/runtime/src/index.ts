@@ -14,7 +14,7 @@ import { Activity } from "./activity.ts";
 import { createRuntimeApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { ControlClient, RemoteFeatures } from "./control.ts";
-import { dbPath, filesDir, hasDatabase, restoreSnapshot, withSnapshot } from "./snapshot.ts";
+import { dataDbPath, dbPath, filesDir, hasDatabase, restoreSnapshot, withSnapshot } from "./snapshot.ts";
 import { controlTools } from "./tools.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 
@@ -63,6 +63,7 @@ const tenant = openTenant(config.TENANT_ID, db, {
     },
   },
   files,
+  database: { path: dataDbPath(config.DATA_DIR) },
   gotenbergUrl: config.GOTENBERG_URL,
   vitepressUrl: config.VITEPRESS_URL,
   features,
@@ -71,7 +72,7 @@ const tenant = openTenant(config.TENANT_ID, db, {
 });
 
 const activity = new Activity();
-const snapshot = (reason: string) => withSnapshot(db, config.DATA_DIR, (archive) => control.uploadBackup(archive, reason));
+const snapshot = (reason: string) => withSnapshot(db, config.DATA_DIR, tenant.data.db, (archive) => control.uploadBackup(archive, reason));
 
 const app = createRuntimeApp({
   tenant,

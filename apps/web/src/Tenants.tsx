@@ -20,6 +20,7 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   scheduler: { label: "Plánované úlohy", hint: "asistent v nastavený čas sám spustí zadaný úkol" },
   sites: { label: "Weby", hint: "publikování webu firmy ze složky www na hosting přes SFTP" },
   public: { label: "Asistenti", hint: "asistenti pro zákazníky firmy na webu, s vybranými znalostmi a nástroji" },
+  database: { label: "Databáze", hint: "tabulky, do kterých si asistent ukládá data (kontakty, zakázky…), s prohlížečem" },
   integrations: { label: "Google a Microsoft účty", hint: "asistent pracuje s poštou, kontakty a kalendářem uživatelů, kteří si účet propojí" },
 };
 
