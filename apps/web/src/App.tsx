@@ -19,6 +19,7 @@ import { ChatPane } from "./chat/ChatPane.tsx";
 import { Files, OWN_VIEWS } from "./Files.tsx";
 import { Schedules } from "./Schedules.tsx";
 import { Database } from "./Database.tsx";
+import { Dashboards } from "./Dashboards.tsx";
 import { Sites } from "./Sites.tsx";
 import { PublicAssistants } from "./PublicAssistant.tsx";
 import { PublicChat } from "./PublicChat.tsx";
@@ -428,6 +429,7 @@ function Workspace() {
           )}
           {tenant && (
             <NavSection title="Tenant">
+              <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
               {tenant.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Asistenti" icon="M2 4h12v7H6l-3 3V4z" />}
               {tenant.features.database && (
                 <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label="Databáze" icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
@@ -448,11 +450,12 @@ function Workspace() {
           )}
           {me.systemAdmin && (
             <NavSection title="Systém">
-              <NavLink active={view.kind === "tenants"} onClick={() => setView({ kind: "tenants" })} label="Tenanti" icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
+              <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
+              <NavLink active={view.kind === "web"} onClick={() => setView({ kind: "web" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
               <NavLink active={view.kind === "logs"} onClick={() => setView({ kind: "logs" })} label="Logy" icon="M3 3h10M3 6h10M3 9h7M3 12h9" />
               <NavLink active={view.kind === "metrics"} onClick={() => setView({ kind: "metrics" })} label="Metriky" icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
               <NavLink active={view.kind === "traces"} onClick={() => setView({ kind: "traces" })} label="Trasy" icon="M2 4h6M4 8h7M6 12h8" />
-              <NavLink active={view.kind === "web"} onClick={() => setView({ kind: "web" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
+              <NavLink active={view.kind === "tenants"} onClick={() => setView({ kind: "tenants" })} label="Tenanti" icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
               <NavLink
                 active={view.kind === "settings"}
                 onClick={() => setView({ kind: "settings" })}
@@ -490,7 +493,9 @@ function Workspace() {
             </button>
           </div>
         )}
-        {view.kind === "settings" ? (
+        {view.kind === "sysdash" ? (
+          me.systemAdmin ? <Dashboards key="system" system canEdit me={me.user} /> : null
+        ) : view.kind === "settings" ? (
           me.systemAdmin ? <SystemSettings /> : null
         ) : view.kind === "logs" ? (
           me.systemAdmin ? <Logs key={view.traceId ?? ""} traceId={view.traceId} onOpenTrace={(id) => setView({ kind: "traces", traceId: id })} /> : null
@@ -536,6 +541,8 @@ function Workspace() {
           ) : null
         ) : view.kind === "schedules" ? (
           tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
+        ) : view.kind === "dashboard" ? (
+          <Dashboards key={tenant.id} system={false} canEdit={isAdmin} me={me.user} />
         ) : view.kind === "database" ? (
           tenant.features.database ? <Database key={tenant.id} isAdmin={isAdmin} /> : null
         ) : view.kind === "public" ? (

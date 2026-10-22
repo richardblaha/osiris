@@ -29,12 +29,16 @@ export type View =
   | { kind: "files" }
   | { kind: "schedules" }
   | { kind: "database" }
+  /** The tenant's dashboards. */
+  | { kind: "dashboard" }
+  /** The system's dashboards (system admins). */
+  | { kind: "sysdash" }
   | { kind: "sites" }
   | { kind: "guards" }
   | { kind: "public" };
 
 /** Views of the active tenant without a record of their own. */
-const TENANT_PAGES = ["files", "schedules", "database", "sites", "guards", "public", "users", "tenant"] as const;
+const TENANT_PAGES = ["dashboard", "files", "schedules", "database", "sites", "guards", "public", "users", "tenant"] as const;
 
 const seg = encodeURIComponent;
 
@@ -47,6 +51,8 @@ export function toPath(view: View, tenant: string | undefined): string | undefin
     case "metrics":
     case "web":
       return `/system/${view.kind}`;
+    case "sysdash":
+      return "/system/dashboard";
     case "logs":
     case "traces":
       return `/system/${view.kind}${view.traceId ? `/${seg(view.traceId)}` : ""}`;
@@ -79,6 +85,7 @@ export function fromPath(path: string): { tenant?: string; view: View } | undefi
   if (top === "profile" && !a) return { view: { kind: "profile" } };
   if (top === "system") {
     if ((a === "settings" || a === "metrics" || a === "web") && !b) return { view: { kind: a } };
+    if (a === "dashboard" && !b) return { view: { kind: "sysdash" } };
     if ((a === "logs" || a === "traces") && !c) return { view: { kind: a, traceId: b } };
     if (a === "tenants" && !c) return { view: { kind: "tenants", initial: b === "new" ? null : b } };
     return undefined;

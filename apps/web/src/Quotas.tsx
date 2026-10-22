@@ -11,6 +11,7 @@ const FIELDS: { key: keyof TenantQuotas; label: string }[] = [
   { key: "tokensPerUserMonth", label: "AI tokeny za měsíc na uživatele" },
   { key: "tables", label: "Tabulky databáze" },
   { key: "databaseMb", label: "Databáze (MB)" },
+  { key: "dashboards", label: "Vlastní dashboardy" },
 ];
 
 /** The system admin's quotas of a tenant; an empty field is no limit (storage: 80 % of the disk). */
@@ -54,6 +55,7 @@ const METERS: { key: keyof TenantUsage; label: string; format: (n: number) => st
   { key: "userTokens", label: "Moje AI tento měsíc", format: (n) => compact.format(n) },
   { key: "tables", label: "Tabulky", format: String },
   { key: "database", label: "Databáze", format: fileSize },
+  { key: "dashboards", label: "Dashboardy", format: String },
 ];
 
 /** The tenant's quotas and how full they are, above the tenant in the sidebar; quotas without a limit are left out. */

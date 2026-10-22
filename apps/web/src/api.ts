@@ -53,6 +53,10 @@ import type {
   DbQueryResult,
   DbRows,
   DbTable,
+  Dashboard,
+  PanelData,
+  UsageBreakdown,
+  WebSummary,
 } from "@osiris/shared";
 import type { startRegistration } from "@simplewebauthn/browser";
 import { getAccessToken, login } from "./auth.ts";
@@ -212,6 +216,21 @@ export const api = {
     query: (sql: string) => json<DbQueryResult>("/database/query", { method: "POST", body: JSON.stringify({ sql }) }),
   },
   usage: () => json<TenantUsage>("/usage"),
+  usageBreakdown: () => json<UsageBreakdown>("/usage/breakdown"),
+  /** Dashboards of the active tenant (`/dashboards`) or of the system (`/admin/dashboards`). */
+  dashboards: (system: boolean) => {
+    const base = system ? "/admin/dashboards" : "/dashboards";
+    return {
+      list: () => json<Dashboard[]>(base),
+      create: (d: Pick<Dashboard, "name" | "definition">) => json<Dashboard>(base, { method: "POST", body: JSON.stringify(d) }),
+      update: (id: string, d: Pick<Dashboard, "name" | "definition">) => json<Dashboard>(`${base}/${id}`, { method: "PUT", body: JSON.stringify(d) }),
+      remove: (id: string) => request(`${base}/${id}`, { method: "DELETE" }),
+      web: (q: { from: number; to: number }) => json<WebSummary>(`${base}/data/web?${query(strings(q))}`),
+      logs: (q: { from: number; to: number; severity?: string; namespace?: string }) => json<PanelData>(`${base}/data/logs?${query(strings(q))}`),
+      cluster: (view: string, q: { from: number; to: number }) => json<PanelData>(`${base}/data/cluster/${view}?${query(strings(q))}`),
+      usage: () => json<PanelData>(`${base}/data/usage`),
+    };
+  },
   publicAssistants: () => json<PublicAssistantSettings[]>("/public-assistants"),
   savePublicAssistant: ({ name, ...settings }: PublicAssistantSettings) =>
     json<PublicAssistantSettings>(`/public-assistants/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(settings) }),
@@ -296,7 +315,7 @@ export const api = {
       json<TenantSummary>("/admin/tenants", { method: "POST", body: JSON.stringify({ id, name }) }),
     updateTenant: (
       id: string,
-      body: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[]; quotas?: Partial<TenantQuotas> },
+      body: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[]; quotas?: Partial<TenantQuotas>; webSites?: string[] },
     ) =>
       request(`/admin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
     deleteTenant: (id: string) => request(`/admin/tenants/${id}`, { method: "DELETE" }),

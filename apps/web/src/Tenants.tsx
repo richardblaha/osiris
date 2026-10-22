@@ -177,6 +177,7 @@ export function TenantPanel({ id, onChanged, onDeleted }: { id: string; onChange
         <h3 className="section-header mt-4">Kvóty</h3>
         <p className="mt-1 text-xs text-fg-muted">Prázdné pole = bez limitu (úložiště: 80 % disku). Plnění vidí členové nad tenantem v panelu.</p>
         <QuotaForm key={JSON.stringify(tenant.quotas)} quotas={tenant.quotas} busy={busy} onSave={(quotas) => void run(() => api.admin.updateTenant(id, { quotas }))} />
+        <WebSitesForm key={tenant.webSites.join()} sites={tenant.webSites} busy={busy} onSave={(webSites) => void run(() => api.admin.updateTenant(id, { webSites }))} />
         <div className="mt-4 flex items-center gap-3">
           <h3 className="section-header flex-1">Zálohy</h3>
           <button disabled={busy} onClick={() => void run(() => api.admin.backup(id))} className="btn-link text-sm">
@@ -366,5 +367,21 @@ export function TenantLogo({ tenant, size = 32 }: { tenant: { name: string; logo
     <span style={style} className="flex shrink-0 items-center justify-center rounded-sm bg-secondary-soft font-semibold text-secondary">
       {tenant.name.slice(0, 1).toUpperCase()}
     </span>
+  );
+}
+
+/** Which web analytics sites (web-events) the tenant sees on its Weby dashboard, besides those of its domains. */
+function WebSitesForm({ sites, busy, onSave }: { sites: string[]; busy: boolean; onSave: (sites: string[]) => void }) {
+  const [text, setText] = useState(sites.join("\n"));
+  const parsed = [...new Set(text.split(/[\s,]+/).map((s) => s.trim().toLowerCase()).filter(Boolean))];
+  return (
+    <form onSubmit={(e) => (e.preventDefault(), onSave(parsed))} className="mt-4 space-y-2">
+      <h3 className="section-header">Weby v návštěvnosti</h3>
+      <p className="text-xs text-fg-muted">Weby z Návštěvnosti, které tenant vidí na dashboardu Weby (jeden na řádek, např. k6labs.cz). Weby jeho domén vidí vždy.</p>
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} className="field w-full max-w-md font-mono text-xs" />
+      <button disabled={busy || parsed.join() === sites.join()} className="btn-secondary">
+        Uložit weby
+      </button>
+    </form>
   );
 }
