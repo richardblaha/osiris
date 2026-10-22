@@ -1,5 +1,6 @@
+import type { AgentModels } from "./model.ts";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { AIMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import type { RunnableConfig } from "@langchain/core/runnables";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { END, MessagesAnnotation, START, StateGraph, type BaseCheckpointSaver } from "@langchain/langgraph";
@@ -20,6 +21,8 @@ export interface AgentDeps {
   /** The tenant this graph serves; runs carrying another `tenant_id` are refused. */
   tenantId: string;
   model: BaseChatModel;
+  /** System-selected models for agent steps, tool follow-ups and guard checks. */
+  models?: AgentModels;
   /** Tools bound to this tenant's stores. */
   tools: StructuredToolInterface[];
   /** Tools that can change between turns or differ per user (MCP servers), resolved on every model and tool step. */
@@ -60,7 +63,9 @@ export const USER_TOKENS_EXHAUSTED = "Tvůj měsíční limit využití asistent
 export function createAgentGraph(deps: AgentDeps) {
   const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage, rules, persona, publicPrompt, publicLimit, database } =
     deps;
-  if (!model.bindTools) throw new Error("Chat model does not support tool calling");
+  for (const chat of [deps.models?.agent ?? model, deps.models?.tools ?? model]) {
+    if (!chat.bindTools) throw new Error("Chat model does not support tool calling");
+  }
   const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
 
   /** Which quota is used up: the tenant's, or the run's own (the member's, or the public assistant's); null for none. */
@@ -85,7 +90,7 @@ export function createAgentGraph(deps: AgentDeps) {
     const ctx = getRunContext(config);
     const r = (await rules?.(ctx)) ?? noRules;
     if (!hasRules(r) || !text.trim() || (await exhausted(ctx))) return null;
-    const result = await breaksRules(model, r, kind, text).catch((err) => {
+    const result = await breaksRules(deps.models?.guard ?? model, r, kind, text).catch((err) => {
       console.error("Guard check failed", err);
       return { breaks: false, tokens: 0 };
     });
@@ -130,7 +135,9 @@ export function createAgentGraph(deps: AgentDeps) {
         persona: await persona?.(ctx),
       }),
     );
-    const response = await model.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);
+    const selected = deps.models ? (ToolMessage.isInstance(state.messages.at(-1)) ? deps.models.tools : deps.models.agent) : model;
+    if (!selected.bindTools) throw new Error("Selected model does not support tool calling");
+    const response = await selected.bindTools!(await allTools(ctx)).invoke([system, ...state.messages], config);
     await count(ctx, response.usage_metadata?.total_tokens ?? 0);
     return { messages: [response] };
   };

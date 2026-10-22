@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { serve } from "@hono/node-server";
-import { createChatModel } from "@osiris/core/agent/model.ts";
+import { createAgentModels } from "@osiris/core/agent/model.ts";
 import { loadSkills } from "@osiris/core/agent/skills.ts";
 import { createDb } from "@osiris/core/db/client.ts";
 import { migrate } from "@osiris/core/db/migrate.ts";
@@ -45,8 +45,15 @@ const files = { dir: filesDir(config.DATA_DIR), maxFileBytes: config.FILES_MAX_F
 const bundledSkills = loadSkills(config.SKILLS_DIR);
 
 const features = new RemoteFeatures(control);
+const models = await createAgentModels({
+  agent: config.LLM_AGENT_MODEL ?? config.LLM_MODEL,
+  tools: config.LLM_TOOLS_MODEL ?? config.LLM_MODEL,
+  guard: config.LLM_GUARD_MODEL ?? config.LLM_MODEL,
+  persona: config.LLM_PERSONA_MODEL ?? config.LLM_MODEL,
+});
 const tenant = openTenant(config.TENANT_ID, db, {
-  model: await createChatModel(config.LLM_MODEL),
+  model: models.agent,
+  models,
   embeddings: createEmbeddings(config.EMBEDDING_MODEL),
   embeddingModel: config.EMBEDDING_MODEL,
   bundledSkills,

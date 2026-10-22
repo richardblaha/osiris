@@ -28,6 +28,10 @@ const schema = z
     TENANT_SECRETS_KEY: z.string().optional(),
 
     LLM_MODEL: z.string().default("mistralai:mistral-small-2603"),
+    LLM_AGENT_MODEL: z.string().optional(),
+    LLM_TOOLS_MODEL: z.string().optional(),
+    LLM_GUARD_MODEL: z.string().optional(),
+    LLM_PERSONA_MODEL: z.string().optional(),
     EMBEDDING_MODEL: z.string().default("mistralai:mistral-embed"),
     TIMEZONE: z.string().default("Europe/Prague"),
     SKILLS_DIR: z.string().default("./skills"),

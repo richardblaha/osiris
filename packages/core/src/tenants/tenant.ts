@@ -1,3 +1,10 @@
+import { StandardAccounts } from "../integrations/standard.ts";
+import { mailTools } from "../integrations/mail.ts";
+import { davTools } from "../integrations/dav.ts";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { getRunContext } from "../agent/context.ts";
+import type { AgentModels } from "../agent/model.ts";
 import type { EmbeddingsInterface } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { Client } from "@libsql/client";
@@ -60,6 +67,7 @@ export interface Tenant {
   siteTargets: SiteTargetStore;
   /** Users' Google and Microsoft accounts. */
   integrations: IntegrationAccounts;
+  standardAccounts: StandardAccounts;
   /** The assistant for the tenant's customers, and the inquiries it took. */
   publicAssistants: PublicAssistantStore;
   /** The VitePress builder, when there is one. */
@@ -76,12 +84,14 @@ export interface Tenant {
   /** The rules a user's runs keep to: system, tenant and the user's own. */
   rules(userId: string): Promise<GuardRules>;
   model: BaseChatModel;
+  personaModel: BaseChatModel;
   graph: AgentGraph;
 }
 
 /** Shared, tenant-independent dependencies. */
 export interface TenantDeps {
   model: BaseChatModel;
+  models?: AgentModels;
   embeddings: EmbeddingsInterface;
   embeddingModel: string;
   bundledSkills: Skill[];
@@ -166,6 +176,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     deps.integrations?.redirectUrl ?? "http://localhost:5173/integration-callback",
     deps.integrations?.fetch,
   );
+  const standardAccounts = new StandardAccounts(db, deps.secrets);
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   const vitepress = deps.vitepressUrl ? new VitepressClient(deps.vitepressUrl, deps.fetch) : undefined;
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
@@ -178,6 +189,10 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ["files", searchFilesTool(fileIndex)],
     ["sites", publishSiteTool(files, siteTargets)],
     ...(vitepress ? [["sites", buildVitepressTool(files, vitepress)] as [Feature, StructuredToolInterface]] : []),
+    ["integrations", tool(async (_, config) => JSON.stringify(await standardAccounts.list(getRunContext(config).user_id)), {
+      name: "standard_accounts", description: "Seznam mých propojených účtů pro poštu (SMTP/IMAP/POP3), CalDAV kalendář a CardDAV kontakty. Vrací názvy účtů pro ostatní nástroje.", schema: z.object({}),
+    })],
+    ...[...mailTools(standardAccounts, deps.mcp?.allowPrivate), ...davTools(standardAccounts, deps.mcp?.allowPrivate)].map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ...googleTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ...microsoftTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
     ...databaseTools(data).map((t): [Feature, StructuredToolInterface] => ["database", t]),
@@ -187,6 +202,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const graph = createAgentGraph({
     tenantId: id,
     model: deps.model,
+    models: deps.models,
     tools: [],
     // Resolved on every step, so switching a feature or a tool applies from the next step.
     dynamicTools: async (ctx) => {
@@ -203,9 +219,14 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
         return publicTools({ knowledge, inquiries, skills, notify }, assistant);
       }
       const [on, off] = await Promise.all([features.get(), features.disabledTools()]);
-      // Google and Microsoft tools only for accounts the user connected.
+      // Integration tools only for accounts the user connected.
       const connected = on.integrations ? await integrations.connected(ctx.user_id) : [];
-      const usable = (f: Feature, name: string) => f !== "integrations" || connected.some((p) => name.startsWith(`${p}_`));
+      const standard = on.integrations ? await standardAccounts.list(ctx.user_id) : [];
+      const usable = (f: Feature, name: string) =>
+        f !== "integrations" ||
+        (name === "standard_accounts" && standard.length > 0) ||
+        connected.some((p) => name.startsWith(`${p}_`)) ||
+        standard.some((a) => name.startsWith(`${a.kind}_`));
       const tools = builtins.filter(([f, t]) => on[f] && !off.includes(t.name) && usable(f, t.name)).map(([, t]) => t);
       return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id))] : tools;
     },
@@ -271,6 +292,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     fileIndex,
     siteTargets,
     integrations,
+    standardAccounts,
     publicAssistants,
     inquiries,
     vitepress,
@@ -279,7 +301,8 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     profiles,
     guards,
     rules,
-    model: deps.model,
+    model: deps.models?.agent ?? deps.model,
+    personaModel: deps.models?.persona ?? deps.model,
     graph,
     init,
   };

@@ -6,6 +6,10 @@ import { FEATURE_LABELS } from "./Tenants.tsx";
 
 /** The Google and Microsoft tools (`<provider>_<area>_<action>`) are split by service. */
 const INTEGRATION_GROUPS: Record<string, string> = {
+  standard_accounts: "Propojené standardní účty",
+  mail: "Pošta SMTP / IMAP / POP3",
+  caldav: "Kalendář CalDAV",
+  carddav: "Kontakty CardDAV",
   google_mail: "Google Mail",
   google_contacts: "Google kontakty",
   google_calendar: "Google kalendář",
@@ -33,7 +37,7 @@ function groups(tools: BuiltinTool[]): Group[] {
   return FEATURES.flatMap((f) => {
     const byKey = new Map<string, Group>();
     for (const t of tools.filter((t) => t.feature === f)) {
-      const service = f === "integrations" ? t.name.split("_").slice(0, 2).join("_") : undefined;
+      const service = f === "integrations" ? (/^(mail|caldav|carddav)_/.test(t.name) ? t.name.split("_")[0] : t.name.split("_").slice(0, 2).join("_")) : undefined;
       const { key, label } = service ? { key: service, label: INTEGRATION_GROUPS[service] ?? service } : (OWN_GROUPS[t.name] ?? { key: f, label: FEATURE_LABELS[f].label });
       const group = byKey.get(key) ?? byKey.set(key, { key, label, tools: [] }).get(key)!;
       group.tools.push(t);

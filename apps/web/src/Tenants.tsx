@@ -21,7 +21,7 @@ export const FEATURE_LABELS: Record<Feature, { label: string; hint: string }> = 
   sites: { label: "Weby", hint: "publikování webu firmy ze složky www na hosting přes SFTP" },
   public: { label: "Asistenti", hint: "asistenti pro zákazníky firmy na webu, s vybranými znalostmi a nástroji" },
   database: { label: "Databáze", hint: "tabulky, do kterých si asistent ukládá data (kontakty, zakázky…), s prohlížečem" },
-  integrations: { label: "Google a Microsoft účty", hint: "asistent pracuje s poštou, kontakty a kalendářem uživatelů, kteří si účet propojí" },
+  integrations: { label: "Pošta, kontakty a kalendáře", hint: "asistent pracuje s poštou, kontakty a kalendářem uživatelů, kteří si účet propojí" },
 };
 
 /** System admins (claim role=osiris-admin) create tenants here; each tenant's detail is a `TenantPanel`. */

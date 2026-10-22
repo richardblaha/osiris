@@ -273,3 +273,34 @@ the volume no longer exists) and the next start restores it.
 - **rqlite lost entirely:** restore the newest `rqlite/osiris.sqlite3.gz` from S3 (`rqlite` CLI `.restore`, see rqlite docs).
 - **Updating:** CI pushes `:main`; `kubectl -n osiris rollout restart deploy/<service>`. To pin a release, set the
   image to `:sha-<commit>` (runtimes: `RUNTIME_IMAGE` of the operator).
+
+### Model assignments and standard accounts
+
+Chat model assignments are system environment settings. Unset role overrides inherit `LLM_MODEL`
+(default `mistralai:mistral-small-2603`):
+
+| Variable | Used for |
+| --- | --- |
+| `LLM_AGENT_MODEL` | First agent step for a user message, including tool selection |
+| `LLM_TOOLS_MODEL` | Agent steps after tool results, including further tool selection |
+| `LLM_GUARD_MODEL` | Input and final answer rule checks |
+| `LLM_PERSONA_MODEL` | Writing assistant personas |
+| `EMBEDDING_MODEL` | Knowledge vectors; default `mistralai:mistral-embed` |
+
+Chat specs accept `mistralai:…`, `openai:…`, `anthropic:…`; configure their respective
+`MISTRAL_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` in the system environment.
+The two agent models must support tool calling. Embeddings support Mistral and OpenAI.
+Locally control passes its environment to runtimes. In Kubernetes configure operator
+`RUNTIME_ENV_LLM_*` / `RUNTIME_ENV_EMBEDDING_MODEL` and `RUNTIME_SECRET_*_API_KEY`,
+then restart runtimes to apply changes. No tenant or user can override these assignments.
+
+Users connect their own named SMTP/IMAP/POP3, CalDAV and CardDAV accounts in
+Profile > Propojené účty. The existing `integrations` feature gates their routes and tools.
+Secrets are encrypted with the tenant key and are never returned by the API. SMTP uses
+implicit TLS or mandatory STARTTLS; IMAP and POP3 require implicit TLS. DAV requires
+HTTPS and a canonical URL on one origin (redirects and cross-origin discovery are refused).
+Use an application password where the provider requires it. POP3 reading uses UIDL ids
+and does not delete mail; IMAP reading does not mark messages read. DAV updates require
+the ETag returned by reading, so concurrent changes return HTTP 412 instead of being overwritten.
+Mail attachments and deletion are not currently exposed. Outgoing SMTP also requires
+that the hosting provider permits the selected port (see the Civo SMTP restriction above).

@@ -21,15 +21,21 @@
     "@modelcontextprotocol/client": "2.3.1",
     "@osiris/platform": "workspace:*",
     "@osiris/shared": "workspace:*",
+    "imapflow": "^2.5.9",
     "langchain": "^1.5.16",
+    "mailparser": "^3.10.0",
     "mustache": "4.2.0",
+    "nodemailer": "^10.1.7",
     "sharp": "0.35.5",
     "ssh2-sftp-client": "12.1.1",
+    "tsdav": "^2.5.0",
     "zod": "^4.6.5"
   },
   "devDependencies": {
+    "@types/mailparser": "^3.9.0",
     "@types/mustache": "4.2.6",
     "@types/node": "^26.6.4",
+    "@types/nodemailer": "^8.0.2",
     "@types/ssh2-sftp-client": "9.0.6",
     "typescript": "6.0.3"
   }

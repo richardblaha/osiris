@@ -1,3 +1,4 @@
+import { standardAccountSchema } from "@osiris/core/integrations/standard.ts";
 import { randomUUID } from "node:crypto";
 import type { AssistantProfile, AssistantProfiles, BuiltinTool, Guard, Guards, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UsageBreakdown, UserSettings } from "@osiris/shared";
 import { GUARD_NAME, PUBLIC_ASSISTANT_NAME, PUBLIC_TOOLS } from "@osiris/shared";
@@ -559,7 +560,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       if (quotas.tokensPerUserMonth !== null && (await tenant.usage.tokens(Date.now(), { user: user.sub })) >= quotas.tokensPerUserMonth) {
         throw new HTTPException(429, { message: USER_TOKENS_EXHAUSTED });
       }
-      const { description, tokens } = await describePersona(tenant.model, character, source);
+      const { description, tokens } = await describePersona(tenant.personaModel, character, source);
       await tenant.usage.add(tokens, Date.now(), { user: user.sub });
       return c.json<Persona>({ character, source, description });
     })
@@ -598,6 +599,22 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       if (!inquiry?.threadId) throw new HTTPException(404, { message: "Konverzace není" });
       const state = await tenant.graph.getState({ configurable: { thread_id: inquiry.threadId } });
       return c.json<ThreadMessage[]>(toThreadMessages(state.values.messages ?? []));
+    })
+
+    .get("/integrations/standard", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      return c.json(await tenant.standardAccounts.list(user.sub));
+    })
+    .put("/integrations/standard/:name", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      const name = parse(z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/).max(64), c.req.param("name"));
+      await tenant.standardAccounts.put(user.sub, name, parse(standardAccountSchema, await c.req.json()));
+      return c.json({ ok: true });
+    })
+    .delete("/integrations/standard/:name", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      await tenant.standardAccounts.delete(user.sub, c.req.param("name"));
+      return c.json({ ok: true });
     })
 
     // The caller's Google and Microsoft accounts (personal: only they connect and use them).

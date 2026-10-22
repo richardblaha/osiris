@@ -247,6 +247,9 @@ export const api = {
   setInquiryStatus: (id: string, status: Inquiry["status"]) =>
     request(`/inquiries/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ status }) }),
   inquiryMessages: (id: string) => json<ThreadMessage[]>(`/inquiries/${encodeURIComponent(id)}/messages`),
+  standardAccounts: () => json<{ name: string; kind: "mail" | "caldav" | "carddav" }[]>("/integrations/standard"),
+  saveStandardAccount: (name: string, account: unknown) => request(`/integrations/standard/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(account) }),
+  deleteStandardAccount: (name: string) => request(`/integrations/standard/${encodeURIComponent(name)}`, { method: "DELETE" }),
   integrations: () => json<Integration[]>("/integrations"),
   connectIntegration: (provider: Integration["provider"]) =>
     json<{ authorizationUrl: string }>(`/integrations/${provider}/connect`, { method: "POST" }),
