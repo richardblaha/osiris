@@ -309,6 +309,8 @@ export interface SkillSummary {
   description: string;
   /** Precedence for one name: `personal` (this user) > `tenant` (admin) > `bundled` (ships with the app). */
   source: "bundled" | Scope;
+  /** Frontmatter `requires`: offered only while the tenant has that feature (its tools). */
+  requires?: Feature;
 }
 
 export interface Skill extends SkillSummary {

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { FileError, type FileLocation, type FileStore } from "../files/store.ts";
-import type { Scope, SkillSummary } from "@osiris/shared";
+import { FEATURES, type Feature, type Scope, type SkillSummary } from "@osiris/shared";
 
 /**
  * A skill is a named set of instructions. Only name + description go into the system prompt; the model pulls
@@ -17,6 +17,8 @@ export interface Skill {
   instructions: string;
   /** Frontmatter `public: true`: the old single public assistant's skills, moved to its skill list (`migrateLegacy`). */
   public?: boolean;
+  /** Frontmatter `requires: <feature>`: the skill needs that feature's tools, so it's offered only while it's on. */
+  requires?: Feature;
 }
 
 export const SKILL_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -46,12 +48,13 @@ export function parseSkill(source: string, file = "SKILL.md"): Skill {
     if (kv) meta[kv[1]!] = kv[2]!.trim().replace(/^(["'])(.*)\1$/, "$2");
   }
 
-  const { name = "", description = "", public: open = "" } = meta;
+  const { name = "", description = "", public: open = "", requires = "" } = meta;
+  if (requires && !(FEATURES as readonly string[]).includes(requires)) throw new Error(`${file}: requires must be a feature, got "${requires}"`);
   if (!SKILL_NAME.test(name)) throw new Error(`${file}: name must be lowercase-kebab-case, got "${name}"`);
   if (!description) throw new Error(`${file}: description is required`);
   const instructions = body.trim();
   if (!instructions) throw new Error(`${file}: instructions are empty`);
-  return { name, description, instructions, ...(open === "true" ? { public: true } : {}) };
+  return { name, description, instructions, ...(open === "true" ? { public: true } : {}), ...(requires ? { requires: requires as Feature } : {}) };
 }
 
 /** Where skills live in the tenant's and each user's files: `skills/<name>/SKILL.md`. */
@@ -61,7 +64,7 @@ const locationOf = (scope: Scope, userId: string): FileLocation => (scope === "t
 
 /** A skill as its SKILL.md: frontmatter with name and description, then the instructions. */
 export const formatSkill = (s: Skill) =>
-  `---\nname: ${s.name}\ndescription: ${s.description.replace(/\s+/g, " ").trim()}\n${s.public ? "public: true\n" : ""}---\n\n${s.instructions.trim()}\n`;
+  `---\nname: ${s.name}\ndescription: ${s.description.replace(/\s+/g, " ").trim()}\n${s.public ? "public: true\n" : ""}${s.requires ? `requires: ${s.requires}\n` : ""}---\n\n${s.instructions.trim()}\n`;
 
 /**
  * Bundled skills merged with the tenant's (`skills/` in the tenant's files); the tenant's win over bundled ones of
@@ -103,8 +106,9 @@ export class SkillStore {
   /** The tenant's skills and the bundled ones it doesn't replace, one per name. */
   async list(): Promise<SkillSummary[]> {
     const merged = new Map<string, SkillSummary>();
-    for (const s of this.bundled.values()) merged.set(s.name, { name: s.name, description: s.description, source: "bundled" });
-    for (const s of (await this.read("tenant", "")).values()) merged.set(s.name, { name: s.name, description: s.description, source: "tenant" });
+    const summary = (s: Skill, source: SkillSummary["source"]): SkillSummary => ({ name: s.name, description: s.description, source, ...(s.requires ? { requires: s.requires } : {}) });
+    for (const s of this.bundled.values()) merged.set(s.name, summary(s, "bundled"));
+    for (const s of (await this.read("tenant", "")).values()) merged.set(s.name, summary(s, "tenant"));
     return [...merged.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 

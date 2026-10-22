@@ -92,3 +92,19 @@ describe("skills", () => {
     expect(() => loadSkills(join(import.meta.dirname, "../skills"))).not.toThrow();
   });
 });
+
+describe("bundled skills", () => {
+  it("load, and those needing a feature are offered only while it's on", async () => {
+    const bundled = loadSkills(join(import.meta.dirname, "..", "skills"));
+    expect(bundled.filter((s) => s.requires === "database").map((s) => s.name)).toEqual(["crm", "kontakty"]);
+
+    const { tenants, model } = createTestTenants([new AIMessage("Ahoj"), new AIMessage("Ahoj")], bundled);
+    const a = await tenants.get("a");
+    const ctx = { thread_id: "t", tenant_id: "a", user_id: "u", role: "member" as const, channel: "web" as const };
+    await a.graph.invoke({ messages: [new HumanMessage("Ahoj")] }, { configurable: ctx });
+    expect(model.calls[0]?.[0]?.text).toMatch(/- kontakty: /);
+    await a.features.set({ database: false });
+    await a.graph.invoke({ messages: [new HumanMessage("Ahoj")] }, { configurable: { ...ctx, thread_id: "t2" } });
+    expect(model.calls[1]?.[0]?.text).not.toMatch(/kontakty|# DATABÁZE/);
+  });
+});
