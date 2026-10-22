@@ -49,6 +49,10 @@ import type {
   UserProfile,
   UserSettings,
   WebStats,
+  DbColumnType,
+  DbQueryResult,
+  DbRows,
+  DbTable,
 } from "@osiris/shared";
 import type { startRegistration } from "@simplewebauthn/browser";
 import { getAccessToken, login } from "./auth.ts";
@@ -91,6 +95,22 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
 }
 
 const json = async <T>(path: string, init?: RequestInit) => (await request(path, init)).json() as Promise<T>;
+
+export interface DbColumnInput {
+  name: string;
+  type: DbColumnType;
+  required?: boolean;
+  unique?: boolean;
+  references?: string | null;
+}
+
+export interface DbTableChange {
+  description?: string;
+  rename?: string;
+  addColumns?: DbColumnInput[];
+  renameColumns?: { from: string; to: string }[];
+  dropColumns?: string[];
+}
 
 /** A file the API addresses by scope and path; temp files also by the thread they belong to. */
 export interface FileRef {
@@ -176,6 +196,21 @@ export const api = {
     json<UserProfile>("/me/profile", { method: "PATCH", body: JSON.stringify(changes) }),
   savePicture: (image: Blob) => request("/me/picture", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   tools: () => json<BuiltinTool[]>("/tools"),
+  db: {
+    tables: () => json<DbTable[]>("/database/tables"),
+    createTable: (t: { name: string; description: string; columns: DbColumnInput[] }) =>
+      json<DbTable>("/database/tables", { method: "POST", body: JSON.stringify(t) }),
+    alterTable: (name: string, change: DbTableChange) => json<DbTable>(`/database/tables/${encodeURIComponent(name)}`, { method: "PATCH", body: JSON.stringify(change) }),
+    dropTable: (name: string) => request(`/database/tables/${encodeURIComponent(name)}`, { method: "DELETE" }),
+    rows: (name: string, q: { limit?: number; offset?: number; order?: string; desc?: boolean; search?: string }) =>
+      json<DbRows>(`/database/tables/${encodeURIComponent(name)}/rows?${query(strings(q))}`),
+    insert: (name: string, rows: Record<string, unknown>[]) =>
+      json<{ ids: number[] }>(`/database/tables/${encodeURIComponent(name)}/rows`, { method: "POST", body: JSON.stringify({ rows }) }),
+    update: (name: string, id: number, values: Record<string, unknown>) =>
+      request(`/database/tables/${encodeURIComponent(name)}/rows/${id}`, { method: "PATCH", body: JSON.stringify(values) }),
+    delete: (name: string, id: number) => request(`/database/tables/${encodeURIComponent(name)}/rows/${id}`, { method: "DELETE" }),
+    query: (sql: string) => json<DbQueryResult>("/database/query", { method: "POST", body: JSON.stringify({ sql }) }),
+  },
   usage: () => json<TenantUsage>("/usage"),
   publicAssistants: () => json<PublicAssistantSettings[]>("/public-assistants"),
   savePublicAssistant: ({ name, ...settings }: PublicAssistantSettings) =>

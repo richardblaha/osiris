@@ -28,12 +28,13 @@ export type View =
   | { kind: "traces"; traceId?: string }
   | { kind: "files" }
   | { kind: "schedules" }
+  | { kind: "database" }
   | { kind: "sites" }
   | { kind: "guards" }
   | { kind: "public" };
 
 /** Views of the active tenant without a record of their own. */
-const TENANT_PAGES = ["files", "schedules", "sites", "guards", "public", "users", "tenant"] as const;
+const TENANT_PAGES = ["files", "schedules", "database", "sites", "guards", "public", "users", "tenant"] as const;
 
 const seg = encodeURIComponent;
 

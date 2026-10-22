@@ -28,6 +28,7 @@ const LANGUAGES: Record<string, string> = {
   js: "javascript",
   json: "json",
   csv: "plaintext",
+  sql: "sql",
   txt: "plaintext",
   xml: "xml",
   svg: "xml",

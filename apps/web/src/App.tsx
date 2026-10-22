@@ -18,6 +18,7 @@ import { getAccessToken, login, logout } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
 import { Files, OWN_VIEWS } from "./Files.tsx";
 import { Schedules } from "./Schedules.tsx";
+import { Database } from "./Database.tsx";
 import { Sites } from "./Sites.tsx";
 import { PublicAssistants } from "./PublicAssistant.tsx";
 import { PublicChat } from "./PublicChat.tsx";
@@ -428,6 +429,12 @@ function Workspace() {
           {tenant && (
             <NavSection title="Tenant">
               {tenant.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Asistenti" icon="M2 4h12v7H6l-3 3V4z" />}
+              {tenant.features.database && (
+                <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label="Databáze" icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
+              )}
+              {tenant.features.scheduler && (
+                <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
+              )}
               <NavLink
                 active={view.kind === "users"}
                 onClick={() => (me.systemAdmin && void refreshTenants(), setView({ kind: "users" }))}
@@ -436,9 +443,6 @@ function Workspace() {
               />
               {tenant.features.sites && (
                 <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Weby" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
-              )}
-              {tenant.features.scheduler && (
-                <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
               )}
             </NavSection>
           )}
@@ -532,6 +536,8 @@ function Workspace() {
           ) : null
         ) : view.kind === "schedules" ? (
           tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
+        ) : view.kind === "database" ? (
+          tenant.features.database ? <Database key={tenant.id} isAdmin={isAdmin} /> : null
         ) : view.kind === "public" ? (
           tenant.features.public ? <PublicAssistants key={tenant.id} tenantId={tenant.id} isAdmin={isAdmin} /> : null
         ) : view.kind === "guards" ? (
