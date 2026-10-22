@@ -371,10 +371,14 @@ function Workspace() {
     <div className="flex h-full">
       {/* Collapsed: icons only; `side-label` parts hide. */}
       <aside data-collapsed={collapsed} className={`group/side flex shrink-0 flex-col border-r border-line bg-sidebar text-sm ${collapsed ? "w-16" : "w-72"}`}>
-        <div className={`flex items-center gap-2 pt-3 ${collapsed ? "flex-col px-2" : "px-3"}`}>
-          <img src="/logo.svg" alt="" className="h-8 w-8" />
-          {!collapsed && <span className="flex-1 text-xl font-semibold tracking-[0.2em]">OSIRIS</span>}
-          <button onClick={toggleSidebar} className="list-row p-1.5 text-fg-secondary" aria-label={collapsed ? "Rozbalit panel" : "Sbalit panel"} title={collapsed ? "Rozbalit panel" : "Sbalit panel"}>
+        <div className={`relative flex items-center gap-2 pt-3 ${collapsed ? "flex-col px-2" : "px-3"}`}>
+          {/* The logo and the name centred over the whole width; the toggle sits at the right edge. */}
+          <div className={`flex items-center gap-2 ${collapsed ? "" : "flex-1 justify-center"}`}>
+            <img src="/logo.svg" alt="" className="h-8 w-8" />
+            {/* The letter spacing also follows the last letter, so it's taken back for the centring. */}
+            {!collapsed && <span className="-mr-[0.2em] text-xl leading-none font-semibold tracking-[0.2em]">OSIRIS</span>}
+          </div>
+          <button onClick={toggleSidebar} className={`list-row p-1.5 text-fg-secondary ${collapsed ? "" : "absolute right-3"}`} aria-label={collapsed ? "Rozbalit panel" : "Sbalit panel"} title={collapsed ? "Rozbalit panel" : "Sbalit panel"}>
             <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
               <path d={collapsed ? "M2 3h12v10H2zM6 3v10M8.5 6.5 10 8l-1.5 1.5" : "M2 3h12v10H2zM6 3v10M11 6.5 9.5 8 11 9.5"} fill="none" stroke="currentColor" strokeWidth="1.3" />
             </svg>
