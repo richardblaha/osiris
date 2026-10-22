@@ -1,3 +1,8 @@
+import { ComfyUploadApi } from "../images/http.ts";
+import { ImageError } from "../images/errors.ts";
+import { imageTools } from "../agent/tools/images.ts";
+import { ImageService, type ImageOptions } from "../images/service.ts";
+import { ImageJobStore } from "../images/store.ts";
 import { chatFileTool } from "../agent/tools/chat-file.ts";
 import { MediaReader } from "../agent/attachments.ts";
 import { QuestionStore } from "../agent/questions.ts";
@@ -96,6 +101,9 @@ export interface Tenant {
 
 /** Shared, tenant-independent dependencies. */
 export interface TenantDeps {
+  images?: ImageOptions;
+  /** Optional runtime bootstrap credential; sealed into the existing tenant vault, never sent to the model. */
+  comfyApiKey?: string;
   media?: MediaReader;
   model: BaseChatModel;
   models?: AgentModels;
@@ -187,7 +195,17 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   const vitepress = deps.vitepressUrl ? new VitepressClient(deps.vitepressUrl, deps.fetch) : undefined;
   // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
+  const images = deps.images ? new ImageService(new ImageJobStore(db), files, mcp, deps.models?.tools ?? deps.model, { ...deps.images,
+    uploadApi: deps.images.uploadApi ?? (deps.images.apiUploadFallback ? new ComfyUploadApi(secrets, deps.images.uploadApiKeySecret, deps.fetch) : undefined),
+    authorize: async ctx => {
+      const on = await features.get(), q = await features.quotas();
+      if (!on.files || !on.mcp || ctx.channel === "public") throw new ImageError("IMAGE_ACCESS_DISABLED");
+      if ((q.tokensPerMonth !== null && await usage.tokens() >= q.tokensPerMonth) || (q.tokensPerUserMonth !== null && await usage.tokens(Date.now(), { user: ctx.user_id }) >= q.tokensPerUserMonth)) throw new ImageError("TOKEN_QUOTA_EXHAUSTED");
+      await deps.images?.authorize?.(ctx);
+    },
+  }, (ctx, tokens) => usage.add(tokens, Date.now(), { user: ctx.user_id })) : undefined;
   const builtins: [Feature, StructuredToolInterface][] = [
+    ...(images ? imageTools(images, files).map((t): [Feature, StructuredToolInterface] => ["files", t]) : []),
     ["knowledge", searchKnowledgeTool(knowledge)],
     ["knowledge", saveKnowledgeTool(knowledge)],
     ["skills", loadSkillTool(skills)],
@@ -244,8 +262,8 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
         (name === "standard_accounts" && standard.length > 0) ||
         connected.some((p) => name.startsWith(`${p}_`)) ||
         standard.some((a) => name.startsWith(`${a.kind}_`));
-      const tools = builtins.filter(([f, t]) => on[f] && !off.includes(t.name) && usable(f, t.name)).map(([, t]) => t);
-      return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id))] : tools;
+      const tools = builtins.filter(([f, t]) => on[f] && (!t.name.startsWith("image_") || on.mcp) && !off.includes(t.name) && usable(f, t.name)).map(([, t]) => t);
+      return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id)).filter(t => !images || !t.name.startsWith(`${deps.images?.server ?? "comfy-cloud"}_`))] : tools;
     },
     features,
     usage,
@@ -285,12 +303,21 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   });
   // Old tenants' documents and skills move to files once, then the indexes catch up with the files on disk.
   const init = async () => {
+    if (images && deps.comfyApiKey) {
+      const name = deps.images?.server ?? "comfy-cloud", keyName = deps.images?.uploadApiKeySecret ?? "COMFY_API_KEY";
+      if (!(await secrets.list("")).some(secret => secret.name === keyName)) await secrets.put(keyName, "", { value: deps.comfyApiKey, allowedHosts: ["cloud.comfy.org"], description: "Comfy Cloud runtime credential" });
+      if (!await mcpServers.get(name, "")) {
+        await mcpServers.put(name, "", { url: "https://cloud.comfy.org/mcp", auth: "headers", enabled: true, headers: { "X-API-Key": `{{secret:${keyName}}}` } });
+        mcp.invalidate("");
+      }
+    }
     await moveLegacyToFiles(db, files);
     await mergePersonalIntoTenant(db, files);
     await moveKnowledgeToDb(db, files, knowledge);
     await publicAssistants.migrateLegacy(skills);
     await guards.migrateProfiles(db);
     await indexer!.reconcile();
+    await images?.cleanup();
   };
   return {
     id,

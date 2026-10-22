@@ -1,5 +1,7 @@
 # Deployment
 
+Optional conversational image generation: [Comfy Cloud integration](images/README.md).
+
 Osiris runs in the `abydos` k3s cluster (Civo) at https://osiris.k6labs.cz. Shared services live in the `osiris`
 namespace; each tenant gets its own namespace `osiris-t-<slug>`, created by the operator.
 

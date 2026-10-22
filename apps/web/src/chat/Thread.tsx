@@ -9,7 +9,7 @@ import {
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import type { FileScope, RunStatus } from "@osiris/shared";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { api, saveBlob } from "../api.ts";
 
 /** The open thread's id (null until the first message creates it), for downloading the thread's temp files. */
@@ -30,6 +30,19 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   render_template: (a) => `Vyplňuji šablonu ${file(a, "template_scope", "template_path")}`,
   edit_text: (a) => `${a.dry_run ? "Zkouším úpravu" : "Upravuji"} ${file(a)}`,
   convert_to_pdf: (a) => `Převádím do PDF ${file(a)}`,
+  image_import: () => "Načítám referenční obrázek",
+  image_generate: () => "Vytvářím obrázek",
+  image_edit: () => "Upravuji obrázek",
+  image_variations: () => "Vytvářím variantu obrázku",
+  image_get_status: () => "Kontroluji stav tvorby obrázku",
+  image_cancel: () => "Ruším tvorbu obrázku",
+  image_get_history: () => "Procházím předchozí verze obrázků",
+  image_analyze: () => "Ověřuji vlastnosti obrázku",
+  image_capabilities: () => "Zjišťuji dostupné obrazové nástroje",
+  image_generate_spritesheet: () => "Vytvářím herní snímky a atlas",
+  image_select_revision: () => "Vybírám verzi obrázku",
+  image_contact_sheet: () => "Sestavuji přehled obrázků",
+  image_assemble_spritesheet: () => "Sestavuji obrázky do mřížky",
   resize_image: (a) => `Upravuji obrázek ${file(a)}`,
   search_files: (a) => `Hledám v souborech: „${String(a.query ?? "")}“`,
   save_knowledge: (a) => `Ukládám do znalostní báze: ${String(a.title ?? a.id ?? "")}`,
@@ -64,8 +77,26 @@ function Download({ scope, path }: { scope: FileScope; path: string }) {
   );
 }
 
+function GeneratedImage({ scope, path, mime }: { scope: FileScope; path: string; mime?: string }) {
+  const threadId = useContext(ThreadIdContext);
+  const [url, setUrl] = useState<string>();
+  useEffect(() => {
+    if (!/^image\/(png|jpeg|webp)$/.test(mime ?? "")) return;
+    let disposed = false, objectUrl: string | undefined;
+    api.downloadFile({ scope, path, thread: threadId() ?? undefined }).then(blob => {
+      if (disposed) return;
+      objectUrl = URL.createObjectURL(blob); setUrl(objectUrl);
+    }).catch(() => {});
+    return () => { disposed = true; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [scope, path, mime, threadId]);
+  return <div className="my-2">{url && <img src={url} alt="Vytvořený obrázek" className="max-h-96 max-w-full rounded border border-line-strong" />}<Download scope={scope} path={path} /></div>;
+}
+
 /** A result the tool reports as a failure: a refusal, an error, or a JSON answer with `success: false`. */
-const failed = (result: string) => /^(Nelze|Operace selhala|Chyba|Error)/.test(result) || /^\{"success":false/.test(result);
+const failed = (result: string) => {
+  if (/^(Nelze|Operace selhala|Chyba|Error)/.test(result)) return true;
+  try { const value = JSON.parse(result); return value.success === false || value.status === "failed" || !!value.error; } catch { return false; }
+};
 
 /** A JSON result or argument, indented; long values cut so a step stays readable. */
 function pretty(value: unknown): string {
@@ -94,6 +125,8 @@ function ToolCall({ toolName, args, argsText, result }: ToolCallMessagePartProps
   const output = result === undefined ? undefined : String(result);
   const state = output === undefined ? "running" : failed(output) ? "failed" : "done";
   const created = output === undefined || state === "failed" ? null : CREATED.exec(output);
+  let imageFiles: { scope: FileScope; path: string; mime?: string }[] = [];
+  if (toolName.startsWith("image_") && output) { try { const parsed = JSON.parse(output); imageFiles = parsed.artifacts ?? parsed.result?.artifacts ?? []; } catch { /* A failed tool has no files. */ } }
   let offered: { scope: FileScope; path: string } | undefined;
   if (toolName === "send_chat_file" && output) { try { offered = JSON.parse(output).file; } catch { /* Tool failure. */ } }
   return (
@@ -122,6 +155,7 @@ function ToolCall({ toolName, args, argsText, result }: ToolCallMessagePartProps
         </div>
       </details>
       {created && <Download scope={created[1] as FileScope} path={created[2]!} />}
+      {imageFiles.map(f => <GeneratedImage key={f.path} scope={f.scope} path={f.path} mime={f.mime} />)}
       {offered && <Download scope={offered.scope} path={offered.path} />}
     </div>
   );
@@ -133,11 +167,13 @@ const STATUS_LABELS: Record<RunStatus, string> = { thinking: "Přemýšlím", to
 function RunStatusLine() {
   const running = useAuiState((s) => s.message.status?.type === "running");
   const status = useAuiState((s) => s.message.metadata?.custom?.status as RunStatus | undefined);
+  const image = useAuiState((s) => s.message.metadata?.custom?.imageProgress as { status: string; progress?: { value: number; max: number } } | undefined);
   if (!running) return null;
   return (
     <div className="run-status" role="status">
       <span className="tool-spinner" aria-hidden="true" />
-      {STATUS_LABELS[status ?? "thinking"]}
+      {image && !["completed", "failed", "cancelled"].includes(image.status) ? ({ queued: "Obrázek čeká ve frontě", running: "Vytvářím obrázek", planning: "Připravuji obrázek", submitting: "Odesílám zadání obrázku", unknown: "Ověřuji stav obrázku" }[image.status] ?? "Zpracovávám obrázek") : STATUS_LABELS[status ?? "thinking"]}
+      {image?.progress && <span>{image.progress.value}/{image.progress.max}</span>}
       <span className="run-status-dots" aria-hidden="true" />
     </div>
   );

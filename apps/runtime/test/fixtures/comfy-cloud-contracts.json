@@ -1,0 +1,576 @@
+{
+  "verifiedOn": "2026-10-22",
+  "source": "Authenticated tools/list at https://cloud.comfy.org/mcp",
+  "tools": {
+    "get_job_status": {
+      "type": "object",
+      "properties": {
+        "prompt_id": {
+          "type": "string"
+        },
+        "include_workflow": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string",
+              "const": "knobs"
+            }
+          ]
+        }
+      },
+      "required": [
+        "prompt_id"
+      ]
+    },
+    "get_output": {
+      "type": "object",
+      "properties": {
+        "prompt_id": {
+          "type": "string"
+        },
+        "client_os": {
+          "default": "darwin",
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux",
+            "windows"
+          ]
+        },
+        "inline_urls": {
+          "type": "boolean"
+        },
+        "offset": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "save_to_disk": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "prompt_id"
+      ]
+    },
+    "upload_file": {
+      "type": "object",
+      "properties": {
+        "file_path": {
+          "type": "string"
+        },
+        "client_os": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux",
+            "windows"
+          ]
+        }
+      },
+      "required": [
+        "file_path",
+        "client_os"
+      ]
+    },
+    "cancel_job": {
+      "type": "object",
+      "properties": {
+        "prompt_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "prompt_id"
+      ]
+    },
+    "partner_generate": {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": [
+            "image",
+            "video",
+            "3d",
+            "svg",
+            "audio",
+            "music"
+          ]
+        },
+        "model": {
+          "type": "string"
+        },
+        "prompt": {
+          "type": "string"
+        },
+        "aspect_ratio": {
+          "type": "string"
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": -9007199254740991,
+          "maximum": 9007199254740991
+        },
+        "medias": {
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "role": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "value": {
+                "type": "string",
+                "format": "uri"
+              },
+              "prompt_id": {
+                "type": "string"
+              },
+              "output_index": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 255
+              },
+              "subfolder": {
+                "type": "string",
+                "maxLength": 512
+              },
+              "type": {
+                "type": "string",
+                "const": "input"
+              }
+            },
+            "required": [
+              "role"
+            ]
+          }
+        },
+        "params": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "client_os": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux",
+            "windows"
+          ]
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "wait_for_output": {
+          "type": "boolean"
+        },
+        "idempotency_key": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255,
+          "pattern": "^[!-~]+$"
+        }
+      },
+      "required": [
+        "type",
+        "model",
+        "client_os"
+      ]
+    },
+    "submit_batch": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "minItems": 1,
+          "maxItems": 50,
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "const": "partner_generate"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": [
+                      "image",
+                      "video",
+                      "3d",
+                      "svg",
+                      "audio",
+                      "music"
+                    ]
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "prompt": {
+                    "type": "string"
+                  },
+                  "aspect_ratio": {
+                    "type": "string"
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  "medias": {
+                    "maxItems": 16,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "role": {
+                          "type": "string",
+                          "maxLength": 64
+                        },
+                        "value": {
+                          "type": "string",
+                          "format": "uri"
+                        },
+                        "name": {
+                          "type": "string",
+                          "maxLength": 255
+                        },
+                        "subfolder": {
+                          "type": "string",
+                          "maxLength": 512
+                        },
+                        "type": {
+                          "type": "string",
+                          "const": "input"
+                        }
+                      },
+                      "required": [
+                        "role"
+                      ]
+                    }
+                  },
+                  "params": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "tool",
+                  "type",
+                  "model"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "const": "submit_workflow"
+                  },
+                  "workflow": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  },
+                  "extra_data": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "tool",
+                  "workflow"
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "tool": {
+                    "type": "string",
+                    "const": "run_template"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[A-Za-z0-9._-]+$"
+                  },
+                  "input_overrides": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "object",
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "additionalProperties": {}
+                    }
+                  },
+                  "slot_overrides": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {}
+                  }
+                },
+                "required": [
+                  "tool",
+                  "name"
+                ]
+              }
+            ]
+          }
+        },
+        "client_os": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux",
+            "windows"
+          ]
+        },
+        "confirm": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "items",
+        "client_os"
+      ]
+    },
+    "get_batch_status": {
+      "type": "object",
+      "properties": {
+        "batch_id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "batch_id"
+      ]
+    },
+    "get_batch_output": {
+      "type": "object",
+      "properties": {
+        "batch_id": {
+          "type": "string"
+        },
+        "client_os": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux",
+            "windows"
+          ]
+        },
+        "inline_urls": {
+          "type": "boolean"
+        },
+        "save_to_disk": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "batch_id",
+        "client_os"
+      ]
+    },
+    "search_templates": {
+      "type": "object",
+      "properties": {
+        "q": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 512
+        },
+        "tag": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "offset": {
+          "type": "number"
+        },
+        "detail": {
+          "type": "string",
+          "enum": [
+            "lean",
+            "full"
+          ]
+        },
+        "response_format": {
+          "type": "string",
+          "enum": [
+            "concise",
+            "detailed"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "get_template_schema": {
+      "type": "object",
+      "properties": {
+        "template_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      },
+      "required": [
+        "template_id"
+      ]
+    },
+    "run_template": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        },
+        "input_overrides": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          }
+        },
+        "slot_overrides": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {}
+        },
+        "confirm": {
+          "type": "boolean"
+        },
+        "wait_for_output": {
+          "type": "boolean"
+        },
+        "client_os": {
+          "type": "string",
+          "enum": [
+            "darwin",
+            "linux",
+            "windows"
+          ]
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  "template": {
+    "id": "image_z_image_turbo",
+    "slots": [
+      {
+        "address": "57.text",
+        "node_id": "57",
+        "input_name": "text",
+        "type": "STRING",
+        "known": true,
+        "source": "subgraph_input"
+      },
+      {
+        "address": "57.width",
+        "node_id": "57",
+        "input_name": "width",
+        "type": "INT",
+        "known": true,
+        "source": "subgraph_input"
+      },
+      {
+        "address": "57.height",
+        "node_id": "57",
+        "input_name": "height",
+        "type": "INT",
+        "known": true,
+        "source": "subgraph_input"
+      },
+      {
+        "address": "57.seed",
+        "node_id": "57",
+        "input_name": "seed",
+        "type": "INT",
+        "known": true,
+        "source": "subgraph_input"
+      },
+      {
+        "address": "57.steps",
+        "node_id": "57",
+        "input_name": "steps",
+        "type": "INT",
+        "known": true,
+        "source": "subgraph_input"
+      },
+      {
+        "address": "57.unet_name",
+        "node_id": "57",
+        "input_name": "unet_name",
+        "type": "COMBO",
+        "known": true,
+        "source": "subgraph_input"
+      },
+      {
+        "address": "57.clip_name",
+        "node_id": "57",
+        "input_name": "clip_name",
+        "type": "COMBO",
+        "known": true,
+        "source": "subgraph_input"
+      },
+      {
+        "address": "57.vae_name",
+        "node_id": "57",
+        "input_name": "vae_name",
+        "type": "COMBO",
+        "known": true,
+        "source": "subgraph_input"
+      }
+    ]
+  }
+}

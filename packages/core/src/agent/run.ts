@@ -22,12 +22,16 @@ export async function* streamRun(
 ): AsyncGenerator<RunEvent> {
   const stream = await graph.stream(
     { messages: [input ?? new HumanMessage({ content: text, additional_kwargs: { display_text: displayUserText(text) } })] },
-    { configurable: { ...ctx }, streamMode: ["messages", "updates", "tasks"], signal },
+    { configurable: { ...ctx }, streamMode: ["messages", "updates", "tasks", "custom"], signal },
   );
 
   let held = "";
   const announced = new Set<string>();
   for await (const [mode, data] of stream) {
+    if (mode === "custom") {
+      if (data && typeof data === "object" && data.type === "image-progress" && typeof data.id === "string" && typeof data.status === "string") yield data as RunEvent;
+      continue;
+    }
     if (mode === "tasks") {
       // A task's start has no result yet. The rules' nodes pass straight through when there are none.
       const status = NODE_STATUS[data.name];

@@ -23,6 +23,7 @@ export function createAdapter(
       let parts: Part[] = [];
       // What the run is doing now, for the line under the message (`metadata.custom.status`).
       let status: RunStatus | undefined;
+      let imageProgress: { id: string; status: string; progress?: { value: number; max: number } } | undefined;
       try {
         for await (const event of stream(threadId, text, abortSignal)) {
           switch (event.type) {
@@ -34,6 +35,9 @@ export function createAdapter(
                   : [...parts, { type: "text", text: event.delta }];
               break;
             }
+            case "image-progress":
+              imageProgress = event;
+              break;
             case "status":
               status = event.status;
               break;
@@ -66,7 +70,7 @@ export function createAdapter(
             case "done":
               break;
           }
-          yield { content: parts, metadata: { custom: { status: event.type === "done" ? undefined : status } } };
+          yield { content: parts, metadata: { custom: { status: event.type === "done" ? undefined : status, imageProgress: event.type === "done" ? undefined : imageProgress } } };
         }
       } finally {
         onDone();

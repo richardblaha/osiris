@@ -29,6 +29,7 @@ export type RunEvent =
   | { type: "tool-call-start"; toolCallId: string; toolName: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown> }
   | { type: "tool-result"; toolCallId: string; result: string }
+  | { type: "image-progress"; id: string; status: string; progress?: { value: number; max: number } }
   | { type: "done" }
   | { type: "error"; message: string };
 

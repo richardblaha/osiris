@@ -122,12 +122,14 @@ export function createAgentGraph(deps: AgentDeps) {
     const used = await exhausted(ctx);
     if (used) return { messages: [new AIMessage(used)] };
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.
+    const availableTools = await allTools(ctx);
     const system = new SystemMessage(
       ctx.channel === "public" && publicPrompt ? await publicPrompt(ctx) : buildSystemPrompt({
         channel: ctx.channel,
         timezone,
         knowledge: on.knowledge,
         files: on.files,
+        imageToolNames: availableTools.filter(t => t.name.startsWith("image_")).map(t => t.name),
         skills: on.skills ? (await skills?.list())?.filter((s) => !s.requires || on[s.requires]) : undefined,
         memories: on.memory ? await memory?.list(ctx.user_id) : undefined,
         userName: ctx.user_name,
@@ -152,7 +154,7 @@ export function createAgentGraph(deps: AgentDeps) {
     const question = await deps.questions?.latest(ctx.user_id, ctx.thread_id);
     const prompt = question && (question.state === "expired" || question.state === "cancelled")
       ? new SystemMessage(`${system.text}\n\nPoslední strukturovaná otázka má stav ${question.state}. Nepovažuj odpovědi na tuto starou otázku za potvrzení. Pokud je potvrzení dál potřeba, polož novou otázku nástrojem ask_user.`) : system;
-    const response = await selected.bindTools!(await allTools(ctx)).invoke([prompt, ...messages], config);
+    const response = await selected.bindTools!(availableTools).invoke([prompt, ...messages], config);
     await count(ctx, response.usage_metadata?.total_tokens ?? 0);
     return { messages: [response] };
   };

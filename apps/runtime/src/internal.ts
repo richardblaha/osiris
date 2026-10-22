@@ -65,10 +65,10 @@ export function createInternalRoutes({
     const state = await tenant.graph.getState({ configurable: { thread_id: threadId } });
     const messages = state.values.messages ?? [];
     const start = messages.findLastIndex((m: unknown) => HumanMessage.isInstance(m));
-    const calls = new Set(messages.slice(start).filter((m: unknown) => AIMessage.isInstance(m)).flatMap((m: AIMessage) => (m.tool_calls ?? []).filter(c => c.name === "send_chat_file").map(c => c.id)));
+    const calls = new Set(messages.slice(start).filter((m: unknown) => AIMessage.isInstance(m)).flatMap((m: AIMessage) => (m.tool_calls ?? []).filter(c => c.name === "send_chat_file" || ["image_generate", "image_edit", "image_variations", "image_generate_spritesheet", "image_get_status", "image_assemble_spritesheet", "image_contact_sheet"].includes(c.name)).map(c => c.id)));
     return messages.slice(start).filter((m: unknown) => ToolMessage.isInstance(m)).flatMap((m: ToolMessage) => {
       if (!calls.has(m.tool_call_id)) return [];
-      try { const v = JSON.parse(m.text); return v.file ? [v.file as { scope: "temp" | "tenant"; path: string; mime: string }] : []; } catch { return []; }
+      try { const v = JSON.parse(m.text); return v.file ? [v.file as { scope: "temp" | "tenant"; path: string; mime: string }] : (v.status === "completed" || v.artifacts ? v.artifacts ?? v.result?.artifacts ?? [] : []); } catch { return []; }
     }).slice(0, 5);
   };
 

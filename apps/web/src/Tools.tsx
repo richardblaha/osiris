@@ -38,7 +38,7 @@ function groups(tools: BuiltinTool[]): Group[] {
     const byKey = new Map<string, Group>();
     for (const t of tools.filter((t) => t.feature === f)) {
       const service = f === "integrations" ? (/^(mail|caldav|carddav)_/.test(t.name) ? t.name.split("_")[0] : t.name.split("_").slice(0, 2).join("_")) : undefined;
-      const { key, label } = service ? { key: service, label: INTEGRATION_GROUPS[service] ?? service } : (OWN_GROUPS[t.name] ?? { key: f, label: FEATURE_LABELS[f].label });
+      const { key, label } = service ? { key: service, label: INTEGRATION_GROUPS[service] ?? service } : ((t.name.startsWith("image_") ? OWN_GROUPS.resize_image : OWN_GROUPS[t.name]) ?? { key: f, label: FEATURE_LABELS[f].label });
       const group = byKey.get(key) ?? byKey.set(key, { key, label, tools: [] }).get(key)!;
       group.tools.push(t);
     }
