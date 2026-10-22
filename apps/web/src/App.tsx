@@ -440,9 +440,6 @@ function Workspace() {
                 {tenant.features.database && (
                   <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label="Databáze" icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
                 )}
-                {tenant.features.sites && (
-                  <NavLink active={view.kind === "analytics"} onClick={() => setView({ kind: "analytics" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
-                )}
                 {tenant.features.scheduler && (
                   <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
                 )}
@@ -454,6 +451,9 @@ function Workspace() {
                 />
                 {tenant.features.sites && (
                   <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Weby" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
+                )}
+                {tenant.features.sites && (
+                  <NavLink active={view.kind === "analytics"} onClick={() => setView({ kind: "analytics" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
                 )}
               </NavSection>
             )}
