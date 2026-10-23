@@ -72,7 +72,7 @@ const schema = z
     K8S_NAMESPACE: z.string().default("osiris"),
     RUNTIME_PORT: z.coerce.number().int().default(8080),
     // Local orchestrator: the runtime entry point and where runtimes keep their data.
-    LOCAL_RUNTIME_ENTRY: z.string().default("../runtime/src/index.ts"),
+    LOCAL_RUNTIME_ENTRY: z.string().default("../../apps/osiris/src/index.ts"),
     LOCAL_RUNTIME_DATA_DIR: z.string().default("./data/runtimes"),
     LOCAL_RUNTIME_BASE_PORT: z.coerce.number().int().default(4100),
     // Where runtimes reach control (local orchestrator passes it on).

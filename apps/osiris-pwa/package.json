@@ -1,5 +1,5 @@
 {
-  "name": "@osiris/web",
+  "name": "@osiris/pwa",
   "private": true,
   "type": "module",
   "scripts": {

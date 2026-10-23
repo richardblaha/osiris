@@ -16,18 +16,18 @@ lacks falls back to English, message by message.
 
 | Catalog | Used by | Layout |
 | --- | --- | --- |
-| `apps/web/src/locales/<lang>/<namespace>.json` | the web app | one file per namespace (roughly one per view; `common` holds shared words) |
+| `apps/osiris-pwa/src/locales/<lang>/<namespace>.json` | the web app | one file per namespace (roughly one per view; `common` holds shared words) |
 | `packages/platform/src/locales/<lang>.json` | gateway, control, runtime | API errors, WhatsApp replies, e-mails, sign-in pages |
 
 The agent's system prompts, tool descriptions and tool results (`packages/core/src/agent`) are not catalogs: they
 steer the model, so changing their language needs evaluation, not just translation. The bundled skills
-(`apps/runtime/skills`) and the legal pages (`apps/web/public/*.html`) are content and are translated separately.
+(`apps/osiris/skills`) and the legal pages (`apps/osiris-pwa/public/*.html`) are content and are translated separately.
 
 ### Adding a language
 
 1. Add its BCP 47 language subtag (for example `de`) to `LOCALES` in `packages/shared/src/i18n.ts`. If a related
    language should use it instead of English, add that to `RELATED` there.
-2. Copy `apps/web/src/locales/en/` to `apps/web/src/locales/de/` and `packages/platform/src/locales/en.json` to
+2. Copy `apps/osiris-pwa/src/locales/en/` to `apps/osiris-pwa/src/locales/de/` and `packages/platform/src/locales/en.json` to
    `packages/platform/src/locales/de.json`, then translate the values.
 3. Add zod's built-in validation messages for it to `ZOD_LOCALES` in `packages/platform/src/i18n.ts` (zod ships
    `z.locales.<lang>`).

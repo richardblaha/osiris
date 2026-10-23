@@ -6,7 +6,7 @@ export interface SiteFile {
   data: Uint8Array;
 }
 
-/** The VitePress builder (shared, no network, `apps/vitepress`): a site's source files in, the built site out. */
+/** The VitePress builder (shared, no network, `server/vitepress`): a site's source files in, the built site out. */
 export class VitepressClient {
   private readonly base: string;
 

@@ -10,12 +10,12 @@ The UI and the services' messages are available in English (the default) and Cze
 
 | Path | What it is |
 | --- | --- |
-| `apps/gateway` | The only entry from the internet: sign-in passthrough, access checks, routing to control and project runtimes |
-| `apps/control` | OpenID Connect provider, users, projects, WhatsApp, scheduler, backups, dashboards |
-| `apps/runtime` | One process per project: the agent and the project's API, database and files |
-| `apps/operator` | Kubernetes operator for `Project` resources (scale to zero, snapshots) |
-| `apps/web` | React web app (Assistant UI) |
-| `apps/sites`, `apps/vitepress`, `apps/web-events` | Project websites, the VitePress builder, cookieless web analytics |
+| `server/gateway` | The only entry from the internet: sign-in passthrough, access checks, routing to control and project runtimes |
+| `server/control` | OpenID Connect provider, users, projects, WhatsApp, scheduler, backups, dashboards |
+| `apps/osiris` | One process per project: the agent and the project's API, database and files |
+| `server/operator` | Kubernetes operator for `Project` resources (scale to zero, snapshots) |
+| `apps/osiris-pwa` | React web app (Assistant UI) |
+| `server/sites`, `server/vitepress`, `server/web-events` | Project websites, the VitePress builder, cookieless web analytics |
 | `packages/shared` | Types shared with the web app, locale helpers |
 | `packages/platform` | Service plumbing: internal JWT, rqlite, object storage, telemetry, service message catalogs |
 | `packages/core` | The agent: graph, tools, checkpointer, RAG, MCP, vault, files |

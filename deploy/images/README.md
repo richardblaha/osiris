@@ -30,7 +30,7 @@ IMAGE_RETENTION_DAYS=30
 
 Local child runtimes inherit control's environment. For Kubernetes, use the operator's existing passthrough: `RUNTIME_ENV_IMAGE_GENERATION_ENABLED=true`, other `RUNTIME_ENV_IMAGE_*` settings, and `RUNTIME_SECRET_COMFY_API_KEY` when using key bootstrap. The operator updates project ConfigMaps/Secrets and restarts runtimes on configuration changes. Configuration does not grant a Comfy subscription or credits.
 
-The official [MCP reference](https://docs.comfy.org/agent-tools/mcp) documents the endpoint and available tools. Authenticated discovery was also performed against the user's account; sanitized input-schema fixtures are in `apps/runtime/test/fixtures/comfy-cloud-contracts.json`. MCP definitions are still discovered at runtime rather than frozen to these fixtures.
+The official [MCP reference](https://docs.comfy.org/agent-tools/mcp) documents the endpoint and available tools. Authenticated discovery was also performed against the user's account; sanitized input-schema fixtures are in `apps/osiris/test/fixtures/comfy-cloud-contracts.json`. MCP definitions are still discovered at runtime rather than frozen to these fixtures.
 
 ## Native tools
 
@@ -113,19 +113,19 @@ Precise pixel preservation is guaranteed only by deterministic copying/compositi
 ## Tests and troubleshooting
 
 ```bash
-pnpm --filter @osiris/runtime exec vitest run test/images.test.ts test/images-advanced.test.ts test/images-execution.test.ts test/images-contracts.test.ts test/chat-attachments.test.ts
-pnpm --filter @osiris/runtime typecheck
-pnpm --filter @osiris/web typecheck
+pnpm --filter @osiris/agent exec vitest run test/images.test.ts test/images-advanced.test.ts test/images-execution.test.ts test/images-contracts.test.ts test/chat-attachments.test.ts
+pnpm --filter @osiris/agent typecheck
+pnpm --filter @osiris/pwa typecheck
 ```
 
 Routine tests mock MCP/model/network responses, include sanitized authenticated contract fixtures, and never spend image credits. Optional live checks are separately gated:
 
 ```bash
 # COMFY_API_KEY or COMFY_TEST_API_KEY and normal chat-model credentials must be supplied securely.
-COMFY_LIVE_TEST=1 pnpm --filter @osiris/runtime exec vitest run test/images-live.test.ts
-COMFY_LIVE_UPLOAD=1 pnpm --filter @osiris/runtime exec vitest run test/images-live.test.ts
+COMFY_LIVE_TEST=1 pnpm --filter @osiris/agent exec vitest run test/images-live.test.ts
+COMFY_LIVE_UPLOAD=1 pnpm --filter @osiris/agent exec vitest run test/images-live.test.ts
 # Paid: one small submission, zero refinements. Failed checks retain /tmp DB state for reconciliation.
-COMFY_LIVE_GENERATE=1 pnpm --filter @osiris/runtime exec vitest run test/images-live.test.ts
+COMFY_LIVE_GENERATE=1 pnpm --filter @osiris/agent exec vitest run test/images-live.test.ts
 ```
 
 Use Node ≥24 as required by the project. This workspace's installed Node 22.22.1 and broken pnpm launcher required invoking installed Vitest/TypeScript entry points directly; production requirements are unchanged. The OAuth regression fixture needs loopback access.

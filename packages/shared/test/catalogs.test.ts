@@ -100,7 +100,7 @@ function references(sources: string[]) {
 function serverCatalog(): Catalog {
   const dir = join(ROOT, "packages/platform/src/locales");
   const languages = readdirSync(dir).map((f) => f.replace(/\.json$/, ""));
-  const sources = ["apps/control/src", "apps/gateway/src", "apps/runtime/src", "packages/core/src", "packages/platform/src"];
+  const sources = ["server/control/src", "server/gateway/src", "apps/osiris/src", "packages/core/src", "packages/platform/src"];
   const refs = references(sources);
   return {
     name: "services (packages/platform/src/locales)",
@@ -112,15 +112,15 @@ function serverCatalog(): Catalog {
 }
 
 function webCatalog(): Catalog {
-  const dir = join(ROOT, "apps/web/src/locales");
+  const dir = join(ROOT, "apps/osiris-pwa/src/locales");
   const languages = readdirSync(dir);
-  const refs = references(["apps/web/src"]);
+  const refs = references(["apps/osiris-pwa/src"]);
   // <Trans ns="x" i18nKey="y">: the key alone, with its namespace beside it.
   const trans = new Set([...refs.files.values()].flatMap((code) => [...code.matchAll(/ns="(\w+)"\s+i18nKey=(?:"([\w.]+)"|\{[^}]*?"([\w.]+)"\s*:\s*"([\w.]+)"\})/g)].flatMap((m) => [m[2], m[3], m[4]].filter(Boolean).map((k) => `${m[1]}:${k}`))));
   return {
-    name: "web app (apps/web/src/locales)",
+    name: "web app (apps/osiris-pwa/src/locales)",
     languages,
-    sources: ["apps/web/src"],
+    sources: ["apps/osiris-pwa/src"],
     files: (lang) => {
       const out: Messages = {};
       for (const file of readdirSync(join(dir, lang))) {

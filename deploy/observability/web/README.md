@@ -18,12 +18,12 @@ consent banner.
                        Osiris System > Traffic (control → /api/admin/telemetry/web)  ·  grafana-dashboard.json
 ```
 
-- **Script** (`apps/web-events/src/e.js`, ~0.6 kB gzip): sends a pageview on load and on every SPA navigation
+- **Script** (`server/web-events/src/e.js`, ~0.6 kB gzip): sends a pageview on load and on every SPA navigation
   (`pushState`, `replaceState`, `popstate`; the same path twice in a row once), with `navigator.sendBeacon` or
   `fetch(…, { keepalive })`. Silent with Do Not Track, for automated browsers (`navigator.webdriver`), on localhost and
   `file://`. Custom events: `window.wa?.event("signup", { plan: "pro" })` (at most 10 props). The path is `/_e`, not
   "analytics" or "track", so blockers don't catch it by name.
-- **Service** (`apps/web-events`, TypeScript like the rest of Osiris): `GET /_e/e.js`, `POST /_e`, `GET /healthz`.
+- **Service** (`server/web-events`, TypeScript like the rest of Osiris): `GET /_e/e.js`, `POST /_e`, `GET /healthz`.
   It accepts a site from the allowlist (ConfigMap `web-events`, `SITES`) only when the page's URL and the request's
   Host are both among that site's hosts, the body is at most 4 kB, and it matches the schema. Bots (User-Agent
   patterns, none at all) and `DNT: 1` / `Sec-GPC: 1` are dropped. Each event gets the browser, OS and device (from the

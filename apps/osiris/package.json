@@ -1,5 +1,5 @@
 {
-  "name": "@osiris/runtime",
+  "name": "@osiris/agent",
   "private": true,
   "type": "module",
   "scripts": {

@@ -13,7 +13,7 @@ const schema = z
     CDN_PROXIES: z.string().default(""),
     PORT: z.coerce.number().int().default(3001),
     CORS_ORIGIN: z.string().default("http://localhost:5173"),
-    // Built web app (apps/web/dist); unset in development, where Vite serves it.
+    // Built web app (apps/osiris-pwa/dist); unset in development, where Vite serves it.
     STATIC_DIR: z.string().optional(),
     // A GoatCounter site (e.g. https://osiris.stats.k6labs.cz) the web app counts its visits to; unset = no counting.
     GOATCOUNTER_URL: z.url().optional().transform((v) => v?.replace(/\/$/, "")),
