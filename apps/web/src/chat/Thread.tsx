@@ -124,7 +124,7 @@ function ToolCall(props: ToolCallMessagePartProps) {
   // A workflow's diagram, live while it runs, then above its result (or its approval question).
   return (
     <>
-      <WorkflowDiagram view={workflow} />
+      <WorkflowDiagram view={workflow} running={props.result === undefined} />
       <ToolStep {...props} />
     </>
   );

@@ -68,7 +68,7 @@ async function setup(script: (string | object)[], react: ReactDelegate = async (
   const calls: string[] = [];
   const graph = createOrchestratorGraph({
     model: new ScriptModel(script),
-    react: async (goal, cfg, key) => (calls.push(key), react(goal, cfg, key)),
+    react: async (goal, cfg, key, progress) => (calls.push(key), react(goal, cfg, key, progress)),
     checkpointer: new LibSQLSaver(await createTestDb()),
   });
   return { graph, calls };
@@ -114,12 +114,29 @@ describe("orchestrator", () => {
       ...Array.from({ length: MAX_REPAIRS + 1 }, () => "DELETE FROM t"),
       "Nepovedlo se.",
     ]);
-    await graph.invoke(input("dotaz"), config());
-    const { results, verdict } = (await graph.getState(config())).values;
+    const events = await collect(streamTelemetry(graph, input("dotaz"), config()));
+    const { results, verdict, messages } = (await graph.getState(config())).values;
     expect(results.sql).toMatchObject({ status: "failed", attempts: MAX_REPAIRS + 1 });
     expect(results.dalsi!.status).toBe("skipped");
     expect(verdict).toEqual({ ok: false, failed: ["sql", "dalsi"] });
     expect(calls).toEqual([]);
+    // The step that never ran ends skipped in the diagram, not waiting, and the answer says what wasn't done.
+    expect(events.filter((e) => e.nodeId === "dalsi").at(-1)).toMatchObject({ status: "skipped" });
+    expect(messages.at(-1)!.text).toMatch(/^Neprovedeno: sql \(selhalo\); dalsi \(nespuštěno\)\.\n\nNepovedlo se\.$/);
+  });
+
+  it("reports what a ReAct step is doing while it runs", async () => {
+    const { graph } = await setup([{ rationale: "x", steps: [step({ id: "hledej", pattern: "ReAct" })] }], async (_goal, _config, _key, progress) => {
+      progress?.("Nástroj: search_knowledge");
+      return "nalezeno";
+    });
+    const events = await collect(streamTelemetry(graph, input("najdi"), config()));
+    expect(events.filter((e) => e.nodeId === "hledej").map((e) => [e.status, e.message])).toEqual([
+      ["pending", "hledej"],
+      ["running", "hledej"],
+      ["running", "Nástroj: search_knowledge"],
+      ["success", "hledej"],
+    ]);
   });
 
   it("maps items in parallel through the agent and reduces them in order", async () => {

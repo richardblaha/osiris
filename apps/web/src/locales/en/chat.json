@@ -35,7 +35,7 @@
     "build_vitepress_site": "Building website {{site}}",
     "publish_site": "Publishing website {{target}}",
     "http_request": "Calling {{method}} {{host}}",
-    "run_workflow": "Running a workflow",
+    "run_workflow": "Workflow",
     "run_workflow_resume": "Continuing the workflow"
   },
   "download": "Download {{name}}",
@@ -112,8 +112,14 @@
       "running": "running",
       "success": "done",
       "failed": "failed",
-      "waiting_approval": "needs approval"
-    }
+      "waiting_approval": "needs approval",
+      "skipped": "skipped"
+    },
+    "now": "Now: {{node}} · {{message}} · {{seconds}} s ago",
+    "failedCount_one": "{{count}} failed",
+    "failedCount_other": "{{count}} failed",
+    "skippedCount_one": "{{count}} skipped",
+    "skippedCount_other": "{{count}} skipped"
   },
   "scratchpad": {
     "open": "Chat files",

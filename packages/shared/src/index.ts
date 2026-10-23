@@ -755,7 +755,8 @@ export const QUESTION_TOOLS: readonly string[] = ["ask_user", "run_workflow"];
 /** Agent orchestration patterns (`@osiris/core/agent/orchestrator`). `Composite`: a plan mixing several of them. */
 export type AgentPattern = "ReAct" | "PEV" | "JEV" | "MapReduce" | "Reflexion" | "HITL" | "Composite";
 export type AgentPhase = "Router" | "Plan" | "Judge" | "Execute" | "Verify" | "Critic" | "Map" | "Reduce" | "HumanApproval" | "Complete";
-export type AgentNodeStatus = "pending" | "running" | "success" | "failed" | "waiting_approval";
+/** `skipped`: never ran (what it needed failed or was rejected, or the workflow ended without it). */
+export type AgentNodeStatus = "pending" | "running" | "success" | "failed" | "waiting_approval" | "skipped";
 
 /** The graph the UI draws: sent once with the router's result, before any step runs. */
 export interface AgentGraphTopology {
@@ -782,6 +783,8 @@ export interface WorkflowView {
   pattern: AgentPattern;
   topology: AgentGraphTopology;
   nodes: Record<string, { status: AgentNodeStatus; message: string }>;
+  /** What happened last, for a line under the diagram: the user sees the workflow is busy and with what. */
+  latest?: { nodeId: string; status: AgentNodeStatus; message: string; at: number };
 }
 
 const isNodeState = (v: unknown): v is WorkflowView["nodes"][string] =>
@@ -800,10 +803,20 @@ export function applyTelemetry(view: WorkflowView | undefined, e: AgentTelemetry
       nodes[n.id] = isNodeState(r) ? r : { status: "pending", message: n.label };
     }
     nodes[e.nodeId] = { status: e.status, message: e.message };
-    return { pattern: e.pattern, topology: e.activeGraphTopology, nodes };
+    return { pattern: e.pattern, topology: e.activeGraphTopology, nodes, latest: latestOf(e) };
   }
   if (!view || !view.nodes[e.nodeId]) return view;
-  return { ...view, nodes: { ...view.nodes, [e.nodeId]: { status: e.status, message: e.message } } };
+  return { ...view, nodes: { ...view.nodes, [e.nodeId]: { status: e.status, message: e.message } }, latest: latestOf(e) };
+}
+
+const latestOf = (e: AgentTelemetryEvent): WorkflowView["latest"] => ({ nodeId: e.nodeId, status: e.status, message: e.message, at: e.timestamp });
+
+/** The view of a workflow that ended: whatever hadn't run by then never will. */
+export function finishedView(view: WorkflowView): WorkflowView {
+  const nodes = Object.fromEntries(
+    Object.entries(view.nodes).map(([id, n]) => [id, n.status === "pending" || n.status === "running" ? { ...n, status: "skipped" as const } : n]),
+  );
+  return { ...view, nodes };
 }
 
 /** The view as stored with a tool result, or undefined for anything else. */

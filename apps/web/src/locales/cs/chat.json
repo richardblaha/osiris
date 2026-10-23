@@ -35,8 +35,8 @@
     "build_vitepress_site": "Sestavuji web {{site}}",
     "publish_site": "Publikuji web {{target}}",
     "http_request": "Volám {{method}} {{host}}",
-    "run_workflow": "Spouštím postup",
-    "run_workflow_resume": "Pokračuji v postupu"
+    "run_workflow": "Řízený postup",
+    "run_workflow_resume": "Pokračování postupu"
   },
   "download": "Stáhnout {{name}}",
   "generatedImage": "Vytvořený obrázek",
@@ -114,8 +114,18 @@
       "running": "běží",
       "success": "hotovo",
       "failed": "selhalo",
-      "waiting_approval": "čeká na schválení"
-    }
+      "waiting_approval": "čeká na schválení",
+      "skipped": "přeskočeno"
+    },
+    "now": "Teď: {{node}} · {{message}} · před {{seconds}} s",
+    "failedCount_one": "{{count}} selhal",
+    "failedCount_few": "{{count}} selhaly",
+    "failedCount_many": "{{count}} selhalo",
+    "failedCount_other": "{{count}} selhalo",
+    "skippedCount_one": "{{count}} přeskočen",
+    "skippedCount_few": "{{count}} přeskočeny",
+    "skippedCount_many": "{{count}} přeskočeno",
+    "skippedCount_other": "{{count}} přeskočeno"
   },
   "scratchpad": {
     "open": "Soubory konverzace",

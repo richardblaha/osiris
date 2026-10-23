@@ -27,17 +27,35 @@ export function isolated<T>(run: () => Promise<T>): Promise<T> {
   return AsyncLocalStorageProviderSingleton.getInstance().run(undefined, run);
 }
 
+/** A step's own agent run gives up after this long, so one stuck model call can't hold the whole workflow. */
+export const STEP_TIMEOUT_MS = 5 * 60_000;
+
 /**
  * The existing ReAct agent as a delegate: a step runs as its own thread (`<thread>:<key>`) with the run's identity,
- * so guards, quotas, tools and history work exactly as in a chat.
+ * so guards, quotas, tools and history work exactly as in a chat. Each tool it calls is reported to `progress`.
  */
 export function reactFromAgentGraph(agent: AgentGraph): ReactDelegate {
-  return async (goal, config, key) => {
+  return async (goal, config, key, progress) => {
     const ctx = getRunContext(config);
     // Only the run's identity, not the parent's Pregel internals: the agent is its own graph with its own checkpoints.
     const configurable: RunContext = { thread_id: `${ctx.thread_id}:${key}`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, assistant: ctx.assistant, user_name: ctx.user_name, locale: ctx.locale, workflow: true, scratch_thread: scratchThread(ctx) };
-    const state = await isolated(() => agent.invoke({ messages: [new HumanMessage(goal)] }, { configurable, signal: config.signal }));
-    return state.messages.at(-1)?.text ?? "";
+    const timeout = AbortSignal.timeout(STEP_TIMEOUT_MS);
+    const signal = config.signal ? AbortSignal.any([config.signal, timeout]) : timeout;
+    let answer = "";
+    try {
+      await isolated(async () => {
+        const stream = await agent.stream({ messages: [new HumanMessage(goal)] }, { configurable, signal, streamMode: "values" });
+        for await (const state of stream) {
+          const last = state.messages.at(-1);
+          if (AIMessage.isInstance(last) && last.tool_calls?.length) progress?.(`Nástroj: ${last.tool_calls.map((c) => c.name).join(", ")}`);
+          answer = last?.text ?? "";
+        }
+      });
+    } catch (err) {
+      if (timeout.aborted) throw new Error(`Krok nedoběhl do ${STEP_TIMEOUT_MS / 60_000} minut.`);
+      throw err;
+    }
+    return answer;
   };
 }
 
@@ -99,7 +117,10 @@ export function createOrchestratorGraph(deps: OrchestratorDeps & { checkpointer?
     const context = brief(step, state.results);
     if (step.pattern === "ReAct") {
       const goal = context ? `${step.goal}\n\n${context}` : step.goal;
-      const output = await traced(config, { pattern: "ReAct", phase: "Execute", nodeId: step.id, message: step.goal }, () => deps.react(goal, config, step.id));
+      const at = { pattern: "ReAct" as const, phase: "Execute" as const, nodeId: step.id };
+      const output = await traced(config, { ...at, message: step.goal }, () =>
+        deps.react(goal, config, step.id, (message) => emit(config, { ...at, status: "running", message })),
+      );
       return { status: "success", output };
     }
     if (step.pattern === "MapReduce") {
@@ -124,10 +145,20 @@ export function createOrchestratorGraph(deps: OrchestratorDeps & { checkpointer?
     return { results: Object.fromEntries(done) };
   };
 
-  /** PEV's verify: deterministic over the whole plan; unreachable steps are marked skipped. */
+  /** PEV's verify: deterministic over the whole plan; steps that never ran are marked skipped, in the diagram too. */
   const verify = (state: RootState, config: RunnableConfig) => {
     const skipped = Object.fromEntries(state.plan.filter((s) => !state.results[s.id]).map((s): [string, StepResult] => [s.id, { status: "skipped", output: "Nespuštěno: předchozí krok neuspěl." }]));
     const results = { ...state.results, ...skipped };
+    const topology = planTopology(state.plan, state.pattern);
+    for (const step of state.plan) {
+      const status = results[step.id]!.status;
+      if (status !== "skipped" && status !== "rejected") continue;
+      // A rejected step's approval node already shows the rejection; the rest of it never ran.
+      for (const node of topology.nodes) {
+        if (node.id.split("/")[0] !== step.id || (status === "rejected" && node.type === "HumanApproval")) continue;
+        emit(config, { pattern: step.pattern, phase: node.type, nodeId: node.id, status: "skipped", message: status === "rejected" ? "Zamítnuto uživatelem" : "Nespuštěno: předchozí krok neuspěl" });
+      }
+    }
     const failed = state.plan.filter((s) => results[s.id]!.status !== "success").map((s) => s.id);
     emit(config, { pattern: state.pattern, phase: "Verify", nodeId: "verify", status: failed.length ? "failed" : "success", message: failed.length ? `Neuspělo: ${failed.join(", ")}` : "Všechny kroky uspěly", payload: { results } });
     return { results: skipped, verdict: { ok: !failed.length, failed } };
@@ -139,8 +170,18 @@ export function createOrchestratorGraph(deps: OrchestratorDeps & { checkpointer?
       const only = state.plan.length === 1 ? state.results[state.plan[0]!.id] : undefined;
       if (only) return { messages: [new AIMessage(only.status === "success" ? only.output : `Úkol se nepodařilo dokončit: ${only.output}`)] };
       const request = state.messages.findLast((m) => HumanMessage.isInstance(m))?.text ?? "";
-      const report = state.plan.map((s) => `## ${s.id} (${state.results[s.id]!.status}): ${s.goal}\n${state.results[s.id]!.output}`).join("\n\n");
-      return { messages: [new AIMessage(await text(deps, "Odpověz uživateli v jazyce jeho požadavku na základě výsledků kroků. Neuspělé či zamítnuté kroky přiznej.", `Požadavek: ${request}\n\n${report}`, config))] };
+      const label: Record<StepResult["status"], string> = { success: "HOTOVO", failed: "SELHALO", rejected: "ZAMÍTNUTO UŽIVATELEM", skipped: "NESPUŠTĚNO" };
+      const report = state.plan.map((s) => `## ${s.id} [${label[state.results[s.id]!.status]}]: ${s.goal}\n${state.results[s.id]!.output}`).join("\n\n");
+      const summary = await text(
+        deps,
+        "Odpověz uživateli v jazyce jeho požadavku na základě výsledků kroků. Použij jen výsledky kroků HOTOVO. U kroků SELHALO, ZAMÍTNUTO či NESPUŠTĚNO jasně řekni, že se neprovedly a proč; nepředstírej jejich výsledek.",
+        `Požadavek: ${request}\n\n${report}`,
+        config,
+      );
+      // What didn't get done is stated by the workflow itself, whatever the summary makes of it.
+      const missed = state.plan.filter((s) => state.results[s.id]!.status !== "success");
+      const note = missed.length ? `Neprovedeno: ${missed.map((s) => `${s.goal} (${label[state.results[s.id]!.status].toLowerCase()})`).join("; ")}.\n\n` : "";
+      return { messages: [new AIMessage(`${note}${summary}`)] };
     });
 
   const next = (state: RootState) => (readySteps(state.plan, state.results).length ? "approval" : "verify");

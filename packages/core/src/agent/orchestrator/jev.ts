@@ -97,7 +97,7 @@ export function createJevGraph(deps: OrchestratorDeps) {
     const critic = s.mode === "Reflexion";
     return traced(config, at(s, critic ? "critic" : "evaluate", critic ? "Critic" : "Judge", "Hodnotím výsledek"), async () => {
       const verdict = await structured(deps, Evaluation, "evaluation",
-        "Jsi přísný hodnotitel. Posuď výsledek podle kritérií. Přijmi ho jen tehdy, když splňuje všechna. Ve feedback uveď konkrétně, co je špatně.",
+        "Jsi hodnotitel. Posuď výsledek jen podle stanovených kritérií. Přijmi ho, když všechna splňuje; zamítni ho jen kvůli porušenému kritériu, ne kvůli stylu, formátování nebo možným vylepšením. Ve feedback uveď konkrétně, které kritérium je porušené a jak to opravit.",
         `${brief(s)}\n\nKritéria:\n${s.criteria.map((c) => `- ${c}`).join("\n")}\n\nVýsledek:\n${s.artifact}`, config);
       return verdict.accepted ? { status: "success" as const, lastFailure: null } : fail(s, `zamítnut: ${verdict.feedback}`);
     }, (r) => (r.lastFailure ? { status: "failed", message: r.lastFailure, payload: { attempt: s.attempts } } : {}));

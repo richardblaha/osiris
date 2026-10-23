@@ -1,7 +1,14 @@
 import type { ChatModelAdapter, ThreadAssistantMessagePart, ThreadMessageLike } from "@assistant-ui/react";
-import { applyTelemetry, asWorkflowView, QUESTION_TOOLS, type RunStatus, type ThreadMessage } from "@osiris/shared";
+import { applyTelemetry, asWorkflowView, finishedView, QUESTION_TOOLS, type RunStatus, type ThreadMessage } from "@osiris/shared";
 
 const WORKFLOW_TOOL = "run_workflow";
+
+/** A finished tool's artifact: the one it returned, else (a workflow that broke off) its live diagram, ended. */
+const ended = (live: unknown, returned: unknown) => {
+  if (returned !== undefined) return { artifact: returned };
+  const view = asWorkflowView(live);
+  return view ? { artifact: finishedView(view) } : {};
+};
 import { api } from "../api.ts";
 
 type Part = ThreadAssistantMessagePart;
@@ -66,7 +73,7 @@ export function createAdapter(
             }
             case "tool-result":
               parts = parts.map((p) =>
-                p.type === "tool-call" && p.toolCallId === event.toolCallId ? { ...p, result: event.result, ...(event.artifact === undefined ? {} : { artifact: event.artifact }) } : p,
+                p.type === "tool-call" && p.toolCallId === event.toolCallId ? { ...p, result: event.result, ...ended(p.artifact, event.artifact) } : p,
               );
               break;
             case "telemetry": {

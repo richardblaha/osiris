@@ -9,7 +9,7 @@ import type { QuestionStore } from "../questions.ts";
 import { Command, isolated, streamTelemetry, type OrchestratorGraph } from "./graph.ts";
 import type { ApprovalDecision, ApprovalRequest, RootState, StepStatus } from "./state.ts";
 import { planTopology } from "./telemetry.ts";
-import { applyTelemetry, type AgentNodeStatus, type AgentTelemetryEvent, type WorkflowView } from "@osiris/shared";
+import { applyTelemetry, finishedView, type AgentNodeStatus, type AgentTelemetryEvent, type WorkflowView } from "@osiris/shared";
 
 export const WORKFLOW_TOOL = "run_workflow";
 
@@ -27,7 +27,7 @@ async function pendingApproval(graph: OrchestratorGraph, config: RunnableConfig)
   return value?.type === "approval" ? value : null;
 }
 
-const STEP_STATUS: Record<StepStatus, AgentNodeStatus> = { success: "success", failed: "failed", rejected: "failed", skipped: "pending" };
+const STEP_STATUS: Record<StepStatus, AgentNodeStatus> = { success: "success", failed: "failed", rejected: "failed", skipped: "skipped" };
 
 /** The diagram of a workflow waiting for approval, rebuilt from its state for the call that resumes it. */
 function snapshot(state: RootState, pending: ApprovalRequest): AgentTelemetryEvent {
@@ -103,15 +103,21 @@ export function workflowTool(graph: OrchestratorGraph, questions: QuestionStore)
         write?.({ type: "telemetry", event: e });
       };
       if (resume) send(snapshot((await graph.getState(cfg)).values as RootState, pending!));
-      await isolated(async () => {
-        for await (const event of streamTelemetry(graph, input, cfg)) send(event);
-      });
+      try {
+        await isolated(async () => {
+          for await (const event of streamTelemetry(graph, input, cfg)) send(event);
+        });
+      } catch (err) {
+        // The diagram ends too, with what ran; nothing in it may look as if it were still going.
+        if (config.signal?.aborted) throw err;
+        return [`Postup selhal: ${err instanceof Error ? err.message : String(err)}`, view && finishedView(view)];
+      }
 
       const waiting = await pendingApproval(graph, cfg);
       if (waiting) return [JSON.stringify({ question: await questions.create(ctx.user_id, ctx.thread_id, approvalQuestion(waiting, ctx)) }), view];
       const { messages, plan, results } = (await graph.getState(cfg)).values as RootState;
       const steps = plan.map((s) => `${s.id}: ${results[s.id]?.status ?? "?"}`).join(", ");
-      return [`${messages.at(-1)?.text ?? ""}\n\n(Kroky postupu: ${steps})`, view];
+      return [`${messages.at(-1)?.text ?? ""}\n\n(Kroky postupu: ${steps})`, view && finishedView(view)];
     },
     {
       name: WORKFLOW_TOOL,

@@ -1,5 +1,6 @@
 import type { AgentNodeStatus, WorkflowView } from "@osiris/shared";
 import { t } from "i18next";
+import { useEffect, useState } from "react";
 
 const W = 168;
 const H = 46;
@@ -15,6 +16,7 @@ const STATUS_CLASS: Record<AgentNodeStatus, string> = {
   success: "text-success",
   failed: "text-error",
   waiting_approval: "text-warning",
+  skipped: "text-fg-muted opacity-60",
 };
 /** The run's own nodes are named by their phase; a step's by its goal. */
 const OWN = new Set(["router", "verify", "complete"]);
@@ -80,18 +82,41 @@ function layout(view: WorkflowView): Layout {
 
 const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
 
-/** A workflow's graph, each node colored by its state as the run's events arrive. */
-export function WorkflowDiagram({ view }: { view: WorkflowView }) {
+/** Seconds since `at`, ticking while `live`. */
+function useSince(at: number | undefined, live: boolean) {
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    if (!live) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [live]);
+  return at === undefined ? 0 : Math.max(0, Math.round((now - at) / 1000));
+}
+
+/**
+ * A workflow's graph, each node colored by its state as the run's events arrive, with what happened last under it
+ * (where the chat's newest lines are) while it runs. A finished one opens folded to its summary.
+ */
+export function WorkflowDiagram({ view, running }: { view: WorkflowView; running: boolean }) {
   const { pos, back, width, height } = layout(view);
   const states = Object.values(view.nodes);
-  const done = states.filter((s) => s.status === "success").length;
+  const count = (status: AgentNodeStatus) => states.filter((s) => s.status === status).length;
+  const waiting = count("waiting_approval") > 0;
+  // Busy while its tool hasn't answered; waiting for an approval is the user's turn, not work.
+  const live = running && !waiting;
+  const since = useSince(view.latest?.at, live);
+  const latestNode = view.topology.nodes.find((n) => n.id === view.latest?.nodeId);
+  const latestLabel = latestNode && (OWN.has(latestNode.id) ? t(`chat:workflow.phase.${latestNode.type}`) : latestNode.label);
+  const [open, setOpen] = useState(live || waiting);
   return (
-    <figure className="my-2 rounded-md border border-line bg-canvas p-3">
-      <figcaption className="mb-2 flex items-center gap-2 text-xs text-fg-secondary">
+    <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="my-2 rounded-md border border-line bg-canvas p-3">
+      <summary className="flex cursor-pointer flex-wrap items-center gap-x-2 gap-y-1 text-xs text-fg-secondary">
         <span className="font-medium text-fg">{t(`chat:workflow.pattern.${view.pattern}`)}</span>
-        <span>{t("chat:workflow.progress", { done, total: states.length })}</span>
-      </figcaption>
-      <div className="overflow-x-auto">
+        <span>{t("chat:workflow.progress", { done: count("success"), total: states.length })}</span>
+        {count("failed") > 0 && <span className="text-error">{t("chat:workflow.failedCount", { count: count("failed") })}</span>}
+        {count("skipped") > 0 && <span>{t("chat:workflow.skippedCount", { count: count("skipped") })}</span>}
+      </summary>
+      <div className="mt-2 overflow-x-auto">
         <svg viewBox={`-4 -4 ${width + 8} ${height + 8}`} width={width + 8} className="block max-w-none" role="img" aria-label={t("chat:workflow.label")}>
           <defs>
             <marker id="wf-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -128,6 +153,7 @@ export function WorkflowDiagram({ view }: { view: WorkflowView }) {
                   fill="var(--color-canvas)"
                   stroke="currentColor"
                   strokeWidth={state.status === "running" || state.status === "waiting_approval" ? 2.2 : 1.4}
+                  strokeDasharray={state.status === "skipped" ? "4 3" : undefined}
                   className={state.status === "running" ? "animate-pulse" : undefined}
                 />
                 <text x={10} y={17} fontSize={10} fill="currentColor">
@@ -141,6 +167,14 @@ export function WorkflowDiagram({ view }: { view: WorkflowView }) {
           })}
         </svg>
       </div>
-    </figure>
+      {(live || waiting) && view.latest && latestLabel && (
+        <p className="mt-2 flex items-center gap-2 text-xs text-fg-secondary" role="status">
+          {live && <span className="tool-spinner" aria-hidden="true" />}
+          <span className="min-w-0 truncate">
+            {t("chat:workflow.now", { node: clip(latestLabel, 40), message: clip(view.latest.message, 80), seconds: since })}
+          </span>
+        </p>
+      )}
+    </details>
   );
 }

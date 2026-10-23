@@ -14,7 +14,9 @@ export function createMapReduceGraph(deps: OrchestratorDeps) {
     const at = { pattern: "MapReduce" as const, phase: "Map" as const, nodeId: nodeId(s.stepId, "map") };
     emit(config, { ...at, status: "running", message: value, payload: { index, item: value } });
     try {
-      const output = await deps.react(`${s.goal}\n\nZpracuj pouze tuto položku: ${value}`, config, `${s.stepId}:${index}`);
+      const output = await deps.react(`${s.goal}\n\nZpracuj pouze tuto položku: ${value}`, config, `${s.stepId}:${index}`, (message) =>
+        emit(config, { ...at, status: "running", message: `${value}: ${message}`, payload: { index, item: value } }),
+      );
       emit(config, { ...at, status: "success", message: value, payload: { index, item: value, done: true } });
       return { partials: [{ index, item: value, output }] };
     } catch (err) {
