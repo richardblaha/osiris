@@ -34,7 +34,9 @@
     "cancel_schedule": "Cancelling a scheduled task",
     "build_vitepress_site": "Building website {{site}}",
     "publish_site": "Publishing website {{target}}",
-    "http_request": "Calling {{method}} {{host}}"
+    "http_request": "Calling {{method}} {{host}}",
+    "run_workflow": "Running a workflow",
+    "run_workflow_resume": "Continuing the workflow"
   },
   "download": "Download {{name}}",
   "generatedImage": "Generated image",
@@ -86,5 +88,43 @@
   "choose": "Choose…",
   "yes": "Yes",
   "no": "No",
-  "sendAnswer": "Send answer"
+  "sendAnswer": "Send answer",
+  "workflow": {
+    "label": "Workflow diagram",
+    "progress": "{{done}} of {{total}} done",
+    "pattern": {
+      "ReAct": "Agent",
+      "PEV": "Plan, execute, verify",
+      "JEV": "Judge, execute, verify",
+      "MapReduce": "Item by item",
+      "Reflexion": "Write and critique",
+      "HITL": "With approval",
+      "Composite": "Combined workflow"
+    },
+    "phase": {
+      "Router": "Routing",
+      "Plan": "Plan",
+      "Judge": "Judge",
+      "Execute": "Execute",
+      "Verify": "Verify",
+      "Critic": "Critic",
+      "Map": "Map",
+      "Reduce": "Reduce",
+      "HumanApproval": "Approval",
+      "Complete": "Done"
+    },
+    "status": {
+      "pending": "waiting",
+      "running": "running",
+      "success": "done",
+      "failed": "failed",
+      "waiting_approval": "needs approval"
+    }
+  },
+  "scratchpad": {
+    "open": "Chat files",
+    "hint": "Working files of this conversation: attachments and what the assistant made",
+    "title": "Chat files",
+    "intro": "The working files of this conversation. They're deleted with it; save what you want to keep to the tenant's files."
+  }
 }

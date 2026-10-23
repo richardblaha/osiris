@@ -95,7 +95,7 @@ export function createJevGraph(deps: OrchestratorDeps) {
   /** Judge (or Critic) against the criteria. A rejection becomes a reflection; out of attempts, the step fails. */
   const evaluate = (s: JevStateType, config: RunnableConfig) => {
     const critic = s.mode === "Reflexion";
-    return traced(config, at(s, critic ? "critic" : "judge", critic ? "Critic" : "Judge", "Hodnotím výsledek"), async () => {
+    return traced(config, at(s, critic ? "critic" : "evaluate", critic ? "Critic" : "Judge", "Hodnotím výsledek"), async () => {
       const verdict = await structured(deps, Evaluation, "evaluation",
         "Jsi přísný hodnotitel. Posuď výsledek podle kritérií. Přijmi ho jen tehdy, když splňuje všechna. Ve feedback uveď konkrétně, co je špatně.",
         `${brief(s)}\n\nKritéria:\n${s.criteria.map((c) => `- ${c}`).join("\n")}\n\nVýsledek:\n${s.artifact}`, config);
@@ -107,7 +107,7 @@ export function createJevGraph(deps: OrchestratorDeps) {
   const retryOr = (next: "evaluate" | typeof END) => (s: JevStateType) =>
     !s.lastFailure ? next : s.attempts <= MAX_REPAIRS ? "execute" : "give_up";
   const giveUp = (s: JevStateType, config: RunnableConfig) => {
-    emit(config, { ...at(s, s.mode === "Reflexion" ? "critic" : "judge", s.mode === "Reflexion" ? "Critic" : "Judge", `Vyčerpány opravy (${MAX_REPAIRS})`), status: "failed" });
+    emit(config, { ...at(s, s.mode === "Reflexion" ? "critic" : "evaluate", s.mode === "Reflexion" ? "Critic" : "Judge", `Vyčerpány opravy (${MAX_REPAIRS})`), status: "failed" });
     return { status: "failed" as const };
   };
 

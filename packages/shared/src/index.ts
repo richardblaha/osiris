@@ -12,7 +12,7 @@ export interface ThreadSummary {
 
 export type MessagePart =
   | { type: "text"; text: string }
-  | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown>; result?: string };
+  | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown>; result?: string; artifact?: unknown };
 
 export interface ThreadMessage {
   id: string;
@@ -30,7 +30,8 @@ export type RunEvent =
   /** The model has started writing a tool call (its arguments follow in `tool-call`). */
   | { type: "tool-call-start"; toolCallId: string; toolName: string }
   | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown> }
-  | { type: "tool-result"; toolCallId: string; result: string }
+  /** `artifact`: what the UI shows beside the result and the model never sees (a workflow's diagram). */
+  | { type: "tool-result"; toolCallId: string; result: string; artifact?: unknown }
   | { type: "image-progress"; id: string; status: string; progress?: { value: number; max: number } }
   /** A state change of a multi-step workflow (`run_workflow`), for the UI's live diagram. */
   | { type: "telemetry"; event: AgentTelemetryEvent }
@@ -764,4 +765,39 @@ export interface AgentTelemetryEvent {
   activeGraphTopology?: AgentGraphTopology;
   payload?: Record<string, unknown>;
   message: string;
+}
+
+/** A workflow's diagram as it stands: the planned graph and each node's latest state. */
+export interface WorkflowView {
+  pattern: AgentPattern;
+  topology: AgentGraphTopology;
+  nodes: Record<string, { status: AgentNodeStatus; message: string }>;
+}
+
+const isNodeState = (v: unknown): v is WorkflowView["nodes"][string] =>
+  !!v && typeof v === "object" && typeof (v as { status?: unknown }).status === "string" && typeof (v as { message?: unknown }).message === "string";
+
+/**
+ * The view after an event. One carrying `activeGraphTopology` starts it over (every node pending, unless its
+ * `payload.nodes` restores their states, as on resuming); the others update their node.
+ */
+export function applyTelemetry(view: WorkflowView | undefined, e: AgentTelemetryEvent): WorkflowView | undefined {
+  if (e.activeGraphTopology) {
+    const restored = e.payload?.nodes && typeof e.payload.nodes === "object" ? (e.payload.nodes as Record<string, unknown>) : {};
+    const nodes: WorkflowView["nodes"] = {};
+    for (const n of e.activeGraphTopology.nodes) {
+      const r = restored[n.id];
+      nodes[n.id] = isNodeState(r) ? r : { status: "pending", message: n.label };
+    }
+    nodes[e.nodeId] = { status: e.status, message: e.message };
+    return { pattern: e.pattern, topology: e.activeGraphTopology, nodes };
+  }
+  if (!view || !view.nodes[e.nodeId]) return view;
+  return { ...view, nodes: { ...view.nodes, [e.nodeId]: { status: e.status, message: e.message } } };
+}
+
+/** The view as stored with a tool result, or undefined for anything else. */
+export function asWorkflowView(v: unknown): WorkflowView | undefined {
+  const w = v as WorkflowView | undefined;
+  return w && typeof w === "object" && Array.isArray(w.topology?.nodes) && Array.isArray(w.topology?.edges) && w.nodes && typeof w.nodes === "object" ? w : undefined;
 }

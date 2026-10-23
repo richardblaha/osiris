@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, symlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -102,18 +102,13 @@ describe("FileStore", () => {
     expect(await code(files.write(alice, "nabidka.html", text("new"), { overwrite: false }))).toBe("exists");
   });
 
-  it("removes temp files of idle threads", async () => {
-    const { root, files } = store({ tempTtlMs: 1000 });
+  it("keeps temp files until their thread goes, and lists the threads that have any", async () => {
+    const { files } = store();
     await files.write({ scope: "temp", threadId: "old" }, "a.txt", text("aaa"));
     await files.write({ scope: "temp", threadId: "new" }, "b.txt", text("b"));
-    const past = new Date(Date.now() - 5000);
-    const oldDir = join(root, "tmp", Buffer.from("old").toString("base64url"));
-    utimesSync(join(oldDir, "a.txt"), past, past);
-    utimesSync(oldDir, past, past);
-
-    await files.sweepTemp();
-    expect(await files.list({ scope: "temp", threadId: "old" })).toEqual([]);
-    expect(await files.list({ scope: "temp", threadId: "new" })).toHaveLength(1);
+    expect((await files.tempThreads()).sort()).toEqual(["new", "old"]);
+    await files.removeTemp("old");
+    expect(await files.tempThreads()).toEqual(["new"]);
     expect(await files.usage()).toBe(1);
   });
 });

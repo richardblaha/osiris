@@ -3,7 +3,7 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import { AsyncLocalStorageProviderSingleton } from "@langchain/core/singletons";
 import { END, START, StateGraph, interrupt, isGraphBubbleUp, type BaseCheckpointSaver } from "@langchain/langgraph";
 import type { AgentTelemetryEvent } from "@osiris/shared";
-import { getRunContext, type RunContext } from "../context.ts";
+import { getRunContext, scratchThread, type RunContext } from "../context.ts";
 import type { AgentGraph } from "../graph.ts";
 import { BUILTIN_VERIFIERS, createJevGraph } from "./jev.ts";
 import { structured, text, type OrchestratorDeps, type ReactDelegate } from "./llm.ts";
@@ -35,7 +35,7 @@ export function reactFromAgentGraph(agent: AgentGraph): ReactDelegate {
   return async (goal, config, key) => {
     const ctx = getRunContext(config);
     // Only the run's identity, not the parent's Pregel internals: the agent is its own graph with its own checkpoints.
-    const configurable: RunContext = { thread_id: `${ctx.thread_id}:${key}`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, assistant: ctx.assistant, user_name: ctx.user_name, locale: ctx.locale, workflow: true };
+    const configurable: RunContext = { thread_id: `${ctx.thread_id}:${key}`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, assistant: ctx.assistant, user_name: ctx.user_name, locale: ctx.locale, workflow: true, scratch_thread: scratchThread(ctx) };
     const state = await isolated(() => agent.invoke({ messages: [new HumanMessage(goal)] }, { configurable, signal: config.signal }));
     return state.messages.at(-1)?.text ?? "";
   };

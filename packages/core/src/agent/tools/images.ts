@@ -1,6 +1,6 @@
 import { tool, type StructuredToolInterface, type ToolRunnableConfig } from "@langchain/core/tools";
 import { z } from "zod";
-import { getRunContext } from "../context.ts";
+import { getRunContext, scratchThread } from "../context.ts";
 import { ImageService, imageRequest } from "../../images/service.ts";
 import type { FileStore } from "../../files/store.ts";
 import { assembleSprites, inspectImage, compareImages, edgeContinuity, borderImageMetadata } from "../../images/processing.ts";
@@ -35,14 +35,14 @@ export function imageTools(service: ImageService, files: FileStore): StructuredT
     tool((_, config) => safe(() => service.history(getRunContext(config))), { name: "image_get_history", description: "Vrátí revize a výsledky obrázků v této konverzaci pro výběr původní nebo předchozí verze.", schema: z.object({}) }),
     tool(({ path, scope, compareTo, mask, seamless, borderSlices, question }, config) => safe(async () => {
       const ctx = getRunContext(config);
-      const { data } = await files.read(scope === "temp" ? { scope, threadId: ctx.thread_id } : { scope }, path);
+      const { data } = await files.read(scope === "temp" ? { scope, threadId: scratchThread(ctx) } : { scope }, path);
       const metadata = await inspectImage(data);
-      const source = compareTo ? (await files.read(compareTo.scope === "temp" ? { scope: "temp", threadId: ctx.thread_id } : { scope: "tenant" }, compareTo.path)).data : undefined;
-      const maskData = mask ? (await files.read(mask.scope === "temp" ? { scope: "temp", threadId: ctx.thread_id } : { scope: "tenant" }, mask.path)).data : undefined;
+      const source = compareTo ? (await files.read(compareTo.scope === "temp" ? { scope: "temp", threadId: scratchThread(ctx) } : { scope: "tenant" }, compareTo.path)).data : undefined;
+      const maskData = mask ? (await files.read(mask.scope === "temp" ? { scope: "temp", threadId: scratchThread(ctx) } : { scope: "tenant" }, mask.path)).data : undefined;
       return { ...metadata, ...(question ? { visual: await service.analyzeVisual({ path, scope }, question, config) } : {}), ...(source ? { comparison: await compareImages(source, data, maskData) } : {}), ...(seamless ? { edges: await edgeContinuity(data) } : {}), ...(borderSlices ? { borderImage: borderImageMetadata(metadata.width, metadata.height, borderSlices) } : {}) };
     }), { name: "image_analyze", description: "Ověří rozměry, formát, integritu a skutečnou průhlednost obrázku. S argumentem question také vizuálně prozkoumá obrázek existujícím modelem; nalezené souřadnice jsou přibližné.", schema: imageFile.extend({ compareTo: imageFile.optional(), mask: imageFile.optional(), seamless: z.boolean().default(false), borderSlices: padding.optional(), question: z.string().max(2000).optional() }) }),
     tool(({ paths, columns, cellWidth, cellHeight, gap }, config) => safe(async () => {
-      const ctx = getRunContext(config), loc = { scope: "temp" as const, threadId: ctx.thread_id };
+      const ctx = getRunContext(config), loc = { scope: "temp" as const, threadId: scratchThread(ctx) };
       const images: Buffer[] = []; let bytes = 0;
       for (const path of paths) { const { data } = await files.read(loc, path); bytes += data.length; if (bytes > 64 * 1024 * 1024) throw new Error("CONTACT_SHEET_INPUT_TOO_LARGE"); images.push(data); }
       const sheet = await assembleSprites(images, columns, cellWidth, cellHeight, gap);
@@ -52,7 +52,7 @@ export function imageTools(service: ImageService, files: FileStore): StructuredT
     }), { name: "image_contact_sheet", description: "Sestaví existující obrázky této konverzace do náhledové mřížky s přesným rozestupem. Neprovádí placené generování.", schema: z.object({ paths: z.array(z.string().max(512)).min(1).max(64), columns: z.number().int().min(1).max(16).default(4), cellWidth: z.number().int().min(1).max(1024).default(256), cellHeight: z.number().int().min(1).max(1024).default(256), gap: z.number().int().min(0).max(128).default(8) }) }),
     tool(({ paths, columns, cellWidth, cellHeight, gap }, config) => safe(async () => {
       const ctx = getRunContext(config);
-      const loc = { scope: "temp" as const, threadId: ctx.thread_id };
+      const loc = { scope: "temp" as const, threadId: scratchThread(ctx) };
       const images: Buffer[] = []; let bytes = 0;
       for (const path of paths) { const { data } = await files.read(loc, path); bytes += data.length; if (bytes > 64 * 1024 * 1024) throw new Error("SPRITE_INPUT_TOO_LARGE"); images.push(data); }
       const { data, atlas } = await assembleSprites(images, columns, cellWidth, cellHeight, gap);

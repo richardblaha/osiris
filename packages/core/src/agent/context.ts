@@ -19,7 +19,12 @@ export interface RunContext {
   locale?: Locale;
   /** A step of a workflow (`run_workflow`): runs without asking the user (`ask_user`) or starting another workflow. */
   workflow?: boolean;
+  /** The chat whose scratchpad (temp files) the run uses: a workflow step's is its chat's, not its own thread's. */
+  scratch_thread?: string;
 }
+
+/** The thread whose temp files a run reads and writes. */
+export const scratchThread = (ctx: RunContext) => ctx.scratch_thread ?? ctx.thread_id;
 
 export function getRunContext(config: RunnableConfig | undefined): RunContext {
   const c = config?.configurable as Partial<RunContext> | undefined;

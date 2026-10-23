@@ -34,7 +34,9 @@
     "cancel_schedule": "Ruším plánovanou úlohu",
     "build_vitepress_site": "Sestavuji web {{site}}",
     "publish_site": "Publikuji web {{target}}",
-    "http_request": "Volám {{method}} {{host}}"
+    "http_request": "Volám {{method}} {{host}}",
+    "run_workflow": "Spouštím postup",
+    "run_workflow_resume": "Pokračuji v postupu"
   },
   "download": "Stáhnout {{name}}",
   "generatedImage": "Vytvořený obrázek",
@@ -90,5 +92,43 @@
   "choose": "Vyber…",
   "yes": "Ano",
   "no": "Ne",
-  "sendAnswer": "Odeslat odpověď"
+  "sendAnswer": "Odeslat odpověď",
+  "workflow": {
+    "label": "Diagram postupu",
+    "progress": "hotovo {{done}} z {{total}}",
+    "pattern": {
+      "ReAct": "Agent",
+      "PEV": "Plán, provedení, ověření",
+      "JEV": "Soudce, provedení, ověření",
+      "MapReduce": "Po položkách",
+      "Reflexion": "Návrh a kritika",
+      "HITL": "Se schválením",
+      "Composite": "Složený postup"
+    },
+    "phase": {
+      "Router": "Směrování",
+      "Plan": "Plán",
+      "Judge": "Soudce",
+      "Execute": "Provedení",
+      "Verify": "Ověření",
+      "Critic": "Kritik",
+      "Map": "Po položkách",
+      "Reduce": "Souhrn",
+      "HumanApproval": "Schválení",
+      "Complete": "Hotovo"
+    },
+    "status": {
+      "pending": "čeká",
+      "running": "běží",
+      "success": "hotovo",
+      "failed": "selhalo",
+      "waiting_approval": "čeká na schválení"
+    }
+  },
+  "scratchpad": {
+    "open": "Soubory konverzace",
+    "hint": "Pracovní soubory této konverzace: přílohy a co asistent vytvořil",
+    "title": "Soubory konverzace",
+    "intro": "Pracovní soubory této konverzace. Smažou se spolu s ní; co si chceš nechat, ulož do souborů firmy."
+  }
 }

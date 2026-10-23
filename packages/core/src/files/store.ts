@@ -34,14 +34,11 @@ export interface FileStoreOptions {
   quota?: () => Promise<number | null>;
   /** Told about every change once it's on disk (indexes follow the files); its failure doesn't undo the change. */
   onChange?: (change: FileChange) => Promise<void>;
-  /** Temporary files of a thread are removed this long after its last change. */
-  tempTtlMs?: number;
 }
 
 const MAX_PATH = 512;
 const MAX_DEPTH = 16;
 const MAX_SEGMENT = 120;
-const SWEEP_EVERY_MS = 60 * 60_000;
 
 /** Splits a relative path into checked segments: no `..`, hidden names, control characters or backslashes. */
 export function pathSegments(path: string, { allowRoot = false } = {}): string[] {
@@ -77,9 +74,7 @@ export class FileStore {
   private readonly quotaBytes: number;
   private readonly quota?: () => Promise<number | null>;
   private readonly onChange?: (change: FileChange) => Promise<void>;
-  private readonly tempTtlMs: number;
   private used?: Promise<number>;
-  private lastSweep = 0;
 
   constructor(
     private readonly root: string,
@@ -89,7 +84,6 @@ export class FileStore {
     this.quotaBytes = options.quotaBytes ?? 1024 * 1024 * 1024;
     this.quota = options.quota;
     this.onChange = options.onChange;
-    this.tempTtlMs = options.tempTtlMs ?? 24 * 60 * 60_000;
   }
 
   get limits() {
@@ -103,7 +97,6 @@ export class FileStore {
   }
 
   async list(loc: FileLocation, dir = ""): Promise<FileEntry[]> {
-    this.maybeSweep();
     const segments = pathSegments(dir, { allowRoot: true });
     const abs = await this.resolve(loc, segments);
     let names;
@@ -147,7 +140,6 @@ export class FileStore {
   }
 
   async write(loc: FileLocation, path: string, data: Uint8Array, { overwrite = true } = {}): Promise<FileEntry> {
-    this.maybeSweep();
     const segments = pathSegments(path);
     const type = fileType(path);
     if (!type) throw new FileError("type", "errors.files.typeNotAllowed", { extension: extensionOf(path) || "?" });
@@ -270,20 +262,10 @@ export class FileStore {
     this.adjustUsage(-size);
   }
 
-  /** Deletes temporary files of threads that haven't changed them for `tempTtlMs`. */
-  async sweepTemp(now = Date.now()): Promise<void> {
-    this.lastSweep = now;
-    const tmp = join(this.root, "tmp");
-    const dirs = await readdir(tmp, { withFileTypes: true }).catch(() => []);
-    for (const d of dirs) {
-      if (!d.isDirectory()) continue;
-      const dir = join(tmp, d.name);
-      if (now - (await newestChange(dir)) > this.tempTtlMs) {
-        const size = await sizeOf(dir);
-        await rm(dir, { recursive: true, force: true });
-        this.adjustUsage(-size);
-      }
-    }
+  /** The threads that have temporary files (a thread's scratchpad lives as long as the thread). */
+  async tempThreads(): Promise<string[]> {
+    const dirs = await readdir(join(this.root, "tmp"), { withFileTypes: true }).catch(() => []);
+    return dirs.filter((d) => d.isDirectory()).map((d) => Buffer.from(d.name, "base64url").toString());
   }
 
   /** Bytes used by all of the tenant's files. Counted once, then kept up to date by the store's own writes. */
@@ -296,11 +278,6 @@ export class FileStore {
 
   private adjustUsage(delta: number) {
     if (this.used) this.used = this.used.then((n) => Math.max(0, n + delta));
-  }
-
-  private maybeSweep() {
-    if (Date.now() - this.lastSweep < SWEEP_EVERY_MS) return;
-    this.sweepTemp().catch((err) => console.error("Temp file cleanup failed", err));
   }
 
   private scopeDir(loc: FileLocation): string {
@@ -355,12 +332,4 @@ async function sizeOf(path: string): Promise<number> {
   let total = 0;
   for (const name of await readdir(path)) total += await sizeOf(join(path, name));
   return total;
-}
-
-async function newestChange(path: string): Promise<number> {
-  const s = await lstat(path).catch(() => undefined);
-  if (!s) return 0;
-  let newest = s.mtimeMs;
-  if (s.isDirectory()) for (const name of await readdir(path)) newest = Math.max(newest, await newestChange(join(path, name)));
-  return newest;
 }

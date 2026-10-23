@@ -1,4 +1,4 @@
-import { fileType, type FileEntry, type FileSearchHit } from "@osiris/shared";
+import { fileType, type FileEntry, type FileScope, type FileSearchHit } from "@osiris/shared";
 import { useEffect, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import { api, saveBlob } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
@@ -68,11 +68,19 @@ function Icon({ entry }: { entry: Pick<FileEntry, "type" | "name"> }) {
 }
 
 /**
- * The tenant's files, folder by folder; everyone in the tenant may change them. `root` limits the view to one folder
- * (a website's template), `hide` leaves out top-level folders that have views of their own.
+ * Files folder by folder: the tenant's by default, or another `location` (a chat's scratchpad). `root` limits the
+ * view to one folder (a website's template), `hide` leaves out top-level folders that have views of their own.
  */
-export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] }: { root?: string; title?: string; intro?: ReactNode; hide?: string[] }) {
-  const tab = "tenant";
+export function Files({ root = "", title = t("app:nav.files"), intro, hide = [], location = { scope: "tenant" } }: {
+  root?: string;
+  title?: string;
+  intro?: ReactNode;
+  hide?: string[];
+  location?: { scope: FileScope; thread?: string };
+}) {
+  const loc = location;
+  // Search covers the indexed files; a chat's scratchpad isn't indexed.
+  const searchable = loc.scope !== "temp";
   const [dir, setDir] = useState(root);
   const [entries, setEntries] = useState<FileEntry[]>();
   const [editing, setEditing] = useState<Editing>();
@@ -90,7 +98,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] 
   dirRef.current = dir;
 
   const load = () =>
-    api.files(tab, dir).then(
+    api.files(loc.scope, dir, loc.thread).then(
       (list) => setEntries(dir === "" ? list.filter((e) => !hide.includes(e.name)) : list),
       (e: Error) => setError(e.message),
     );
@@ -109,18 +117,18 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] 
       if (open?.kind === "text" && open.text !== open.saved && !window.confirm(t("files:closeUnsaved"))) return;
       const type = fileType(path);
       if (type?.text) {
-        const text = await (await api.downloadFile({ scope: tab, path })).text();
+        const text = await (await api.downloadFile({ ...loc, path })).text();
         setOpen({ path, kind: "text", text, saved: text, isNew: false });
-      } else if (IMAGE.test(type?.mime ?? "")) setOpen({ path, kind: "image", url: URL.createObjectURL(await api.downloadFile({ scope: tab, path })) });
+      } else if (IMAGE.test(type?.mime ?? "")) setOpen({ path, kind: "image", url: URL.createObjectURL(await api.downloadFile({ ...loc, path })) });
       else setOpen({ path, kind: "other", size });
     });
   const openEntry = (e: FileEntry) => (e.type === "dir" ? setDir(e.path) : void openPath(e.path, e.size));
-  const download = (path: string) => attempt(setBusy, setError, async () => saveBlob(await api.downloadFile({ scope: tab, path }), nameOf(path)));
+  const download = (path: string) => attempt(setBusy, setError, async () => saveBlob(await api.downloadFile({ ...loc, path }), nameOf(path)));
 
   const saveDoc = () =>
     attempt(setBusy, setError, async () => {
       if (open?.kind !== "text") return;
-      await api.uploadFile({ scope: tab, path: open.path }, new Blob([open.text], { type: fileType(open.path)?.mime ?? "text/plain" }), !open.isNew);
+      await api.uploadFile({ ...loc, path: open.path }, new Blob([open.text], { type: fileType(open.path)?.mime ?? "text/plain" }), !open.isNew);
       setOpen({ ...open, saved: open.text, isNew: false });
       await load();
     });
@@ -138,7 +146,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] 
     const send = async (i: number, overwrite: boolean) => {
       update(i, { state: "uploading" });
       try {
-        await api.uploadFile({ scope: tab, path: queue[i]!.path }, queue[i]!.file, overwrite);
+        await api.uploadFile({ ...loc, path: queue[i]!.path }, queue[i]!.file, overwrite);
         update(i, { state: "done" });
         return "done";
       } catch (err) {
@@ -178,14 +186,14 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] 
     ev.preventDefault();
     if (!search.trim()) return setHits(undefined);
     void attempt(setBusy, setError, async () =>
-      setHits((await api.searchFiles(search, tab)).filter((h) => (root ? h.path.startsWith(`${root}/`) : !hide.includes(h.path.split("/")[0]!)))),
+      setHits((await api.searchFiles(search, loc.scope)).filter((h) => (root ? h.path.startsWith(`${root}/`) : !hide.includes(h.path.split("/")[0]!)))),
     );
   };
 
   const remove = (e: FileEntry) => {
     if (!window.confirm(e.type === "dir" ? t("files:confirmDeleteDir", { name: e.name }) : t("files:confirmDeleteFile", { name: e.name }))) return;
     void attempt(setBusy, setError, async () => {
-      await api.deleteFile({ scope: tab, path: e.path });
+      await api.deleteFile({ ...loc, path: e.path });
       if (open && (open.path === e.path || open.path.startsWith(`${e.path}/`))) setOpen(undefined);
       await load();
     });
@@ -199,8 +207,8 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] 
         const path = join(dir, name.includes(".") ? name : `${name}.md`);
         if (!fileType(path)?.text) throw new Error(t("files:newMustBeText"));
         setOpen({ path, kind: "text", text: "", saved: "", isNew: true });
-      } else if (editing.kind === "mkdir") await api.makeDir({ scope: tab, path: join(dir, name) });
-      else await api.moveFile({ scope: tab, path: editing.entry.path }, { scope: tab, path: join(dir, name) });
+      } else if (editing.kind === "mkdir") await api.makeDir({ ...loc, path: join(dir, name) });
+      else await api.moveFile({ ...loc, path: editing.entry.path }, { ...loc, path: join(dir, name) });
       setEditing(undefined);
       await load();
     });
@@ -288,7 +296,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] 
 
           <ErrorNotice error={error} />
 
-          <form onSubmit={runSearch} className="mt-4 flex gap-2">
+          {searchable && <form onSubmit={runSearch} className="mt-4 flex gap-2">
             <input
               type="search"
               value={search}
@@ -302,7 +310,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] 
             <button disabled={busy} className="btn-secondary text-sm">
               {t("files:search")}
             </button>
-          </form>
+          </form>}
           {hits && (
             <ul className="mt-2 text-sm">
               {hits.map((h) => (

@@ -139,7 +139,7 @@ export function createAgentGraph(deps: AgentDeps) {
     if (!question || !(await check(config, "output", JSON.stringify({ title: question.title, fields: question.fields })))) return m;
     const ctx = getRunContext(config);
     await deps.questions.withdraw(ctx.user_id, ctx.thread_id, question.id);
-    return new ToolMessage({ id: m.id, name: m.name, tool_call_id: m.tool_call_id, content: "Otázka porušuje pravidla a nebyla položena. Žádná akce nebyla provedena." });
+    return new ToolMessage({ id: m.id, name: m.name, tool_call_id: m.tool_call_id, artifact: m.artifact, content: "Otázka porušuje pravidla a nebyla položena. Žádná akce nebyla provedena." });
   };
 
   const callModel = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {

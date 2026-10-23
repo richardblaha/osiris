@@ -9,7 +9,7 @@ import { getWriter } from "@langchain/langgraph";
 import { z } from "zod";
 import type { FileStore } from "../files/store.ts";
 import type { McpToolset } from "../mcp/toolset.ts";
-import { getRunContext, type RunContext } from "../agent/context.ts";
+import { getRunContext, scratchThread, type RunContext } from "../agent/context.ts";
 import { ImageJobStore } from "./store.ts";
 import { assembleSprites, borderImageMetadata, compareImages, edgeContinuity, inspectImage, maskedComposite, processImage, rectangleMask, restoreOutpaintSource, transformImage } from "./processing.ts";
 import { deterministicOperations, imageRequest, type ImageArtifact, type ImageReference, type ImageRequest, type ImageResult, type ImageStatus } from "./types.ts";
@@ -99,7 +99,7 @@ export class ImageService {
     if (!values.includes(providerId)) throw new ImageError("PROVIDER_ID_MISMATCH");
     return name === "cancel_job" ? providerData(await target.invoke(args, config)) : this.read(target, args, config);
   }
-  private loc(ctx: RunContext, ref: { scope: "tenant" | "temp" }) { return ref.scope === "temp" ? { scope: "temp" as const, threadId: ctx.thread_id } : { scope: "tenant" as const }; }
+  private loc(ctx: RunContext, ref: { scope: "tenant" | "temp" }) { return ref.scope === "temp" ? { scope: "temp" as const, threadId: scratchThread(ctx) } : { scope: "tenant" as const }; }
   private async sourceContext(id: string, request: ImageRequest, ctx: RunContext): Promise<ImageContext> {
     const references = [...request.references];
     const selection = await this.jobs.selection(ctx);
@@ -140,7 +140,7 @@ export class ImageService {
       if (references.length >= 5) throw new ImageError("TOO_MANY_REFERENCES");
       const data = await rectangleMask(context.sourceMetadata.width, context.sourceMetadata.height, request.geometry.region);
       const path = `images/${id}/mask.png`;
-      await this.files.write({ scope: "temp", threadId: ctx.thread_id }, path, data);
+      await this.files.write({ scope: "temp", threadId: scratchThread(ctx) }, path, data);
       references.push({ role: "mask", scope: "temp", path });
     }
     const mask = references.find(r => r.role === "mask");
@@ -491,7 +491,7 @@ export class ImageService {
     const row = await this.jobs.get(ctx, id), attempt = Number(row?.attempts ?? 0), artifacts: ImageArtifact[] = [];
     for (const [index, data] of processed.entries()) {
       const meta = await inspectImage(data, input.output.transparent), path = `images/${id}/${attempt}-${index}.${meta.format === "jpeg" ? "jpg" : meta.format}`;
-      await this.files.write({ scope: "temp", threadId: ctx.thread_id }, path, data);
+      await this.files.write({ scope: "temp", threadId: scratchThread(ctx) }, path, data);
       artifacts.push({ scope: "temp", path, revision: id, mime: meta.mime, width: meta.width, height: meta.height, bytes: data.length, transparent: meta.transparent,
         generation: { operation: input.operation, provider: deterministicOperations.has(input.operation) ? "sharp" : "comfy-cloud", providerId: context.facts?.providerId, workflow: context.workflow?.id, model: context.facts?.model, seed: context.facts?.seed ?? input.seed, estimatedCost: row?.estimated_cost, attempts: attempt, refinements: row?.refinements } });
     }
@@ -503,8 +503,8 @@ export class ImageService {
       const names = layout.frames.length ? layout.frames : layout.states.length ? layout.states : processed.map((_, i) => String(i));
       const atlas = { ...sheet.atlas, frames: sheet.atlas.frames.map((frame, i) => ({ ...frame, name: names[i] })) };
       const sheetPath = `images/${id}/${attempt}-sprites.png`, atlasPath = `images/${id}/${attempt}-atlas.json`;
-      await this.files.write({ scope: "temp", threadId: ctx.thread_id }, sheetPath, sheet.data);
-      await this.files.write({ scope: "temp", threadId: ctx.thread_id }, atlasPath, Buffer.from(JSON.stringify(atlas)));
+      await this.files.write({ scope: "temp", threadId: scratchThread(ctx) }, sheetPath, sheet.data);
+      await this.files.write({ scope: "temp", threadId: scratchThread(ctx) }, atlasPath, Buffer.from(JSON.stringify(atlas)));
       const meta = await inspectImage(sheet.data);
       artifacts.push({ scope: "temp", path: sheetPath, revision: id, mime: "image/png", width: meta.width, height: meta.height, bytes: meta.bytes, transparent: meta.transparent, atlasPath });
       validations.push({ atlas: { scope: "temp", path: atlasPath, mime: "application/json" } });
@@ -520,7 +520,7 @@ export class ImageService {
     await this.options.authorize?.(ctx);
     const data = await downloadImage(url, this.options.downloadHosts ?? ["cloud.comfy.org", "storage.googleapis.com"], Math.min(this.files.limits.maxFileBytes, this.options.maxOutputBytes ?? 20 * 1024 * 1024), config.signal, this.options.fetch);
     const metadata = await inspectImage(data), path = `images/${randomUUID()}/reference.${metadata.format === "jpeg" ? "jpg" : metadata.format}`;
-    await this.files.write({ scope: "temp", threadId: ctx.thread_id }, path, data, { overwrite: false });
+    await this.files.write({ scope: "temp", threadId: scratchThread(ctx) }, path, data, { overwrite: false });
     return { artifacts: [{ scope: "temp", path, ...metadata }], hint: "Use this file as a reference with an explicit source/style/identity role." };
   }
   async select(ctx: RunContext, id: string, index: number) {
@@ -529,7 +529,7 @@ export class ImageService {
     const value = JSON.parse(String(row.result)) as ImageResult;
     const artifact = value.artifacts?.[index];
     if (!artifact) throw new ImageError("SOURCE_VARIANT_NOT_FOUND");
-    await this.files.read({ scope: "temp", threadId: ctx.thread_id }, artifact.path);
+    await this.files.read({ scope: "temp", threadId: scratchThread(ctx) }, artifact.path);
     await this.jobs.select(ctx, id, index);
     return { revision: id, selectedIndex: index, artifact };
   }

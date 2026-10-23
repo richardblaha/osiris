@@ -5,6 +5,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
 import { createAdapter, toInitialMessages } from "./adapter.ts";
 import { Thread, ThreadIdContext } from "./Thread.tsx";
+import { Files } from "../Files.tsx";
+import { t } from "i18next";
 
 interface Props {
   /** Existing thread to open, or null for a new conversation (created on first send). */
@@ -31,8 +33,13 @@ export function ChatPane({ threadId, onThreadCreated, onRunFinished }: Props) {
 
 function Chat({ threadId, initial, onThreadCreated, onRunFinished }: Props & { initial: ThreadMessageLike[] }) {
   const idRef = useRef(threadId);
-  const callbacks = useRef({ onThreadCreated, onRunFinished });
-  callbacks.current = { onThreadCreated, onRunFinished };
+  // The thread once it exists (its scratchpad opens only then) and the scratchpad's state: open, and reloaded after each run.
+  const [thread, setThread] = useState(threadId);
+  const [scratchpad, setScratchpad] = useState(false);
+  const [runs, setRuns] = useState(0);
+  const wrapped = { onThreadCreated: (id: string) => (setThread(id), onThreadCreated(id)), onRunFinished: () => (setRuns((n) => n + 1), onRunFinished()) };
+  const callbacks = useRef(wrapped);
+  callbacks.current = wrapped;
 
   const creating = useRef<Promise<string> | null>(null);
   const getThreadId = async () => {
@@ -90,7 +97,24 @@ function Chat({ threadId, initial, onThreadCreated, onRunFinished }: Props & { i
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadIdContext.Provider value={() => idRef.current}>
-        <UploadContext.Provider value={upload}><Thread /></UploadContext.Provider>
+        <div className="relative h-full">
+          <UploadContext.Provider value={upload}><Thread /></UploadContext.Provider>
+          {thread && !scratchpad && (
+            <button onClick={() => setScratchpad(true)} className="btn-secondary absolute end-4 top-3 z-10 text-sm" title={t("chat:scratchpad.hint")}>
+              {t("chat:scratchpad.open")}
+            </button>
+          )}
+          {thread && scratchpad && (
+            <aside className="absolute inset-y-0 end-0 z-30 flex w-[min(56rem,100%)] flex-col border-s border-line bg-canvas shadow-xl" aria-label={t("chat:scratchpad.title")}>
+              <button onClick={() => setScratchpad(false)} className="btn-secondary absolute end-4 top-3 z-10 text-sm">
+                {t("close")}
+              </button>
+              <div className="min-h-0 flex-1">
+                <Files key={runs} location={{ scope: "temp", thread }} title={t("chat:scratchpad.title")} intro={t("chat:scratchpad.intro")} />
+              </div>
+            </aside>
+          )}
+        </div>
       </ThreadIdContext.Provider>
     </AssistantRuntimeProvider>
   );

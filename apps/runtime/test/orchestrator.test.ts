@@ -12,11 +12,11 @@ import { planTopology } from "@osiris/core/agent/orchestrator/telemetry.ts";
 import type { AgentTelemetryEvent } from "@osiris/shared";
 import { createAgentGraph } from "@osiris/core/agent/graph.ts";
 import { QuestionStore } from "@osiris/core/agent/questions.ts";
-import { streamRun } from "@osiris/core/agent/run.ts";
+import { streamRun, toThreadMessages } from "@osiris/core/agent/run.ts";
 import { workflowTool, WORKFLOW_TOOL } from "@osiris/core/agent/orchestrator/tool.ts";
 import { reactFromAgentGraph } from "@osiris/core/agent/orchestrator/graph.ts";
 import type { RunContext } from "@osiris/core/agent/context.ts";
-import type { RunEvent } from "@osiris/shared";
+import type { RunEvent, WorkflowView } from "@osiris/shared";
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "./helpers.ts";
 
@@ -164,10 +164,10 @@ describe("verifiers and topology", () => {
     const t = planTopology([step({ id: "a", pattern: "JEV", verifier: "json" }), step({ id: "b", pattern: "Reflexion", dependsOn: ["a"], destructive: true })], "Composite");
     expect(t.edges).toEqual(expect.arrayContaining([
       { from: "router", to: "a/judge" },
-      { from: "a/judge", to: "b/approval" },
+      { from: "a/evaluate", to: "b/approval" },
       { from: "b/critic", to: "verify" },
     ]));
-    expect(t.edges.some((e) => e.from === "a/judge" && e.to === "verify")).toBe(false);
+    expect(t.edges.some((e) => e.from === "a/evaluate" && e.to === "verify")).toBe(false);
   });
 });
 
@@ -211,6 +211,14 @@ describe("run_workflow tool", () => {
     // agent turn 1, agent turn 2, the step's own run, the final answer: the step had neither ask_user nor run_workflow.
     expect(model.bound[2]).toEqual([]);
     expect(model.bound[0]).toEqual(["ask_user", WORKFLOW_TOOL]);
+
+    // The diagram goes with each result: waiting after the first call, rebuilt and finished after the resume.
+    const artifact = (events: RunEvent[]) => (events.find((e) => e.type === "tool-result") as { artifact?: WorkflowView }).artifact!;
+    expect(artifact(first).nodes["smazani/approval"]!.status).toBe("waiting_approval");
+    expect(artifact(second).topology.nodes.map((n) => n.id)).toEqual(["router", "smazani/approval", "smazani", "verify", "complete"]);
+    expect(artifact(second).nodes).toMatchObject({ "smazani/approval": { status: "success" }, smazani: { status: "success" }, complete: { status: "success" } });
+    const history = toThreadMessages((await agent.getState({ configurable: ctx })).values.messages);
+    expect(history.flatMap((m) => m.content).filter((p) => p.type === "tool-call" && p.artifact)).toHaveLength(2);
 
     const derived = async () => Number((await db.execute("SELECT count(*) AS n FROM checkpoints WHERE thread_id LIKE 't1:%'")).rows[0]!.n);
     expect(await derived()).toBeGreaterThan(0);

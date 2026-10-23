@@ -334,6 +334,10 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     await publicAssistants.migrateLegacy(skills);
     await guards.migrateProfiles(db);
     await indexer!.reconcile();
+    // A chat's scratchpad lives as long as the chat; one whose chat is gone (from before it did) goes now.
+    for (const thread of await files.tempThreads()) {
+      if (!(await db.execute({ sql: "SELECT 1 FROM threads WHERE id = ?", args: [thread] })).rows.length) await files.removeTemp(thread);
+    }
     await images?.cleanup();
   };
   return {

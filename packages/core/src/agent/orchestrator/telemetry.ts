@@ -28,10 +28,11 @@ function stepGraph(step: PlanStep): { nodes: Node[]; edges: Edge[]; entry: strin
     nodes = [node(judge, step.goal, "Judge"), node(execute, step.goal, "Execute")];
     edges = [{ from: judge, to: execute, condition: "criteria" }];
     if (step.pattern === "JEV") {
-      const verify = nodeId(step.id, "verify");
-      nodes.push(node(verify, step.verifier ?? "verify", "Verify"));
-      edges.push({ from: execute, to: verify }, { from: verify, to: execute, condition: "repair" }, { from: verify, to: judge, condition: "valid" }, { from: judge, to: execute, condition: "rejected" });
-      exit = judge;
+      // The Judge sets the criteria first and evaluates last: two nodes, so the graph only loops back to repair.
+      const [verify, evaluate] = [nodeId(step.id, "verify"), nodeId(step.id, "evaluate")];
+      nodes.push(node(verify, step.verifier ?? "verify", "Verify"), node(evaluate, step.goal, "Judge"));
+      edges.push({ from: execute, to: verify }, { from: verify, to: execute, condition: "repair" }, { from: verify, to: evaluate, condition: "valid" }, { from: evaluate, to: execute, condition: "rejected" });
+      exit = evaluate;
     } else {
       const critic = nodeId(step.id, "critic");
       nodes.push(node(critic, step.goal, "Critic"));

@@ -71,7 +71,7 @@ export async function* streamRun(
             yield { type: "tool-call", toolCallId: call.id ?? "", toolName: call.name, args: call.args };
           }
         } else if (ToolMessage.isInstance(message)) {
-          yield { type: "tool-result", toolCallId: message.tool_call_id, result: message.text };
+          yield { type: "tool-result", toolCallId: message.tool_call_id, result: message.text, ...(message.artifact === undefined ? {} : { artifact: message.artifact }) };
         }
       }
     }
@@ -121,7 +121,10 @@ export function toThreadMessages(messages: BaseMessage[]): ThreadMessage[] {
       }
     } else if (ToolMessage.isInstance(m)) {
       const part = toolParts.get(m.tool_call_id);
-      if (part) part.result = m.text;
+      if (part) {
+        part.result = m.text;
+        if (m.artifact !== undefined) part.artifact = m.artifact;
+      }
     }
   }
   return out;

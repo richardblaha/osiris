@@ -7,7 +7,7 @@ import type { GotenbergClient } from "../../files/gotenberg.ts";
 import type { FileIndex } from "../../files/index.ts";
 import { FileError, type FileLocation, type FileStore } from "../../files/store.ts";
 import { extensionOf, fileType } from "@osiris/shared";
-import { getRunContext, type RunContext } from "../context.ts";
+import { getRunContext, scratchThread, type RunContext } from "../context.ts";
 import { isGuardPath } from "../guards.ts";
 import { editText, type EditFailure, type TextEdit } from "./text-edit.ts";
 
@@ -28,7 +28,7 @@ const scope = z
 const path = z.string().trim().min(1).max(512).describe("Cesta uvnitř rozsahu, např. sablony/nabidka.html");
 
 export function locate(s: FileScope, ctx: RunContext): FileLocation {
-  if (s === "temp") return { scope: "temp", threadId: ctx.thread_id };
+  if (s === "temp") return { scope: "temp", threadId: scratchThread(ctx) };
   return { scope: "tenant" };
 }
 

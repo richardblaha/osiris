@@ -4,17 +4,19 @@ import { tool } from "@langchain/core/tools";
 import { getWriter } from "@langchain/langgraph";
 import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
 import { z } from "zod";
-import { getRunContext, type RunContext } from "../context.ts";
+import { getRunContext, scratchThread, type RunContext } from "../context.ts";
 import type { QuestionStore } from "../questions.ts";
 import { Command, isolated, streamTelemetry, type OrchestratorGraph } from "./graph.ts";
-import type { ApprovalDecision, ApprovalRequest, RootState } from "./state.ts";
+import type { ApprovalDecision, ApprovalRequest, RootState, StepStatus } from "./state.ts";
+import { planTopology } from "./telemetry.ts";
+import { applyTelemetry, type AgentNodeStatus, type AgentTelemetryEvent, type WorkflowView } from "@osiris/shared";
 
 export const WORKFLOW_TOOL = "run_workflow";
 
 /** The orchestrator keeps its own checkpoints next to the chat's, on a thread of its own. */
 export function workflowConfig(ctx: RunContext, signal?: AbortSignal): RunnableConfig {
   return {
-    configurable: { thread_id: `${ctx.thread_id}:workflow`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, user_name: ctx.user_name, locale: ctx.locale },
+    configurable: { thread_id: `${ctx.thread_id}:workflow`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, user_name: ctx.user_name, locale: ctx.locale, scratch_thread: scratchThread(ctx) },
     signal,
   };
 }
@@ -23,6 +25,22 @@ async function pendingApproval(graph: OrchestratorGraph, config: RunnableConfig)
   const state = await graph.getState(config);
   const value = state.tasks.flatMap((t) => t.interrupts).at(0)?.value as ApprovalRequest | undefined;
   return value?.type === "approval" ? value : null;
+}
+
+const STEP_STATUS: Record<StepStatus, AgentNodeStatus> = { success: "success", failed: "failed", rejected: "failed", skipped: "pending" };
+
+/** The diagram of a workflow waiting for approval, rebuilt from its state for the call that resumes it. */
+function snapshot(state: RootState, pending: ApprovalRequest): AgentTelemetryEvent {
+  const topology = planTopology(state.plan, state.pattern);
+  const nodes: WorkflowView["nodes"] = {};
+  const waiting = new Set(pending.steps.map((s) => s.id));
+  for (const n of topology.nodes) {
+    const step = n.id.split("/")[0]!;
+    const result = state.results[step];
+    if (result) nodes[n.id] = { status: STEP_STATUS[result.status], message: n.label };
+    else if (waiting.has(step) && n.type === "HumanApproval") nodes[n.id] = { status: "waiting_approval", message: n.label };
+  }
+  return { sessionId: "", timestamp: Date.now(), pattern: state.pattern, phase: "Router", nodeId: "router", status: "success", message: "", activeGraphTopology: topology, payload: { nodes } };
 }
 
 const field = (i: number) => `step_${i + 1}`;
@@ -61,11 +79,11 @@ export function workflowTool(graph: OrchestratorGraph, questions: QuestionStore)
       const pending = await pendingApproval(graph, cfg);
       let input: Parameters<OrchestratorGraph["stream"]>[0];
       if (resume) {
-        if (!pending) return "Žádný postup nečeká na schválení.";
+        if (!pending) return ["Žádný postup nečeká na schválení.", undefined];
         const answer = await decision(questions, ctx, pending);
-        if (answer === "waiting") return "Uživatel na schválení ještě neodpověděl. Počkej na jeho odpověď.";
+        if (answer === "waiting") return ["Uživatel na schválení ještě neodpověděl. Počkej na jeho odpověď.", undefined];
         // The question was replaced or never asked: ask again, and let the user decide.
-        if (answer === "missing") return JSON.stringify({ question: await questions.create(ctx.user_id, ctx.thread_id, approvalQuestion(pending, ctx)) });
+        if (answer === "missing") return [JSON.stringify({ question: await questions.create(ctx.user_id, ctx.thread_id, approvalQuestion(pending, ctx)) }), undefined];
         input = new Command({ resume: answer });
       } else {
         input = { messages: [new HumanMessage(request)] };
@@ -77,18 +95,28 @@ export function workflowTool(graph: OrchestratorGraph, questions: QuestionStore)
       } catch {
         // Called outside a graph: no stream to write to.
       }
+      // The diagram this call shows: on resuming, the graph as it stood (the router doesn't run again).
+      let view: WorkflowView | undefined;
+      const send = (event: AgentTelemetryEvent) => {
+        const e = { ...event, sessionId: ctx.thread_id };
+        view = applyTelemetry(view, e);
+        write?.({ type: "telemetry", event: e });
+      };
+      if (resume) send(snapshot((await graph.getState(cfg)).values as RootState, pending!));
       await isolated(async () => {
-        for await (const event of streamTelemetry(graph, input, cfg)) write?.({ type: "telemetry", event: { ...event, sessionId: ctx.thread_id } });
+        for await (const event of streamTelemetry(graph, input, cfg)) send(event);
       });
 
       const waiting = await pendingApproval(graph, cfg);
-      if (waiting) return JSON.stringify({ question: await questions.create(ctx.user_id, ctx.thread_id, approvalQuestion(waiting, ctx)) });
+      if (waiting) return [JSON.stringify({ question: await questions.create(ctx.user_id, ctx.thread_id, approvalQuestion(waiting, ctx)) }), view];
       const { messages, plan, results } = (await graph.getState(cfg)).values as RootState;
       const steps = plan.map((s) => `${s.id}: ${results[s.id]?.status ?? "?"}`).join(", ");
-      return `${messages.at(-1)?.text ?? ""}\n\n(Kroky postupu: ${steps})`;
+      return [`${messages.at(-1)?.text ?? ""}\n\n(Kroky postupu: ${steps})`, view];
     },
     {
       name: WORKFLOW_TOOL,
+      // The diagram goes with the result to the UI (and the checkpoint), never to the model.
+      responseFormat: "content_and_artifact",
       description:
         "Provede větší úkol jako řízený postup: rozplánuje ho do kroků, vytvořené JSON/DTDL/SQL ověří a opraví, kolekce souborů či senzorů projde po položkách a před kroky, které mění data, požádá uživatele o schválení. " +
         "Použij jen pro vícekrokové úkoly nebo strojově ověřitelné výsledky, ne pro jednoduché dotazy. Volej samostatně. " +

@@ -8,7 +8,8 @@ import {
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import { QUESTION_TOOLS, type FileScope, type RunStatus } from "@osiris/shared";
+import { asWorkflowView, QUESTION_TOOLS, type FileScope, type RunStatus } from "@osiris/shared";
+import { WorkflowDiagram } from "./WorkflowDiagram.tsx";
 import { createContext, useContext, useEffect, useState } from "react";
 import { api, saveBlob } from "../api.ts";
 import { t } from "i18next";
@@ -53,6 +54,7 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
   cancel_schedule: () => t("chat:tools.cancel_schedule"),
   build_vitepress_site: (a) => t("chat:tools.build_vitepress_site", { site: String(a.site ?? "") }),
   publish_site: (a) => t("chat:tools.publish_site", { target: String(a.target ?? a.dir ?? "") }),
+  run_workflow: (a) => (a.resume ? t("chat:tools.run_workflow_resume") : t("chat:tools.run_workflow")),
   http_request: (a) => {
     const url = String(a.url ?? "");
     const host = /^https?:\/\/([^/?#]+)/.exec(url)?.[1] ?? url;
@@ -117,7 +119,19 @@ function pretty(value: unknown): string {
  * One step of the run, as a coding agent shows it: running, done or failed, what it does, and (opened) the tool, its
  * arguments and its result.
  */
-function ToolCall({ toolName, args, argsText, result }: ToolCallMessagePartProps) {
+function ToolCall(props: ToolCallMessagePartProps) {
+  const workflow = asWorkflowView(props.artifact);
+  if (!workflow) return <ToolStep {...props} />;
+  // A workflow's diagram, live while it runs, then above its result (or its approval question).
+  return (
+    <>
+      <WorkflowDiagram view={workflow} />
+      <ToolStep {...props} />
+    </>
+  );
+}
+
+function ToolStep({ toolName, args, argsText, result }: ToolCallMessagePartProps) {
   const writing = !argsText;
   if (QUESTION_TOOLS.includes(toolName) && result) {
     try { const parsed = JSON.parse(String(result)); if (parsed.question) return <Question initial={parsed.question} />; } catch { /* A failed tool uses the normal display. */ }

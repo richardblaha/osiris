@@ -1,5 +1,7 @@
 import type { ChatModelAdapter, ThreadAssistantMessagePart, ThreadMessageLike } from "@assistant-ui/react";
-import { QUESTION_TOOLS, type RunStatus, type ThreadMessage } from "@osiris/shared";
+import { applyTelemetry, asWorkflowView, QUESTION_TOOLS, type RunStatus, type ThreadMessage } from "@osiris/shared";
+
+const WORKFLOW_TOOL = "run_workflow";
 import { api } from "../api.ts";
 
 type Part = ThreadAssistantMessagePart;
@@ -63,8 +65,17 @@ export function createAdapter(
               break;
             }
             case "tool-result":
-              parts = parts.map((p) => (p.type === "tool-call" && p.toolCallId === event.toolCallId ? { ...p, result: event.result } : p));
+              parts = parts.map((p) =>
+                p.type === "tool-call" && p.toolCallId === event.toolCallId ? { ...p, result: event.result, ...(event.artifact === undefined ? {} : { artifact: event.artifact }) } : p,
+              );
               break;
+            case "telemetry": {
+              // A workflow's events belong to the run_workflow call still running.
+              const i = parts.findLastIndex((p) => p.type === "tool-call" && p.toolName === WORKFLOW_TOOL && p.result === undefined);
+              if (i < 0) break;
+              parts = parts.map((p, k) => (k === i && p.type === "tool-call" ? { ...p, artifact: applyTelemetry(asWorkflowView(p.artifact), event.event) } : p));
+              break;
+            }
             case "error":
               throw new Error(event.message);
             case "done":
