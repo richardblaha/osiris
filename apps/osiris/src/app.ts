@@ -31,6 +31,8 @@ import type { InternalVerifier } from "@osiris/platform/internal-auth.ts";
 import { SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import type { Activity } from "./activity.ts";
 import { publicAuth, userAuth, type AuthEnv, type RequestContext } from "./auth.ts";
+import { localAuth, localRoutes, type LocalAccess } from "./local.ts";
+import { cors } from "hono/cors";
 import { createInternalRoutes } from "./internal.ts";
 import { databaseRoutes } from "./database.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
@@ -145,7 +147,10 @@ const moveBody = z.object({ from: fileRef, to: fileRef });
 
 export interface RuntimeAppDeps {
   project: Project;
-  verifier: InternalVerifier;
+  /** Server mode: internal tokens from the gateway, control and the operator. */
+  verifier?: InternalVerifier;
+  /** Local mode: the agent's own token, for the clients on this computer. */
+  local?: LocalAccess;
   activity: Activity;
   /** Takes a snapshot and uploads it (operator before sleep, control on demand). */
   snapshot: (reason: string) => Promise<{ key: string; bytes: number }>;
@@ -158,7 +163,8 @@ export interface RuntimeAppDeps {
  * identify the access token and checked the membership), scheduled runs and WhatsApp messages from control, activity checks and
  * snapshots from the operator. The project is fixed: this process serves one project and refuses tokens for another.
  */
-export function createRuntimeApp({ project, verifier, activity, snapshot, counts }: RuntimeAppDeps) {
+export function createRuntimeApp({ project, verifier, local, activity, snapshot, counts }: RuntimeAppDeps) {
+  if (!verifier && !local) throw new Error("The agent needs the server's verifier or a local token");
   // One run per thread at a time. In-process is enough: a project has exactly one runtime.
   const activeRuns = new Set<string>();
 
@@ -303,7 +309,7 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
 
   // The project's customers (anonymous): the public chat page and the website widget, through the gateway.
   const pub = new Hono<AuthEnv>()
-    .use(publicAuth(verifier, project))
+    .use(publicAuth(verifier!, project))
     .use(async (_c, next) => {
       activity.touch();
       await next();
@@ -342,7 +348,7 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
     });
 
   const api = new Hono<AuthEnv>()
-    .use(userAuth(verifier, project))
+    .use(local ? localAuth(project, local) : userAuth(verifier!, project))
     .use(async (c, next) => {
       activity.touch();
       await next();
@@ -1014,19 +1020,23 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
       return c.body(null, 204);
     });
 
-  const internal = createInternalRoutes({ project, verifier, activity, snapshot, activeRuns });
-
-  return new Hono()
+  const app = new Hono()
     .use(telemetryMiddleware())
+    // Local clients come from other origins (a VS Code webview, a desktop window); the token, not a cookie, lets them in.
+    .use(local ? cors({ origin: (o) => o, allowHeaders: ["authorization", "content-type", "accept-language", "x-project-id"], exposeHeaders: ["content-disposition"] }) : (_c, next) => next())
     .use(async (c, next) => {
       // Shutting down for sleep: the caller wakes the runtime again and retries.
       if (activity.sleeping && c.req.path !== "/health") return c.json({ error: "Runtime is going to sleep" }, 503, { [SLEEPING_HEADER]: "1" });
       await next();
     })
-    .get("/health", (c) => c.json({ ok: true, project: project.id }))
-    .route("/api", api)
-    .route("/public", pub)
-    .route("/internal", internal)
+    .get("/health", (c) => c.json({ ok: true, project: project.id, mode: local ? "local" : "server" }));
+  if (local) app.route("/api", localRoutes(project, local));
+  app.route("/api", api);
+  // The public chat and the server's calls exist only behind the server.
+  if (verifier) app.route("/public", pub).route("/internal", createInternalRoutes({ project, verifier, activity, snapshot, activeRuns }));
+  return app
+    // A local agent has no members, schedules, domains or administration: those are the server's.
+    .notFound((c) => (local && c.req.path.startsWith("/api/") ? c.json(errorResponse(new HttpError(404, "errors.local.serverOnly"), requestLocale(c.req.header("accept-language")))!.body, 404) : c.json({ error: "Not found" }, 404)))
     .onError((err, c) => {
       if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
       const localized = errorResponse(err, requestLocale(c.req.header("accept-language")));

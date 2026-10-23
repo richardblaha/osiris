@@ -366,6 +366,9 @@
       "branch": "Invalid branch name.",
       "notConnected": "The project isn't connected to a git repository.",
       "diverged": "The repository and the project both changed (commit and resolve outside Osiris). Different files: {{files}}"
+    },
+    "local": {
+      "serverOnly": "This needs Osiris server; a local agent doesn't have it."
     }
   },
   "schedules": {

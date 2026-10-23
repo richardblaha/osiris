@@ -6,19 +6,27 @@ const bool = z
   .transform((v) => v === "true" || v === "1");
 const pem = z.string().transform((v) => v.replace(/\\n/g, "\n"));
 
-/** One runtime serves one project. In the cluster the operator fills this in (ConfigMap and Secret per project). */
+/**
+ * One agent serves one project. In the cluster (server mode) the operator fills this in (ConfigMap and Secret per
+ * project); run locally (`osiris [dir]`, local mode) the server's settings are absent and the project is a folder.
+ */
 const schema = z
   .object({
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     PORT: z.coerce.number().int().default(8080),
-    PROJECT_ID: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
+    // Server mode: set by the operator. Local mode: the folder's name.
+    PROJECT_ID: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/).optional(),
     // The project's volume: the project folder in project/ (its files and .osiris/).
     DATA_DIR: z.string().default("/data"),
 
-    // Control: features, backups, schedules, site publishing.
-    CONTROL_URL: z.url(),
-    // Verifies internal tokens from the gateway, control and the operator.
-    INTERNAL_JWT_PUBLIC_KEY: pem,
+    // Server mode only. Control: features, backups, schedules, site publishing.
+    CONTROL_URL: z.url().optional(),
+    // Server mode only. Verifies internal tokens from the gateway, control and the operator.
+    INTERNAL_JWT_PUBLIC_KEY: pem.optional(),
+    // Local mode: where the agent listens (loopback unless a devcontainer forwards it), and the PWA build it serves.
+    OSIRIS_HOST: z.string().default("127.0.0.1"),
+    OSIRIS_PORT: z.coerce.number().int().min(0).max(65535).default(7777),
+    STATIC_DIR: z.string().optional(),
     // Projected ServiceAccount token (audience osiris-control), sent to control.
     RUNTIME_TOKEN_PATH: z.string().default("/var/run/secrets/osiris/token"),
     // Development only: authenticate to control with `dev-runtime:<project>`.
@@ -83,4 +91,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = schema.safeParse(env);
   if (!parsed.success) throw new Error(`Invalid configuration:\n${z.prettifyError(parsed.error)}`);
   return parsed.data;
+}
+
+/** The server mode's configuration: everything the cluster sets, required. */
+export type ServerConfig = Config & { PROJECT_ID: string; CONTROL_URL: string; INTERNAL_JWT_PUBLIC_KEY: string };
+
+export function serverConfig(config: Config): ServerConfig {
+  const missing = (["PROJECT_ID", "CONTROL_URL", "INTERNAL_JWT_PUBLIC_KEY"] as const).filter((k) => !config[k]);
+  if (missing.length) throw new Error(`Invalid configuration: ${missing.join(", ")} required in server mode`);
+  return config as ServerConfig;
 }

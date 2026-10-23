@@ -46,6 +46,8 @@ export interface MeResponse {
   /** Claim `role=osiris-admin`: admin of every project, manages projects. */
   systemAdmin: boolean;
   projects: { id: string; name: string; role: Role; logo: string | null }[];
+  /** `local`: a local agent answers (one project, one user, no server parts); absent from osiris-server. */
+  mode?: "local";
 }
 
 /** What a system admin can switch on or off per project. */

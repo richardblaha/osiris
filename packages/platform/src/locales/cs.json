@@ -382,6 +382,9 @@
       "branch": "Neplatný název větve.",
       "notConnected": "Projekt není připojený ke git repozitáři.",
       "diverged": "Změnil se repozitář i projekt (sloučení vyřešte mimo Osiris). Rozdílné soubory: {{files}}"
+    },
+    "local": {
+      "serverOnly": "Tohle potřebuje Osiris server; lokální agent to nemá."
     }
   },
   "schedules": {
