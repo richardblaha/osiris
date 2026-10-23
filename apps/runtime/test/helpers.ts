@@ -5,9 +5,10 @@ import { Embeddings } from "@langchain/core/embeddings";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { ChatResult } from "@langchain/core/outputs";
-import type { Client } from "@libsql/client";
 import { createDb } from "@osiris/core/db/client.ts";
-import { migrate } from "@osiris/core/db/migrate.ts";
+import type { Client } from "@libsql/client";
+import { Records } from "@osiris/core/projects/records.ts";
+import { prepareCache } from "@osiris/core/projects/cache.ts";
 import type { Skill } from "@osiris/core/agent/skills.ts";
 import type { McpConnector } from "@osiris/core/mcp/toolset.ts";
 import { openProject, type Project, type ProjectDeps } from "@osiris/core/projects/project.ts";
@@ -21,10 +22,21 @@ import { createRuntimeApp } from "../src/app.ts";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "osiris-test-"));
 
-/** Fresh migrated project database in a temp file (libSQL `:memory:` loses data across transactions). */
-export async function createTestDb(): Promise<Client> {
-  const db = createDb(`file:${join(tempDir(), "test.db")}`);
-  await migrate(db);
+/** A project's `.osiris/` data in a fresh temp folder. */
+export function createTestRecords(): Records {
+  return new Records(join(tempDir(), ".osiris"));
+}
+
+/** Everything stored under a project's `.osiris/`, as one text (to check nothing is stored in the clear). */
+export async function allText(records: Records): Promise<string> {
+  const texts = await Promise.all((await records.walk("")).map((p) => records.readText(p)));
+  return texts.join("\n");
+}
+
+/** A fresh cache database (indexes) in a temp file (libSQL `:memory:` loses data across transactions). */
+export async function createTestCache(): Promise<Client> {
+  const db = createDb(`file:${join(tempDir(), "index.db")}`);
+  await prepareCache(db);
   return db;
 }
 
@@ -71,23 +83,21 @@ export class StaticFeatures implements FeatureSource {
 
 export type TestProject = Project & { features: StaticFeatures };
 
-/** Projects opened on demand, each on its own database and files in a temp dir, like one runtime per project. */
+/** Projects opened on demand, each in its own folder in a temp dir, like one runtime per project. */
 export class TestProjects {
   private readonly open = new Map<string, Promise<TestProject>>();
 
   constructor(
     private readonly dir: string,
-    private readonly deps: Omit<ProjectDeps, "features" | "files" | "database">,
+    private readonly deps: Omit<ProjectDeps, "features">,
   ) {}
 
   get(id: string): Promise<TestProject> {
     let t = this.open.get(id);
     if (!t) {
       t = (async () => {
-        const db = createDb(`file:${join(this.dir, `${id}.db`)}`);
-        await migrate(db);
         const features = new StaticFeatures();
-        const project = openProject(id, db, { ...this.deps, features, files: { dir: join(this.dir, "files", id) }, database: { path: join(this.dir, `${id}.data.db`) } }) as TestProject;
+        const project = openProject(id, join(this.dir, id), { ...this.deps, features }) as TestProject;
         await project.init();
         return project;
       })();
@@ -102,7 +112,7 @@ export function createTestProjects(
   script: AIMessage[] = [],
   bundledSkills: Skill[] = [],
   mcpConnect?: McpConnector,
-  extra: Partial<Omit<ProjectDeps, "features" | "files">> = {},
+  extra: Partial<Omit<ProjectDeps, "features">> = {},
 ) {
   const model = new ScriptedChatModel(script);
   const dir = tempDir();

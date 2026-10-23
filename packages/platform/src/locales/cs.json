@@ -191,7 +191,6 @@
     },
     "guard": {
       "notFound": "Pravidlo neexistuje",
-      "adminOnly": "Pravidla (guards/) mění jen správce",
       "level": "Úroveň: user, project nebo assistant"
     },
     "files": {

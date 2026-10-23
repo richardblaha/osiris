@@ -7,19 +7,19 @@ import { tool } from "@langchain/core/tools";
 import { ImageService, imageRequest } from "@osiris/core/images/service.ts";
 import { ImageJobStore } from "@osiris/core/images/store.ts";
 import { FileStore } from "@osiris/core/files/store.ts";
-import { createDb } from "@osiris/core/db/client.ts";
-import { migrate } from "@osiris/core/db/migrate.ts";
+import { Records } from "@osiris/core/projects/records.ts";
+import { createThread } from "@osiris/core/repo/threads.ts";
 import type { McpToolset } from "@osiris/core/mcp/toolset.ts";
-import { ScriptedChatModel, createTestProjects } from "./helpers.ts";
+import { ScriptedChatModel, allText, createTestProjects } from "./helpers.ts";
 import contracts from "./fixtures/comfy-cloud-contracts.json";
 const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
 const ctx = { thread_id: "thread", project_id: "acme", user_id: "alice", role: "member" as const, channel: "web" as const }, config = { configurable: ctx };
-const resources: { dir: string; db: ReturnType<typeof createDb> }[] = [];
-afterEach(async () => { for (const { db, dir } of resources.splice(0)) { db.close(); await rm(dir, { recursive: true, force: true }); } });
+const resources: { dir: string; db: Records }[] = [];
+afterEach(async () => { for (const { dir } of resources.splice(0)) { await rm(dir, { recursive: true, force: true }); } });
 const plan = (name: string, args: Record<string, unknown>) => new AIMessage({ content: "", tool_calls: [{ id: name, name: `comfy-cloud_${name}`, args }] });
 async function fixture(batch: boolean, invalid = false) {
-  const dir = await mkdtemp(join(tmpdir(), "osiris-image-contract-")), db = createDb(`file:${join(dir, "project.db")}`); resources.push({ dir, db }); await migrate(db);
-  await db.execute("INSERT INTO threads(id,user_id,channel) VALUES ('thread','alice','web')");
+  const dir = await mkdtemp(join(tmpdir(), "osiris-image-contract-")), db = new Records(join(dir, ".osiris")); resources.push({ dir, db });
+  await createThread(db, "alice", "thread", "web");
   let paid = 0;
   const tools = Object.entries(contracts.tools).map(([name, raw]) => tool(async (args: Record<string, unknown>) => {
     if (name === "search_templates") return JSON.stringify({ data: [{ name: contracts.template.id, tags: ["Text to Image"], models: ["Z-Image-Turbo"] }] });
@@ -38,7 +38,7 @@ async function fixture(batch: boolean, invalid = false) {
   const script = [plan("search_templates", { q: "text to image", media_type: "image" }), plan("get_template_schema", { template_id: contracts.template.id }), batch ? plan("submit_batch", { client_os: "linux", items: [0, 1].map(() => ({ tool: "run_template", name: contracts.template.id, slot_overrides: overrides })) }) : plan("run_template", { name: contracts.template.id, slot_overrides: overrides })];
   // Only expose the selected route's live contracts, avoiding optional model discovery in this fixture.
   const mcp = { tools: async () => tools.filter(t => !["comfy-cloud_partner_generate"].includes(t.name)) } as unknown as McpToolset;
-  const service = new ImageService(new ImageJobStore(db), new FileStore(join(dir, "files")), mcp, new ScriptedChatModel(script), { downloadHosts: ["93.184.215.14"], fetch: async () => new Response(new Uint8Array(image), { headers: { "content-type": "image/png" } }) });
+  const service = new ImageService(new ImageJobStore(db), new FileStore(dir), mcp, new ScriptedChatModel(script), { downloadHosts: ["93.184.215.14"], fetch: async () => new Response(new Uint8Array(image), { headers: { "content-type": "image/png" } }) });
   return { service, paid: () => paid };
 }
 it("executes the real discovered template/slot contract and retrieves the same job", async () => {
@@ -65,10 +65,10 @@ it("bootstraps a missing MCP connection with a sealed host-scoped key without re
   const project = await projects.get("bootstrap");
   try {
     expect((await project.mcpServers.get("comfy-cloud", ""))?.headers).toEqual({ "X-API-Key": "{{secret:COMFY_API_KEY}}" });
-    expect(JSON.stringify((await project.db.execute("SELECT value_enc FROM secrets")).rows)).not.toContain("test-runtime-key");
+    expect(await allText(project.records)).not.toContain("test-runtime-key");
     expect((await project.secrets.fill({ key: "{{secret:COMFY_API_KEY}}" }, { userId: "", host: "cloud.comfy.org" })).filled.key).toBe("test-runtime-key");
     await project.mcpServers.put("comfy-cloud", "", { url: "https://cloud.comfy.org/mcp", auth: "oauth", enabled: false });
     await project.init();
     expect(await project.mcpServers.get("comfy-cloud", "")).toMatchObject({ auth: "oauth", enabled: false });
-  } finally { await project.mcp.close(); project.db.close(); }
+  } finally { await project.mcp.close(); }
 });

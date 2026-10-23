@@ -1,6 +1,6 @@
-import type { Client } from "@libsql/client";
+import { userDir, type Records } from "../projects/records.ts";
 
-// WhatsApp state of one user in one project (the project's own database).
+// WhatsApp state of one user in one project: `private/users/<sub>/whatsapp.json`.
 
 export interface WhatsAppSession {
   threadId: string | null;
@@ -8,26 +8,20 @@ export interface WhatsAppSession {
   selectedAt: number | null;
 }
 
-export async function getSession(db: Client, userId: string): Promise<WhatsAppSession | null> {
-  const { rows } = await db.execute({ sql: "SELECT thread_id, selected_at FROM whatsapp_sessions WHERE user_id = ?", args: [userId] });
-  const row = rows[0];
-  if (!row) return null;
-  return { threadId: (row.thread_id as string | null) ?? null, selectedAt: row.selected_at == null ? null : Number(row.selected_at) };
+const file = (userId: string) => `${userDir(userId)}/whatsapp.json`;
+
+export async function getSession(records: Records, userId: string): Promise<WhatsAppSession | null> {
+  return (await records.read<WhatsAppSession>(file(userId))) ?? null;
 }
 
-export async function selectProject(db: Client, userId: string, at: number): Promise<void> {
-  await db.execute({
-    sql: `INSERT INTO whatsapp_sessions (user_id, selected_at) VALUES (?, ?)
-          ON CONFLICT(user_id) DO UPDATE SET selected_at = excluded.selected_at`,
-    args: [userId, at],
-  });
+const patch = (records: Records, userId: string, change: Partial<WhatsAppSession>) =>
+  records.update<WhatsAppSession>(file(userId), (s) => ({ threadId: null, selectedAt: null, ...s, ...change }));
+
+export async function selectProject(records: Records, userId: string, at: number): Promise<void> {
+  await patch(records, userId, { selectedAt: at });
 }
 
 /** Sets the thread WhatsApp messages go to; null makes the next message start a new one. */
-export async function setThread(db: Client, userId: string, threadId: string | null): Promise<void> {
-  await db.execute({
-    sql: `INSERT INTO whatsapp_sessions (user_id, thread_id) VALUES (?, ?)
-          ON CONFLICT(user_id) DO UPDATE SET thread_id = excluded.thread_id`,
-    args: [userId, threadId],
-  });
+export async function setThread(records: Records, userId: string, threadId: string | null): Promise<void> {
+  await patch(records, userId, { threadId });
 }

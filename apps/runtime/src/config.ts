@@ -12,7 +12,7 @@ const schema = z
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     PORT: z.coerce.number().int().default(8080),
     PROJECT_ID: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
-    // The project's volume: the database in db/, files in files/.
+    // The project's volume: the project folder in project/ (its files and .osiris/).
     DATA_DIR: z.string().default("/data"),
 
     // Control: features, backups, schedules, site publishing.

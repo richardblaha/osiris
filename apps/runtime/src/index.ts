@@ -1,11 +1,7 @@
 import { MediaReader } from "@osiris/core/agent/attachments.ts";
-import { mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { serve } from "@hono/node-server";
 import { createAgentModels } from "@osiris/core/agent/model.ts";
 import { loadSkills } from "@osiris/core/agent/skills.ts";
-import { createDb } from "@osiris/core/db/client.ts";
-import { migrate } from "@osiris/core/db/migrate.ts";
 import { createEmbeddings } from "@osiris/core/rag/embeddings.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
 import { openProject } from "@osiris/core/projects/project.ts";
@@ -15,7 +11,7 @@ import { Activity } from "./activity.ts";
 import { createRuntimeApp } from "./app.ts";
 import { loadConfig } from "./config.ts";
 import { ControlClient, RemoteFeatures } from "./control.ts";
-import { dataDbPath, dbPath, filesDir, hasDatabase, restoreSnapshot, withSnapshot } from "./snapshot.ts";
+import { hasProject, projectDir, restoreSnapshot, withSnapshot } from "./snapshot.ts";
 import { controlTools } from "./tools.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 import { monthOf } from "@osiris/core/agent/usage.ts";
@@ -28,21 +24,17 @@ const control = new ControlClient(
   runtimeToken(config.DEV_RUNTIME_AUTH ? { devProject: config.PROJECT_ID } : { tokenPath: config.RUNTIME_TOKEN_PATH }),
 );
 
-// A runtime starting on an empty volume (new pod, lost volume, data imported from the monolith) restores the newest snapshot.
-if (!hasDatabase(config.DATA_DIR)) {
+// A runtime starting on an empty volume (new pod, lost volume) restores the newest snapshot.
+if (!hasProject(config.DATA_DIR)) {
   const backup = await control.latestBackup();
   if (backup) {
     console.log(`Restoring ${config.PROJECT_ID} from ${backup.key}`);
     await restoreSnapshot(config.DATA_DIR, backup.body);
   }
 }
-mkdirSync(dirname(dbPath(config.DATA_DIR)), { recursive: true });
-const db = createDb(`file:${dbPath(config.DATA_DIR)}`);
-const applied = await migrate(db);
-if (applied.length) console.log(`Project ${config.PROJECT_ID}: applied migrations ${applied.join(", ")}`);
 
 if (!config.PROJECT_SECRETS_KEY) console.warn("PROJECT_SECRETS_KEY not set: secrets use an insecure development key.");
-const files = { dir: filesDir(config.DATA_DIR), maxFileBytes: config.FILES_MAX_FILE_MB * 1024 * 1024, quotaBytes: config.FILES_QUOTA_MB * 1024 * 1024 };
+const files = { maxFileBytes: config.FILES_MAX_FILE_MB * 1024 * 1024, quotaBytes: config.FILES_QUOTA_MB * 1024 * 1024 };
 const bundledSkills = loadSkills(config.SKILLS_DIR);
 
 const features = new RemoteFeatures(control);
@@ -52,7 +44,7 @@ const models = await createAgentModels({
   guard: config.LLM_GUARD_MODEL ?? config.LLM_MODEL,
   persona: config.LLM_PERSONA_MODEL ?? config.LLM_MODEL,
 });
-const project = openProject(config.PROJECT_ID, db, {
+const project = openProject(config.PROJECT_ID, projectDir(config.DATA_DIR), {
   model: models.agent,
   models,
   media: new MediaReader(config.MISTRAL_API_KEY, config.AUDIO_MODEL, config.OCR_MODEL),
@@ -74,7 +66,6 @@ const project = openProject(config.PROJECT_ID, db, {
     },
   },
   files,
-  database: { path: dataDbPath(config.DATA_DIR) },
   comfyApiKey: config.COMFY_API_KEY,
   images: config.IMAGE_GENERATION_ENABLED ? { server: config.IMAGE_MCP_SERVER, maxExecutionTimeMs: config.IMAGE_TIMEOUT_MS, maxAttempts: config.IMAGE_MAX_ATTEMPTS, maxRefinements: config.IMAGE_MAX_REFINEMENTS, maxEstimatedCost: config.IMAGE_MAX_ESTIMATED_COST, maxReadAttempts: config.IMAGE_MAX_READ_ATTEMPTS, maxImages: config.IMAGE_MAX_COUNT, visualEvaluation: config.IMAGE_VISUAL_EVALUATION, apiUploadFallback: config.IMAGE_API_UPLOAD_FALLBACK, uploadApiKeySecret: config.IMAGE_API_KEY_SECRET, retentionDays: config.IMAGE_RETENTION_DAYS, downloadHosts: config.IMAGE_DOWNLOAD_HOSTS } : undefined,
   gotenbergUrl: config.GOTENBERG_URL,
@@ -103,7 +94,7 @@ const reportUsage = async () => {
 const report = () => reportUsage().catch((err) => console.error("Usage report failed", err));
 const snapshot = async (reason: string) => {
   if (reason === "sleep") await report();
-  return withSnapshot(db, config.DATA_DIR, project.data.db, (archive) => control.uploadBackup(archive, reason));
+  return withSnapshot(config.DATA_DIR, project.data.db, (archive) => control.uploadBackup(archive, reason));
 };
 
 const app = createRuntimeApp({
@@ -113,7 +104,7 @@ const app = createRuntimeApp({
   snapshot,
   counts: () => features.counts(),
 });
-// Before serving: old database content moves to files, and the file indexes catch up with the files on disk.
+// Before serving: the indexes catch up with the files on disk.
 await project.init();
 const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) =>
   console.log(`Runtime of ${config.PROJECT_ID} listening on http://localhost:${port}`),
@@ -133,7 +124,7 @@ const shutdown = async () => {
   activity.sleeping = true;
   server.close();
   await project.mcp.close();
-  db.close();
+  project.cache.close();
   process.exit(0);
 };
 process.on("SIGTERM", shutdown);

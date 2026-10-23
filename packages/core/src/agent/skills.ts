@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { FileError, type FileLocation, type FileStore } from "../files/store.ts";
+import { userDir, type Records } from "../projects/records.ts";
 import { FEATURES, type Feature, type Scope, type SkillSummary } from "@osiris/shared";
 
 /**
@@ -8,8 +8,8 @@ import { FEATURES, type Feature, type Scope, type SkillSummary } from "@osiris/s
  * the instructions in with the `load_skill` tool when a request matches, so many skills cost few prompt tokens.
  *
  * Bundled skills ship with the app as folders `<SKILLS_DIR>/<name>/SKILL.md` (Agent Skills layout: frontmatter
- * with `name` and `description`, then Markdown). The project adds its own in the same layout under `skills/` in its
- * files, which override a bundled skill of the same name.
+ * with `name` and `description`, then Markdown). The project adds its own in the same layout under `.osiris/skills/`,
+ * which override a bundled skill of the same name.
  */
 export interface Skill {
   name: string;
@@ -57,25 +57,25 @@ export function parseSkill(source: string, file = "SKILL.md"): Skill {
   return { name, description, instructions, ...(open === "true" ? { public: true } : {}), ...(requires ? { requires: requires as Feature } : {}) };
 }
 
-/** Where skills live in the project's and each user's files: `skills/<name>/SKILL.md`. */
+/** Where skills live: `.osiris/skills/<name>/SKILL.md`, a user's in their private folder. */
 export const SKILLS_DIR = "skills";
 
-const locationOf = (scope: Scope, userId: string): FileLocation => (scope === "project" ? { scope: "project" } : { scope: "personal", userId });
+const dirOf = (scope: Scope, userId: string) => (scope === "project" ? SKILLS_DIR : `${userDir(userId)}/${SKILLS_DIR}`);
 
 /** A skill as its SKILL.md: frontmatter with name and description, then the instructions. */
 export const formatSkill = (s: Skill) =>
   `---\nname: ${s.name}\ndescription: ${s.description.replace(/\s+/g, " ").trim()}\n${s.public ? "public: true\n" : ""}${s.requires ? `requires: ${s.requires}\n` : ""}---\n\n${s.instructions.trim()}\n`;
 
 /**
- * Bundled skills merged with the project's (`skills/` in the project's files) and each user's (`skills/` in theirs):
- * personal wins over project, which wins over bundled. The files are read on every call, so a
- * skill edited or added in Soubory (or by the agent) applies from the next step; a malformed one is skipped.
+ * Bundled skills merged with the project's (`.osiris/skills/`) and each user's (in their private folder): personal
+ * wins over project, which wins over bundled. The files are read on every call, so a skill edited (in Osiris or in
+ * the repository) applies from the next step; a malformed one is skipped.
  */
 export class SkillStore {
   private readonly bundled: Map<string, Skill>;
 
   constructor(
-    private readonly files: FileStore,
+    private readonly records: Records,
     bundled: Skill[],
   ) {
     this.bundled = new Map(bundled.map((s) => [s.name, s]));
@@ -83,21 +83,17 @@ export class SkillStore {
 
   /** The valid skills in one scope's skills/ folder, by name. */
   private async read(scope: Scope, userId: string): Promise<Map<string, Skill>> {
-    const loc = locationOf(scope, userId);
-    const dirs = await this.files.list(loc, SKILLS_DIR).catch((err: FileError) => {
-      if (err instanceof FileError && err.code === "not_found") return [];
-      throw err;
-    });
+    const dir = dirOf(scope, userId);
     const skills = new Map<string, Skill>();
-    for (const d of dirs) {
-      if (d.type !== "dir") continue;
+    for (const name of await this.records.list(dir)) {
+      const text = await this.records.readText(`${dir}/${name}/SKILL.md`).catch(() => undefined);
+      if (text === undefined) continue;
       try {
-        const { data } = await this.files.read(loc, `${d.path}/SKILL.md`);
-        const skill = parseSkill(data.toString("utf8"), `${d.path}/SKILL.md`);
-        if (skill.name !== d.name) throw new Error(`${d.path}/SKILL.md: name "${skill.name}" must match its folder "${d.name}"`);
+        const skill = parseSkill(text, `${dir}/${name}/SKILL.md`);
+        if (skill.name !== name) throw new Error(`${dir}/${name}/SKILL.md: name "${skill.name}" must match its folder "${name}"`);
         skills.set(skill.name, skill);
       } catch (err) {
-        if (!(err instanceof FileError && err.code === "not_found")) console.warn(`Skipping skill ${d.path}: ${(err as Error).message}`);
+        console.warn(`Skipping skill ${dir}/${name}: ${(err as Error).message}`);
       }
     }
     return skills;
@@ -143,18 +139,11 @@ export class SkillStore {
 
   async put(skill: Skill, scope: Scope = "project", userId = ""): Promise<void> {
     if (!SKILL_NAME.test(skill.name)) throw new Error(`Invalid skill name "${skill.name}"`);
-    await this.files.write(locationOf(scope, userId), `${SKILLS_DIR}/${skill.name}/SKILL.md`, Buffer.from(formatSkill(skill)));
+    await this.records.writeText(`${dirOf(scope, userId)}/${skill.name}/SKILL.md`, formatSkill(skill));
   }
 
   /** Deletes a project or personal skill (bundled ones can't be deleted; deleting a replacement reveals what it hid). */
   async delete(name: string, scope: Scope = "project", userId = ""): Promise<boolean> {
-    if (!SKILL_NAME.test(name)) return false;
-    return this.files.delete(locationOf(scope, userId), `${SKILLS_DIR}/${name}`).then(
-      () => true,
-      (err) => {
-        if (err instanceof FileError && err.code === "not_found") return false;
-        throw err;
-      },
-    );
+    return SKILL_NAME.test(name) && this.records.remove(`${dirOf(scope, userId)}/${name}`);
   }
 }

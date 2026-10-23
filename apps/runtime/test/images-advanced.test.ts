@@ -6,7 +6,7 @@ import { catalogRecords, rankWorkflows } from "@osiris/core/images/registry.ts";
 import { downloadImage, ComfyUploadApi, completeMcpUpload } from "@osiris/core/images/http.ts";
 import { SecretVault } from "@osiris/core/vault/vault.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
-import { createTestDb } from "./helpers.ts";
+import { createTestRecords } from "./helpers.ts";
 const red = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
 const blue = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWNgYPj/HwADAgH/xCAAOgAAAABJRU5ErkJggg==", "base64");
 const white = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4////fwAJ+wP9CNHoHgAAAABJRU5ErkJggg==", "base64");
@@ -113,7 +113,7 @@ describe("provider contracts and security", () => {
     expect(calls).toBe(1);
   });
   it("uploads through the official API using only a host-scoped vault credential", async () => {
-    const db = await createTestDb();
+    const db = createTestRecords();
     try {
       const vault = new SecretVault(db, SecretBox.insecureDev());
       await vault.put("COMFY_API_KEY", "", { value: "private-key", allowedHosts: ["cloud.comfy.org"], description: "test" });
@@ -127,6 +127,6 @@ describe("provider contracts and security", () => {
       expect(await api.upload(red, "ref.png", "image/png")).toEqual({ name: "uploaded.png", subfolder: "", type: "input" });
       await vault.put("COMFY_API_KEY", "", { allowedHosts: ["another.example"], description: "wrong host" });
       await expect(api.upload(red, "ref.png", "image/png")).rejects.toThrow();
-    } finally { db.close(); }
+    } finally { /* nothing to close */ }
   });
 });

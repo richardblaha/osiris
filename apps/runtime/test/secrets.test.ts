@@ -6,7 +6,7 @@ import type { McpConnector } from "@osiris/core/mcp/toolset.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
 import { hostAllowed, redact, templateHost } from "@osiris/core/vault/template.ts";
 import { SecretVault } from "@osiris/core/vault/vault.ts";
-import { createTestDb, createTestProjects, createTestApp } from "./helpers.ts";
+import { allText, createTestRecords, createTestProjects, createTestApp } from "./helpers.ts";
 
 const run = (user: string, role: "admin" | "member" = "member") => ({
   configurable: { thread_id: `t-${user}`, project_id: "acme", user_id: user, role, channel: "web" as const },
@@ -27,13 +27,12 @@ describe("secret templates", () => {
 
 describe("SecretVault", () => {
   it("stores values sealed, lists without values and fills only for allowed hosts", async () => {
-    const db = await createTestDb();
+    const db = createTestRecords();
     const vault = new SecretVault(db, SecretBox.insecureDev());
     await vault.put("CRM_TOKEN", "", { value: "project-tok", allowedHosts: ["crm.example.com"], description: "CRM" });
     await vault.put("CRM_TOKEN", "alice", { value: "alice-tok", allowedHosts: ["crm.example.com"], description: "" });
 
-    const raw = await db.execute("SELECT value_enc FROM secrets");
-    expect(raw.rows.map((r) => String(r.value_enc)).join()).not.toMatch(/tok/);
+    expect(await allText(db)).not.toMatch(/tok/);
     expect(JSON.stringify(await vault.list("alice"))).not.toContain("alice-tok");
 
     const t = { h: "Bearer {{secret:CRM_TOKEN}}" };

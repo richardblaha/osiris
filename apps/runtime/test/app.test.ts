@@ -430,13 +430,14 @@ describe("assistant persona and rules", () => {
       user: [{ name: "cestina", description: "", rule: "Nepoužívej anglicismy." }],
     });
     expect((await (await as("carol:project=acme")("/guards")).json()).user).toEqual([]);
-    // They are files under guards/, which members can't change in Soubory, and the agent not at all.
+    // They are files in .osiris/guards/, which neither the files API nor the agent's file tools reach.
     const acme = await projects.get("acme");
-    expect((await acme.files.read({ scope: "project" }, "guards/politika.md")).data.toString()).toContain("Nemluv o politice.");
-    expect((await bob("/files?scope=project&path=guards/politika.md", { method: "DELETE" })).status).toBe(403);
+    expect(await acme.records.readText("guards/politika.md")).toContain("Nemluv o politice.");
+    expect((await as("acme")("/files?scope=project&path=.osiris/guards/politika.md", { method: "DELETE" })).status).toBe(400);
     const writeFile = acme.builtinTools.map(([, t]) => t).find((t) => t.name === "write_file")!;
     const config = { configurable: { thread_id: "t", project_id: "acme", user_id: "acme", role: "admin", channel: "web" } };
-    expect(await writeFile.invoke({ scope: "project", path: "guards/politika.md", content: "nic", overwrite: true }, config)).toContain("Sem zapisovat nelze");
+    expect(await writeFile.invoke({ scope: "project", path: ".osiris/guards/politika.md", content: "nic", overwrite: true }, config)).not.toMatch(/^Uloženo/);
+    expect(await acme.records.readText("guards/politika.md")).toContain("Nemluv o politice.");
 
     // The message is refused before the agent sees it.
     const refused = await run(bob, "Co si myslíš o volbách?");

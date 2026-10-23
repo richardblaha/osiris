@@ -1,4 +1,5 @@
-import { mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { idName } from "@osiris/core/projects/records.ts";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough, type Readable } from "node:stream";
@@ -9,7 +10,7 @@ import { generateInternalKeys, InternalSigner, InternalVerifier, projectAudience
 import { SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import { Activity } from "../src/activity.ts";
 import { createRuntimeApp } from "../src/app.ts";
-import { dbPath, hasDatabase, restoreSnapshot, withSnapshot } from "../src/snapshot.ts";
+import { hasProject, projectDir, restoreSnapshot, withSnapshot } from "../src/snapshot.ts";
 import { createTestProjects } from "./helpers.ts";
 
 const keys = await generateInternalKeys();
@@ -63,8 +64,7 @@ describe("runtime internal routes", () => {
     expect(again).toEqual(first);
     expect(model.calls).toHaveLength(1);
     expect(model.calls[0]!.at(-1)!.text).toContain("Plánovaná úloha „Ranní souhrn“");
-    const { rows } = await project.db.execute({ sql: "SELECT user_id, title FROM threads WHERE id = ?", args: [first.threadId] });
-    expect(rows[0]).toMatchObject({ user_id: "u1", title: "⏰ Ranní souhrn" });
+    expect(await project.records.read(`private/threads/${idName(first.threadId)}/thread.json`)).toMatchObject({ userId: "u1", title: "⏰ Ranní souhrn" });
   });
 
   it("keeps a WhatsApp conversation per user until a new thread is asked for, and drops redeliveries", async () => {
@@ -96,30 +96,35 @@ describe("runtime internal routes", () => {
 });
 
 describe("snapshots", () => {
-  it("round-trips the database and files, and restores only them", async () => {
+  it("round-trips the project folder and its database, without the cache, and restores only them", async () => {
     const dir = mkdtempSync(join(tmpdir(), "osiris-snap-"));
-    mkdirSync(join(dir, "db"), { recursive: true });
-    const db = createDb(`file:${dbPath(dir)}`);
+    const root = projectDir(dir);
+    mkdirSync(join(root, "sablony"), { recursive: true });
+    writeFileSync(join(root, "sablony", "a.html"), "<p>x</p>");
+    mkdirSync(join(root, ".osiris", "cache"), { recursive: true });
+    writeFileSync(join(root, ".osiris", "memory.md"), "ahoj");
+    writeFileSync(join(root, ".osiris", "cache", "index.db"), "x");
+    const db = createDb(`file:${join(root, ".osiris", "data.db")}`);
     await db.execute("CREATE TABLE t (v TEXT)");
     await db.execute("INSERT INTO t VALUES ('ahoj')");
-    mkdirSync(join(dir, "files", "project", "sablony"), { recursive: true });
-    writeFileSync(join(dir, "files", "project", "sablony", "a.html"), "<p>x</p>");
 
     const chunks: Buffer[] = [];
-    await withSnapshot(db, dir, undefined, async (archive: Readable) => {
+    await withSnapshot(dir, db, async (archive: Readable) => {
       for await (const c of archive) chunks.push(Buffer.from(c as Uint8Array));
     });
     db.close();
 
     const target = mkdtempSync(join(tmpdir(), "osiris-restore-"));
-    expect(hasDatabase(target)).toBe(false);
+    expect(hasProject(target)).toBe(false);
     const stream = new PassThrough();
     stream.end(Buffer.concat(chunks));
     await restoreSnapshot(target, stream);
-    expect(hasDatabase(target)).toBe(true);
-    const restored = createDb(`file:${dbPath(target)}`);
+    expect(hasProject(target)).toBe(true);
+    const restored = createDb(`file:${join(projectDir(target), ".osiris", "data.db")}`);
     expect((await restored.execute("SELECT v FROM t")).rows[0]?.v).toBe("ahoj");
-    expect(readFileSync(join(target, "files", "project", "sablony", "a.html"), "utf8")).toBe("<p>x</p>");
+    expect(readFileSync(join(projectDir(target), "sablony", "a.html"), "utf8")).toBe("<p>x</p>");
+    expect(readFileSync(join(projectDir(target), ".osiris", "memory.md"), "utf8")).toBe("ahoj");
+    expect(existsSync(join(projectDir(target), ".osiris", "cache"))).toBe(false);
   });
 });
 

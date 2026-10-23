@@ -1,60 +1,65 @@
-import type { Client } from "@libsql/client";
+import type { Records } from "../projects/records.ts";
 
 /** The calendar month (UTC) a time falls in, as `YYYY-MM`. */
 export const monthOf = (now = Date.now()) => new Date(now).toISOString().slice(0, 7);
 
-/** Whose tokens: a public assistant's (row `public:<name>:YYYY-MM`) or a member's (`user:<sub>:YYYY-MM`). */
+/** Whose tokens: a public assistant's or a member's. */
 export interface UsageOwner {
   public?: string;
   user?: string;
 }
 
-const key = (month: string, { public: open, user }: UsageOwner) => (open ? `public:${open}:${month}` : user ? `user:${user}:${month}` : month);
+/** One month's tokens: the project's, and by member and by public assistant. */
+interface MonthUsage {
+  tokens: number;
+  users: Record<string, number>;
+  assistants: Record<string, number>;
+}
 
-/** Tokens the project's agent used per calendar month, checked against the project's, its members' and its public assistants' quotas. */
+const EMPTY: MonthUsage = { tokens: 0, users: {}, assistants: {} };
+const file = (month: string) => `private/usage/${month}.json`;
+
+/** Tokens the project's agent used per calendar month (`private/usage/<YYYY-MM>.json`), checked against the quotas. */
 export class UsageStore {
-  constructor(private readonly db: Client) {}
+  constructor(private readonly records: Records) {}
+
+  private async month(month: string): Promise<MonthUsage> {
+    return { ...EMPTY, ...(await this.records.read<MonthUsage>(file(month))) };
+  }
 
   /** Counts tokens for the project, and for the public assistant or the member who ran them. */
   async add(tokens: number, now = Date.now(), owner: UsageOwner = {}) {
     if (!(tokens > 0)) return;
-    const sql = "INSERT INTO usage_months (month, tokens) VALUES (?, ?) ON CONFLICT (month) DO UPDATE SET tokens = tokens + excluded.tokens";
     const n = Math.round(tokens);
     const month = monthOf(now);
-    const own = owner.public || owner.user ? [{ sql, args: [key(month, owner), n] }] : [];
-    await this.db.batch([{ sql, args: [month, n] }, ...own], "write");
+    await this.records.update<MonthUsage>(file(month), (current) => {
+      const u = { ...EMPTY, ...current, users: { ...current?.users }, assistants: { ...current?.assistants } };
+      u.tokens += n;
+      if (owner.public) u.assistants[owner.public] = (u.assistants[owner.public] ?? 0) + n;
+      else if (owner.user) u.users[owner.user] = (u.users[owner.user] ?? 0) + n;
+      return u;
+    });
   }
 
   async tokens(now = Date.now(), owner: UsageOwner = {}): Promise<number> {
-    const { rows } = await this.db.execute({ sql: "SELECT tokens FROM usage_months WHERE month = ?", args: [key(monthOf(now), owner)] });
-    return Number(rows[0]?.tokens ?? 0);
+    const u = await this.month(monthOf(now));
+    return owner.public ? (u.assistants[owner.public] ?? 0) : owner.user ? (u.users[owner.user] ?? 0) : u.tokens;
   }
 
   /** This month's tokens by member and by public assistant (most first), and the project's of the last 12 months. */
   async breakdown(now = Date.now()): Promise<{ users: { userId: string; tokens: number }[]; assistants: { name: string; tokens: number }[]; months: { month: string; tokens: number }[] }> {
-    const month = monthOf(now);
-    const { rows } = await this.db.execute("SELECT month, tokens FROM usage_months");
-    const all = rows.map((r) => ({ key: String(r.month), tokens: Number(r.tokens) }));
-    const own = (prefix: string) =>
-      all
-        .filter((r) => r.key.startsWith(prefix) && r.key.endsWith(`:${month}`))
-        .map((r) => ({ id: r.key.slice(prefix.length, -month.length - 1), tokens: r.tokens }))
-        .sort((a, b) => b.tokens - a.tokens);
+    const u = await this.month(monthOf(now));
+    const months = (await this.records.list("private/usage")).filter((n) => /^\d{4}-\d{2}\.json$/.test(n)).slice(-12);
+    const most = <T extends { tokens: number }>(a: T[]) => a.sort((x, y) => y.tokens - x.tokens);
     return {
-      users: own("user:").map((u) => ({ userId: u.id, tokens: u.tokens })),
-      assistants: own("public:").map((a) => ({ name: a.id, tokens: a.tokens })),
-      months: all
-        .filter((r) => /^\d{4}-\d{2}$/.test(r.key))
-        .sort((a, b) => a.key.localeCompare(b.key))
-        .slice(-12)
-        .map((r) => ({ month: r.key, tokens: r.tokens })),
+      users: most(Object.entries(u.users).map(([userId, tokens]) => ({ userId, tokens }))),
+      assistants: most(Object.entries(u.assistants).map(([name, tokens]) => ({ name, tokens }))),
+      months: await Promise.all(months.map(async (n) => ({ month: n.slice(0, 7), tokens: (await this.month(n.slice(0, 7))).tokens }))),
     };
   }
 
   /** Each member's tokens in a month, by user id. */
   async byUser(now = Date.now()): Promise<Record<string, number>> {
-    const month = monthOf(now);
-    const { rows } = await this.db.execute({ sql: "SELECT month, tokens FROM usage_months WHERE month LIKE 'user:%' AND month LIKE ?", args: [`%:${month}`] });
-    return Object.fromEntries(rows.map((r) => [String(r.month).slice(5, -month.length - 1), Number(r.tokens)]));
+    return (await this.month(monthOf(now))).users;
   }
 }

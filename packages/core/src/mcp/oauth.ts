@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Client } from "@libsql/client";
+import { userDir, userIds, type Records } from "../projects/records.ts";
 import {
   auth,
   type OAuthClientMetadata,
@@ -16,34 +16,38 @@ interface OAuthData {
   verifier?: string;
 }
 
+const oauthDir = (owner: string) => `${owner ? userDir(owner) : "private"}/mcp-oauth`;
+
 /** OAuth sign-ins to MCP servers, per server and owner ('' = project-wide, or a user's sub); sealed with the SecretBox. */
 export class McpOAuthStore {
   constructor(
-    private readonly db: Client,
+    private readonly records: Records,
     private readonly secrets: SecretBox,
   ) {}
 
   async get(owner: string, name: string): Promise<OAuthData> {
-    const { rows } = await this.db.execute({ sql: "SELECT data_enc FROM mcp_oauth WHERE owner = ? AND name = ?", args: [owner, name] });
-    return rows[0] ? (JSON.parse(this.secrets.open(String(rows[0].data_enc))) as OAuthData) : {};
+    const r = await this.records.read<{ dataEnc: string }>(`${oauthDir(owner)}/${name}.json`);
+    return r ? (JSON.parse(this.secrets.open(r.dataEnc)) as OAuthData) : {};
   }
 
   /** Merges changes into the stored data (a key set to undefined is removed); `state` replaces the pending state. */
   async patch(owner: string, name: string, changes: Partial<OAuthData>, state?: string | null) {
-    const data: OAuthData = { ...(await this.get(owner, name)), ...changes };
-    for (const k of Object.keys(changes) as (keyof OAuthData)[]) if (changes[k] === undefined) delete data[k];
-    await this.db.execute({
-      sql: `INSERT INTO mcp_oauth (owner, name, data_enc, state) VALUES (?, ?, ?, ?)
-            ON CONFLICT (owner, name) DO UPDATE SET data_enc = excluded.data_enc,
-              state = ${state === undefined ? "mcp_oauth.state" : "excluded.state"}, updated_at = datetime('now')`,
-      args: [owner, name, this.secrets.seal(JSON.stringify(data)), state ?? null],
+    const file = `${oauthDir(owner)}/${name}.json`;
+    await this.records.lock(file, async () => {
+      const data: OAuthData = { ...(await this.get(owner, name)), ...changes };
+      for (const k of Object.keys(changes) as (keyof OAuthData)[]) if (changes[k] === undefined) delete data[k];
+      const kept = state === undefined ? ((await this.records.read<{ state?: string | null }>(file))?.state ?? null) : state;
+      await this.records.write(file, { dataEnc: this.secrets.seal(JSON.stringify(data)), state: kept });
     });
   }
 
   /** The server whose sign-in is waiting for this state value. */
   async byState(state: string): Promise<{ owner: string; name: string } | undefined> {
-    const { rows } = await this.db.execute({ sql: "SELECT owner, name FROM mcp_oauth WHERE state = ?", args: [state] });
-    return rows[0] ? { owner: String(rows[0].owner), name: String(rows[0].name) } : undefined;
+    for (const owner of ["", ...(await userIds(this.records))]) {
+      const found = (await this.records.all<{ state?: string | null }>(oauthDir(owner))).find((r) => r.value.state === state);
+      if (found) return { owner, name: found.name };
+    }
+    return undefined;
   }
 
   async connected(owner: string, name: string): Promise<boolean> {
@@ -51,7 +55,7 @@ export class McpOAuthStore {
   }
 
   async clear(owner: string, name: string) {
-    await this.db.execute({ sql: "DELETE FROM mcp_oauth WHERE owner = ? AND name = ?", args: [owner, name] });
+    await this.records.remove(`${oauthDir(owner)}/${name}.json`);
   }
 }
 

@@ -1,7 +1,7 @@
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import { MemoryStore } from "@osiris/core/agent/memory.ts";
-import { createTestDb, createTestProjects } from "./helpers.ts";
+import { createTestRecords, createTestProjects } from "./helpers.ts";
 
 const ctx = (user: string, role: "admin" | "member") => ({
   thread_id: `t-${user}`,
@@ -13,7 +13,7 @@ const ctx = (user: string, role: "admin" | "member") => ({
 
 describe("MemoryStore", () => {
   it("shows a user their own and shared memories, not other users' personal ones", async () => {
-    const store = new MemoryStore(await createTestDb());
+    const store = new MemoryStore(createTestRecords());
     await store.add("alice", "Alice tyká", "personal");
     await store.add("bob", "Bob vyká", "personal");
     const shared = await store.add("alice", "Firma není plátce DPH", "project");

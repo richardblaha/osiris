@@ -13,6 +13,7 @@ import type { Project } from "@osiris/core/projects/project.ts";
 import type { InternalVerifier } from "@osiris/platform/internal-auth.ts";
 import type { Activity } from "./activity.ts";
 import { verifyCall, type AuthEnv } from "./auth.ts";
+import { idName } from "@osiris/core/projects/records.ts";
 import { configuredLocale, HttpError, ValidationError } from "@osiris/platform/i18n.ts";
 
 const scheduledRun = z.object({ title: z.string().min(1).max(100), prompt: z.string().min(1).max(4000), idempotencyKey: z.string().min(1).max(200) });
@@ -20,13 +21,11 @@ const whatsappMessage = z.object({ messageId: z.string().min(1).max(200), text: 
 
 /** A run's stored answer, so a repeated request (lost lease, redelivery) doesn't run the agent twice. */
 async function once(project: Project, key: string, work: () => Promise<{ threadId: string; reply: string }>) {
-  const { rows } = await project.db.execute({ sql: "SELECT thread_id, reply FROM processed_runs WHERE key = ?", args: [key] });
-  if (rows[0]) return { threadId: String(rows[0].thread_id), reply: String(rows[0].reply) };
+  const file = `private/runs/${idName(key)}.json`;
+  const done = await project.records.read<{ threadId: string; reply: string }>(file);
+  if (done) return done;
   const result = await work();
-  await project.db.execute({
-    sql: "INSERT INTO processed_runs (key, thread_id, reply) VALUES (?, ?, ?) ON CONFLICT (key) DO NOTHING",
-    args: [key, result.threadId, result.reply],
-  });
+  await project.records.write(file, { threadId: result.threadId, reply: result.reply });
   return result;
 }
 
@@ -111,8 +110,8 @@ export function createInternalRoutes({
       return c.json(
         await once(project, `schedule:${idempotencyKey}`, async () => {
           const threadId = randomUUID();
-          await threads.createThread(project.db, user.sub, threadId, "web");
-          await threads.touchThread(project.db, threadId, `⏰ ${title}`);
+          await threads.createThread(project.records, user.sub, threadId, "web");
+          await threads.touchThread(project.records, threadId, `⏰ ${title}`);
           const reply = await invoke(
             { thread_id: threadId, project_id: project.id, user_id: user.sub, role, channel, user_name: user.name ?? undefined, locale: configuredLocale() },
             `[Plánovaná úloha „${title}“, spuštěná automaticky bez přítomnosti uživatele. Udělej ji a výsledek shrň.]\n\n${prompt}`,
@@ -130,7 +129,7 @@ export function createInternalRoutes({
       const { messageId, text } = body.data;
       const { reply } = await once(project, `whatsapp:${messageId}`, async () => {
         const threadId = await whatsappThread(project, user.sub);
-        await threads.touchThread(project.db, threadId, text);
+        await threads.touchThread(project.records, threadId, text);
         let message = text;
         if (body.data.attachment) {
           if (!(await project.features.get()).files) throw new HttpError(403, "errors.files.featureOff");
@@ -157,24 +156,24 @@ export function createInternalRoutes({
       const { user } = asUser(c.get("call"));
       if (!(await project.features.get()).files) throw new HTTPException(403);
       const { threadId, scope, path } = z.object({ threadId: z.string(), scope: z.enum(["project", "temp"]), path: z.string().max(300) }).parse(await c.req.json());
-      if (!(await threads.ownsThread(project.db, user.sub, threadId)) || !(await offeredFiles(threadId)).some((f: { scope: string; path: string }) => f.scope === scope && f.path === path)) throw new HTTPException(404);
+      if (!(await threads.ownsThread(project.records, user.sub, threadId)) || !(await offeredFiles(threadId)).some((f: { scope: string; path: string }) => f.scope === scope && f.path === path)) throw new HTTPException(404);
       const file = await project.files.read(scope === "temp" ? { scope, threadId } : { scope }, path);
       if (file.data.length > 20 * 1024 * 1024) throw new HTTPException(413);
       return c.json({ data: file.data.toString("base64"), name: path.split("/").at(-1), mime: fileType(path)!.mime });
     })
     .post("/whatsapp/new-thread", async (c) => {
       const { user } = asUser(c.get("call"));
-      await sessions.setThread(project.db, user.sub, null);
+      await sessions.setThread(project.records, user.sub, null);
       return c.body(null, 204);
     });
 }
 
 /** The user's current WhatsApp thread, created if there is none (or it was deleted on the web). */
 async function whatsappThread(project: Project, userId: string): Promise<string> {
-  const session = await sessions.getSession(project.db, userId);
-  if (session?.threadId && (await threads.ownsThread(project.db, userId, session.threadId))) return session.threadId;
+  const session = await sessions.getSession(project.records, userId);
+  if (session?.threadId && (await threads.ownsThread(project.records, userId, session.threadId))) return session.threadId;
   const id = randomUUID();
-  await threads.createThread(project.db, userId, id, "whatsapp");
-  await sessions.setThread(project.db, userId, id);
+  await threads.createThread(project.records, userId, id, "whatsapp");
+  await sessions.setThread(project.records, userId, id);
   return id;
 }

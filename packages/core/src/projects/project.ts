@@ -25,7 +25,7 @@ import { SkillStore, type Skill } from "../agent/skills.ts";
 import { saveKnowledgeTool, searchKnowledgeTool } from "../agent/tools/knowledge.ts";
 import { memoryTools } from "../agent/tools/memory.ts";
 import { loadSkillTool } from "../agent/tools/skills.ts";
-import { LibSQLSaver } from "../checkpointer/libsql-saver.ts";
+import { FileSaver } from "../checkpointer/file-saver.ts";
 import { McpServerStore } from "../mcp/store.ts";
 import { McpToolset, type McpOptions } from "../mcp/toolset.ts";
 import { KnowledgeStore } from "../rag/store.ts";
@@ -50,18 +50,28 @@ import { microsoftTools } from "../integrations/microsoft.ts";
 import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
 import { buildVitepressTool, publishSiteTool } from "../agent/tools/site.ts";
 import { VitepressClient } from "../files/vitepress.ts";
-import { FileIndexer, moveKnowledgeToDb, moveLegacyToFiles } from "../files/sync.ts";
+import { FileIndexer } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 import { databaseTools } from "../agent/tools/database.ts";
 import { DataStore } from "../database/store.ts";
 import { createDb } from "../db/client.ts";
+import { join } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
+import { Records } from "./records.ts";
+import { prepareCache } from "./cache.ts";
+import { threadIds } from "../repo/threads.ts";
 import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
 
-/** Everything one project owns, all on the project's own database. */
+/** Everything one project owns: its folder, with its own data in `.osiris/`. */
 export interface Project {
   id: string;
-  db: Client;
-  checkpointer: LibSQLSaver;
+  /** The project folder (a git working tree when the project uses git). */
+  root: string;
+  /** The project's own data under `.osiris/` (settings, conversations, keys, ...). */
+  records: Records;
+  /** Derived indexes in `.osiris/cache/index.db`, rebuilt from the files at init. */
+  cache: Client;
+  checkpointer: FileSaver;
   knowledge: KnowledgeStore;
   skills: SkillStore;
   memory: MemoryStore;
@@ -116,10 +126,8 @@ export interface ProjectDeps {
   timezone: string;
   secrets: SecretBox;
   mcp?: McpOptions;
-  /** Where the project's files live. */
-  files: FileStoreOptions & { dir: string };
-  /** The file of the project's database (feature `database`), next to the project's own. */
-  database: { path: string };
+  /** Limits of the project's files. */
+  files?: FileStoreOptions;
   /** Which features the project may use (from control). */
   features: FeatureSource;
   /** Tools beyond the built-in ones (the runtime's schedule and site tools), each tied to a feature. */
@@ -136,21 +144,29 @@ export interface ProjectDeps {
   fetch?: typeof fetch;
 }
 
-export function openProject(id: string, db: Client, deps: ProjectDeps): Project {
-  const checkpointer = new LibSQLSaver(db);
-  const knowledge = new KnowledgeStore(db, deps.embeddings, deps.embeddingModel);
-  const memory = new MemoryStore(db);
-  const mcpServers = new McpServerStore(db, deps.secrets);
-  const secrets = new SecretVault(db, deps.secrets);
-  const mcp = new McpToolset(mcpServers, secrets, new McpOAuthStore(db, deps.secrets), deps.mcp);
+/** The project's own data folder in its root. */
+export const OSIRIS_DIR = ".osiris";
+/** What git leaves out: personal and sealed data, rebuildable indexes, chats' scratchpads. */
+const GITIGNORE = "private/\ncache/\ntmp/\ndata.db*\n";
+
+/** Opens the project in `root` (created on first use). */
+export function openProject(id: string, root: string, deps: ProjectDeps): Project {
+  const records = new Records(join(root, OSIRIS_DIR));
+  const cache = createDb(`file:${join(records.dir, "cache", "index.db")}`);
+  const checkpointer = new FileSaver(records);
+  const knowledge = new KnowledgeStore(records, cache, deps.embeddings, deps.embeddingModel);
+  const memory = new MemoryStore(records);
+  const mcpServers = new McpServerStore(records, deps.secrets);
+  const secrets = new SecretVault(records, deps.secrets);
+  const mcp = new McpToolset(mcpServers, secrets, new McpOAuthStore(records, deps.secrets), deps.mcp);
   const userDefaults = async () => (await deps.features.userDefaults?.()) ?? {};
-  const settings = new UserSettingsStore(db, async () => {
+  const settings = new UserSettingsStore(records, async () => {
     const { persona: _, ...defaults } = await userDefaults();
     return defaults;
   });
   const features = deps.features;
-  const usage = new UsageStore(db);
-  const profiles = new AssistantProfileStore(db);
+  const usage = new UsageStore(records);
+  const profiles = new AssistantProfileStore(records);
   // Guards are files, so the store comes after the file store; rules() runs only in runs, long after.
   let guards!: GuardStore;
   const rules = async (userId: string): Promise<GuardRules> => {
@@ -158,7 +174,7 @@ export function openProject(id: string, db: Client, deps: ProjectDeps): Project 
     return { system: guardsText(system), project: guardsText(project), user: guardsText(user) };
   };
   // The public assistants (customers): each its own persona and rules after the system's and the project's.
-  const publicAssistants = new PublicAssistantStore(db);
+  const publicAssistants = new PublicAssistantStore(records);
   const publicRules = async (name = ""): Promise<GuardRules> => {
     const [system, project, open] = await Promise.all([
       features.systemGuards(),
@@ -167,11 +183,11 @@ export function openProject(id: string, db: Client, deps: ProjectDeps): Project 
     ]);
     return { system: guardsText(system), project: guardsText(project), user: guardsText(open) };
   };
-  const inquiries = new InquiryStore(db);
-  const fileIndex = new FileIndex(db);
+  const inquiries = new InquiryStore(records);
+  const fileIndex = new FileIndex(cache);
   // The files are the truth for the knowledge base and skills; the indexes follow every change.
   let indexer: FileIndexer | undefined;
-  const files = new FileStore(deps.files.dir, {
+  const files = new FileStore(root, {
     ...deps.files,
     quota: async () => {
       const mb = (await features.quotas()).storageMb;
@@ -180,25 +196,26 @@ export function openProject(id: string, db: Client, deps: ProjectDeps): Project 
     onChange: (change) => indexer!.apply(change),
   });
   indexer = new FileIndexer(files, fileIndex);
-  const data = new DataStore(createDb(`file:${deps.database.path}`), deps.database.path, async () => {
+  const dataPath = join(records.dir, "data.db");
+  const data = new DataStore(createDb(`file:${dataPath}`), dataPath, async () => {
     const q = await features.quotas();
     return { tables: q.tables, bytes: q.databaseMb === null ? null : q.databaseMb * 1024 * 1024 };
   });
-  const skills = new SkillStore(files, deps.bundledSkills);
-  guards = new GuardStore(files);
-  const siteTargets = new SiteTargetStore(db, deps.secrets);
+  const skills = new SkillStore(records, deps.bundledSkills);
+  guards = new GuardStore(records);
+  const siteTargets = new SiteTargetStore(records, deps.secrets);
   const integrations = new IntegrationAccounts(
-    db,
+    records,
     deps.secrets,
     deps.integrations?.clients ?? {},
     deps.integrations?.redirectUrl ?? "http://localhost:5173/integration-callback",
     deps.integrations?.fetch,
   );
-  const standardAccounts = new StandardAccounts(db, deps.secrets);
+  const standardAccounts = new StandardAccounts(records, deps.secrets);
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   const vitepress = deps.vitepressUrl ? new VitepressClient(deps.vitepressUrl, deps.fetch) : undefined;
   // Each built-in tool belongs to a feature a system admin can switch off for the project.
-  const images = deps.images ? new ImageService(new ImageJobStore(db), files, mcp, deps.models?.tools ?? deps.model, { ...deps.images,
+  const images = deps.images ? new ImageService(new ImageJobStore(records), files, mcp, deps.models?.tools ?? deps.model, { ...deps.images,
     uploadApi: deps.images.uploadApi ?? (deps.images.apiUploadFallback ? new ComfyUploadApi(secrets, deps.images.uploadApiKeySecret, deps.fetch) : undefined),
     authorize: async ctx => {
       const on = await features.get(), q = await features.quotas();
@@ -207,7 +224,7 @@ export function openProject(id: string, db: Client, deps: ProjectDeps): Project 
       await deps.images?.authorize?.(ctx);
     },
   }, (ctx, tokens) => usage.add(tokens, Date.now(), { user: ctx.user_id })) : undefined;
-  const questions = new QuestionStore(db);
+  const questions = new QuestionStore(records);
   // Workflow steps run as the project's agent itself, declared below (the graph exists before any tool runs).
   const orchestrator = createOrchestratorGraph({
     model: deps.models?.agent ?? deps.model,
@@ -318,8 +335,12 @@ export function openProject(id: string, db: Client, deps: ProjectDeps): Project 
     secrets,
     database: () => data.tables(),
   });
-  // Old projects' documents and skills move to files once, then the indexes catch up with the files on disk.
+  // The indexes catch up with the files on disk (a restored snapshot, a git pull, a lost cache).
   const init = async () => {
+    await mkdir(records.dir, { recursive: true });
+    await writeFile(join(records.dir, ".gitignore"), GITIGNORE, { flag: "wx" }).catch((err) => (err.code === "EEXIST" ? undefined : Promise.reject(err)));
+    if (!(await records.read("project.json"))) await records.write("project.json", { id });
+    await prepareCache(cache);
     if (images && deps.comfyApiKey) {
       const name = deps.images?.server ?? "comfy-cloud", keyName = deps.images?.uploadApiKeySecret ?? "COMFY_API_KEY";
       if (!(await secrets.list("")).some(secret => secret.name === keyName)) await secrets.put(keyName, "", { value: deps.comfyApiKey, allowedHosts: ["cloud.comfy.org"], description: "Comfy Cloud runtime credential" });
@@ -328,20 +349,18 @@ export function openProject(id: string, db: Client, deps: ProjectDeps): Project 
         mcp.invalidate("");
       }
     }
-    await moveLegacyToFiles(db, files);
-    await moveKnowledgeToDb(db, files, knowledge);
-    await publicAssistants.migrateLegacy(skills);
-    await guards.migrateProfiles(db);
     await indexer!.reconcile();
-    // A chat's scratchpad lives as long as the chat; one whose chat is gone (from before it did) goes now.
-    for (const thread of await files.tempThreads()) {
-      if (!(await db.execute({ sql: "SELECT 1 FROM threads WHERE id = ?", args: [thread] })).rows.length) await files.removeTemp(thread);
-    }
+    await knowledge.reindexStale();
+    // A chat's scratchpad lives as long as the chat; one whose chat is gone goes now.
+    const threads = await threadIds(records);
+    for (const thread of await files.tempThreads()) if (!threads.has(thread)) await files.removeTemp(thread);
     await images?.cleanup();
   };
   return {
     id,
-    db,
+    root,
+    records,
+    cache,
     checkpointer,
     knowledge,
     skills,

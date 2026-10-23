@@ -7,7 +7,7 @@ import { McpServerStore } from "@osiris/core/mcp/store.ts";
 import { McpToolset, type McpConnector } from "@osiris/core/mcp/toolset.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
 import { SecretVault } from "@osiris/core/vault/vault.ts";
-import { createTestDb } from "./helpers.ts";
+import { allText, createTestRecords } from "./helpers.ts";
 
 let server: Server | undefined;
 afterEach(() => server?.close());
@@ -61,7 +61,7 @@ async function fakeProvider() {
 describe("MCP servers signed in with OAuth", () => {
   it("registers, sends the user to the provider, exchanges the code with PKCE and connects with the token", async () => {
     const { base, seen } = await fakeProvider();
-    const db = await createTestDb();
+    const db = createTestRecords();
     const box = SecretBox.insecureDev();
     const store = new McpServerStore(db, box);
     let connectedWith: string | undefined;
@@ -99,7 +99,7 @@ describe("MCP servers signed in with OAuth", () => {
     expect(await mcp.signedIn("", "vas-hosting")).toBe(true);
     // The state works once, and the tokens are sealed in the database.
     expect(await mcp.pendingSignIn(state)).toBeUndefined();
-    const stored = String((await db.execute("SELECT data_enc FROM mcp_oauth")).rows[0]!.data_enc);
+    const stored = await allText(db);
     expect(stored).not.toContain("access-1");
 
     expect(await mcp.test(config, "")).toEqual({ ok: true, tools: [] });

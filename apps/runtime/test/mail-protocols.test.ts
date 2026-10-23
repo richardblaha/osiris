@@ -4,7 +4,7 @@ import { pop3Read } from "@osiris/core/integrations/pop3.ts";
 import { mailTools } from "@osiris/core/integrations/mail.ts";
 import { StandardAccounts } from "@osiris/core/integrations/standard.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
-import { createTestDb } from "./helpers.ts";
+import { createTestRecords } from "./helpers.ts";
 
 const mocks = vi.hoisted(() => ({ connect: vi.fn(), sendMail: vi.fn(), close: vi.fn(), createTransport: vi.fn() }));
 vi.mock("node:tls", async importOriginal => ({ ...await importOriginal<typeof import("node:tls")>(), connect: mocks.connect }));
@@ -54,7 +54,7 @@ describe("standard mail protocols", () => {
   });
 
   it("sends with configured sender, mandatory STARTTLS, and closes the transport", async () => {
-    const db = await createTestDb();
+    const db = createTestRecords();
     const accounts = new StandardAccounts(db, SecretBox.insecureDev());
     await accounts.put("bob", "work", { kind: "mail", from: "bob@example.cz", smtp: { ...endpoint, port: 587, secure: false } });
     const createTransport = mocks.createTransport.mockReturnValue({ sendMail: mocks.sendMail, close: mocks.close });
@@ -67,6 +67,5 @@ describe("standard mail protocols", () => {
     expect(mocks.close).toHaveBeenCalled();
     await expect(send.invoke({ account: "work", to: ["eva@example.cz"], subject: "Test\r\nBcc: bad@example.cz", body: "Ahoj" }, config)).rejects.toThrow();
     await expect(send.invoke({ account: "work", to: ["eva@example.cz"], subject: "Test", body: "Ahoj" }, { configurable: { ...config.configurable, user_id: "eva" } })).rejects.toThrow("isn't connected");
-    db.close();
   });
 });

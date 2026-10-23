@@ -1,3 +1,4 @@
+import { idName } from "@osiris/core/projects/records.ts";
 import { AIMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import { createTestApp, createTestProjects } from "./helpers.ts";
@@ -49,7 +50,7 @@ describe("durable chat questions", () => {
     expect(cancel).toContain("Neprováděj akci");
     expect((await project.questions.get("dev:bob", id, q.id))?.state).toBe("cancelled");
     const next = await project.questions.create("dev:bob", id, definition);
-    await project.db.execute({ sql: "UPDATE chat_questions SET expires_at=0 WHERE id=?", args: [next.id] });
+    await project.records.update<{ expiresAt: number }>(`private/threads/${idName(id)}/questions/${next.id}.json`, (q) => ({ ...q!, expiresAt: 0 }));
     await expect(project.questions.resolve("dev:bob", id, next.id, { confirm: true }, false)).rejects.toThrow();
     expect((await project.questions.get("dev:bob", id, next.id))?.state).toBe("expired");
     await expect(project.questions.prepare("dev:bob", id, "ano")).rejects.toThrow("has expired");

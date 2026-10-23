@@ -6,7 +6,7 @@ import { McpServerStore } from "@osiris/core/mcp/store.ts";
 import type { McpConnector } from "@osiris/core/mcp/toolset.ts";
 import { assertSafePublicUrl } from "@osiris/core/mcp/url.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
-import { createTestDb, createTestProjects, createTestApp } from "./helpers.ts";
+import { allText, createTestRecords, createTestProjects, createTestApp } from "./helpers.ts";
 
 /** Fake MCP servers: `weather` has one tool, `broken` fails to connect. Records the headers it was given. */
 function fakeMcp() {
@@ -53,12 +53,11 @@ describe("MCP URL guard", () => {
 
 describe("McpServerStore", () => {
   it("encrypts headers, lists only their names and keeps them when omitted", async () => {
-    const db = await createTestDb();
+    const db = createTestRecords();
     const store = new McpServerStore(db, SecretBox.insecureDev());
     await store.put("crm", "", { url: "https://crm.example/mcp", enabled: true, headers: { Authorization: "Bearer s3cret" } });
 
-    const raw = await db.execute("SELECT headers_enc FROM mcp_servers");
-    expect(String(raw.rows[0]?.headers_enc)).not.toContain("s3cret");
+    expect(await allText(db)).not.toContain("s3cret");
     expect(await store.list("u", { showProjectUrls: true })).toMatchObject([
       { name: "crm", scope: "project", url: "https://crm.example/mcp", headerNames: ["Authorization"], enabled: true },
     ]);
@@ -70,7 +69,7 @@ describe("McpServerStore", () => {
   });
 
   it("keeps personal servers private, each replacing the project's of its name for its owner", async () => {
-    const store = new McpServerStore(await createTestDb(), SecretBox.insecureDev());
+    const store = new McpServerStore(createTestRecords(), SecretBox.insecureDev());
     await store.put("kalendar", "alice", { url: "https://cal.example/mcp", enabled: true });
 
     expect(await store.list("bob", { showProjectUrls: true })).toEqual([]);

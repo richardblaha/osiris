@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestApp, createTestDb, createTestProjects } from "./helpers.ts";
-import { joinChunks, moveLegacyToFiles } from "@osiris/core/files/sync.ts";
+import { createTestApp, createTestRecords, createTestProjects } from "./helpers.ts";
 import { FileStore } from "@osiris/core/files/store.ts";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -64,21 +63,6 @@ describe("knowledge base", () => {
     expect((await bob("/knowledge/documents/public/cenik-sluzeb.md")).status).toBe(404);
   });
 
-  it("moves the files once in knowledge/ into documents, once", async () => {
-    const { projects } = createTestProjects();
-    const acme = await projects.get("acme");
-    await acme.files.write({ scope: "project" }, "knowledge/public/cenik.md", text("# Ceník\n\n650 Kč"));
-    await acme.files.write({ scope: "project" }, "knowledge/plán zakázek.md", text("Brno v pondělí"));
-    await acme.files.write({ scope: "project" }, "knowledge/foto.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
-    await acme.init();
-    expect((await acme.knowledge.listDocuments()).map((d) => [d.id, d.title, d.chunks])).toEqual([
-      ["plán-zakázek.md", "plán zakázek", 1],
-      ["public/cenik.md", "Ceník", 1],
-    ]);
-    expect((await acme.files.list({ scope: "project" }, "knowledge")).map((e) => e.name)).toEqual(["public", "foto.png"]);
-    expect((await acme.knowledge.search("Brno")).map((r) => r.path)[0]).toBe("knowledge/plán-zakázek.md");
-  });
-
   it("searches all text files by words, with a snippet", async () => {
     const { projects } = createTestProjects();
     const acme = await projects.get("acme");
@@ -96,34 +80,9 @@ describe("knowledge base", () => {
     const acme = await projects.get("acme");
     await acme.knowledge.putDocument("a.md", "stará verze");
     await acme.files.write({ scope: "project" }, "poznamky/a.md", text("stará verze"));
-    await acme.db.batch(["DELETE FROM indexed_files", "DELETE FROM file_text", "DELETE FROM knowledge_chunks", "DELETE FROM knowledge_text"], "write");
+    await acme.cache.batch(["DELETE FROM indexed_files", "DELETE FROM file_text", "DELETE FROM knowledge_chunks", "DELETE FROM knowledge_text"], "write");
     await acme.init();
     expect((await acme.knowledge.search("verze")).map((r) => r.path)).toEqual(["knowledge/a.md"]);
     expect((await acme.fileIndex.search("verze", [""])).map((h) => h.path)).toEqual(["poznamky/a.md"]);
-  });
-
-  it("moves documents and skills from old tables to files, rebuilding documents from overlapping chunks", async () => {
-    expect(joinChunks(["Jedna dvě tři čtyři", "tři čtyři pět šest", "zcela jiný"])).toBe("Jedna dvě tři čtyři pět šest\n\nzcela jiný");
-    const db = await createTestDb();
-    await db.batch(
-      [
-        // The tables as the earlier migrations left them.
-        "INSERT INTO documents (id, title, owner) VALUES ('d1', 'Ceník služeb', ''), ('d2', 'Moje', 'bob')",
-        `INSERT INTO chunks (id, document_id, idx, content, embedding_model, embedding) VALUES
-           ('c1', 'd1', 0, 'Hodina práce 650 Kč', 'm', x''), ('c2', 'd1', 1, '650 Kč a doprava 10 Kč/km', 'm', x''), ('c3', 'd2', 0, 'osobní', 'm', x'')`,
-        "INSERT INTO skills (owner, name, description, instructions) VALUES ('', 'faktura', 'Jak psát faktury', 'Krok 1.'), ('bob', 'moje', 'Bobova', 'Krok A.')",
-      ],
-      "write",
-    );
-    const files = new FileStore(mkdtempSync(join(tmpdir(), "osiris-legacy-")));
-    await moveLegacyToFiles(db, files);
-    expect((await files.read({ scope: "project" }, "knowledge/cenik-sluzeb.md")).data.toString()).toBe("# Ceník služeb\n\nHodina práce 650 Kč a doprava 10 Kč/km\n");
-    expect((await files.read({ scope: "personal", userId: "bob" }, "knowledge/moje.md")).data.toString()).toContain("osobní");
-    expect((await files.read({ scope: "project" }, "skills/faktura/SKILL.md")).data.toString()).toBe(
-      "---\nname: faktura\ndescription: Jak psát faktury\n---\n\nKrok 1.\n",
-    );
-    expect((await files.read({ scope: "personal", userId: "bob" }, "skills/moje/SKILL.md")).data.toString()).toContain("Krok A.");
-    const tables = (await db.execute("SELECT name FROM sqlite_master WHERE name IN ('documents', 'chunks', 'skills')")).rows;
-    expect(tables).toEqual([]);
   });
 });

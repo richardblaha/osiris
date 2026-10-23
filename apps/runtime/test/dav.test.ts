@@ -2,14 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import { davTools } from "@osiris/core/integrations/dav.ts";
 import { StandardAccounts } from "@osiris/core/integrations/standard.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
-import { createTestDb } from "./helpers.ts";
+import { createTestRecords } from "./helpers.ts";
 
 const config = { configurable: { project_id: "acme", user_id: "bob", role: "member", channel: "web", thread_id: "t1" } };
 
 describe("DAV tools", () => {
   for (const kind of ["caldav", "carddav"] as const) {
     it(`${kind} discovers collections, reads and updates with ETag preconditions`, async () => {
-      const db = await createTestDb();
+      const db = createTestRecords();
       const accounts = new StandardAccounts(db, SecretBox.insecureDev());
       await accounts.put("bob", "work", { kind, url: "https://cloud.example.cz/dav/", username: "bob", password: "secret" });
       const collection = "https://cloud.example.cz/dav/work/";
@@ -42,7 +42,6 @@ describe("DAV tools", () => {
       await expect(read.invoke({ account: "work", collection: "https://evil.cz/" }, config)).rejects.toThrow("Kolekce");
       update.mockResolvedValueOnce(new Response(null, { status: 412 }));
       await expect(save.invoke({ account: "work", collection, data, url: objectUrl, etag: '"v1"' }, config)).rejects.toThrow("412");
-      db.close();
     });
   }
 });

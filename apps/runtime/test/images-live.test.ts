@@ -23,22 +23,22 @@ it.skipIf(process.env.COMFY_LIVE_GENERATE !== "1")("generates one small image th
   const { tmpdir } = await import("node:os");
   const { join } = await import("node:path");
   const { setTimeout: delay } = await import("node:timers/promises");
-  const { createDb } = await import("@osiris/core/db/client.ts");
-  const { migrate } = await import("@osiris/core/db/migrate.ts");
+  const { Records } = await import("@osiris/core/projects/records.ts");
+  const { createThread } = await import("@osiris/core/repo/threads.ts");
   const { FileStore } = await import("@osiris/core/files/store.ts");
   const { ImageJobStore } = await import("@osiris/core/images/store.ts");
   const { ImageService, imageRequest } = await import("@osiris/core/images/service.ts");
   const { createChatModel } = await import("@osiris/core/agent/model.ts");
   const dir = await mkdtemp(join(tmpdir(), "osiris-comfy-live-"));
-  const db = createDb(`file:${join(dir, "project.db")}`);
+  const db = new Records(join(dir, ".osiris"));
   const connection = await defaultConnector(false)({ name: "comfy-cloud", url: "https://cloud.comfy.org/mcp", auth: "headers", headers: { "X-API-Key": key } });
   let completed = false;
   try {
-    await migrate(db);
-    await db.execute("INSERT INTO threads(id,user_id,channel) VALUES ('live','live','web')");
+   
+    await createThread(db, "live", "live", "web");
     const model = await createChatModel(process.env.LLM_TOOLS_MODEL ?? process.env.LLM_MODEL ?? "mistralai:mistral-small-2603");
     const mcp = { tools: async () => connection.tools };
-    const service = new ImageService(new ImageJobStore(db), new FileStore(join(dir, "files")), mcp as import("@osiris/core/mcp/toolset.ts").McpToolset, model, {
+    const service = new ImageService(new ImageJobStore(db), new FileStore(dir), mcp as import("@osiris/core/mcp/toolset.ts").McpToolset, model, {
       maxAttempts: 1, maxRefinements: 0, maxImages: 1, maxExecutionTimeMs: 600_000,
       downloadHosts: (process.env.IMAGE_DOWNLOAD_HOSTS ?? "cloud.comfy.org,storage.googleapis.com").split(",").map(h => h.trim()),
     });
@@ -50,9 +50,9 @@ it.skipIf(process.env.COMFY_LIVE_GENERATE !== "1")("generates one small image th
     expect(result.status, `Image pipeline did not complete: ${result.error ?? result.status}`).toBe("completed");
     expect(result.artifacts).toHaveLength(1);
     expect(result.artifacts?.[0]).toMatchObject({ width: 256, height: 256, mime: "image/png" });
-    expect(Number((await db.execute("SELECT SUM(attempts) AS attempts FROM image_jobs")).rows[0]!.attempts)).toBe(1);
+    expect((await db.all<{ attempts: number }>("private/images/jobs")).reduce((n, j) => n + j.value.attempts, 0)).toBe(1);
   } finally {
-    await connection.close(); db.close();
+    await connection.close();
     if (completed) await rm(dir, { recursive: true, force: true });
     else console.info("Live image check retained for reconciliation:", dir);
   }

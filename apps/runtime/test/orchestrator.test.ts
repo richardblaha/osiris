@@ -1,9 +1,11 @@
+import { createThread } from "@osiris/core/repo/threads.ts";
+import { fromIdName } from "@osiris/core/projects/records.ts";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { ChatResult } from "@langchain/core/outputs";
 import { RunnableLambda } from "@langchain/core/runnables";
 import { HumanMessage } from "@langchain/core/messages";
-import { LibSQLSaver } from "@osiris/core/checkpointer/libsql-saver.ts";
+import { FileSaver } from "@osiris/core/checkpointer/file-saver.ts";
 import { Command, createOrchestratorGraph, streamTelemetry } from "@osiris/core/agent/orchestrator/graph.ts";
 import { BUILTIN_VERIFIERS, MAX_REPAIRS } from "@osiris/core/agent/orchestrator/jev.ts";
 import type { ReactDelegate } from "@osiris/core/agent/orchestrator/llm.ts";
@@ -18,7 +20,7 @@ import { reactFromAgentGraph } from "@osiris/core/agent/orchestrator/graph.ts";
 import type { RunContext } from "@osiris/core/agent/context.ts";
 import type { RunEvent, WorkflowView } from "@osiris/shared";
 import { describe, expect, it } from "vitest";
-import { createTestDb } from "./helpers.ts";
+import { createTestRecords } from "./helpers.ts";
 
 /** Answers in script order: objects for structured calls, strings or messages for text calls. */
 class ScriptModel extends BaseChatModel {
@@ -69,7 +71,7 @@ async function setup(script: (string | object)[], react: ReactDelegate = async (
   const graph = createOrchestratorGraph({
     model: new ScriptModel(script),
     react: async (goal, cfg, key, progress) => (calls.push(key), react(goal, cfg, key, progress)),
-    checkpointer: new LibSQLSaver(await createTestDb()),
+    checkpointer: new FileSaver(createTestRecords()),
   });
   return { graph, calls };
 }
@@ -190,9 +192,9 @@ describe("verifiers and topology", () => {
 
 describe("run_workflow tool", () => {
   it("asks for approval in the chat, resumes only on the user's answer, and runs steps without ask_user", async () => {
-    const db = await createTestDb();
-    const checkpointer = new LibSQLSaver(db);
-    await db.execute("INSERT INTO threads (id, user_id, channel) VALUES ('t1', 'bob', 'web')");
+    const db = createTestRecords();
+    const checkpointer = new FileSaver(db);
+    await createThread(db, "bob", "t1", "web");
     const questions = new QuestionStore(db);
     const model = new ScriptModel([
       new AIMessage({ content: "", tool_calls: [{ id: "c1", name: WORKFLOW_TOOL, args: { request: "Smaž staré zakázky" } }] }),
@@ -237,16 +239,16 @@ describe("run_workflow tool", () => {
     const history = toThreadMessages((await agent.getState({ configurable: ctx })).values.messages);
     expect(history.flatMap((m) => m.content).filter((p) => p.type === "tool-call" && p.artifact)).toHaveLength(2);
 
-    const derived = async () => Number((await db.execute("SELECT count(*) AS n FROM checkpoints WHERE thread_id LIKE 't1:%'")).rows[0]!.n);
+    const derived = async () => (await db.list("private/threads")).filter((d) => fromIdName(d).startsWith("t1:")).length;
     expect(await derived()).toBeGreaterThan(0);
     await checkpointer.deleteDerivedThreads("t1");
     expect(await derived()).toBe(0);
   });
 
   it("withdraws an approval question that breaks the rules, like ask_user's", async () => {
-    const db = await createTestDb();
-    await db.execute("INSERT INTO threads (id, user_id, channel) VALUES ('t1', 'bob', 'web')");
-    const checkpointer = new LibSQLSaver(db);
+    const db = createTestRecords();
+    await createThread(db, "bob", "t1", "web");
+    const checkpointer = new FileSaver(db);
     const questions = new QuestionStore(db);
     const model = new ScriptModel([
       new AIMessage({ content: "", tool_calls: [{ id: "c1", name: WORKFLOW_TOOL, args: { request: "Smaž zákazníka Nováka" } }] }),

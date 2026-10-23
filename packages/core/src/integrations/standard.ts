@@ -1,4 +1,4 @@
-import type { Client } from "@libsql/client";
+import { userDir, type Records } from "../projects/records.ts";
 import { z } from "zod";
 import type { SecretBox } from "../secrets.ts";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
@@ -17,21 +17,21 @@ export type StandardAccount = z.infer<typeof standardAccountSchema>;
 
 /** Credentials never leave the runtime. Connections belong to the signed-in user. */
 export class StandardAccounts {
-  constructor(private db: Client, private box: SecretBox) {}
+  constructor(private records: Records, private box: SecretBox) {}
+  private dir = (owner: string) => `${userDir(owner)}/accounts`;
   async list(owner: string) {
-    const { rows } = await this.db.execute({ sql: "SELECT name, kind FROM standard_accounts WHERE owner = ? ORDER BY name", args: [owner] });
-    return rows.map(r => ({ name: String(r.name), kind: String(r.kind) }));
+    return (await this.records.all<{ kind: string }>(this.dir(owner))).map(r => ({ name: r.name, kind: r.value.kind }));
   }
   async get(owner: string, name: string): Promise<StandardAccount> {
-    const { rows } = await this.db.execute({ sql: "SELECT data_enc FROM standard_accounts WHERE owner = ? AND name = ?", args: [owner, name] });
-    if (!rows[0]) throw new LocalizedError("errors.integration.accountMissing");
-    return standardAccountSchema.parse(JSON.parse(this.box.open(String(rows[0].data_enc))));
+    const r = await this.records.read<{ dataEnc: string }>(`${this.dir(owner)}/${name}.json`).catch(() => undefined);
+    if (!r) throw new LocalizedError("errors.integration.accountMissing");
+    return standardAccountSchema.parse(JSON.parse(this.box.open(r.dataEnc)));
   }
   async put(owner: string, name: string, account: StandardAccount) {
     account = standardAccountSchema.parse(account);
-    await this.db.execute({ sql: "INSERT INTO standard_accounts(owner, name, kind, data_enc) VALUES (?, ?, ?, ?) ON CONFLICT(owner, name) DO UPDATE SET kind=excluded.kind, data_enc=excluded.data_enc", args: [owner, name, account.kind, this.box.seal(JSON.stringify(account))] });
+    await this.records.write(`${this.dir(owner)}/${name}.json`, { kind: account.kind, dataEnc: this.box.seal(JSON.stringify(account)) });
   }
   async delete(owner: string, name: string) {
-    await this.db.execute({ sql: "DELETE FROM standard_accounts WHERE owner = ? AND name = ?", args: [owner, name] });
+    await this.records.remove(`${this.dir(owner)}/${name}.json`);
   }
 }

@@ -1,4 +1,4 @@
-import type { Client } from "@libsql/client";
+import { userDir, type Records } from "../projects/records.ts";
 import type { Scope, SecretSummary } from "@osiris/shared";
 import type { SecretBox } from "../secrets.ts";
 import { hostAllowed, SECRET_NAME, SECRET_REF, SecretUseError } from "./template.ts";
@@ -6,56 +6,57 @@ import { hostAllowed, SECRET_NAME, SECRET_REF, SecretUseError } from "./template
 /** Row owner: '' for project-wide secrets, the user's sub for personal ones. */
 export const secretOwner = (scope: Scope, userId: string) => (scope === "project" ? "" : userId);
 
+interface StoredSecret {
+  valueEnc: string;
+  allowedHosts: string[];
+  description: string;
+  updatedAt: string;
+}
+
+const dirOf = (owner: string) => `${owner ? userDir(owner) : "private"}/secrets`;
+
 /**
- * Secrets of one project and its users. Values are sealed at rest and never leave the server except when
- * substituted into a request to one of the secret's allowed hosts.
+ * Secrets of one project and its users, one sealed JSON file each. Values are sealed at rest and never leave the
+ * server except when substituted into a request to one of the secret's allowed hosts.
  */
 export class SecretVault {
   constructor(
-    private readonly db: Client,
+    private readonly records: Records,
     private readonly box: SecretBox,
   ) {}
 
+  private read(name: string, owner: string) {
+    return SECRET_NAME.test(name) ? this.records.read<StoredSecret>(`${dirOf(owner)}/${name}.json`) : Promise.resolve(undefined);
+  }
+
   /** Project secrets plus `userId`'s personal ones, without values; a project one the user has their own of is `overridden`. */
   async list(userId: string): Promise<SecretSummary[]> {
-    const { rows } = await this.db.execute({
-      sql: `SELECT s.owner, s.name, s.allowed_hosts, s.description, s.updated_at,
-              (s.owner = '' AND ? <> '' AND EXISTS (SELECT 1 FROM secrets p WHERE p.owner = ? AND p.name = s.name)) AS overridden
-            FROM secrets s WHERE s.owner IN ('', ?) ORDER BY s.owner <> '', s.name`,
-      args: [userId, userId, userId],
+    const own = userId ? await this.records.all<StoredSecret>(dirOf(userId)) : [];
+    const names = new Set(own.map((r) => r.name));
+    const summary = (scope: Scope, r: { name: string; value: StoredSecret }): SecretSummary => ({
+      name: r.name,
+      scope,
+      ...(scope === "project" && names.has(r.name) ? { overridden: true } : {}),
+      allowedHosts: r.value.allowedHosts,
+      description: r.value.description,
+      updatedAt: r.value.updatedAt,
     });
-    return rows.map((r) => ({
-      name: String(r.name),
-      scope: r.owner === "" ? "project" : "personal",
-      ...(Number(r.overridden) ? { overridden: true } : {}),
-      allowedHosts: JSON.parse(String(r.allowed_hosts)) as string[],
-      description: String(r.description),
-      updatedAt: String(r.updated_at),
-    }));
+    return [...(await this.records.all<StoredSecret>(dirOf(""))).map((r) => summary("project", r)), ...own.map((r) => summary("personal", r))];
   }
 
   /** Creates or updates a secret. `value: undefined` keeps the stored value (e.g. when only hosts change). */
   async put(name: string, owner: string, { value, allowedHosts, description }: { value?: string; allowedHosts: string[]; description: string }) {
     if (!SECRET_NAME.test(name)) throw new Error(`Invalid secret name "${name}"`);
-    const hosts = JSON.stringify(allowedHosts.map((h) => h.toLowerCase()));
-    if (value === undefined) {
-      const r = await this.db.execute({
-        sql: "UPDATE secrets SET allowed_hosts = ?, description = ?, updated_at = datetime('now') WHERE owner = ? AND name = ?",
-        args: [hosts, description, owner, name],
-      });
-      if (!r.rowsAffected) throw new SecretUseError("errors.secret.valueRequired");
-      return;
-    }
-    await this.db.execute({
-      sql: `INSERT INTO secrets (owner, name, value_enc, allowed_hosts, description) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (owner, name) DO UPDATE SET value_enc = excluded.value_enc, allowed_hosts = excluded.allowed_hosts,
-              description = excluded.description, updated_at = datetime('now')`,
-      args: [owner, name, this.box.seal(value), hosts, description],
+    const file = `${dirOf(owner)}/${name}.json`;
+    await this.records.lock(file, async () => {
+      const valueEnc = value === undefined ? (await this.read(name, owner))?.valueEnc : this.box.seal(value);
+      if (!valueEnc) throw new SecretUseError("errors.secret.valueRequired");
+      await this.records.write(file, { valueEnc, allowedHosts: allowedHosts.map((h) => h.toLowerCase()), description, updatedAt: new Date().toISOString() } satisfies StoredSecret);
     });
   }
 
   async delete(name: string, owner: string): Promise<boolean> {
-    return (await this.db.execute({ sql: "DELETE FROM secrets WHERE owner = ? AND name = ?", args: [owner, name] })).rowsAffected > 0;
+    return SECRET_NAME.test(name) && this.records.remove(`${dirOf(owner)}/${name}.json`);
   }
 
   /**
@@ -68,16 +69,12 @@ export class SecretVault {
     const names = new Set(Object.values(texts).flatMap((t) => [...t.matchAll(SECRET_REF)].map((m) => m[1]!)));
     const values = new Map<string, string>();
     for (const name of names) {
-      const { rows } = await this.db.execute({
-        sql: "SELECT value_enc, allowed_hosts FROM secrets WHERE name = ? AND owner IN ('', ?) ORDER BY owner = '' LIMIT 1",
-        args: [name, userId],
-      });
-      const r = rows[0];
+      const r = (userId ? await this.read(name, userId) : undefined) ?? (await this.read(name, ""));
       if (!r) throw new SecretUseError("errors.secret.notFound", { name });
-      if (!hostAllowed(host, JSON.parse(String(r.allowed_hosts)) as string[])) {
+      if (!hostAllowed(host, r.allowedHosts)) {
         throw new SecretUseError("errors.secret.hostNotAllowed", { name, host });
       }
-      values.set(name, this.box.open(String(r.value_enc)));
+      values.set(name, this.box.open(r.valueEnc));
     }
     const filled = Object.fromEntries(
       Object.entries(texts).map(([k, t]) => [k, t.replace(SECRET_REF, (_, n: string) => values.get(n)!)]),

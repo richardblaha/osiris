@@ -56,7 +56,7 @@ describe("public assistants", () => {
     await acme.knowledge.putDocument("public/cenik.md", "# Ceník\nZásuvka montáž 450 Kč za kus.");
     await acme.knowledge.putDocument("public_x/jine.md", "Zásuvka jinde.");
     await acme.knowledge.putDocument("interni.md", "Marže na zásuvkách je 60 %.");
-    await acme.files.write({ scope: "project" }, "skills/reklamace/SKILL.md", text("---\nname: reklamace\ndescription: Jak přijmout reklamaci\n---\n\nPostup."));
+    await acme.records.writeText("skills/reklamace/SKILL.md", "---\nname: reklamace\ndescription: Jak přijmout reklamaci\n---\n\nPostup.");
     const fact = await acme.memory.add("", "Otevřeno Po–Pá 8–16.", "project");
     await acme.memory.add("", "Interní: šéf je na dovolené.", "project");
     await admin("/public-assistants/eshop", {
@@ -111,29 +111,6 @@ describe("public assistants", () => {
     expect(list).toMatchObject([{ name: "Anna", contact: "777 123 456", status: "new", threadId: "t1", assistant: "web" }]);
     expect((await admin(`/inquiries/${list[0].id}`, { method: "PATCH", body: JSON.stringify({ status: "done" }) })).status).toBe(204);
     expect((await (await admin("/inquiries")).json())[0].status).toBe("done");
-  });
-
-  it("moves the old single assistant to one named web", async () => {
-    const { projects, admin } = await setup();
-    const acme = await projects.get("acme");
-    await acme.files.write({ scope: "project" }, "skills/cenik/SKILL.md", text("---\nname: cenik\ndescription: Ceník\npublic: true\n---\n\nPostup."));
-    await acme.db.batch(
-      [
-        {
-          sql: "INSERT INTO project_settings (key, value) VALUES ('public_assistant', ?)",
-          args: [JSON.stringify({ enabled: true, title: "Novák", greeting: "Ahoj", tools: ["create_inquiry", "load_skill"], tokensPerMonth: 5 })],
-        },
-        "INSERT INTO assistant_profiles (owner, persona, guards) VALUES ('@public', NULL, 'Vykej.')",
-        "INSERT INTO usage_months (month, tokens) VALUES ('public:2026-10', 7)",
-      ],
-      "write",
-    );
-    await acme.init();
-    expect(await (await admin("/public-assistants")).json()).toEqual([
-      { name: "web", enabled: true, title: "Novák", greeting: "Ahoj", knowledge: ["public"], memories: [], skills: ["cenik"], tools: ["create_inquiry"], tokensPerMonth: 5 },
-    ]);
-    expect((await (await admin("/guards")).json()).assistants).toEqual({ web: [{ name: "pravidlo-1", description: "Vykej.", rule: "Vykej." }] });
-    expect(await acme.usage.tokens(Date.parse("2026-10-15"), { public: "web" })).toBe(7);
   });
 
   it("estimates prices exactly, with VAT, as an estimate", () => {

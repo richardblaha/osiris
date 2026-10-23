@@ -12,7 +12,7 @@ import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
 import { publicProfile } from "@osiris/core/public/assistant.ts";
 import { buildSite, createSite, describeBuild, listSites, SITE_NAME, VITEPRESS_DIR } from "@osiris/core/agent/tools/site.ts";
-import { isGuardPath, type GuardOwner } from "@osiris/core/agent/guards.ts";
+import type { GuardOwner } from "@osiris/core/agent/guards.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
 import { DOCUMENT_ID } from "@osiris/core/rag/store.ts";
@@ -181,7 +181,7 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
     return streamSSE(c, async (sse) => {
       sse.onAbort(() => abort.abort());
       try {
-        await threads.touchThread(project.db, id, message);
+        await threads.touchThread(project.records, id, message);
         const runCtx = { thread_id: id, project_id: project.id, user_id: user.sub, role, channel, assistant, user_name: user.name ?? undefined, locale };
         // With rules, the answer is sent only after the output check (the public assistant's rules too).
         const guarded = channel === "public" ? true : hasRules(await project.rules(user.sub));
@@ -205,7 +205,7 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
   };
 
   const requireThread = async ({ project, user }: RequestContext, id: string) => {
-    if (!(await threads.ownsThread(project.db, user.sub, id))) throw new HttpError(404, "errors.thread.notFound");
+    if (!(await threads.ownsThread(project.records, user.sub, id))) throw new HttpError(404, "errors.thread.notFound");
   };
   const requireAdmin = (ctx: RequestContext) => {
     if (ctx.role !== "admin") throw new HttpError(403, "errors.access.adminOnly");
@@ -244,10 +244,10 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
   };
   const fileQuery = (c: { req: { query: (k: string) => string | undefined } }) =>
     parse(fileRef.partial({ path: true }), { scope: c.req.query("scope"), path: c.req.query("path"), thread: c.req.query("thread") });
-  /** The project's files are the admins' to write (guards/ above all); personal ones the caller's; temp ones their thread's (checked by `fileLocation`). */
-  const requireFileWrite = (ctx: RequestContext, scope: FileScope, path: string | undefined) => {
+  /** The project's files are the admins' to write; personal ones the caller's; temp ones their thread's (checked by `fileLocation`). */
+  const requireFileWrite = (ctx: RequestContext, scope: FileScope, _path?: string) => {
     if (scope !== "project" || ctx.role === "admin") return;
-    throw new HttpError(403, isGuardPath(path ?? "") ? "errors.guard.adminOnly" : "errors.files.projectAdminOnly");
+    throw new HttpError(403, "errors.files.projectAdminOnly");
   };
   const fileErrors = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
@@ -302,7 +302,7 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
       await requirePublic(c.req.param("assistant"));
       const { user } = c.get("ctx");
       const id = randomUUID();
-      await threads.createThread(project.db, user.sub, id, "public");
+      await threads.createThread(project.records, user.sub, id, "public");
       return c.json({ id }, 201);
     })
     .get("/:assistant/threads/:id/messages", async (c) => {
@@ -346,13 +346,13 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
 
     .get("/threads", async (c) => {
       const { project, user } = c.get("ctx");
-      return c.json(await threads.listThreads(project.db, user.sub));
+      return c.json(await threads.listThreads(project.records, user.sub));
     })
 
     .post("/threads", async (c) => {
       const { project, user } = c.get("ctx");
       const id = randomUUID();
-      await threads.createThread(project.db, user.sub, id, "web");
+      await threads.createThread(project.records, user.sub, id, "web");
       return c.json({ id }, 201);
     })
 
@@ -385,7 +385,7 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
       await requireThread(ctx, id);
       await ctx.project.checkpointer.deleteThread(id);
       await ctx.project.checkpointer.deleteDerivedThreads(id);
-      await threads.deleteThread(ctx.project.db, id);
+      await threads.deleteThread(ctx.project.records, id);
       await ctx.project.files.removeTemp(id);
       return c.body(null, 204);
     })

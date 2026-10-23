@@ -1,4 +1,4 @@
-import type { Client } from "@libsql/client";
+import { userDir, type Records } from "../projects/records.ts";
 import type { McpServer, Scope } from "@osiris/shared";
 import type { SecretBox } from "../secrets.ts";
 
@@ -19,21 +19,42 @@ const authOf = (r: Record<string, unknown>): McpAuth => (r.auth === "oauth" ? "o
 /** Row owner: '' for project-wide servers, the user's sub for personal ones. */
 export const mcpOwner = (scope: Scope, userId: string) => (scope === "project" ? "" : userId);
 
-/** MCP server configuration in one project's database. Headers are sealed with the SecretBox. */
+interface StoredServer {
+  url: string;
+  enabled: boolean;
+  auth: McpAuth;
+  updatedAt: string;
+  /** A user's sealed headers; the project's are kept apart in private/mcp-headers (the definition goes to git). */
+  headersEnc?: string | null;
+}
+
+/** Where an owner's servers are: the project's in `mcp/`, a user's in their private folder. */
+const dirOf = (owner: string) => (owner ? `${userDir(owner)}/mcp` : "mcp");
+const headersFile = (owner: string, name: string) => (owner ? `${dirOf(owner)}/${name}.json` : `private/mcp-headers/${name}.json`);
+
+/** MCP server configuration of one project, one JSON file per server. Headers are sealed with the SecretBox. */
 export class McpServerStore {
   constructor(
-    private readonly db: Client,
+    private readonly records: Records,
     private readonly secrets: SecretBox,
   ) {}
 
-  private headers(row: Record<string, unknown>): Record<string, string> {
-    return row.headers_enc ? (JSON.parse(this.secrets.open(String(row.headers_enc))) as Record<string, string>) : {};
+  private async sealedHeaders(owner: string, name: string): Promise<string | null | undefined> {
+    return (await this.records.read<{ headersEnc?: string | null }>(headersFile(owner, name)))?.headersEnc;
+  }
+
+  private async headers(owner: string, name: string): Promise<Record<string, string>> {
+    const sealed = await this.sealedHeaders(owner, name);
+    return sealed ? (JSON.parse(this.secrets.open(sealed)) as Record<string, string>) : {};
+  }
+
+  private async servers(owner: string) {
+    return (await this.records.all<StoredServer>(dirOf(owner))).filter((r) => MCP_SERVER_NAME.test(r.name));
   }
 
   /** One owner's server names, enabled or not. */
   async names(owner: string): Promise<string[]> {
-    const { rows } = await this.db.execute({ sql: "SELECT name FROM mcp_servers WHERE owner = ?", args: [owner] });
-    return rows.map((r) => String(r.name));
+    return (await this.servers(owner)).map((r) => r.name);
   }
 
   /**
@@ -41,39 +62,37 @@ export class McpServerStore {
    * user has their own of (same name) is `overridden`.
    */
   async list(userId: string, { showProjectUrls }: { showProjectUrls: boolean }): Promise<Omit<McpServer, "status">[]> {
-    const { rows } = await this.db.execute({
-      sql: "SELECT * FROM mcp_servers WHERE owner IN ('', ?) ORDER BY owner <> '', name",
-      args: [userId],
-    });
-    const own = new Set(rows.filter((r) => r.owner !== "").map((r) => String(r.name)));
-    return rows.map((r) => {
-      const scope: Scope = r.owner === "" ? "project" : "personal";
+    const own = userId ? await this.servers(userId) : [];
+    const names = new Set(own.map((r) => r.name));
+    const row = async (owner: string, r: { name: string; value: StoredServer }): Promise<Omit<McpServer, "status">> => {
+      const scope: Scope = owner === "" ? "project" : "personal";
       return {
-        ...(scope === "project" && own.has(String(r.name)) ? { overridden: true } : {}),
-        name: String(r.name),
+        ...(scope === "project" && names.has(r.name) ? { overridden: true } : {}),
+        name: r.name,
         scope,
-        url: scope === "project" && !showProjectUrls ? "" : String(r.url),
-        enabled: Number(r.enabled) === 1,
-        auth: authOf(r),
-        headerNames: Object.keys(this.headers(r)),
-        updatedAt: String(r.updated_at),
+        url: scope === "project" && !showProjectUrls ? "" : r.value.url,
+        enabled: r.value.enabled,
+        auth: authOf(r.value as unknown as Record<string, unknown>),
+        headerNames: Object.keys(await this.headers(owner, r.name)),
+        updatedAt: r.value.updatedAt,
       };
-    });
+    };
+    return [...(await Promise.all((await this.servers("")).map((r) => row("", r)))), ...(await Promise.all(own.map((r) => row(userId, r))))];
   }
 
   async get(name: string, owner: string): Promise<(McpServerConfig & { enabled: boolean }) | undefined> {
-    const { rows } = await this.db.execute({ sql: "SELECT * FROM mcp_servers WHERE owner = ? AND name = ?", args: [owner, name] });
-    const r = rows[0];
-    return r && { name, url: String(r.url), headers: this.headers(r), auth: authOf(r), enabled: Number(r.enabled) === 1 };
+    if (!MCP_SERVER_NAME.test(name)) return undefined;
+    const r = await this.records.read<StoredServer>(`${dirOf(owner)}/${name}.json`);
+    return r && { name, url: r.url, headers: await this.headers(owner, name), auth: authOf(r as unknown as Record<string, unknown>), enabled: r.enabled };
   }
 
   /** Enabled servers of one owner with decrypted headers, for connecting. */
   async enabled(owner: string): Promise<McpServerConfig[]> {
-    const { rows } = await this.db.execute({
-      sql: "SELECT * FROM mcp_servers WHERE owner = ? AND enabled = 1 ORDER BY name",
-      args: [owner],
-    });
-    return rows.map((r) => ({ name: String(r.name), url: String(r.url), headers: this.headers(r), auth: authOf(r) }));
+    const out: McpServerConfig[] = [];
+    for (const r of await this.servers(owner)) {
+      if (r.value.enabled) out.push({ name: r.name, url: r.value.url, headers: await this.headers(owner, r.name), auth: authOf(r.value as unknown as Record<string, unknown>) });
+    }
+    return out;
   }
 
   /** Creates or updates a server. `headers: undefined` keeps the stored headers; `{}` clears them. */
@@ -84,24 +103,21 @@ export class McpServerStore {
   ) {
     // A user's server may share a name with the project's: theirs replaces it in their runs.
     if (!MCP_SERVER_NAME.test(name)) throw new Error(`Invalid MCP server name "${name}"`);
-    const sealed = headers === undefined ? undefined : Object.keys(headers).length ? this.secrets.seal(JSON.stringify(headers)) : null;
-    await this.db.execute({
-      sql: `INSERT INTO mcp_servers (owner, name, url, enabled, headers_enc, auth) VALUES (?, ?, ?, ?, ?, ?)
-            ON CONFLICT (owner, name) DO UPDATE SET url = excluded.url, enabled = excluded.enabled, auth = excluded.auth,
-              headers_enc = ${sealed === undefined ? "mcp_servers.headers_enc" : "excluded.headers_enc"},
-              updated_at = datetime('now')`,
-      args: [owner, name, url, enabled ? 1 : 0, sealed ?? null, auth],
-    });
+    const headersEnc = headers === undefined ? await this.sealedHeaders(owner, name) : Object.keys(headers).length ? this.secrets.seal(JSON.stringify(headers)) : null;
+    const server: StoredServer = { url, enabled, auth, updatedAt: new Date().toISOString() };
+    if (owner) await this.records.write(`${dirOf(owner)}/${name}.json`, { ...server, headersEnc: headersEnc ?? null });
+    else {
+      await this.records.write(`${dirOf(owner)}/${name}.json`, server);
+      if (headersEnc) await this.records.write(headersFile(owner, name), { headersEnc });
+      else await this.records.remove(headersFile(owner, name));
+    }
   }
 
   async delete(name: string, owner: string): Promise<boolean> {
-    const [r] = await this.db.batch(
-      [
-        { sql: "DELETE FROM mcp_servers WHERE owner = ? AND name = ?", args: [owner, name] },
-        { sql: "DELETE FROM mcp_oauth WHERE owner = ? AND name = ?", args: [owner, name] },
-      ],
-      "write",
-    );
-    return (r?.rowsAffected ?? 0) > 0;
+    if (!MCP_SERVER_NAME.test(name)) return false;
+    const existed = await this.records.remove(`${dirOf(owner)}/${name}.json`);
+    if (!owner) await this.records.remove(headersFile(owner, name));
+    await this.records.remove(`${owner ? userDir(owner) : "private"}/mcp-oauth/${name}.json`);
+    return existed;
   }
 }

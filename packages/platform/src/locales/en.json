@@ -177,7 +177,6 @@
     },
     "guard": {
       "notFound": "The rule doesn't exist.",
-      "adminOnly": "Only an administrator can change rules (guards/).",
       "level": "Level: user, project or assistant."
     },
     "files": {

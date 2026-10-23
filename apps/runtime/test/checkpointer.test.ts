@@ -1,8 +1,11 @@
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { validate } from "@langchain/langgraph-checkpoint-validation";
-import { LibSQLSaver } from "@osiris/core/checkpointer/libsql-saver.ts";
-import { createTestDb } from "./helpers.ts";
+import { FileSaver } from "@osiris/core/checkpointer/file-saver.ts";
+import { Records } from "@osiris/core/projects/records.ts";
 
 validate({
-  checkpointerName: "LibSQLSaver",
-  createCheckpointer: async () => new LibSQLSaver(await createTestDb()),
+  checkpointerName: "FileSaver",
+  createCheckpointer: async () => new FileSaver(new Records(mkdtempSync(join(tmpdir(), "osiris-cp-")))),
 });

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { AIMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
-import { createTestApp, createTestProjects } from "./helpers.ts";
+import { createTestApp, createTestProjects, allText } from "./helpers.ts";
 
 type Call = { url: URL; init: RequestInit };
 
@@ -79,7 +79,7 @@ describe("Google and Microsoft accounts", () => {
       { provider: "microsoft", account: null, connected: false },
     ]);
     const acme = await projects.get("acme");
-    expect(String((await acme.db.execute("SELECT data_enc FROM integrations")).rows[0]!.data_enc)).not.toContain("access-1");
+    expect(await allText(acme.records)).not.toContain("access-1");
 
     // The model sees Google's tools in Bob's runs, not in Eva's.
     const bound: string[][] = [];

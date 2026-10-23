@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { posix } from "node:path";
-import type { Client } from "@libsql/client";
+import type { Records } from "../projects/records.ts";
 import type { PublishResult, SiteTarget } from "@osiris/shared";
 import SftpClient from "ssh2-sftp-client";
 import type { FileLocation, FileStore } from "../files/store.ts";
@@ -27,32 +27,26 @@ export class HostKeyMismatchError extends LocalizedError {}
 
 const fingerprint = (key: Buffer) => `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
 
+/** A target as kept in `site/targets/<name>.json` (goes to git); its password or key is in `private/site-targets/`. */
+type StoredTarget = Omit<SiteTarget, "name">;
+const targetFile = (name: string) => `site/targets/${name}.json`;
+const secretFile = (name: string) => `private/site-targets/${name}.json`;
+
 /** Where the project's site is published over SFTP; secrets are sealed with the project's key and never returned. */
 export class SiteTargetStore {
   constructor(
-    private readonly db: Client,
+    private readonly records: Records,
     private readonly box: SecretBox,
   ) {}
 
   async list(): Promise<SiteTarget[]> {
-    const { rows } = await this.db.execute("SELECT * FROM site_targets ORDER BY name");
-    return rows.map((r) => ({
-      name: String(r.name),
-      host: String(r.host),
-      port: Number(r.port),
-      username: String(r.username),
-      remoteDir: String(r.remote_dir),
-      auth: r.auth === "key" ? "key" : "password",
-      hostKey: r.host_key ? String(r.host_key) : null,
-      lastPublish: r.last_publish ? (JSON.parse(String(r.last_publish)) as PublishResult) : null,
-    }));
+    return (await this.records.all<StoredTarget>("site/targets")).map((r) => ({ ...r.value, name: r.name }));
   }
 
   async get(name: string): Promise<(SiteTarget & { secret: string }) | undefined> {
     const target = (await this.list()).find((t) => t.name === name);
-    if (!target) return undefined;
-    const { rows } = await this.db.execute({ sql: "SELECT secret_enc FROM site_targets WHERE name = ?", args: [name] });
-    return { ...target, secret: this.box.open(String(rows[0]!.secret_enc)) };
+    const sealed = target && (await this.records.read<{ secretEnc: string }>(secretFile(name)));
+    return target && sealed ? { ...target, secret: this.box.open(sealed.secretEnc) } : undefined;
   }
 
   async put(name: string, t: SiteTargetInput) {
@@ -61,25 +55,29 @@ export class SiteTargetStore {
     if (!secret) throw new LocalizedError("errors.sftp.credentials");
     // A different server or user means a different host key.
     const sameServer = existing && existing.host === t.host && existing.port === t.port;
-    await this.db.execute({
-      sql: `INSERT INTO site_targets (name, host, port, username, remote_dir, auth, secret_enc, host_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (name) DO UPDATE SET host = excluded.host, port = excluded.port, username = excluded.username,
-              remote_dir = excluded.remote_dir, auth = excluded.auth, secret_enc = excluded.secret_enc, host_key = excluded.host_key,
-              updated_at = datetime('now')`,
-      args: [name, t.host, t.port, t.username, t.remoteDir, t.auth, this.box.seal(secret), sameServer ? existing.hostKey : null],
-    });
+    await this.records.write(secretFile(name), { secretEnc: this.box.seal(secret) });
+    await this.records.write(targetFile(name), {
+      host: t.host,
+      port: t.port,
+      username: t.username,
+      remoteDir: t.remoteDir,
+      auth: t.auth,
+      hostKey: sameServer ? existing.hostKey : null,
+      lastPublish: existing?.lastPublish ?? null,
+    } satisfies StoredTarget);
   }
 
   async delete(name: string): Promise<boolean> {
-    return (await this.db.execute({ sql: "DELETE FROM site_targets WHERE name = ?", args: [name] })).rowsAffected > 0;
+    await this.records.remove(secretFile(name));
+    return this.records.remove(targetFile(name));
   }
 
   async pinHostKey(name: string, key: string) {
-    await this.db.execute({ sql: "UPDATE site_targets SET host_key = ? WHERE name = ? AND host_key IS NULL", args: [key, name] });
+    await this.records.update<StoredTarget>(targetFile(name), (t) => (t!.hostKey ? t! : { ...t!, hostKey: key }));
   }
 
   async recordPublish(name: string, result: PublishResult) {
-    await this.db.execute({ sql: "UPDATE site_targets SET last_publish = ? WHERE name = ?", args: [JSON.stringify(result), name] });
+    await this.records.update<StoredTarget>(targetFile(name), (t) => ({ ...t!, lastPublish: result }));
   }
 }
 

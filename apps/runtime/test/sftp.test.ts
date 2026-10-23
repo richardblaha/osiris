@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import { FileStore } from "@osiris/core/files/store.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
 import { HostKeyMismatchError, MANIFEST, publishFolder, SiteTargetStore } from "@osiris/core/sites/sftp.ts";
-import { createTestApp, createTestDb, createTestProjects } from "./helpers.ts";
+import { createTestApp, createTestRecords, createTestProjects } from "./helpers.ts";
 
 /** An SFTP server in memory: files by absolute path, and the host key it presents. */
 function fakeServer(hostKey = "server-key-1") {
@@ -43,7 +43,7 @@ describe("publishing a site over SFTP", () => {
   it("uploads what changed, deletes only its own files, and pins the server's host key", async () => {
     const files = new FileStore(mkdtempSync(join(tmpdir(), "osiris-site-")));
     const project = { scope: "project" } as const;
-    const targets = new SiteTargetStore(await createTestDb(), SecretBox.insecureDev());
+    const targets = new SiteTargetStore(createTestRecords(), SecretBox.insecureDev());
     await targets.put("firma", { host: "vps.example.cz", port: 22, username: "web", remoteDir: "/var/www/firma", auth: "password", secret: "heslo" });
     const { server, client } = fakeServer();
     server.files.set("/var/www/firma/cizi.txt", Buffer.from("someone else's"));
@@ -75,7 +75,7 @@ describe("publishing a site over SFTP", () => {
 
   it("refuses a folder without index.html", async () => {
     const files = new FileStore(mkdtempSync(join(tmpdir(), "osiris-site-")));
-    const targets = new SiteTargetStore(await createTestDb(), SecretBox.insecureDev());
+    const targets = new SiteTargetStore(createTestRecords(), SecretBox.insecureDev());
     await targets.put("firma", { host: "h", port: 22, username: "u", remoteDir: "/w", auth: "password", secret: "s" });
     await files.write({ scope: "project" }, "www/a.css", Buffer.from("a{}"));
     await expect(publishFolder(files, { scope: "project" }, "www", targets, "firma", fakeServer().client())).rejects.toThrow("index.html");

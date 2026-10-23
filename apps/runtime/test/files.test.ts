@@ -58,9 +58,8 @@ describe("FileStore", () => {
     const { root, files } = store();
     const outside = mkdtempSync(join(tmpdir(), "osiris-outside-"));
     writeFileSync(join(outside, "secret.txt"), "tajne");
-    mkdirSync(join(root, "project"), { recursive: true });
-    symlinkSync(outside, join(root, "project", "link"));
-    symlinkSync(join(outside, "secret.txt"), join(root, "project", "file.txt"));
+    symlinkSync(outside, join(root, "link"));
+    symlinkSync(join(outside, "secret.txt"), join(root, "file.txt"));
 
     expect(await code(files.read(project, "link/secret.txt"))).toBe("invalid");
     expect(await code(files.write(project, "link/new.txt", text("x")))).toBe("invalid");

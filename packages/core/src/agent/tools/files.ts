@@ -8,7 +8,6 @@ import type { FileIndex } from "../../files/index.ts";
 import { FileError, type FileLocation, type FileStore } from "../../files/store.ts";
 import { extensionOf, fileType } from "@osiris/shared";
 import { getRunContext, scratchThread, type RunContext } from "../context.ts";
-import { isGuardPath } from "../guards.ts";
 import { editText, type EditFailure, type TextEdit } from "./text-edit.ts";
 
 const MAX_READ_CHARS = 50_000;
@@ -34,12 +33,11 @@ export function locate(s: FileScope, ctx: RunContext): FileLocation {
 }
 
 /**
- * Why the run may not write there, or null when it may. The project's files are the admins'; the guards nobody's: the
- * agent never changes its own rules.
+ * Why the run may not write there, or null when it may. The project's files are the admins'. The rules (guards) are
+ * in `.osiris/`, which no file tool reaches, so the agent never changes its own rules.
  */
 function refusal(s: FileScope, path: string, ctx: RunContext): string | null {
   if (s !== "project") return null;
-  if (isGuardPath(path)) return "Sem zapisovat nelze (pravidla v guards/ mění jen správce v Osirisu).";
   return ctx.role === "admin" ? null : "Do souborů firmy zapisuje jen správce. Ulož to do personal (vlastní kopie se stejnou cestou firemní soubor uživateli nahradí).";
 }
 

@@ -1,28 +1,25 @@
-import type { Client } from "@libsql/client";
+import { idName, type Records } from "../projects/records.ts";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { AssistantProfile, Persona } from "@osiris/shared";
 
 export const EMPTY_PROFILE: AssistantProfile = { persona: null };
 
-/** The assistant's persona and rules, project-wide (owner `''`) or a user's own (owner = their sub). */
+/** Where an owner's persona is kept: the project's, a public assistant's (`@public:<name>`) or a user's own. */
+const personaFile = (owner: string) =>
+  owner === "" ? "persona.json" : owner.startsWith("@public:") ? `assistants/${owner.slice(8)}/persona.json` : `private/users/${idName(owner)}/persona.json`;
+
+/** The assistant's persona, project-wide (owner `''`), a public assistant's or a user's own (owner = their sub). */
 export class AssistantProfileStore {
-  constructor(private readonly db: Client) {}
+  constructor(private readonly records: Records) {}
 
   async get(owner: string): Promise<AssistantProfile> {
-    const { rows } = await this.db.execute({ sql: "SELECT persona FROM assistant_profiles WHERE owner = ?", args: [owner] });
-    const r = rows[0];
-    if (!r) return { ...EMPTY_PROFILE };
-    return { persona: r.persona ? (JSON.parse(String(r.persona)) as Persona) : null };
+    return { ...EMPTY_PROFILE, persona: (await this.records.read<Persona>(personaFile(owner))) ?? null };
   }
 
   async put(owner: string, profile: AssistantProfile): Promise<void> {
-    await this.db.execute({
-      // The guards column is left from before guard files (GuardStore.migrateProfiles empties it).
-      sql: `INSERT INTO assistant_profiles (owner, persona, guards) VALUES (?, ?, '')
-            ON CONFLICT (owner) DO UPDATE SET persona = excluded.persona, updated_at = datetime('now')`,
-      args: [owner, profile.persona ? JSON.stringify(profile.persona) : null],
-    });
+    if (profile.persona) await this.records.write(personaFile(owner), profile.persona);
+    else await this.records.remove(personaFile(owner));
   }
 }
 

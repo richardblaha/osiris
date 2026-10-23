@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { Client } from "@libsql/client";
+import { userDir, userIds, type Records } from "../projects/records.ts";
 import type { SecretBox } from "../secrets.ts";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
 
@@ -73,7 +73,7 @@ export class NotConnectedError extends LocalizedError {}
  */
 export class IntegrationAccounts {
   constructor(
-    private readonly db: Client,
+    private readonly records: Records,
     private readonly box: SecretBox,
     private readonly clients: Partial<Record<IntegrationProvider, IntegrationClient>>,
     /** The web app's `/integration-callback`. */
@@ -92,30 +92,30 @@ export class IntegrationAccounts {
     return client;
   }
 
+  private file = (owner: string, provider: IntegrationProvider) => `${userDir(owner)}/integrations/${provider}.json`;
+
   private async read(owner: string, provider: IntegrationProvider) {
-    const { rows } = await this.db.execute({ sql: "SELECT account, data_enc FROM integrations WHERE owner = ? AND provider = ?", args: [owner, provider] });
-    const r = rows[0];
-    return r ? { account: r.account ? String(r.account) : null, data: JSON.parse(this.box.open(String(r.data_enc))) as Data } : undefined;
+    const r = await this.records.read<{ account: string | null; dataEnc: string }>(this.file(owner, provider));
+    return r ? { account: r.account, data: JSON.parse(this.box.open(r.dataEnc)) as Data } : undefined;
   }
 
   private async write(owner: string, provider: IntegrationProvider, data: Data, fields: { account?: string | null; state?: string | null }) {
-    await this.db.execute({
-      sql: `INSERT INTO integrations (owner, provider, account, data_enc, state) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (owner, provider) DO UPDATE SET data_enc = excluded.data_enc,
-              account = ${fields.account === undefined ? "integrations.account" : "excluded.account"},
-              state = ${fields.state === undefined ? "integrations.state" : "excluded.state"}, updated_at = datetime('now')`,
-      args: [owner, provider, fields.account ?? null, this.box.seal(JSON.stringify(data)), fields.state ?? null],
-    });
+    await this.records.update<{ account: string | null; dataEnc: string; state: string | null }>(this.file(owner, provider), (current) => ({
+      account: fields.account === undefined ? (current?.account ?? null) : fields.account,
+      state: fields.state === undefined ? (current?.state ?? null) : fields.state,
+      dataEnc: this.box.seal(JSON.stringify(data)),
+    }));
   }
 
   /** The user's connections, by provider: the account's address, or absent when not connected. */
   async list(owner: string): Promise<{ provider: IntegrationProvider; account: string | null; connected: boolean }[]> {
-    const { rows } = await this.db.execute({ sql: "SELECT provider, account, data_enc FROM integrations WHERE owner = ?", args: [owner] });
-    return this.available().map((provider) => {
-      const r = rows.find((row) => row.provider === provider);
-      const connected = !!r && !!(JSON.parse(this.box.open(String(r.data_enc))) as Data).tokens;
-      return { provider, account: connected && r?.account ? String(r.account) : null, connected };
-    });
+    return Promise.all(
+      this.available().map(async (provider) => {
+        const r = await this.read(owner, provider);
+        const connected = !!r?.data.tokens;
+        return { provider, account: connected ? (r?.account ?? null) : null, connected };
+      }),
+    );
   }
 
   async connected(owner: string): Promise<IntegrationProvider[]> {
@@ -145,8 +145,12 @@ export class IntegrationAccounts {
 
   /** Whose sign-in waits for this state value. */
   async pending(state: string): Promise<{ owner: string; provider: IntegrationProvider } | undefined> {
-    const { rows } = await this.db.execute({ sql: "SELECT owner, provider FROM integrations WHERE state = ?", args: [state] });
-    return rows[0] ? { owner: String(rows[0].owner), provider: rows[0].provider as IntegrationProvider } : undefined;
+    for (const owner of await userIds(this.records)) {
+      for (const provider of Object.keys(PROVIDERS) as IntegrationProvider[]) {
+        if ((await this.records.read<{ state?: string | null }>(this.file(owner, provider)))?.state === state) return { owner, provider };
+      }
+    }
+    return undefined;
   }
 
   /** Exchanges the code the provider sent the user back with; returns the connected account. */
@@ -168,7 +172,7 @@ export class IntegrationAccounts {
   }
 
   async disconnect(owner: string, provider: IntegrationProvider) {
-    await this.db.execute({ sql: "DELETE FROM integrations WHERE owner = ? AND provider = ?", args: [owner, provider] });
+    await this.records.remove(this.file(owner, provider));
   }
 
   /** A valid access token for the user's account, refreshed when it's about to expire. */

@@ -3,6 +3,7 @@ import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
 import type { Client } from "@libsql/client";
 import type { DocumentSummary } from "@osiris/shared";
 import { ftsQuery } from "../files/index.ts";
+import { formatFrontmatter, parseFrontmatter, userDir, userIds, type Records } from "../projects/records.ts";
 
 /** Chunks of a document are keyed by path `knowledge/<id>`; it was the knowledge base's folder in the files. */
 export const KNOWLEDGE_DIR = "knowledge";
@@ -35,14 +36,20 @@ const RRF_K = 60;
 /** A document's title: its leading Markdown heading, or the file's name. */
 export const titleOf = (path: string, text = "") => /^#\s+(.+)/.exec(text.trimStart())?.[1]?.trim() || (path.split("/").at(-1) ?? path).replace(/\.[^.]+$/, "");
 
+/** Where an owner's documents are: the project's in `knowledge/`, a user's in their private folder. */
+const docDir = (owner: string) => (owner ? `${userDir(owner)}/knowledge` : KNOWLEDGE_DIR);
+
 /**
- * The knowledge base: the project's documents (`knowledge_documents`) with their chunks' vectors and text, indexed as
- * a document is saved. Search combines vector similarity with full-text matches.
+ * The knowledge base: the project's documents (Markdown files under `knowledge/`, a `title` in frontmatter when it
+ * isn't the leading heading) with their chunks' vectors and text in the cache database, indexed as a document is
+ * saved. Search combines vector similarity with full-text matches.
  *
  * Chunks record `embeddingModel`, so changing EMBEDDING_MODEL hides old vectors until `reindexStale` (at startup).
  */
 export class KnowledgeStore {
   constructor(
+    private readonly records: Records,
+    /** The cache database (chunks, vectors, full text): rebuilt from the documents when lost. */
     private readonly db: Client,
     private readonly embeddings: EmbeddingsInterface,
     private readonly embeddingModel: string,
@@ -122,57 +129,78 @@ export class KnowledgeStore {
     });
   }
 
+  /** The ids of one owner's documents. */
+  private async ids(owner: string): Promise<string[]> {
+    return (await this.records.walk(docDir(owner))).filter((id) => DOCUMENT_ID.test(id));
+  }
+
+  private async chunkCounts(owner: string): Promise<Map<string, number>> {
+    const { rows } = await this.db.execute({ sql: "SELECT path, COUNT(*) AS n FROM knowledge_chunks WHERE owner = ? GROUP BY path", args: [owner] });
+    return new Map(rows.map((r) => [String(r.path), Number(r.n)]));
+  }
+
   /** The project's documents and `viewer`'s own, with their chunk counts; a project one the viewer replaced is `overridden`. */
   async listDocuments(viewer = ""): Promise<DocumentSummary[]> {
-    const { rows } = await this.db.execute({
-      sql: `SELECT d.owner, d.id, d.title, d.updated_at,
-              (SELECT COUNT(*) FROM knowledge_chunks c WHERE c.owner = d.owner AND c.path = '${KNOWLEDGE_DIR}/' || d.id) AS chunks,
-              (d.owner = '' AND ? <> '' AND EXISTS (SELECT 1 FROM knowledge_documents m WHERE m.owner = ? AND m.id = d.id)) AS overridden
-            FROM knowledge_documents d WHERE d.owner IN ('', ?) ORDER BY d.id, d.owner <> ''`,
-      args: [viewer, viewer, viewer],
-    });
-    return rows.map((r) => ({
-      id: String(r.id),
-      title: String(r.title),
-      chunks: Number(r.chunks),
-      scope: r.owner === "" ? "project" : "personal",
-      ...(Number(r.overridden) ? { overridden: true } : {}),
-      createdAt: new Date(`${String(r.updated_at).replace(" ", "T")}Z`).toISOString(),
-    }));
+    const own = viewer ? await this.ids(viewer) : [];
+    const out: DocumentSummary[] = [];
+    for (const [owner, ids] of [["", await this.ids("")], ...(viewer ? [[viewer, own] as const] : [])] as const) {
+      const counts = await this.chunkCounts(owner);
+      for (const id of ids) {
+        const doc = await this.getDocument(id, owner);
+        if (!doc) continue;
+        out.push({
+          id,
+          title: doc.title,
+          chunks: counts.get(`${KNOWLEDGE_DIR}/${id}`) ?? 0,
+          scope: owner === "" ? "project" : "personal",
+          ...(owner === "" && own.includes(id) ? { overridden: true } : {}),
+          createdAt: doc.updatedAt,
+        });
+      }
+    }
+    return out.sort((a, b) => a.id.localeCompare(b.id) || Number(a.scope === "personal") - Number(b.scope === "personal"));
   }
 
   /** One owner's document ('' the project's). */
   async getDocument(id: string, owner = ""): Promise<KnowledgeDocument | null> {
-    const { rows } = await this.db.execute({ sql: "SELECT * FROM knowledge_documents WHERE owner = ? AND id = ?", args: [owner, id] });
-    const r = rows[0];
-    return r ? { id: String(r.id), owner, title: String(r.title), content: String(r.content), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } : null;
+    if (!DOCUMENT_ID.test(id)) return null;
+    const path = `${docDir(owner)}/${id}`;
+    const text = await this.records.readText(path);
+    if (text === undefined) return null;
+    const { meta, body } = parseFrontmatter(text);
+    const modified = (await this.records.modified(path))!.toISOString();
+    return { id, owner, title: meta.title || titleOf(id, body), content: body, createdAt: modified, updatedAt: modified };
   }
 
   /** Saves a document (new or changed) and indexes it; the title defaults to its leading heading or its id. */
   async putDocument(id: string, content: string, title = titleOf(id, content), owner = ""): Promise<void> {
     if (!DOCUMENT_ID.test(id) || id.length > 300) throw new Error(`Invalid document id: ${id}`);
-    await this.db.execute({
-      sql: `INSERT INTO knowledge_documents (owner, id, title, content) VALUES (?, ?, ?, ?)
-            ON CONFLICT (owner, id) DO UPDATE SET title = excluded.title, content = excluded.content, updated_at = datetime('now')`,
-      args: [owner, id, title, content],
-    });
+    await this.records.writeText(`${docDir(owner)}/${id}`, formatFrontmatter({ title: title === titleOf(id, content) ? undefined : title }, content));
     await this.indexFile(owner, `${KNOWLEDGE_DIR}/${id}`, content);
   }
 
   async deleteDocument(id: string, owner = ""): Promise<boolean> {
-    const [r] = await this.db.batch([{ sql: "DELETE FROM knowledge_documents WHERE owner = ? AND id = ?", args: [owner, id] }, ...this.removing(owner, `${KNOWLEDGE_DIR}/${id}`, false)], "write");
-    return r!.rowsAffected > 0;
+    if (!DOCUMENT_ID.test(id)) return false;
+    const existed = await this.records.remove(`${docDir(owner)}/${id}`);
+    await this.db.batch(this.removing(owner, `${KNOWLEDGE_DIR}/${id}`, false), "write");
+    return existed;
   }
 
-  /** Indexes the documents without chunks of the current embedding model (new model, or never indexed). */
+  /**
+   * Brings the chunks in step with the documents: indexes those without chunks of the current embedding model (new
+   * model, a lost cache, an edit outside Osiris) and drops chunks of documents that are gone.
+   */
   async reindexStale(): Promise<void> {
-    const { rows } = await this.db.execute({
-      sql: `SELECT owner, id, content FROM knowledge_documents d WHERE NOT EXISTS
-              (SELECT 1 FROM knowledge_chunks c WHERE c.owner = d.owner AND c.path = '${KNOWLEDGE_DIR}/' || d.id AND c.embedding_model = ?)`,
-      args: [this.embeddingModel],
-    });
-    for (const r of rows) {
-      await this.indexFile(String(r.owner), `${KNOWLEDGE_DIR}/${String(r.id)}`, String(r.content)).catch((err) => console.error(`Indexing ${String(r.id)} failed`, err));
+    for (const owner of ["", ...(await userIds(this.records))]) {
+      const ids = await this.ids(owner);
+      const { rows } = await this.db.execute({ sql: "SELECT DISTINCT path FROM knowledge_chunks WHERE owner = ? AND embedding_model = ?", args: [owner, this.embeddingModel] });
+      const indexed = new Set(rows.map((r) => String(r.path)));
+      for (const id of ids) {
+        if (indexed.delete(`${KNOWLEDGE_DIR}/${id}`)) continue;
+        const doc = await this.getDocument(id, owner);
+        if (doc) await this.indexFile(owner, `${KNOWLEDGE_DIR}/${id}`, doc.content).catch((err) => console.error(`Indexing ${id} failed`, err));
+      }
+      for (const gone of indexed) await this.removeFile(owner, gone);
     }
   }
 }

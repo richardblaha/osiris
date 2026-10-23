@@ -61,10 +61,16 @@ export function pathSegments(path: string, { allowRoot = false } = {}): string[]
 /** Directory names derived from ids (user sub, thread id) can't contain `/` or `..`. */
 const idDir = (id: string) => Buffer.from(id).toString("base64url");
 
+/** Where users' own files and threads' temporary files are, inside the project's `.osiris/`. */
+const USERS = ".osiris/private/users";
+const TMP = ".osiris/tmp";
+
 const isMissing = (err: unknown) => (err as NodeJS.ErrnoException)?.code === "ENOENT";
 
 /**
- * A project's files on local disk (in production the project's own volume). Paths are relative to a scope root and
+ * A project's files on local disk (in production the project's own volume): the project folder itself, a user's own
+ * files in `.osiris/private/users/<sub>/files` and a thread's in `.osiris/tmp/<thread>`. Hidden names (`.osiris`, `.git`)
+ * are never listed or reached, so neither the agent nor the API touches the project's own data. Paths are relative to a scope root and
  * validated segment by segment; the store never creates symlinks and refuses to traverse any it finds. Writes go to a
  * temp file that is renamed into place, so a reader never sees half a file. Only known file types are accepted, and
  * their content must match the extension.
@@ -237,8 +243,10 @@ export class FileStore {
 
   /** Users who have personal files. */
   async personalOwners(): Promise<string[]> {
-    const dirs = await readdir(join(this.root, "users"), { withFileTypes: true }).catch(() => []);
-    return dirs.filter((d) => d.isDirectory()).map((d) => Buffer.from(d.name, "base64url").toString());
+    const dirs = await readdir(join(this.root, USERS), { withFileTypes: true }).catch(() => []);
+    const owners: string[] = [];
+    for (const d of dirs) if (d.isDirectory() && (await lstat(join(this.root, USERS, d.name, "files")).catch(() => undefined))?.isDirectory()) owners.push(Buffer.from(d.name, "base64url").toString());
+    return owners;
   }
 
   private async changed(change: FileChange) {
@@ -256,7 +264,7 @@ export class FileStore {
 
   /** Removes a thread's temporary files (when the thread is deleted). */
   async removeTemp(threadId: string): Promise<void> {
-    const dir = join(this.root, "tmp", idDir(threadId));
+    const dir = join(this.root, TMP, idDir(threadId));
     const size = await sizeOf(dir);
     await rm(dir, { recursive: true, force: true });
     this.adjustUsage(-size);
@@ -264,16 +272,24 @@ export class FileStore {
 
   /** The threads that have temporary files (a thread's scratchpad lives as long as the thread). */
   async tempThreads(): Promise<string[]> {
-    const dirs = await readdir(join(this.root, "tmp"), { withFileTypes: true }).catch(() => []);
+    const dirs = await readdir(join(this.root, TMP), { withFileTypes: true }).catch(() => []);
     return dirs.filter((d) => d.isDirectory()).map((d) => Buffer.from(d.name, "base64url").toString());
   }
 
-  /** Bytes used by all of the project's files. Counted once, then kept up to date by the store's own writes. */
+  /** Bytes used by the project's files. Counted once, then kept up to date by the store's own writes. */
   usage(): Promise<number> {
-    return (this.used ??= sizeOf(this.root).catch((err) => {
+    return (this.used ??= this.count().catch((err) => {
       this.used = undefined;
       throw err;
     }));
+  }
+
+  /** The project's files, users' own and threads' temporary ones; not the project's data in `.osiris/` or `.git`. */
+  private async count(): Promise<number> {
+    let total = 0;
+    for (const name of await readdir(this.root).catch(() => [])) if (!name.startsWith(".")) total += await sizeOf(join(this.root, name));
+    for (const user of await readdir(join(this.root, USERS)).catch(() => [])) total += await sizeOf(join(this.root, USERS, user, "files"));
+    return total + (await sizeOf(join(this.root, TMP)));
   }
 
   private adjustUsage(delta: number) {
@@ -283,11 +299,11 @@ export class FileStore {
   private scopeDir(loc: FileLocation): string {
     switch (loc.scope) {
       case "project":
-        return join(this.root, "project");
+        return this.root;
       case "personal":
-        return join(this.root, "users", idDir(loc.userId));
+        return join(this.root, USERS, idDir(loc.userId), "files");
       case "temp":
-        return join(this.root, "tmp", idDir(loc.threadId));
+        return join(this.root, TMP, idDir(loc.threadId));
     }
   }
 

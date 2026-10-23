@@ -1,16 +1,14 @@
 import { randomUUID } from "node:crypto";
-import type { Client } from "@libsql/client";
+import type { Records } from "../projects/records.ts";
 import { tool, type StructuredToolInterface } from "@langchain/core/tools";
-import { PUBLIC_TOOLS, type Inquiry, type Memory, type Persona, type PublicAssistantSettings, type PublicTool } from "@osiris/shared";
+import { PUBLIC_ASSISTANT_NAME as PUBLIC_NAME, PUBLIC_TOOLS, type Inquiry, type Memory, type Persona, type PublicAssistantSettings, type PublicTool } from "@osiris/shared";
 import { z } from "zod";
 import { hasRules, rulesText, type GuardRules } from "../agent/assistant.ts";
 import { getRunContext } from "../agent/context.ts";
 import type { Skill, SkillStore } from "../agent/skills.ts";
 import { KNOWLEDGE_DIR, type KnowledgeStore } from "../rag/store.ts";
 
-/** Where the old single public assistant's knowledge was; the migrated one keeps it. */
-const LEGACY_KNOWLEDGE = "public";
-/** The owner of a public assistant's persona and rules in assistant_profiles. */
+/** The owner of a public assistant's persona (AssistantProfileStore). */
 export const publicProfile = (name: string) => `@public:${name}`;
 /** In public links and routes: the project's first assistant (links from before there were several). */
 export const FIRST_ASSISTANT = "_";
@@ -26,111 +24,78 @@ export const DEFAULT_PUBLIC_SETTINGS: Omit<PublicAssistantSettings, "name"> = {
   tokensPerMonth: null,
 };
 
-/** The project's public assistants, a row each in `public_assistants`, oldest first. */
-export class PublicAssistantStore {
-  constructor(private readonly db: Client) {}
+type StoredAssistant = Omit<PublicAssistantSettings, "name"> & { createdAt?: number };
+const dir = (name: string) => `assistants/${name}`;
 
-  private parse(name: string, config: string): PublicAssistantSettings {
-    const stored = JSON.parse(config) as Partial<PublicAssistantSettings>;
-    const tools = (stored.tools ?? []).filter((t) => (PUBLIC_TOOLS as readonly string[]).includes(t));
-    return { ...DEFAULT_PUBLIC_SETTINGS, ...stored, tools, name };
+/** The project's public assistants, `assistants/<name>/assistant.json` each, oldest first. */
+export class PublicAssistantStore {
+  constructor(private readonly records: Records) {}
+
+  private parse(name: string, stored: Partial<StoredAssistant>): PublicAssistantSettings {
+    const { createdAt: _, ...config } = stored;
+    const tools = (config.tools ?? []).filter((t) => (PUBLIC_TOOLS as readonly string[]).includes(t));
+    return { ...DEFAULT_PUBLIC_SETTINGS, ...config, tools, name };
+  }
+
+  private async read(name: string) {
+    return PUBLIC_NAME.test(name) ? this.records.read<StoredAssistant>(`${dir(name)}/assistant.json`) : undefined;
   }
 
   async list(): Promise<PublicAssistantSettings[]> {
-    const { rows } = await this.db.execute("SELECT name, config FROM public_assistants ORDER BY created_at, rowid");
-    return rows.map((r) => this.parse(String(r.name), String(r.config)));
+    const all: { name: string; stored: StoredAssistant }[] = [];
+    for (const name of await this.records.list("assistants")) {
+      const stored = await this.read(name);
+      if (stored) all.push({ name, stored });
+    }
+    return all.sort((a, b) => (a.stored.createdAt ?? 0) - (b.stored.createdAt ?? 0) || a.name.localeCompare(b.name)).map((a) => this.parse(a.name, a.stored));
   }
 
   /** One by name, or the first for `FIRST_ASSISTANT`. */
   async get(name: string | undefined): Promise<PublicAssistantSettings | null> {
     if (!name) return null;
     if (name === FIRST_ASSISTANT) return (await this.list())[0] ?? null;
-    const { rows } = await this.db.execute({ sql: "SELECT name, config FROM public_assistants WHERE name = ?", args: [name] });
-    return rows[0] ? this.parse(String(rows[0].name), String(rows[0].config)) : null;
+    const stored = await this.read(name);
+    return stored ? this.parse(name, stored) : null;
   }
 
   async put(settings: PublicAssistantSettings) {
     const { name, ...config } = settings;
-    await this.db.execute({
-      sql: `INSERT INTO public_assistants (name, config) VALUES (?, ?)
-            ON CONFLICT (name) DO UPDATE SET config = excluded.config, updated_at = datetime('now')`,
-      args: [name, JSON.stringify(config)],
-    });
+    if (!PUBLIC_NAME.test(name)) throw new Error(`Invalid assistant name "${name}"`);
+    await this.records.update<StoredAssistant>(`${dir(name)}/assistant.json`, (current) => ({ ...config, createdAt: current?.createdAt ?? Date.now() }));
   }
 
-  /** Removes an assistant with its persona and rules. */
+  /** Removes an assistant with its persona and rules (all in its folder). */
   async delete(name: string): Promise<boolean> {
-    const [r] = await this.db.batch(
-      [
-        { sql: "DELETE FROM public_assistants WHERE name = ?", args: [name] },
-        { sql: "DELETE FROM assistant_profiles WHERE owner = ?", args: [publicProfile(name)] },
-      ],
-      "write",
-    );
-    return r!.rowsAffected > 0;
-  }
-
-  /**
-   * Moves the old single public assistant (project_settings `public_assistant`, persona `@public`, skills marked
-   * `public: true`, its usage row) to an assistant named `web`, once.
-   */
-  async migrateLegacy(skills: SkillStore) {
-    const { rows } = await this.db.execute("SELECT value FROM project_settings WHERE key = 'public_assistant'");
-    if (!rows[0]) return;
-    const old = JSON.parse(String(rows[0].value)) as Partial<PublicAssistantSettings> & { tools?: string[] };
-    const config = {
-      ...DEFAULT_PUBLIC_SETTINGS,
-      enabled: old.enabled ?? false,
-      title: old.title ?? "",
-      greeting: old.greeting ?? DEFAULT_PUBLIC_SETTINGS.greeting,
-      knowledge: [LEGACY_KNOWLEDGE],
-      skills: old.tools?.includes("load_skill") ? (await skills.projectSkills()).filter((s) => s.public).map((s) => s.name) : [],
-      tools: (old.tools ?? []).filter((t): t is PublicTool => (PUBLIC_TOOLS as readonly string[]).includes(t)),
-      tokensPerMonth: old.tokensPerMonth ?? null,
-    };
-    await this.db.batch(
-      [
-        { sql: "INSERT OR IGNORE INTO public_assistants (name, config) VALUES ('web', ?)", args: [JSON.stringify(config)] },
-        "UPDATE assistant_profiles SET owner = '@public:web' WHERE owner = '@public'",
-        "UPDATE inquiries SET assistant = 'web' WHERE assistant IS NULL",
-        "UPDATE usage_months SET month = 'public:web:' || substr(month, 8) WHERE month LIKE 'public:____-__'",
-        "DELETE FROM project_settings WHERE key = 'public_assistant'",
-      ],
-      "write",
-    );
+    return PUBLIC_NAME.test(name) && this.records.remove(dir(name));
   }
 }
 
-/** Customers' inquiries the public assistant took. */
+/** Customers' inquiries the public assistant took: personal data, so in `private/inquiries/`. */
 export class InquiryStore {
-  constructor(private readonly db: Client) {}
+  constructor(private readonly records: Records) {}
 
   async add(i: Omit<Inquiry, "id" | "status" | "createdAt">): Promise<Inquiry> {
-    const id = randomUUID();
-    await this.db.execute({
-      sql: "INSERT INTO inquiries (id, name, contact, description, preferred_time, thread_id, assistant) VALUES (?, ?, ?, ?, ?, ?, ?)",
-      args: [id, i.name, i.contact, i.description, i.preferredTime, i.threadId, i.assistant],
-    });
-    return (await this.list()).find((x) => x.id === id)!;
+    const inquiry: Inquiry = { id: randomUUID(), ...i, status: "new", createdAt: new Date().toISOString() };
+    await this.records.write(`private/inquiries/${inquiry.id}.json`, inquiry);
+    return inquiry;
   }
 
   async list(): Promise<Inquiry[]> {
-    const { rows } = await this.db.execute("SELECT * FROM inquiries ORDER BY status = 'done', created_at DESC LIMIT 500");
-    return rows.map((r) => ({
-      id: String(r.id),
-      name: String(r.name),
-      contact: String(r.contact),
-      description: String(r.description),
-      preferredTime: r.preferred_time ? String(r.preferred_time) : null,
-      threadId: r.thread_id ? String(r.thread_id) : null,
-      assistant: r.assistant ? String(r.assistant) : null,
-      status: r.status === "done" ? "done" : "new",
-      createdAt: String(r.created_at),
-    }));
+    const all = (await this.records.all<Inquiry>("private/inquiries")).map((r) => r.value);
+    return all.sort((a, b) => Number(a.status === "done") - Number(b.status === "done") || b.createdAt.localeCompare(a.createdAt)).slice(0, 500);
   }
 
   async setStatus(id: string, status: Inquiry["status"]): Promise<boolean> {
-    return (await this.db.execute({ sql: "UPDATE inquiries SET status = ? WHERE id = ?", args: [status, id] })).rowsAffected > 0;
+    if (!/^[0-9a-f-]{36}$/.test(id)) return false;
+    let found = false;
+    await this.records.update<Inquiry>(`private/inquiries/${id}.json`, (i) => {
+      if (!i) throw Object.assign(new Error("missing"), { missing: true });
+      found = true;
+      return { ...i, status };
+    }).catch((err) => {
+      if (!(err as { missing?: boolean }).missing) throw err;
+    });
+    return found;
   }
 }
 

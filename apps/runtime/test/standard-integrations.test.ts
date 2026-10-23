@@ -2,7 +2,7 @@ import { AIMessage } from "@langchain/core/messages";
 import { describe, expect, it, vi } from "vitest";
 import { davFetch } from "@osiris/core/integrations/dav.ts";
 import { createAgentModels } from "@osiris/core/agent/model.ts";
-import { createTestApp, createTestProjects, ScriptedChatModel } from "./helpers.ts";
+import { createTestApp, createTestProjects, ScriptedChatModel, allText } from "./helpers.ts";
 
 const mail = { kind: "mail", from: "bob@example.cz", incoming: { protocol: "imap", host: "mail.example.cz", port: 993, username: "bob", password: "secret-password" } };
 
@@ -20,8 +20,7 @@ describe("standard integrations", () => {
     expect(await (await bob("/integrations/standard")).json()).toEqual([{ name: "work", kind: "mail" }]);
     expect(await (await eva("/integrations/standard")).json()).toEqual([]);
     const project = await projects.get("acme");
-    const rows = await project.db.execute("SELECT data_enc FROM standard_accounts");
-    expect(String(rows.rows[0]!.data_enc)).not.toContain("secret-password");
+    expect(await allText(project.records)).not.toContain("secret-password");
     await expect(project.standardAccounts.get("dev:eva", "work")).rejects.toThrow("isn't connected");
     const bound: string[][] = [];
     model.bindTools = ((tools: { name: string }[]) => { bound.push(tools.map(t => t.name)); return model; }) as never;

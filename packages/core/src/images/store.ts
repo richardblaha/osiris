@@ -1,61 +1,130 @@
-import type { Client, Row } from "@libsql/client";
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import type { RunContext } from "../agent/context.ts";
+import { idName, type Records } from "../projects/records.ts";
 
+/** An image job as it was a database row: snake_case fields, JSON kept as strings. */
+export interface ImageJob {
+  id: string;
+  thread_id: string;
+  user_id: string;
+  call_id: string;
+  state: string;
+  request: string;
+  provider_id: string | null;
+  context: string | null;
+  result: string | null;
+  created_at: number;
+  updated_at: number;
+  attempts: number;
+  refinements: number;
+  estimated_cost: number;
+  lease_token: string | null;
+  lease_until: number;
+  [key: string]: unknown;
+}
+
+type CatalogEntry = { provider: string; kind: string; id: string; metadata: string; verified_at: number };
+
+const DIR = "private/images";
+const jobFile = (id: string) => `${DIR}/jobs/${id}.json`;
+/** One job per tool call: its id comes from the thread, the user and the call. */
+const jobId = (thread: string, user: string, call: string) => createHash("sha256").update(`${thread}\n${user}\n${call}`).digest("hex").slice(0, 32);
+const selectionFile = (ctx: RunContext) => `${DIR}/selections/${idName(`${ctx.thread_id}\n${ctx.user_id}`)}.json`;
+
+// ponytail: history and expiry read every job file; fine for the images a project makes, an index if that grows.
 export class ImageJobStore {
-  constructor(private db: Client) {}
+  constructor(private records: Records) {}
+
+  private read(id: string) {
+    return /^[0-9a-f]{32}$/.test(id) ? this.records.read<ImageJob>(jobFile(id)) : Promise.resolve(undefined);
+  }
+
+  /** Changes a job under its lock when `when` holds; true when it changed. */
+  private change(id: string, when: (job: ImageJob) => boolean, change: (job: ImageJob) => Partial<ImageJob>): Promise<boolean> {
+    return this.records.lock(jobFile(id), async () => {
+      const job = await this.read(id);
+      if (!job || !when(job)) return false;
+      await this.records.write(jobFile(id), { ...job, ...change(job) });
+      return true;
+    });
+  }
+
+  private async jobs(): Promise<ImageJob[]> {
+    return (await this.records.all<ImageJob>(`${DIR}/jobs`)).map((r) => r.value);
+  }
+
   async claim(ctx: RunContext, call: string, request: unknown) {
-    const id = randomUUID();
-    const r = await this.db.execute({ sql: `INSERT INTO image_jobs
-      (id, thread_id, user_id, call_id, state, request, created_at) VALUES (?, ?, ?, ?, 'planning', ?, ?)
-      ON CONFLICT(thread_id, user_id, call_id) DO NOTHING`,
-      args: [id, ctx.thread_id, ctx.user_id, call, JSON.stringify(request), Date.now()] });
-    const rows = await this.db.execute({ sql: "SELECT * FROM image_jobs WHERE thread_id=? AND user_id=? AND call_id=?", args: [ctx.thread_id, ctx.user_id, call] });
-    return { fresh: r.rowsAffected === 1, row: rows.rows[0]! };
+    const id = jobId(ctx.thread_id, ctx.user_id, call);
+    return this.records.lock(jobFile(id), async () => {
+      const existing = await this.read(id);
+      if (existing) return { fresh: false, row: existing };
+      const row: ImageJob = {
+        id, thread_id: ctx.thread_id, user_id: ctx.user_id, call_id: call, state: "planning", request: JSON.stringify(request),
+        provider_id: null, context: null, result: null, created_at: Date.now(), updated_at: 0,
+        attempts: 0, refinements: 0, estimated_cost: 0, lease_token: null, lease_until: 0,
+      };
+      await this.records.write(jobFile(id), row);
+      return { fresh: true, row };
+    });
   }
   async get(ctx: RunContext, id: string) {
-    return (await this.db.execute({ sql: "SELECT * FROM image_jobs WHERE id=? AND thread_id=? AND user_id=?", args: [id, ctx.thread_id, ctx.user_id] })).rows[0];
+    const job = await this.read(id);
+    return job && job.thread_id === ctx.thread_id && job.user_id === ctx.user_id ? job : undefined;
   }
   async history(ctx: RunContext) {
-    return (await this.db.execute({ sql: "SELECT id,state,request,result,created_at FROM image_jobs WHERE thread_id=? AND user_id=? ORDER BY created_at DESC, rowid DESC LIMIT 50", args: [ctx.thread_id, ctx.user_id] })).rows;
+    return (await this.jobs())
+      .filter((j) => j.thread_id === ctx.thread_id && j.user_id === ctx.user_id)
+      .sort((a, b) => b.created_at - a.created_at)
+      .slice(0, 50);
   }
   async update(id: string, state: string, fields: { providerId?: string; context?: string; result?: string; request?: string } = {}) {
-    await this.db.execute({ sql: "UPDATE image_jobs SET updated_at=?,state=?,provider_id=COALESCE(?,provider_id),context=COALESCE(?,context),result=COALESCE(?,result),request=COALESCE(?,request) WHERE id=?", args: [Date.now(), state, fields.providerId ?? null, fields.context ?? null, fields.result ?? null, fields.request ?? null, id] });
+    await this.change(id, () => true, (j) => ({
+      updated_at: Date.now(), state,
+      provider_id: fields.providerId ?? j.provider_id, context: fields.context ?? j.context, result: fields.result ?? j.result, request: fields.request ?? j.request,
+    }));
   }
   async lease(id: string, token: string, ttlMs: number) {
     const now = Date.now();
-    return (await this.db.execute({ sql: "UPDATE image_jobs SET lease_token=?,lease_until=? WHERE id=? AND (lease_until<? OR lease_token=?)", args: [token, now + ttlMs, id, now, token] })).rowsAffected === 1;
+    return this.change(id, (j) => j.lease_until < now || j.lease_token === token, () => ({ lease_token: token, lease_until: now + ttlMs }));
   }
   async release(id: string, token: string) {
-    await this.db.execute({ sql: "UPDATE image_jobs SET lease_token=NULL,lease_until=0 WHERE id=? AND lease_token=?", args: [id, token] });
+    await this.change(id, (j) => j.lease_token === token, () => ({ lease_token: null, lease_until: 0 }));
   }
   async beginSubmission(id: string, context: unknown, maxAttempts: number, estimatedCost: number, maxCost?: number) {
-    const r = await this.db.execute({ sql: `UPDATE image_jobs SET state='submitting',provider_id=NULL,context=?,attempts=attempts+1,estimated_cost=estimated_cost+?,updated_at=?
-      WHERE id=? AND state IN ('planning','refining') AND attempts<? AND (? IS NULL OR estimated_cost+?<=?)`,
-      args: [JSON.stringify(context), estimatedCost, Date.now(), id, maxAttempts, maxCost ?? null, estimatedCost, maxCost ?? null] });
-    return r.rowsAffected === 1;
+    return this.change(
+      id,
+      (j) => ["planning", "refining"].includes(j.state) && j.attempts < maxAttempts && (maxCost == null || j.estimated_cost + estimatedCost <= maxCost),
+      (j) => ({ state: "submitting", provider_id: null, context: JSON.stringify(context), attempts: j.attempts + 1, estimated_cost: j.estimated_cost + estimatedCost, updated_at: Date.now() }),
+    );
   }
   async beginRefinement(id: string, maxRefinements: number) {
-    return (await this.db.execute({ sql: "UPDATE image_jobs SET state='refining',refinements=refinements+1 WHERE id=? AND state='running' AND refinements<?", args: [id, maxRefinements] })).rowsAffected === 1;
+    return this.change(id, (j) => j.state === "running" && j.refinements < maxRefinements, (j) => ({ state: "refining", refinements: j.refinements + 1 }));
   }
   async catalog(provider: string) {
-    return (await this.db.execute({ sql: "SELECT * FROM image_catalog WHERE provider=? AND verified_at>?", args: [provider, Date.now() - 24 * 60 * 60_000] })).rows;
+    const all = (await this.records.read<CatalogEntry[]>(`${DIR}/catalog.json`)) ?? [];
+    return all.filter((e) => e.provider === provider && e.verified_at > Date.now() - 24 * 60 * 60_000);
   }
   async remember(provider: string, kind: string, id: string, metadata: unknown) {
-    await this.db.execute({ sql: "INSERT INTO image_catalog(provider,kind,id,metadata,verified_at) VALUES (?,?,?,?,?) ON CONFLICT(provider,kind,id) DO UPDATE SET metadata=excluded.metadata,verified_at=excluded.verified_at", args: [provider, kind, id, JSON.stringify(metadata), Date.now()] });
+    await this.records.update<CatalogEntry[]>(`${DIR}/catalog.json`, (all = []) => [
+      ...all.filter((e) => !(e.provider === provider && e.kind === kind && e.id === id)),
+      { provider, kind, id, metadata: JSON.stringify(metadata), verified_at: Date.now() },
+    ]);
   }
-  async expired(before: number): Promise<Row[]> {
-    return (await this.db.execute({ sql: "SELECT * FROM image_jobs WHERE created_at<? AND state IN ('completed','failed','cancelled') LIMIT 100", args: [before] })).rows;
+  async expired(before: number): Promise<ImageJob[]> {
+    return (await this.jobs()).filter((j) => j.created_at < before && ["completed", "failed", "cancelled"].includes(j.state)).slice(0, 100);
   }
-  async delete(id: string) { await this.db.execute({ sql: "DELETE FROM image_jobs WHERE id=?", args: [id] }); }
+  async delete(id: string) {
+    if (/^[0-9a-f]{32}$/.test(id)) await this.records.remove(jobFile(id));
+  }
 
   async selection(ctx: RunContext) {
-    return (await this.db.execute({ sql: "SELECT revision_id,selected_index FROM image_selections WHERE thread_id=? AND user_id=?", args: [ctx.thread_id, ctx.user_id] })).rows[0];
+    return this.records.read<{ revision_id: string; selected_index: number }>(selectionFile(ctx));
   }
   async select(ctx: RunContext, revision: string, index: number, expectedParent?: string) {
-    await this.db.execute({ sql: `INSERT INTO image_selections(thread_id,user_id,revision_id,selected_index) VALUES (?,?,?,?)
-      ON CONFLICT(thread_id,user_id) DO UPDATE SET revision_id=excluded.revision_id,selected_index=excluded.selected_index
-      WHERE ? IS NULL OR image_selections.revision_id=?`, args: [ctx.thread_id, ctx.user_id, revision, index, expectedParent ?? null, expectedParent ?? null] });
+    await this.records.lock(selectionFile(ctx), async () => {
+      const current = await this.selection(ctx);
+      if (current && expectedParent != null && current.revision_id !== expectedParent) return;
+      await this.records.write(selectionFile(ctx), { revision_id: revision, selected_index: index });
+    });
   }
-
 }

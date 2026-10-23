@@ -1,4 +1,4 @@
-import type { Client } from "@libsql/client";
+import { idName, type Records } from "../projects/records.ts";
 import type { UserSettings } from "@osiris/shared";
 
 export const DEFAULT_SETTINGS: UserSettings = { address: "auto", language: "auto", signature: "", instructions: "" };
@@ -6,29 +6,18 @@ export const DEFAULT_SETTINGS: UserSettings = { address: "auto", language: "auto
 /** "Můj profil" of users in one project: how the agent should treat each of them. */
 export class UserSettingsStore {
   constructor(
-    private readonly db: Client,
+    private readonly records: Records,
     /** The system's defaults for users who haven't saved their own (System > Nastavení). */
     private readonly defaults: () => Promise<Partial<UserSettings>> = async () => ({}),
   ) {}
 
   async get(userId: string): Promise<UserSettings> {
-    const { rows } = await this.db.execute({ sql: "SELECT * FROM user_settings WHERE user_id = ?", args: [userId] });
-    const r = rows[0];
-    if (!r) return { ...DEFAULT_SETTINGS, ...(await this.defaults().catch(() => ({}))) };
-    return {
-      address: r.address as UserSettings["address"],
-      language: r.language as UserSettings["language"],
-      signature: String(r.signature),
-      instructions: String(r.instructions),
-    };
+    const saved = await this.records.read<UserSettings>(`private/users/${idName(userId)}/settings.json`);
+    return saved ? { ...DEFAULT_SETTINGS, ...saved } : { ...DEFAULT_SETTINGS, ...(await this.defaults().catch(() => ({}))) };
   }
 
   async put(userId: string, s: UserSettings): Promise<void> {
-    await this.db.execute({
-      sql: `INSERT INTO user_settings (user_id, address, language, signature, instructions) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT (user_id) DO UPDATE SET address = excluded.address, language = excluded.language,
-              signature = excluded.signature, instructions = excluded.instructions, updated_at = datetime('now')`,
-      args: [userId, s.address, s.language, s.signature, s.instructions],
-    });
+    const { address, language, signature, instructions } = s;
+    await this.records.write(`private/users/${idName(userId)}/settings.json`, { address, language, signature, instructions });
   }
 }

@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { AIMessage } from "@langchain/core/messages";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { createDb } from "@osiris/core/db/client.ts";
-import { migrate } from "@osiris/core/db/migrate.ts";
+import { Records } from "@osiris/core/projects/records.ts";
+import { createThread } from "@osiris/core/repo/threads.ts";
 import { FileStore } from "@osiris/core/files/store.ts";
 import { ImageJobStore } from "@osiris/core/images/store.ts";
 import { ImageService, imageRequest } from "@osiris/core/images/service.ts";
@@ -18,17 +18,17 @@ import { ScriptedChatModel } from "./helpers.ts";
 // A real alpha PNG; no external service or paid provider call is used in these tests.
 const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
 const dirs: string[] = [];
-const databases: ReturnType<typeof createDb>[] = [];
-afterEach(async () => { databases.splice(0).forEach(db => db.close()); await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
+const databases: Records[] = [];
+afterEach(async () => { databases.splice(0); await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
 const ctx = { thread_id: "thread", project_id: "acme", user_id: "alice", role: "member" as const, channel: "web" as const };
 const config = { configurable: ctx };
 const plan = (name: string, args: Record<string, unknown>) => new AIMessage({ content: "", tool_calls: [{ id: name, name, args }] });
 async function setup(script: AIMessage[] = [], failedSubmit = false) {
   const dir = await mkdtemp(join(tmpdir(), "osiris-images-")); dirs.push(dir);
-  const db = createDb(`file:${join(dir, "db")}`); databases.push(db); await migrate(db);
-  await db.execute({ sql: "INSERT INTO threads(id,user_id,channel) VALUES (?,?,?)", args: [ctx.thread_id, ctx.user_id, ctx.channel] });
+  const db = new Records(join(dir, ".osiris")); databases.push(db);
+  await createThread(db, ctx.user_id, ctx.thread_id, ctx.channel);
   const jobs = new ImageJobStore(db);
-  const files = new FileStore(join(dir, "files"));
+  const files = new FileStore(dir);
   const calls: string[] = [];
   const tools = ["search_templates", "get_template_schema", "run_template", "get_job_status", "get_output", "cancel_job"].map(name => tool(async () => {
     calls.push(name);
