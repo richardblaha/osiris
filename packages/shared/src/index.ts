@@ -735,3 +735,28 @@ export interface ChatQuestion {
   state: "open" | "answered" | "cancelled" | "expired";
   expiresAt: number;
 }
+
+/** Agent orchestration patterns (`@osiris/core/agent/orchestrator`). `Composite`: a plan mixing several of them. */
+export type AgentPattern = "ReAct" | "PEV" | "JEV" | "MapReduce" | "Reflexion" | "HITL" | "Composite";
+export type AgentPhase = "Router" | "Plan" | "Judge" | "Execute" | "Verify" | "Critic" | "Map" | "Reduce" | "HumanApproval" | "Complete";
+export type AgentNodeStatus = "pending" | "running" | "success" | "failed" | "waiting_approval";
+
+/** The graph the UI draws: sent once with the router's result, before any step runs. */
+export interface AgentGraphTopology {
+  nodes: { id: string; label: string; pattern: AgentPattern; type: AgentPhase }[];
+  edges: { from: string; to: string; condition?: string }[];
+}
+
+/** One state change of an orchestrated run; `nodeId` is a node of `activeGraphTopology`. */
+export interface AgentTelemetryEvent {
+  /** The run's thread. */
+  sessionId: string;
+  timestamp: number;
+  pattern: AgentPattern;
+  phase: AgentPhase;
+  nodeId: string;
+  status: AgentNodeStatus;
+  activeGraphTopology?: AgentGraphTopology;
+  payload?: Record<string, unknown>;
+  message: string;
+}
