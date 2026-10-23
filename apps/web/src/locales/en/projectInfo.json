@@ -8,5 +8,25 @@
   "members": "Project users",
   "loginLink": "Sign-in link",
   "confirmRemove": "Remove {{name}} from the project?",
-  "loginLinkFor": "One-time sign-in link for <strong>{{who}}</strong> (valid for 3 days). Send it to them; after signing in they set up a passkey or password, or link a Google or Microsoft account."
+  "loginLinkFor": "One-time sign-in link for <strong>{{who}}</strong> (valid for 3 days). Send it to them; after signing in they set up a passkey or password, or link a Google or Microsoft account.",
+  "git": {
+    "title": "Git",
+    "intro": "The project folder can be a git repository: its files and the shared part of <code>.osiris/</code> (knowledge, memory, skills, rules, assistants) are versioned; conversations, keys and personal data never leave the project. For a private repository add the key <code>GIT_TOKEN</code> (Keys and passwords) with the repository's host allowed.",
+    "url": "Repository (https)",
+    "branch": "Branch",
+    "connect": "Connect",
+    "confirmConnect": "Connect the project? The branch's files replace the project's files of the same name.",
+    "connected": "Connected.",
+    "sync": "Compared with the repository",
+    "aheadBehind": "{{ahead}} commits to push, {{behind}} to pull",
+    "pull": "Pull changes",
+    "pulled": "Pulled.",
+    "push": "Push",
+    "pushed": "Pushed.",
+    "changes_one": "{{count}} uncommitted change",
+    "changes_other": "{{count}} uncommitted changes",
+    "message": "What changed",
+    "commit": "Commit",
+    "committed": "Committed."
+  }
 }

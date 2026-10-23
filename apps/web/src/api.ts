@@ -147,6 +147,16 @@ export function saveBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+/** The project folder as a git working tree (runtime's /api/git). */
+export interface GitStatus {
+  connected: boolean;
+  url: string | null;
+  branch: string | null;
+  changes: string[];
+  ahead: number;
+  behind: number;
+}
+
 export const api = {
   me: () => json<MeResponse>("/me"),
   project: () => json<ProjectInfo>("/project"),
@@ -311,6 +321,11 @@ export const api = {
   deleteSchedule: (id: string) => request(`/schedules/${id}`, { method: "DELETE" }),
 
   siteTargets: () => json<SiteTarget[]>("/site-targets"),
+  gitStatus: () => json<GitStatus>("/git"),
+  gitConnect: (url: string, branch: string) => json<GitStatus>("/git", { method: "PUT", body: JSON.stringify({ url, branch }) }),
+  gitCommit: (message: string) => json<{ committed: boolean; status: GitStatus }>("/git/commit", { method: "POST", body: JSON.stringify({ message }) }),
+  gitPull: () => json<GitStatus>("/git/pull", { method: "POST" }),
+  gitPush: () => json<GitStatus>("/git/push", { method: "POST" }),
   site: () => json<{ exists: boolean; srcDir: string | null; builder: boolean }>("/site"),
   createSite: (title: string) => json<{ exists: boolean; srcDir: string | null }>("/site", { method: "POST", body: JSON.stringify({ title }) }),
   buildSite: () => json<{ dir: string; written: number; bytes: number; deleted: number; skipped: string[] }>("/site/build", { method: "POST" }),

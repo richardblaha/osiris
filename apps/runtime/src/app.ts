@@ -12,6 +12,7 @@ import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
 import { publicProfile } from "@osiris/core/public/assistant.ts";
 import { buildSite, createSite, describeBuild, SITE_DIST, siteInfo } from "@osiris/core/agent/tools/site.ts";
+import { GitError } from "@osiris/core/projects/git.ts";
 import type { GuardOwner } from "@osiris/core/agent/guards.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
@@ -126,6 +127,7 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/files", ["files"]],
   ["/site-targets", ["sites", "files"]],
   ["/site", ["sites"]],
+  ["/git", ["files"]],
   ["/database", ["database"]],
 ];
 
@@ -249,6 +251,18 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
     if (scope !== "project" || ctx.role === "admin") return;
     throw new HttpError(403, "errors.files.projectAdminOnly");
   };
+  /** A refused or failed git operation as an HTTP error: a diverged pull is a conflict, the rest bad requests. */
+  const gitErrors = async <T>(action: () => Promise<T>): Promise<T> => {
+    try {
+      return await action();
+    } catch (err) {
+      if (err instanceof GitError) throw new HttpError(err.key === "errors.git.diverged" ? 409 : 400, err.key, err.params);
+      if (err instanceof UnsafeUrlError) throw new HttpError(400, err.key, err.params);
+      throw err;
+    }
+  };
+  /** Who commits: the signed-in admin. */
+  const author = (ctx: RequestContext) => ({ name: ctx.user.name || ctx.user.email || "Osiris", email: ctx.user.email || "osiris@localhost" });
   const fileErrors = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
@@ -886,6 +900,40 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
         throw new HttpError(502, "errors.vitepress.buildFailed", { detail: detail(err) });
       });
       return c.json({ ...result, message: describeBuild(result) });
+    })
+
+    // The project folder as a git repository: admins connect it, commit, pull (fast-forward only) and push.
+    .get("/git", async (c) => {
+      requireAdmin(c.get("ctx"));
+      return c.json(await gitErrors(() => c.get("ctx").project.git.status()));
+    })
+    .put("/git", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const { url, branch } = parse(z.object({ url: z.string().trim().min(1).max(500), branch: z.string().trim().min(1).max(100).default("main") }), await c.req.json());
+      const status = await gitErrors(() => ctx.project.git.connect(url, branch, author(ctx)));
+      // The checked-out files are the project's now: the indexes, memory and knowledge catch up.
+      await ctx.project.init();
+      return c.json(status);
+    })
+    .post("/git/commit", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const { message } = parse(z.object({ message: z.string().trim().min(1).max(500) }), await c.req.json());
+      const committed = await gitErrors(() => ctx.project.git.commit(message, author(ctx)));
+      return c.json({ committed, status: await ctx.project.git.status() });
+    })
+    .post("/git/pull", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      const status = await gitErrors(() => ctx.project.git.pull());
+      await ctx.project.init();
+      return c.json(status);
+    })
+    .post("/git/push", async (c) => {
+      const ctx = c.get("ctx");
+      requireAdmin(ctx);
+      return c.json(await gitErrors(() => ctx.project.git.push()));
     })
 
     // Where the project's website is published over SFTP (its VPS at vas-hosting.cz…): admins manage and publish.

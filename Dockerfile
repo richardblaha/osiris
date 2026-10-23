@@ -52,6 +52,8 @@ USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
 
 FROM base AS runtime
+# git: a project folder can be a working tree of its repository (connected, committed, pulled and pushed by its admins).
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/runtime..." && pnpm store prune
 COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src

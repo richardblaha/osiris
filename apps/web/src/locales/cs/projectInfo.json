@@ -8,5 +8,27 @@
   "members": "Uživatelé projektu",
   "loginLink": "Přihlašovací odkaz",
   "confirmRemove": "Odebrat {{name}} z projektu?",
-  "loginLinkFor": "Jednorázový přihlašovací odkaz pro <strong>{{who}}</strong> (platí 3 dny). Pošli ho dotyčnému, po přihlášení si nastaví klíč (passkey), heslo nebo propojí účet Google či Microsoft."
+  "loginLinkFor": "Jednorázový přihlašovací odkaz pro <strong>{{who}}</strong> (platí 3 dny). Pošli ho dotyčnému, po přihlášení si nastaví klíč (passkey), heslo nebo propojí účet Google či Microsoft.",
+  "git": {
+    "title": "Git",
+    "intro": "Složka projektu může být git repozitář: verzují se její soubory a sdílená část <code>.osiris/</code> (znalosti, paměť, dovednosti, pravidla, asistenti); konverzace, klíče a osobní data projekt nikdy neopustí. Pro soukromý repozitář přidejte klíč <code>GIT_TOKEN</code> (Klíče a hesla) s povoleným hostem repozitáře.",
+    "url": "Repozitář (https)",
+    "branch": "Větev",
+    "connect": "Připojit",
+    "confirmConnect": "Připojit projekt? Soubory větve nahradí stejnojmenné soubory projektu.",
+    "connected": "Připojeno.",
+    "sync": "Oproti repozitáři",
+    "aheadBehind": "{{ahead}} commitů k odeslání, {{behind}} ke stažení",
+    "pull": "Stáhnout změny",
+    "pulled": "Staženo.",
+    "push": "Odeslat",
+    "pushed": "Odesláno.",
+    "changes_one": "{{count}} neuložená změna",
+    "changes_few": "{{count}} neuložené změny",
+    "changes_many": "{{count}} neuložené změny",
+    "changes_other": "{{count}} neuložených změn",
+    "message": "Co se změnilo",
+    "commit": "Uložit verzi",
+    "committed": "Uloženo."
+  }
 }

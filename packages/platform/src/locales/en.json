@@ -360,6 +360,12 @@
     "memory": {
       "notFound": "Memory not found.",
       "overrideOwn": "Only your own memory can replace one of the organization's."
+    },
+    "git": {
+      "failed": "git failed: {{detail}}",
+      "branch": "Invalid branch name.",
+      "notConnected": "The project isn't connected to a git repository.",
+      "diverged": "The repository and the project both changed (commit and resolve outside Osiris). Different files: {{files}}"
     }
   },
   "schedules": {

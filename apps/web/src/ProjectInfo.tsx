@@ -7,19 +7,28 @@ import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
 import { featureLabels, ProjectLogo } from "./Projects.tsx";
 import { t } from "i18next";
 import { Trans } from "react-i18next";
+import { GitPanel } from "./Git.tsx";
 
 export const roleLabel = (role: Project["role"]) => (role === "admin" ? t("role.admin") : t("role.member"));
 
 /** The active project: its overview (admins set its logo) and the features it has, each a part of its own. */
 export function ProjectInfo({ me, project, onChanged }: { me: MeResponse; project?: Project; onChanged: () => void }) {
-  const [part, setPart] = useState<"overview" | "features">("overview");
+  const [part, setPart] = useState<"overview" | "features" | "git">("overview");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   if (!project) return <h1 className="detail text-lg font-semibold">{t("app:noProject")}</h1>;
   return (
     <MasterDetail
       title={project.name}
-      groups={[{ items: [{ key: "overview", label: t("projectInfo:overview") }, { key: "features", label: t("projectInfo:features") }] }]}
+      groups={[
+        {
+          items: [
+            { key: "overview", label: t("projectInfo:overview") },
+            { key: "features", label: t("projectInfo:features") },
+            ...(project.role === "admin" && project.features.files ? [{ key: "git", label: t("projectInfo:git.title") }] : []),
+          ],
+        },
+      ]}
       selected={part}
       onSelect={(k) => setPart(k as typeof part)}
     >
@@ -59,6 +68,8 @@ export function ProjectInfo({ me, project, onChanged }: { me: MeResponse; projec
             </dd>
           </dl>
         </div>
+      ) : part === "git" ? (
+        <GitPanel key={project.id} />
       ) : (
         <div className="detail">
           <h1 className="text-lg font-semibold">{t("projectInfo:features")}</h1>

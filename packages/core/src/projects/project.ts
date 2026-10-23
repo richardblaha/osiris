@@ -60,6 +60,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { Records } from "./records.ts";
 import { prepareCache } from "./cache.ts";
 import { createMemoryEngine } from "../memory/mem0.ts";
+import { ProjectGit } from "./git.ts";
 import { threadIds } from "../repo/threads.ts";
 import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
 
@@ -73,6 +74,8 @@ export interface Project {
   /** Derived indexes in `.osiris/cache/index.db`, rebuilt from the files at init. */
   cache: Client;
   checkpointer: FileSaver;
+  /** The project folder as a git working tree (connected by its admins). */
+  git: ProjectGit;
   knowledge: KnowledgeStore;
   skills: SkillStore;
   memory: MemoryStore;
@@ -370,6 +373,7 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     root,
     records,
     cache,
+    git: new ProjectGit(root, secrets, { allowPrivate: deps.mcp?.allowPrivate }),
     checkpointer,
     knowledge,
     skills,

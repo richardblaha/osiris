@@ -30,6 +30,7 @@ export interface SearchResult {
   content: string;
 }
 
+const md5 = (text: string) => createHash("md5").update(text).digest("hex");
 const splitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000, chunkOverlap: 150 });
 
 /** A document's title: its leading Markdown heading, or the file's name. */
@@ -56,7 +57,7 @@ export class KnowledgeStore {
   /** The chunks of one owner's documents (`path` = knowledge/<id>), of the current embedding model unless `any`. */
   private async chunks(owner: string, any = false) {
     const [found] = await (await this.engine.points()).list({ agent_id: KNOWLEDGE_AGENT, owner, ...(any ? {} : { embedding_model: this.embeddingModel }) }, 1_000_000);
-    return found.map((p) => ({ id: p.id, path: String(p.payload.path), idx: Number(p.payload.idx), content: String(p.payload.data ?? "") }));
+    return found.map((p) => ({ id: p.id, path: String(p.payload.path), idx: Number(p.payload.idx), content: String(p.payload.data ?? ""), docHash: String(p.payload.doc_hash ?? "") }));
   }
 
   /** (Re)indexes one file of the knowledge base. */
@@ -66,10 +67,11 @@ export class KnowledgeStore {
     if (!pieces.length) return;
     const vectors = await this.embeddings.embedDocuments(pieces);
     const createdAt = new Date().toISOString();
+    const docHash = md5(content);
     await (await this.engine.points()).insert(
       vectors,
       pieces.map(() => randomUUID()),
-      pieces.map((data, idx) => ({ data, hash: createHash("md5").update(data).digest("hex"), createdAt, agent_id: KNOWLEDGE_AGENT, owner, path, idx, embedding_model: this.embeddingModel })),
+      pieces.map((data, idx) => ({ data, hash: md5(data), createdAt, agent_id: KNOWLEDGE_AGENT, owner, path, idx, embedding_model: this.embeddingModel, doc_hash: docHash })),
     );
   }
 
@@ -165,18 +167,21 @@ export class KnowledgeStore {
 
   /**
    * Brings the chunks in step with the documents: indexes those without chunks of the current embedding model (new
-   * model, a lost cache, an edit outside Osiris) and drops chunks of documents that are gone.
+   * model, a lost cache) or whose content changed outside Osiris (a git pull, a restore), and drops chunks of
+   * documents that are gone.
    */
   async reindexStale(): Promise<void> {
     for (const owner of ["", ...(await userIds(this.records))]) {
-      const ids = await this.ids(owner);
-      const indexed = new Set((await this.chunks(owner)).map((c) => c.path));
-      for (const id of ids) {
-        if (indexed.delete(`${KNOWLEDGE_DIR}/${id}`)) continue;
+      const indexed = new Map((await this.chunks(owner)).map((c) => [c.path, c.docHash]));
+      for (const id of await this.ids(owner)) {
+        const path = `${KNOWLEDGE_DIR}/${id}`;
+        const was = indexed.get(path);
+        indexed.delete(path);
         const doc = await this.getDocument(id, owner);
-        if (doc) await this.indexFile(owner, `${KNOWLEDGE_DIR}/${id}`, doc.content).catch((err) => console.error(`Indexing ${id} failed`, err));
+        if (!doc || was === md5(doc.content)) continue;
+        await this.indexFile(owner, path, doc.content).catch((err) => console.error(`Indexing ${id} failed`, err));
       }
-      for (const gone of indexed) await this.removeFile(owner, gone);
+      for (const gone of indexed.keys()) await this.removeFile(owner, gone);
     }
   }
 }
