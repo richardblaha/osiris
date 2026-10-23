@@ -1,5 +1,6 @@
 import { Loading } from "./Scope.tsx";
 import type { ReactNode } from "react";
+import { t } from "i18next";
 
 export interface PanelItem {
   key: string;
@@ -36,7 +37,7 @@ export function MasterDetail(props: {
 }) {
   return (
     <div className="flex h-full">
-      <nav className="relative flex w-72 shrink-0 flex-col border-r border-line p-2 text-sm">
+      <nav className="relative flex w-72 shrink-0 flex-col border-e border-line p-2 text-sm">
         <Loading show={!!props.loading} />
         <h2 className="section-header px-2 py-1">{props.title}</h2>
         {props.top}
@@ -49,7 +50,7 @@ export function MasterDetail(props: {
                   key={it.key}
                   onClick={() => props.onSelect(it.key)}
                   data-active={props.selected === it.key}
-                  className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left"
+                  className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-start"
                 >
                   <span className={`min-w-0 flex-1 ${it.muted ? "text-fg-muted" : ""}`}>
                     <span className="block truncate">{it.label}</span>
@@ -62,14 +63,14 @@ export function MasterDetail(props: {
             </div>
           ))}
           {props.add && (
-            <button onClick={props.add.onClick} data-active={props.selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
+            <button onClick={props.add.onClick} data-active={props.selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-start text-primary">
               + {props.add.label}
             </button>
           )}
         </div>
       </nav>
       <div className="min-w-0 flex-1 overflow-y-auto">
-        {props.children ?? (props.selected === undefined && <p className="detail text-sm text-fg-muted">{props.placeholder ?? "Vyber položku vlevo."}</p>)}
+        {props.children ?? (props.selected === undefined && <p className="detail text-sm text-fg-muted">{props.placeholder ?? t("selectItem")}</p>)}
       </div>
     </div>
   );

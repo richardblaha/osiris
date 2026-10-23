@@ -40,9 +40,9 @@ describe("MCP URL guard", () => {
   it("requires https and public addresses", async () => {
     await expect(assertSafePublicUrl("http://93.184.215.14/mcp")).rejects.toThrow(/https/);
     for (const host of ["127.0.0.1", "10.43.0.1", "169.254.169.254", "192.168.1.2", "[::1]", "[fd00::1]", "[::ffff:10.0.0.1]"]) {
-      await expect(assertSafePublicUrl(`https://${host}/mcp`)).rejects.toThrow(/privátní/);
+      await expect(assertSafePublicUrl(`https://${host}/mcp`)).rejects.toThrow(/private network/);
     }
-    await expect(assertSafePublicUrl("https://user:pw@93.184.215.14/mcp")).rejects.toThrow(/hlavičky/);
+    await expect(assertSafePublicUrl("https://user:pw@93.184.215.14/mcp")).rejects.toThrow(/use headers/);
     await expect(assertSafePublicUrl("https://93.184.215.14/mcp")).resolves.toBeInstanceOf(URL);
   });
 
@@ -75,8 +75,8 @@ describe("McpServerStore", () => {
 
     expect(await store.list("bob", { showTenantUrls: true })).toEqual([]);
     expect(await store.list("alice", { showTenantUrls: false })).toMatchObject([{ name: "kalendar", scope: "personal", url: "https://cal.example/mcp" }]);
-    await expect(store.put("kalendar", "bob", { url: "https://x.example/mcp", enabled: true })).rejects.toThrow(/jiný server/);
-    await expect(store.put("kalendar", "", { url: "https://x.example/mcp", enabled: true })).rejects.toThrow(/jiný server/);
+    await expect(store.put("kalendar", "bob", { url: "https://x.example/mcp", enabled: true })).rejects.toThrow(/Another server/);
+    await expect(store.put("kalendar", "", { url: "https://x.example/mcp", enabled: true })).rejects.toThrow(/Another server/);
   });
 });
 

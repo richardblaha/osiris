@@ -3,18 +3,22 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
+import { t } from "i18next";
+import { formatDateTime } from "./i18n.ts";
 
-const PRESETS: { label: string; cron: string }[] = [
-  { label: "každý všední den v 7:00", cron: "0 7 * * 1-5" },
-  { label: "každý den v 7:00", cron: "0 7 * * *" },
-  { label: "každé pondělí v 8:00", cron: "0 8 * * 1" },
-  { label: "každý pátek v 15:00", cron: "0 15 * * 5" },
-  { label: "1. den v měsíci v 8:00", cron: "0 8 1 * *" },
+/** A time of day in the reader's format (7:00, 7:00 AM). */
+const clock = (hour: number) => formatDateTime(new Date(2000, 0, 1, hour), { timeStyle: "short" });
+const PRESETS: { label: () => string; cron: string }[] = [
+  { label: () => t("schedules:presets.weekdays", { time: clock(7) }), cron: "0 7 * * 1-5" },
+  { label: () => t("schedules:presets.daily", { time: clock(7) }), cron: "0 7 * * *" },
+  { label: () => t("schedules:presets.monday", { time: clock(8) }), cron: "0 8 * * 1" },
+  { label: () => t("schedules:presets.friday", { time: clock(15) }), cron: "0 15 * * 5" },
+  { label: () => t("schedules:presets.monthly", { time: clock(8) }), cron: "0 8 1 * *" },
 ];
 
-const when = (iso: string | null) => (iso ? new Date(iso).toLocaleString("cs-CZ", { dateStyle: "medium", timeStyle: "short" }) : "—");
-const describe = (s: Schedule) => (s.cron ? (PRESETS.find((p) => p.cron === s.cron)?.label ?? `cron ${s.cron}`) : `jednou ${when(s.runAt)}`);
-const STATUS: Record<NonNullable<Schedule["lastStatus"]>, string> = { done: "hotovo", failed: "selhalo", skipped: "vynecháno" };
+const when = (iso: string | null) => (iso ? formatDateTime(iso) : "—");
+const describe = (s: Schedule) => (s.cron ? (PRESETS.find((p) => p.cron === s.cron)?.label() ?? `cron ${s.cron}`) : t("schedules:once", { time: when(s.runAt) }));
+const status = (value: NonNullable<Schedule["lastStatus"]>) => t(`schedules:status.${value}`);
 
 type Draft = { title: string; prompt: string; mode: "cron" | "once"; cron: string; runAt: string; delivery: "web" | "whatsapp"; enabled: boolean };
 const empty: Draft = { title: "", prompt: "", mode: "cron", cron: PRESETS[0]!.cron, runAt: "", delivery: "web", enabled: true };
@@ -43,12 +47,12 @@ export function Schedules({ isAdmin, onOpenThread }: { isAdmin: boolean; onOpenT
 
   return (
     <MasterDetail
-      title="Plánované úlohy"
+      title={t("app:nav.schedules")}
       loading={!list && !error}
       top={
         isAdmin && (
           <label className="flex items-center gap-2 px-2 py-1 text-xs">
-            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> všech uživatelů
+            <input type="checkbox" checked={all} onChange={(e) => setAll(e.target.checked)} /> {t("schedules:allUsers")}
           </label>
         )
       }
@@ -59,15 +63,15 @@ export function Schedules({ isAdmin, onOpenThread }: { isAdmin: boolean; onOpenT
             label: s.title,
             hint: `${describe(s)}${all && s.ownerName ? ` · ${s.ownerName}` : ""}`,
             muted: !s.enabled,
-            badge: s.lastStatus === "failed" ? <span className="text-xs text-error">selhalo</span> : undefined,
+            badge: s.lastStatus === "failed" ? <span className="text-xs text-error">{status("failed")}</span> : undefined,
           })),
-          empty: "Zatím žádné úlohy.",
+          empty: t("schedules:empty"),
         },
       ]}
       selected={selected}
       onSelect={setSelected}
-      add={{ label: "Nová úloha", onClick: () => setSelected(null) }}
-      placeholder="Asistent úlohu spustí sám v nastavený čas, s tvými oprávněními. Výsledek najdeš jako novou konverzaci, případně i ve WhatsAppu. Úlohu můžeš zadat i v chatu, např. „každé ráno v 7 mi shrň dnešní zakázky“."
+      add={{ label: t("schedules:new"), onClick: () => setSelected(null) }}
+      placeholder={t("schedules:placeholder")}
     >
       {error ? (
         <div className="detail">
@@ -115,7 +119,7 @@ function ScheduleDetail({
     };
     void attempt(setBusy, setError, async () => {
       const saved = schedule ? await api.updateSchedule(schedule.id, input) : await api.createSchedule(input);
-      setNotice("Uloženo.");
+      setNotice(t("savedNotice"));
       onSaved(saved.id);
     });
   };
@@ -123,59 +127,59 @@ function ScheduleDetail({
 
   return (
     <div className="detail max-w-3xl space-y-4">
-      <h1 className="text-lg font-semibold">{s ? s.title : "Nová úloha"}</h1>
+      <h1 className="text-lg font-semibold">{s ? s.title : t("schedules:new")}</h1>
       {s && (
         <div className="text-sm">
           <p className="text-fg-secondary">
             {describe(s)}
-            {s.delivery === "whatsapp" && " · i na WhatsApp"}
+            {s.delivery === "whatsapp" && ` · ${t("schedules:alsoWhatsapp")}`}
             {s.ownerName && ` · ${s.ownerName}`}
           </p>
           <p className="mt-0.5 text-xs text-fg-muted">
-            další spuštění {s.enabled ? when(s.nextRunAt) : "—"}
-            {s.lastRunAt && ` · naposledy ${when(s.lastRunAt)} (${s.lastStatus ? STATUS[s.lastStatus] : "?"})`}
+            {t("schedules:next", { time: s.enabled ? when(s.nextRunAt) : "—" })}
+            {s.lastRunAt && ` · ${t("schedules:last", { time: when(s.lastRunAt), status: s.lastStatus ? status(s.lastStatus) : "?" })}`}
           </p>
           {s.lastError && <p className="mt-0.5 text-xs text-error">{s.lastError}</p>}
           <div className="mt-2 flex flex-wrap gap-2">
             {s.lastThreadId && (
               <button onClick={() => onOpenThread(s.lastThreadId!)} className="btn-secondary text-sm">
-                Poslední výsledek
+                {t("schedules:lastResult")}
               </button>
             )}
             <button
-              onClick={() => void attempt(setBusy, setError, async () => (await api.runSchedule(s.id), setNotice("Spuštěno, výsledek bude v nové konverzaci.")))}
+              onClick={() => void attempt(setBusy, setError, async () => (await api.runSchedule(s.id), setNotice(t("schedules:started"))))}
               disabled={busy}
               className="btn-secondary text-sm"
             >
-              Spustit teď
+              {t("schedules:runNow")}
             </button>
             <span className="flex-1" />
             <button
-              onClick={() => window.confirm(`Smazat úlohu „${s.title}“?`) && void attempt(setBusy, setError, async () => (await api.deleteSchedule(s.id), onDeleted()))}
+              onClick={() => window.confirm(t("schedules:confirmDelete", { title: s.title })) && void attempt(setBusy, setError, async () => (await api.deleteSchedule(s.id), onDeleted()))}
               className="btn-danger text-sm"
             >
-              Smazat
+              {t("delete")}
             </button>
           </div>
         </div>
       )}
       <form onSubmit={submit} className="space-y-3">
-          <Field label="Název">
+          <Field label={t("name")}>
             <input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} required maxLength={100} className="field" />
           </Field>
-          <Field label="Co má asistent udělat">
+          <Field label={t("schedules:prompt")}>
             <textarea value={draft.prompt} onChange={(e) => setDraft({ ...draft, prompt: e.target.value })} required maxLength={4000} rows={4} className="field" />
           </Field>
           <div className="flex flex-wrap gap-3">
-            <Field label="Kdy">
+            <Field label={t("schedules:when")}>
               <select value={draft.mode} onChange={(e) => setDraft({ ...draft, mode: e.target.value as Draft["mode"] })} className="field w-auto">
-                <option value="cron">opakovaně</option>
-                <option value="once">jednou</option>
+                <option value="cron">{t("schedules:repeat")}</option>
+                <option value="once">{t("schedules:onceOption")}</option>
               </select>
             </Field>
             {draft.mode === "cron" ? (
               <>
-                <Field label="Opakování">
+                <Field label={t("schedules:recurrence")}>
                   <select
                     value={PRESETS.some((p) => p.cron === draft.cron) ? draft.cron : "custom"}
                     onChange={(e) => setDraft({ ...draft, cron: e.target.value === "custom" ? "" : e.target.value })}
@@ -183,37 +187,37 @@ function ScheduleDetail({
                   >
                     {PRESETS.map((p) => (
                       <option key={p.cron} value={p.cron}>
-                        {p.label}
+                        {p.label()}
                       </option>
                     ))}
-                    <option value="custom">vlastní (cron)</option>
+                    <option value="custom">{t("schedules:custom")}</option>
                   </select>
                 </Field>
                 {!PRESETS.some((p) => p.cron === draft.cron) && (
-                  <Field label="Cron (min hod den měsíc den-týdne)">
+                  <Field label={t("schedules:cron")}>
                     <input value={draft.cron} onChange={(e) => setDraft({ ...draft, cron: e.target.value })} placeholder="30 6 * * 1-5" required className="field w-auto" />
                   </Field>
                 )}
               </>
             ) : (
-              <Field label="Datum a čas">
+              <Field label={t("schedules:dateTime")}>
                 <input type="datetime-local" value={draft.runAt} onChange={(e) => setDraft({ ...draft, runAt: e.target.value })} required className="field w-auto" />
               </Field>
             )}
-            <Field label="Výsledek poslat">
+            <Field label={t("schedules:delivery")}>
               <select value={draft.delivery} onChange={(e) => setDraft({ ...draft, delivery: e.target.value as Draft["delivery"] })} className="field w-auto">
-                <option value="web">jen do chatu</option>
-                <option value="whatsapp">i na WhatsApp</option>
+                <option value="web">{t("schedules:chatOnly")}</option>
+                <option value="whatsapp">{t("schedules:alsoWhatsapp")}</option>
               </select>
             </Field>
           </div>
           <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> zapnutá
+            <input type="checkbox" checked={draft.enabled} onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })} /> {t("schedules:enabled")}
           </label>
           <ErrorNotice error={error} />
           <div className="flex items-center gap-3">
             <button disabled={busy} className="btn-primary">
-              {busy ? "Ukládám…" : "Uložit"}
+              {busy ? t("saving") : t("save")}
             </button>
             {notice && <span className="text-sm text-success">{notice}</span>}
           </div>

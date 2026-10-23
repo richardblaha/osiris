@@ -8,13 +8,16 @@ import { logout } from "./auth.ts";
 import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
 import { Security, type SecurityPart } from "./Security.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
+import { t } from "i18next";
+import { Trans } from "react-i18next";
+import { applyLanguageSetting, initial } from "./i18n.ts";
 
 const initials = (name: string) =>
   name
     .split(/[\s@.]+/)
     .filter(Boolean)
     .slice(0, 2)
-    .map((w) => w[0]!.toUpperCase())
+    .map(initial)
     .join("");
 
 /** The profile picture (claim `picture`), or the user's initials when there is none or it fails to load. */
@@ -43,18 +46,18 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
   const [part, setPart] = useState<Part>(notice ? "linked" : "account");
   return (
     <MasterDetail
-      title={me.user.name ?? me.user.email ?? "Můj profil"}
+      title={me.user.name ?? me.user.email ?? t("profile:title")}
       groups={[
         {
           items: [
-            { key: "account", label: "Účet" },
-            { key: "passkeys", label: "Klíče (passkeys)" },
-            { key: "password", label: "Změnit heslo" },
-            { key: "totp", label: "Dvoufázové přihlašování" },
-            { key: "linked", label: "Propojené účty" },
-            { key: "personalization", label: "Personalizace" },
-            { key: "activity", label: "Aktivita a relace" },
-            { key: "logout", label: <span className="text-error">Odhlásit</span> },
+            { key: "account", label: t("profile:parts.account") },
+            { key: "passkeys", label: t("profile:parts.passkeys") },
+            { key: "password", label: t("profile:parts.password") },
+            { key: "totp", label: t("profile:parts.totp") },
+            { key: "linked", label: t("profile:parts.linked") },
+            { key: "personalization", label: t("profile:parts.personalization") },
+            { key: "activity", label: t("profile:parts.activity") },
+            { key: "logout", label: <span className="text-error">{t("app:signOut")}</span> },
           ],
         },
       ]}
@@ -66,7 +69,7 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
           <>
             <div className="flex items-center gap-4">
               <Avatar user={me.user} size={56} />
-              <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{me.user.name ?? me.user.email ?? "Můj profil"}</h1>
+              <h1 className="min-w-0 flex-1 truncate text-lg font-semibold">{me.user.name ?? me.user.email ?? t("profile:title")}</h1>
             </div>
             <Account />
           </>
@@ -104,51 +107,54 @@ function Personalization() {
   };
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (settings) void attempt(setBusy, setError, async () => (setSettings(await api.saveSettings(settings)), setSaved(true)));
+    if (!settings) return;
+    void attempt(setBusy, setError, async () => {
+      const next = await api.saveSettings(settings);
+      setSettings(next);
+      setSaved(true);
+      // The app follows the language too; changing it renders the app anew.
+      applyLanguageSetting(next.language);
+    });
   };
 
   return (
     <>
-      <h1 className="text-lg font-semibold">Personalizace</h1>
-      <p className="mt-1 text-sm text-fg-secondary">Jak s tebou má asistent jednat. Platí jen pro tebe, ve všech tvých tenantech zvlášť.</p>
+      <h1 className="text-lg font-semibold">{t("profile:parts.personalization")}</h1>
+      <p className="mt-1 text-sm text-fg-secondary">{t("profile:personalizationIntro")}</p>
       {!settings && !error && <Pending />}
       {settings && (
         <form onSubmit={submit} className="mt-6 space-y-4">
           <div className="flex flex-wrap gap-6">
             <label className="space-y-1">
-              <span className="section-header block">Oslovení</span>
+              <span className="section-header block">{t("profile:address")}</span>
               <select value={settings.address} onChange={(e) => set("address", e.target.value as UserSettings["address"])} className="field w-auto">
-                <option value="auto">podle mě</option>
-                <option value="ty">tykání</option>
-                <option value="vy">vykání</option>
+                <option value="auto">{t("profile:auto")}</option>
+                <option value="ty">{t("profile:informal")}</option>
+                <option value="vy">{t("profile:formal")}</option>
               </select>
             </label>
             <label className="space-y-1">
-              <span className="section-header block">Jazyk odpovědí</span>
-              <select value={settings.language} onChange={(e) => set("language", e.target.value as UserSettings["language"])} className="field w-auto">
-                <option value="auto">podle mě</option>
-                <option value="cs">čeština</option>
-                <option value="sk">slovenčina</option>
-              </select>
+              <span className="section-header block">{t("profile:language")}</span>
+              <LanguageSelect value={settings.language} onChange={(v) => set("language", v)} />
             </label>
           </div>
           <label className="block space-y-1">
-            <span className="section-header block">Podpis</span>
+            <span className="section-header block">{t("profile:signature")}</span>
             <textarea
               value={settings.signature}
               onChange={(e) => set("signature", e.target.value)}
-              placeholder={"Do e-mailů, nabídek a dalších textů psaných tvým jménem, např.\nJan Novák, elektro Novák, 777 123 456"}
+              placeholder={t("profile:signaturePlaceholder")}
               maxLength={1000}
               rows={3}
               className="field"
             />
           </label>
           <label className="block space-y-1">
-            <span className="section-header block">Vlastní pokyny pro asistenta</span>
+            <span className="section-header block">{t("profile:instructions")}</span>
             <textarea
               value={settings.instructions}
               onChange={(e) => set("instructions", e.target.value)}
-              placeholder="Např. Ceny uváděj vždy s DPH. Termíny navrhuj jen ve všední dny."
+              placeholder={t("profile:instructionsPlaceholder")}
               maxLength={4000}
               rows={5}
               className="field"
@@ -156,17 +162,32 @@ function Personalization() {
           </label>
           <div className="flex items-center gap-3">
             <button disabled={busy} className="btn-primary">
-              {busy ? "Ukládám…" : "Uložit"}
+              {busy ? t("saving") : t("save")}
             </button>
-            {saved && <span className="text-sm text-success">Uloženo.</span>}
+            {saved && <span className="text-sm text-success">{t("savedNotice")}</span>}
           </div>
         </form>
       )}
       <ErrorNotice error={error} />
 
-      <h2 className="section-header mt-8">Persona asistenta</h2>
+      <h2 className="section-header mt-8">{t("profile:persona")}</h2>
       <AssistantSettings scope="personal" editable />
     </>
+  );
+}
+
+/** The language choice; each language is named in itself, so a reader finds theirs whatever the app's language. */
+export function LanguageSelect({ value, onChange }: { value: UserSettings["language"]; onChange: (v: UserSettings["language"]) => void }) {
+  const own = (code: string) => new Intl.DisplayNames([code], { type: "language" }).of(code) ?? code;
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value as UserSettings["language"])} className="field w-auto">
+      <option value="auto">{t("profile:languageAuto")}</option>
+      {(["en", "cs", "sk"] as const).map((code) => (
+        <option key={code} value={code} lang={code}>
+          {own(code)}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -194,43 +215,43 @@ function Account() {
   if (!profile) return <Pending error={error} />;
   const challenge = profile.phoneChallenge;
   const waLink = challenge?.whatsappNumber
-    ? `https://wa.me/${challenge.whatsappNumber.replace(/\D/g, "")}?text=${encodeURIComponent(`OVERENI ${challenge.code}`)}`
+    ? `https://wa.me/${challenge.whatsappNumber.replace(/\D/g, "")}?text=${encodeURIComponent(`${t("profile:verifyKeyword")} ${challenge.code}`)}`
     : undefined;
 
   return (
     <section className="mt-6 space-y-4">
-      <h2 className="section-header">Účet</h2>
+      <h2 className="section-header">{t("profile:parts.account")}</h2>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          void act(async () => show(await api.saveProfile(form)), "Uloženo. Nové jméno se projeví do minuty.");
+          void act(async () => show(await api.saveProfile(form)), t("profile:savedName"));
         }}
         className="space-y-3"
       >
         <div className="flex flex-wrap gap-3">
-          <Field label="Jméno">
+          <Field label={t("invite:firstNameLabel")}>
             <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required maxLength={50} className="field" />
           </Field>
-          <Field label="Příjmení">
+          <Field label={t("invite:lastNameLabel")}>
             <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} maxLength={50} className="field" />
           </Field>
         </div>
-        <Field label="E-mail">
+        <Field label={t("profile:email")}>
           <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} maxLength={200} className="field" />
         </Field>
         <div className="flex flex-wrap items-center gap-3">
           <button disabled={busy} className="btn-primary">
-            Uložit účet
+            {t("profile:saveAccount")}
           </button>
           <label className="btn-secondary cursor-pointer">
-            Změnit fotku
+            {t("profile:changePhoto")}
             <input
               type="file"
               accept="image/png,image/jpeg"
               hidden
               onChange={(e) => {
                 const file = e.target.files?.[0];
-                if (file) void act(() => api.savePicture(file), "Fotka uložena. Projeví se do minuty.");
+                if (file) void act(() => api.savePicture(file), t("profile:photoSaved"));
               }}
             />
           </label>
@@ -238,29 +259,33 @@ function Account() {
       </form>
 
       <div>
-        <span className="section-header block">Telefon pro WhatsApp</span>
+        <span className="section-header block">{t("profile:phone")}</span>
         <p className="mt-1 text-sm">
-          {profile.phone ?? <span className="text-fg-muted">neověřený</span>}
+          {profile.phone ?? <span className="text-fg-muted">{t("profile:unverified")}</span>}
           {profile.phone && (
-            <button onClick={() => void act(async () => (await api.removePhone(), show(await api.profile())))} className="btn-danger ml-3 text-sm">
-              Odebrat
+            <button onClick={() => void act(async () => (await api.removePhone(), show(await api.profile())))} className="btn-danger ms-3 text-sm">
+              {t("remove")}
             </button>
           )}
         </p>
         {challenge ? (
           <div className="notice mt-2 space-y-2 px-3 py-2 text-sm">
             <p>
-              Pošli z čísla <strong>{challenge.phone}</strong> zprávu <code>OVERENI {challenge.code}</code> na WhatsApp
-              {challenge.whatsappNumber ? <> číslo <strong>{challenge.whatsappNumber}</strong></> : " Osirisu"}. Kód platí 15 minut.
+              <Trans
+                ns="profile"
+                i18nKey={challenge.whatsappNumber ? "verifyTo" : "verifyOsiris"}
+                values={{ phone: challenge.phone, message: `${t("profile:verifyKeyword")} ${challenge.code}`, number: challenge.whatsappNumber ?? "" }}
+                components={{ strong: <strong />, code: <code /> }}
+              />
             </p>
             <div className="flex gap-3">
               {waLink && (
                 <a href={waLink} target="_blank" rel="noreferrer" className="btn-primary">
-                  Otevřít WhatsApp
+                  {t("profile:openWhatsApp")}
                 </a>
               )}
               <button onClick={() => void act(async () => show(await api.profile()))} className="btn-secondary">
-                Hotovo, zkontrolovat
+                {t("profile:checkDone")}
               </button>
             </div>
           </div>
@@ -274,7 +299,7 @@ function Account() {
           >
             <input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+420 777 123 456" required className="field min-w-0 flex-1" />
             <button disabled={busy} className="btn-secondary">
-              {profile.phone ? "Změnit číslo" : "Ověřit číslo"}
+              {profile.phone ? t("profile:changeNumber") : t("profile:verifyNumber")}
             </button>
           </form>
         )}

@@ -35,7 +35,7 @@ describe("build_vitepress_site", () => {
     // Other sites stay.
     expect((await acme.files.read(tenant, "www/jiny/index.html")).data.toString()).toBe("<p>jiný web</p>");
 
-    expect(await tool.invoke({ site: "nic" })).toContain("neexistuje");
+    expect(await tool.invoke({ site: "nic" })).toContain("doesn't exist");
     await expect(tool.invoke({ site: "../www" })).rejects.toThrow();
   });
 });

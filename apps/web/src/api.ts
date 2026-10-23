@@ -62,6 +62,7 @@ import type {
 } from "@osiris/shared";
 import type { startRegistration } from "@simplewebauthn/browser";
 import { getAccessToken, login } from "./auth.ts";
+import { currentLocale } from "./i18n.ts";
 
 type PasskeyCreationOptions = Parameters<typeof startRegistration>[0]["optionsJSON"];
 
@@ -84,6 +85,8 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
     headers: {
       authorization: `Bearer ${token}`,
       "content-type": "application/json",
+      // Messages from the server (errors, generated texts) come in the app's language, not only the browser's.
+      "accept-language": currentLocale(),
       ...(tenantId ? { "x-tenant-id": tenantId } : {}),
       ...init.headers,
     },
@@ -307,7 +310,7 @@ export const api = {
   siteTargets: () => json<SiteTarget[]>("/site-targets"),
   vitepressSites: () => json<{ sites: string[]; builder: boolean }>("/vitepress-sites"),
   createVitepressSite: (name: string) => json<{ name: string }>("/vitepress-sites", { method: "POST", body: JSON.stringify({ name }) }),
-  buildVitepressSite: (name: string) => json<{ message: string }>(`/vitepress-sites/${encodeURIComponent(name)}/build`, { method: "POST" }),
+  buildVitepressSite: (name: string) => json<{ dir: string; written: number; bytes: number; deleted: number; skipped: string[] }>(`/vitepress-sites/${encodeURIComponent(name)}/build`, { method: "POST" }),
   deleteVitepressSite: (name: string) => request(`/vitepress-sites/${encodeURIComponent(name)}`, { method: "DELETE" }),
   saveSiteTarget: (
     name: string,

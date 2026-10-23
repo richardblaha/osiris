@@ -16,6 +16,7 @@ import type { ControlDirectory } from "./control.ts";
 import type { Identity, TokenVerifier } from "./oidc.ts";
 import { RateLimiter } from "./rate-limit.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
+import { errorBody, HttpError, requestLocale, translate } from "@osiris/platform/i18n.ts";
 
 export interface GatewayDeps {
   verifier: TokenVerifier;
@@ -48,7 +49,7 @@ type Env = { Variables: { auth: Authenticated } };
 const CONTROL_PATHS = /^\/api\/(me|admin|tenant|members|schedules|domains|sites|dashboards|analytics)(\/|$)/;
 
 /** Request headers passed on to the services; credentials and hop-by-hop headers are not. */
-const FORWARD_REQUEST = ["content-type", "accept", "x-tenant-id", "x-hub-signature-256"];
+const FORWARD_REQUEST = ["content-type", "accept", "accept-language", "x-tenant-id", "x-hub-signature-256"];
 /** Response headers passed back to the browser. */
 const FORWARD_RESPONSE = ["content-type", "content-disposition", "cache-control", "content-security-policy", "x-content-type-options", "retry-after"];
 /** Sign-in (`/auth`, control's OIDC provider and the sign-in screens' API) takes cookies and answers with redirects. */
@@ -57,12 +58,12 @@ const AUTH_RESPONSE = [...FORWARD_RESPONSE, "location", "pragma", "www-authentic
 const AUTH_BODY_BYTES = 64 * 1024;
 
 /** A 403 that tells the user who they are signed in as and which claims arrived, so a misconfigured account is easy to fix. */
-class AccessDeniedError extends HTTPException {
+class AccessDeniedError extends HttpError {
   constructor(
-    message: string,
+    key: string,
     readonly user: Record<string, unknown>,
   ) {
-    super(403, { message });
+    super(403, key);
   }
 }
 
@@ -75,6 +76,8 @@ const describeUser = (user: Identity) => ({
   "tenant-admin": user.access.adminTenants,
   ...(user.claimKeys ? { claims: user.claimKeys } : {}),
 });
+
+const tooLarge = (key: string) => (c: Context) => c.json({ error: translate(requestLocale(c.req.header("accept-language")), key), code: key }, 413);
 
 const plainUser = (u: Identity): InternalUser => ({ sub: u.sub, name: u.name, email: u.email, phone: u.phone, picture: u.picture });
 
@@ -125,12 +128,13 @@ export function createGatewayApp(deps: GatewayDeps) {
       if (isUnreachable(err) || (err instanceof ServiceError && err.status >= 500)) throw err;
       throw new HTTPException(401, { message: "Invalid token" });
     }
-    const deny = (message: string) => {
+    const deny = (key: string) => {
       const details = describeUser(user);
-      console.warn(`Access denied: ${message}`, details);
-      return new AccessDeniedError(message, details);
+      const err = new AccessDeniedError(key, details);
+      console.warn(`Access denied: ${err.message}`, details);
+      return err;
     };
-    if (!isAuthorized(user.access)) throw deny("Účet zatím nemá přístup do Osirisu (chybí role osiris-user). Požádej správce.");
+    if (!isAuthorized(user.access)) throw deny("errors.access.noRole");
     const systemAdmin = isSystemAdmin(user.access);
     // Claims may name tenants that were removed; only active ones count. A tenant just created may be missing from
     // the cached list, so an unknown one triggers a reload.
@@ -139,8 +143,8 @@ export function createGatewayApp(deps: GatewayDeps) {
       active = (await control.list({ refresh: true })).map((t) => t.id);
     }
     const memberships = accessibleTenants(user.access, active).filter((m) => active.includes(m.tenantId));
-    if (!memberships.length && !systemAdmin) throw deny("Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.");
-    if (!requests.take(user.sub)) throw new HTTPException(429, { message: "Příliš mnoho požadavků, zkus to za chvíli" });
+    if (!memberships.length && !systemAdmin) throw deny("errors.access.noTenant");
+    if (!requests.take(user.sub)) throw new HttpError(429, "errors.tooManyRequests");
     c.set("auth", { user, memberships, systemAdmin });
     await next();
   });
@@ -183,10 +187,10 @@ export function createGatewayApp(deps: GatewayDeps) {
     const requested = c.req.header("x-tenant-id");
     const membership = requested ? memberships.find((m) => m.tenantId === requested) : memberships.length === 1 ? memberships[0] : undefined;
     if (!membership) {
-      throw new HTTPException(requested ? 403 : 400, { message: requested ? "Not a member of this tenant" : "X-Tenant-Id header required" });
+      throw requested ? new HttpError(403, "errors.access.notMember") : new HttpError(400, "errors.tenantRequired");
     }
     if (c.req.method === "POST" && /^\/api\/threads\/[^/]+\/runs$/.test(c.req.path) && !runs.take(user.sub)) {
-      throw new HTTPException(429, { message: "Příliš mnoho zpráv za minutu, zkus to za chvíli" });
+      throw new HttpError(429, "errors.tooManyMessages");
     }
     const authorization = await signer.header(tenantAudience(membership.tenantId), {
       user: plainUser(user),
@@ -208,7 +212,7 @@ export function createGatewayApp(deps: GatewayDeps) {
   /** Sign-in goes to control as it came, cookies and all; redirects go back to the browser. */
   const toAuth = async (c: Context) => {
     const url = new URL(c.req.url);
-    if (!signIns.take(clientIp(c))) throw new HTTPException(429, { message: "Příliš mnoho požadavků, zkus to za chvíli" });
+    if (!signIns.take(clientIp(c))) throw new HttpError(429, "errors.tooManyRequests");
     const headers: Record<string, string> = {
       // Control builds its URLs and cookie flags from these (the gateway sits behind Traefik, which sets them).
       "x-forwarded-proto": c.req.header("x-forwarded-proto") ?? url.protocol.slice(0, -1),
@@ -236,7 +240,7 @@ export function createGatewayApp(deps: GatewayDeps) {
   };
 
   const api = new Hono<Env>()
-    .use(bodyLimit({ maxSize: deps.maxBodyBytes, onError: (c) => c.json({ error: "Požadavek je příliš velký" }, 413) }))
+    .use(bodyLimit({ maxSize: deps.maxBodyBytes, onError: tooLarge("errors.requestTooLarge") }))
     .use(authenticate)
     .all("*", (c) => (CONTROL_PATHS.test(c.req.path) ? toControl(c) : toRuntime(c)));
 
@@ -258,16 +262,16 @@ export function createGatewayApp(deps: GatewayDeps) {
     .use("/api/*", cors({ origin: deps.corsOrigin, allowHeaders: ["authorization", "content-type", "x-tenant-id"] }))
     .get("/health", (c) => c.json({ ok: true }))
     // A tenant's customers: no sign-in, a visitor id from their browser, the public assistant only.
-    .all("/public/:tenant/*", bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Zpráva je příliš dlouhá" }, 413) }), async (c) => {
+    .all("/public/:tenant/*", bodyLimit({ maxSize: 16 * 1024, onError: tooLarge("errors.public.messageTooLong") }), async (c) => {
       const tenant = c.req.param("tenant");
       const ip = clientIp(c);
       if (!TENANT_SLUG.test(tenant)) throw new HTTPException(404, { message: "Not found" });
-      if (!publicRequests.take(ip)) throw new HTTPException(429, { message: "Příliš mnoho požadavků, zkuste to za chvíli" });
+      if (!publicRequests.take(ip)) throw new HttpError(429, "errors.public.tooManyRequests");
       if (c.req.method === "POST" && c.req.path.endsWith("/runs") && !publicRuns.take(ip)) {
-        throw new HTTPException(429, { message: "Příliš mnoho zpráv za minutu, zkuste to za chvíli" });
+        throw new HttpError(429, "errors.public.tooManyMessages");
       }
       const visitor = c.req.header("x-visitor-id") ?? "";
-      if (!/^[A-Za-z0-9_-]{16,64}$/.test(visitor)) throw new HTTPException(400, { message: "Chybí identifikace návštěvníka" });
+      if (!/^[A-Za-z0-9_-]{16,64}$/.test(visitor)) throw new HttpError(400, "errors.public.visitorMissing");
       if (!(await control.list()).some((t) => t.id === tenant)) throw new HTTPException(404, { message: "Not found" });
       const authorization = await signer.header(tenantAudience(tenant), { tenant, visitor, channel: "public" });
       const url = new URL(c.req.url);
@@ -279,7 +283,7 @@ export function createGatewayApp(deps: GatewayDeps) {
       });
       return relay(res);
     })
-    .all("/auth/*", bodyLimit({ maxSize: AUTH_BODY_BYTES, onError: (c) => c.json({ error: "Požadavek je příliš velký" }, 413) }), toAuth)
+    .all("/auth/*", bodyLimit({ maxSize: AUTH_BODY_BYTES, onError: tooLarge("errors.requestTooLarge") }), toAuth)
     .route("/api", api)
     // Meta's webhook goes to control as it came; control checks Meta's signature.
     .all("/webhooks/whatsapp", bodyLimit({ maxSize: 1024 * 1024 }), async (c) => {
@@ -322,11 +326,13 @@ export function createGatewayApp(deps: GatewayDeps) {
   }
 
   return app.onError((err, c) => {
-    if (err instanceof AccessDeniedError) return c.json({ error: err.message, user: err.user }, err.status);
+    const locale = requestLocale(c.req.header("accept-language"));
+    if (err instanceof AccessDeniedError) return c.json({ ...errorBody(err, locale), user: err.user }, err.status);
+    if (err instanceof HttpError) return c.json(errorBody(err, locale), err.status);
     if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
     if (isUnreachable(err)) {
       console.error("Service unreachable", err);
-      return c.json({ error: "Služba je dočasně nedostupná, zkus to za chvíli" }, 503);
+      return c.json(errorBody(new HttpError(503, "errors.serviceUnavailable"), locale), 503);
     }
     console.error(err);
     return c.json({ error: "Internal server error" }, 500);

@@ -1,0 +1,9 @@
+{
+  "intro": "Fakta, která si asistent pamatuje mezi konverzacemi. Ukládá si je i sám, když mu něco řekneš.",
+  "item": "Záznam v paměti",
+  "saved": "Uloženo {{time}}",
+  "forget": "Zapomenout",
+  "new": "Nový záznam v paměti",
+  "what": "Co si má pamatovat",
+  "placeholder": "Např. Nejsem plátce DPH. Zálohy chci 50 % předem."
+}

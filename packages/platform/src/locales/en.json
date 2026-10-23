@@ -1,0 +1,503 @@
+{
+  "errors": {
+    "access": {
+      "noRole": "This account has no access to Osiris yet (the osiris-user role is missing). Ask an administrator.",
+      "noTenant": "This account doesn't belong to any organization yet. Ask an administrator for an invitation.",
+      "notMember": "You are not a member of this tenant.",
+      "adminOnly": "This requires the administrator role.",
+      "systemAdminOnly": "This requires a system administrator."
+    },
+    "tenantRequired": "Choose a tenant (the X-Tenant-Id header is missing).",
+    "tooManyRequests": "Too many requests. Try again in a moment.",
+    "tooManyMessages": "Too many messages per minute. Try again in a moment.",
+    "requestTooLarge": "The request is too large.",
+    "serviceUnavailable": "The service is temporarily unavailable. Try again in a moment.",
+    "public": {
+      "messageTooLong": "The message is too long.",
+      "tooManyRequests": "Too many requests. Please try again in a moment.",
+      "tooManyMessages": "Too many messages per minute. Please try again in a moment.",
+      "visitorMissing": "The visitor identification is missing."
+    },
+    "schedule": {
+      "cronFields": "A cron expression has 5 fields (minute hour day month weekday).",
+      "cronInvalid": "Invalid cron expression: {{detail}}",
+      "tooOften": "A task may run at most once every {{minutes}} minutes.",
+      "timezone": "Unknown time zone: {{timezone}}",
+      "timingMissing": "Enter a repetition (cron) or a time for a one-off run.",
+      "runAtInvalid": "Invalid run time.",
+      "runAtPast": "The run time is in the past.",
+      "userLimit_one": "You can have at most {{count}} scheduled task.",
+      "userLimit_other": "You can have at most {{count}} scheduled tasks.",
+      "tenantLimit_one": "A tenant can have at most {{count}} scheduled task.",
+      "tenantLimit_other": "A tenant can have at most {{count}} scheduled tasks.",
+      "notFound": "Task not found.",
+      "featureOff": "Scheduled tasks are not enabled for the tenant."
+    },
+    "signIn": {
+      "expired": "The sign-in has expired. Please start again.",
+      "expiredRetry": "The sign-in has expired. Try again.",
+      "tooManyAttempts": "Too many attempts. Try again in a quarter of an hour.",
+      "wrongPassword": "Wrong email or password.",
+      "wrongCode": "The code doesn't match.",
+      "unknownPasskey": "We don't know this passkey. Sign in another way and add it in your profile.",
+      "mailOff": "Sending email is not configured.",
+      "unknownProvider": "Unknown provider.",
+      "linkInvalid": "The sign-in link is invalid, used or expired.",
+      "providerCancelled": "The sign-in at the provider was cancelled.",
+      "noUser": "We have no user for this account. Sign in another way and link it in your profile, or ask an administrator for an invitation."
+    },
+    "link": {
+      "expired": "Linking has expired. Try again.",
+      "cancelled": "Linking was cancelled.",
+      "signedOut": "Your sign-in has expired. Sign in again and repeat the linking."
+    },
+    "session": {
+      "notFound": "The session doesn't exist."
+    },
+    "password": {
+      "tooShort_one": "The password must have at least {{count}} character.",
+      "tooShort_other": "The password must have at least {{count}} characters.",
+      "tooLong_one": "The password can have at most {{count}} character.",
+      "tooLong_other": "The password can have at most {{count}} characters.",
+      "tooSimple": "The password is too simple.",
+      "currentWrong": "The current password doesn't match."
+    },
+    "totp": {
+      "alreadyOn": "The authenticator app is already on.",
+      "wrongCode": "The code doesn't match. Check the time on your phone and try the next code.",
+      "off": "Turn on the authenticator app first.",
+      "notStarted": "Start setting up the authenticator app first."
+    },
+    "passkey": {
+      "exists": "This passkey is already added.",
+      "notFound": "Passkey not found.",
+      "expired": "The time to add the passkey ran out. Try again.",
+      "verifyFailed": "The passkey couldn't be verified.",
+      "verifyFailedDetail": "The passkey couldn't be verified: {{detail}}"
+    },
+    "identity": {
+      "taken": "This account is already linked, either to you or to another user.",
+      "notLinked": "The account isn't linked.",
+      "lastMethod": "This is your only way to sign in. Add another one first."
+    },
+    "social": {
+      "notConfigured": "Sign-in with {{provider}} is not configured.",
+      "noIdToken": "The provider returned no ID token.",
+      "badNonce": "Invalid response from the provider (nonce).",
+      "badToken": "Invalid token from {{provider}}: {{detail}}",
+      "badIssuer": "Invalid Microsoft token issuer.",
+      "otherOrganization": "The account belongs to another organization.",
+      "noAccessToken": "{{provider}} returned no access token.",
+      "noProfile": "{{provider}} returned no profile.",
+      "refused": "The provider refused the sign-in: {{detail}}"
+    },
+    "user": {
+      "emailTaken": "A user with this email already exists.",
+      "exists": "The user already exists.",
+      "notFound": "User not found.",
+      "selfLockout": "You can't block your own account or remove your own system administration.",
+      "disabled": "The account is blocked."
+    },
+    "domain": {
+      "invalid": "Invalid domain (for example www.mycompany.com).",
+      "reserved": "This domain can't be used.",
+      "limit_one": "A tenant can have at most {{count}} domain.",
+      "limit_other": "A tenant can have at most {{count}} domains.",
+      "taken": "Another tenant already uses this domain.",
+      "notFound": "Domain not found."
+    },
+    "publish": {
+      "foreignDomain": "The domain doesn't belong to the tenant.",
+      "unverified": "The domain isn't verified yet.",
+      "noIndex": "The site needs an index.html file at its root.",
+      "releaseNotFound": "Release not found.",
+      "entryType": "Entry type not allowed: {{path}}",
+      "path": "Path not allowed: {{path}}",
+      "fileType": "File type not allowed: {{path}}",
+      "fileTooLarge": "File too large: {{path}}",
+      "tooManyFiles": "The site has more than {{count}} files.",
+      "tooLarge": "The site is too large."
+    },
+    "quota": {
+      "members_one": "A tenant can have at most {{count}} user.",
+      "members_other": "A tenant can have at most {{count}} users.",
+      "dashboards_one": "A tenant can have at most {{count}} own dashboard.",
+      "dashboards_other": "A tenant can have at most {{count}} own dashboards."
+    },
+    "phone": {
+      "invalid": "Invalid phone number."
+    },
+    "dashboard": {
+      "sourceSystem": "Source {{source}} isn't available on a system dashboard.",
+      "sourceTenant": "Source {{source}} isn't available on a tenant dashboard.",
+      "notFound": "Dashboard not found.",
+      "adminOnly": "Only an administrator can change dashboards.",
+      "unknownView": "Unknown view."
+    },
+    "telemetryOff": "Telemetry (ClickHouse) is not configured here.",
+    "telemetry": {
+      "traceId": "Invalid trace id.",
+      "queryFailed": "The ClickHouse query failed: {{detail}}"
+    },
+    "validation": {
+      "invalid": "Invalid request.",
+      "slug": "Slug: lowercase letters, digits and hyphens.",
+      "name": "Name: lowercase letters, digits and hyphens.",
+      "phone": "Enter the number with its country code, for example +420 777 123 456.",
+      "mailAccount": "Set up SMTP or incoming mail.",
+      "messageTooLong": "The message is too long.",
+      "headerName": "Invalid header name.",
+      "knowledgePath": "Invalid path in the knowledge base.",
+      "host": "Server: a host name or IP address.",
+      "remoteDir": "The target folder must be an absolute path, for example /var/www/company.",
+      "allowedHost": "Invalid domain (for example api.example.com or *.example.com).",
+      "allowedHostsEmpty": "Enter at least one allowed domain."
+    },
+    "invalidJson": "The request body isn't valid JSON.",
+    "tenant": {
+      "exists": "A tenant with this slug already exists.",
+      "notFound": "Tenant not found.",
+      "removed": "The tenant was removed."
+    },
+    "member": {
+      "notFound": "Member not found."
+    },
+    "featureOff": "This feature is not enabled for the tenant.",
+    "sites": {
+      "featureOff": "Sites are not enabled for the tenant.",
+      "name": "Site name: lowercase letters, digits, hyphens and dots (for example mycompany.com).",
+      "exists": "Site {{site}} already exists.",
+      "invalidName": "Invalid site name.",
+      "notFound": "The site doesn't exist."
+    },
+    "image": {
+      "tooLarge": "The image can be at most {{mb}} MB.",
+      "pictureType": "The profile picture must be PNG or JPEG.",
+      "logoType": "The logo must be PNG or JPEG."
+    },
+    "guard": {
+      "notFound": "The rule doesn't exist.",
+      "adminOnly": "Only an administrator can change rules (guards/).",
+      "level": "Level: user, tenant or assistant."
+    },
+    "files": {
+      "pathMissing": "The file path is missing.",
+      "pathTooLong": "The path is too long.",
+      "tooDeep": "Too many nested folders.",
+      "badName": "Invalid file or folder name: \"{{name}}\"",
+      "folderMissing": "The folder doesn't exist.",
+      "notFolder": "The path isn't a folder.",
+      "invalid": "Invalid file.",
+      "fileMissing": "File {{path}} doesn't exist.",
+      "isFolder": "{{path}} is a folder, not a file.",
+      "typeNotAllowed": "The file type .{{extension}} isn't allowed.",
+      "tooLarge": "The file is larger than the allowed {{mb}} MB.",
+      "contentMismatch": "The file's content doesn't match the type .{{extension}}.",
+      "folderExists": "{{path}} is a folder.",
+      "fileExists": "File {{path}} already exists.",
+      "quota": "The organization's storage is full. Delete files you don't need.",
+      "missing": "{{path}} doesn't exist.",
+      "exists": "{{path}} already exists.",
+      "renameMismatch": "The file's content doesn't match the new extension.",
+      "moveIntoItself": "A folder can't be moved into itself.",
+      "folderNotFound": "Folder {{path}} doesn't exist.",
+      "badPath": "Invalid path.",
+      "isFile": "{{path}} is a file, not a folder.",
+      "folderEmpty": "Folder {{path}} doesn't exist or is empty.",
+      "featureOff": "Files are not enabled.",
+      "threadRequired": "Temporary files need the conversation (thread).",
+      "uploadTooLarge": "The file is too large."
+    },
+    "db": {
+      "unterminated": "The query has an unterminated string or comment.",
+      "oneStatement": "Send a single statement only.",
+      "selectOnly": "The query must be a SELECT (data is changed with the write tools).",
+      "keyword": "{{keyword}} isn't allowed in a query.",
+      "tableName": "Invalid table name “{{name}}”: lowercase letters without diacritics, digits and _, starting with a letter.",
+      "columnName": "Invalid column name “{{name}}”: lowercase letters without diacritics, digits and _, starting with a letter.",
+      "wrongType": "Column {{column}} expects {{expected}}, got {{value}}.",
+      "required": "Column {{column}} is required.",
+      "textTooLong": "The text in column {{column}} is longer than {{count}} characters.",
+      "unique": "The value in column {{column}} is already in the table (it must be unique).",
+      "reference": "The reference doesn't match: the referenced row doesn't exist, or other rows reference the one being deleted.",
+      "tableExists": "Table {{table}} already exists.",
+      "tableQuota_one": "The organization can have at most {{count}} table.",
+      "tableQuota_other": "The organization can have at most {{count}} tables.",
+      "columnCount": "A table needs 1 to {{count}} columns.",
+      "duplicateColumn": "Column {{column}} is there twice.",
+      "systemColumnChange": "Every table has column {{column}}; it can't be changed.",
+      "noColumn": "Table {{table}} has no column {{column}}.",
+      "noColumnList": "Table {{table}} has no column {{column}} (columns: {{columns}}).",
+      "columnExists": "Column {{column}} is already in the table.",
+      "columnLimit": "A table can have at most {{count}} columns.",
+      "newRequired": "The new column {{column}} can't be required (existing rows have no value).",
+      "rowCount": "You can insert 1 to {{count}} rows at once.",
+      "nothingToChange": "There is nothing to change.",
+      "notUnique": "Column {{column}} can't be made unique: its values repeat.",
+      "systemColumnAdd": "Every table has column {{column}} of its own; don't add it.",
+      "unknownType": "Unknown type {{type}}; allowed: {{types}}.",
+      "noReferencedTable": "The referenced table {{table}} doesn't exist.",
+      "referenceType": "Column {{column}} references a table, so it must be of type integer.",
+      "rowShape": "A row must be an object of column → value.",
+      "automatic": "Column {{column}} is filled in automatically.",
+      "whereMissing": "The where condition is missing (at least one column, for example id).",
+      "listSize": "The list of values for {{column}} must have 1 to {{count}} items.",
+      "quota": "The organization's database is full. Delete rows or tables you don't need.",
+      "timeout": "The query took longer than {{seconds}} s. Simplify it or limit the number of rows.",
+      "queryFailed": "The query couldn't be run.",
+      "sqlite": "{{detail}}",
+      "noTable": "Table {{table}} doesn't exist.",
+      "rowId": "Invalid row id.",
+      "adminOnly": "Only an administrator can change the structure of tables.",
+      "rowNotFound": "The row doesn't exist."
+    },
+    "question": {
+      "expired": "The previous question has expired. Please make a new request.",
+      "useForm": "Fill in the form in the chat, or answer with a JSON object. /cancel cancels the form.",
+      "invalid": "Invalid answer.",
+      "closed": "The question is no longer open or has expired.",
+      "unknownField": "Unknown answer field.",
+      "required": "Fill in: {{field}}",
+      "badValue": "Invalid value: {{field}}",
+      "answered": "The question has already been answered.",
+      "notFound": "The question doesn't exist."
+    },
+    "attachment": {
+      "noReader": "Set MISTRAL_API_KEY to transcribe audio and read PDFs.",
+      "pdfUnreadable": "The PDF can't be read or is encrypted.",
+      "pdfEmpty": "The PDF has no pages.",
+      "failed": "Processing the attachment failed (HTTP {{status}}).",
+      "invalid": "Invalid attachments.",
+      "tooLarge": "The attachments together exceed {{mb}} MB.",
+      "unsupported": "Unsupported attachment.",
+      "unavailable": "Attachments aren't available or the limit is used up."
+    },
+    "url": {
+      "invalid": "Invalid URL.",
+      "credentials": "The URL must not contain credentials; use headers.",
+      "scheme": "The URL must be http(s).",
+      "https": "The URL must use https.",
+      "unresolved": "The address {{host}} can't be resolved.",
+      "private": "The URL points to a private network."
+    },
+    "secret": {
+      "inHost": "A secret must not be in the URL's domain, only in its path or parameters.",
+      "valueRequired": "A new secret needs a value.",
+      "notFound": "Secret {{name}} doesn't exist.",
+      "hostNotAllowed": "Secret {{name}} isn't allowed for {{host}}.",
+      "name": "The name must be in UPPER_CASE (A-Z, 0-9, _).",
+      "missing": "Secret not found."
+    },
+    "mcp": {
+      "nameTaken": "Another server in the organization already uses the name “{{name}}”.",
+      "signInNotStarted": "Signing in to the MCP server wasn't started.",
+      "signInFailed": "The sign-in couldn't be completed.",
+      "timeout": "Timed out after {{seconds}} s.",
+      "signInRequired": "Not signed in: sign in to the server in its settings.",
+      "notFound": "MCP server not found.",
+      "notOauth": "The server doesn't sign in with OAuth.",
+      "otherUser": "The sign-in belongs to another user.",
+      "providerFailed": "Signing in at the provider failed: {{detail}}",
+      "finishFailed": "The sign-in couldn't be completed: {{detail}}"
+    },
+    "integration": {
+      "notConfigured": "Connecting to {{provider}} isn't configured in Osiris.",
+      "expired": "The sign-in has expired or was already completed. Try again.",
+      "notStarted": "The sign-in wasn't started.",
+      "notConnected": "The {{provider}} account isn't connected (My profile → Connected accounts).",
+      "reconnect": "The connection to {{provider}} has expired; connect the account again.",
+      "revoked": "The connection to {{provider}} is no longer valid; connect the account again ({{detail}}).",
+      "accountMissing": "The account isn't connected.",
+      "providerOff": "Connecting to this provider isn't configured in Osiris.",
+      "expiredOrOther": "The sign-in has expired or belongs to another user. Try again.",
+      "failed": "Connecting failed: {{detail}}"
+    },
+    "sftp": {
+      "credentials": "Enter a password or a private key.",
+      "hostKey": "Server {{host}} presented a different key ({{seen}}) than last time ({{expected}}). If the server changed, save the target again.",
+      "targetNotFound": "Target {{name}} doesn't exist.",
+      "noIndex": "Folder {{path}} has no index.html.",
+      "targetMissing": "The target doesn't exist.",
+      "saveFailed": "{{detail}}",
+      "connectFailed": "Connecting failed: {{detail}}",
+      "publishFailed": "Publishing failed: {{detail}}"
+    },
+    "pdf": {
+      "failed": "Converting to PDF failed ({{status}}): {{detail}}",
+      "tooLarge": "The resulting PDF is too large."
+    },
+    "vitepress": {
+      "failed": "Building the site failed ({{status}}): {{detail}}",
+      "off": "Building sites isn't configured here.",
+      "buildFailed": "{{detail}}"
+    },
+    "mail": {
+      "notFound": "Message not found."
+    },
+    "run": {
+      "inProgress": "A run is already in progress in this conversation."
+    },
+    "thread": {
+      "notFound": "Conversation not found."
+    },
+    "scope": {
+      "personalGone": "Personal settings no longer exist; everything applies to the whole tenant."
+    },
+    "assistant": {
+      "notFound": "The assistant doesn't exist.",
+      "unavailable": "The assistant isn't available."
+    },
+    "knowledge": {
+      "folder": "Invalid folder: letters, digits, dots and hyphens, / between folders.",
+      "notFound": "The document doesn't exist."
+    },
+    "skill": {
+      "notFound": "Skill not found."
+    },
+    "persona": {
+      "scope": "A persona is either your own (scope=personal) or a public assistant's."
+    },
+    "inquiry": {
+      "notFound": "The inquiry doesn't exist."
+    },
+    "memory": {
+      "notFound": "Memory not found."
+    }
+  },
+  "schedules": {
+    "notes": {
+      "missed": "The task didn't run in time (the service was unavailable).",
+      "tenantGone": "The tenant no longer exists.",
+      "featureOff": "Scheduled tasks are switched off for the tenant.",
+      "ownerLeft": "The task's owner is no longer a member of the tenant.",
+      "whatsappOff": "WhatsApp is not configured; the result is only in the web chat.",
+      "noPhone": "The user has no verified phone number; the result is only in the web chat.",
+      "whatsappWindow": "WhatsApp only allows messages within 24 hours of the user's last message; the result is only in the web chat."
+    }
+  },
+  "whatsapp": {
+    "notRegistered": "This number has no Osiris account. Verify it in your profile (My profile → Phone), or ask an administrator.",
+    "noTenant": "You aren't assigned to any tenant. Contact an administrator.",
+    "unsupported": "I support text, images, documents and voice messages.",
+    "failed": "Sorry, something went wrong. Please try again.",
+    "newThread": "OK, starting a new conversation.",
+    "verified": "Your number is verified. You can write to me now.",
+    "badCode": "The code doesn't match or has expired. Request a new one in your profile.",
+    "help": "*Commands*\n• /tenant – your tenants and which one is active\n• /tenant <slug> – switch to another tenant\n• /new – start a new conversation\n• /cancel – cancel an open question or form",
+    "chooseTenant": "Send /tenant <slug> to choose the one you want to work with.",
+    "featureOff": "WhatsApp is not enabled for tenant *{{tenant}}*.",
+    "attachmentOnly": "Attaching a file.",
+    "answerInvalid": "The answer isn't valid or the question has expired. Fill in the form again, or send /cancel.",
+    "activeTenant": "Active tenant: *{{tenant}}*.",
+    "noActiveTenant": "You haven't chosen a tenant yet.",
+    "switchHint": "Switch with /tenant <slug>.",
+    "unknownTenant": "You don't have a tenant “{{tenant}}”.",
+    "switched": "Switched to tenant *{{tenant}}*.",
+    "tenants": "Your tenants: {{tenants}}.",
+    "scheduledTask": "Scheduled task",
+    "question": {
+      "yes": "Yes",
+      "no": "No",
+      "choose": "Choose an answer",
+      "fill": "Fill in",
+      "replyOrForm": "Reply with a message, or open the form.",
+      "openForm": "Open the form:",
+      "cancelHint": "/cancel — cancel the question"
+    }
+  },
+  "email": {
+    "signInLink": {
+      "subject": "Sign in to Osiris",
+      "text_one": "Hello,\n\nopen this link to sign in to Osiris (it is valid for {{count}} hour and only once):\n\n{{link}}\n\nIf you didn't ask to sign in, ignore this email.\n",
+      "text_other": "Hello,\n\nopen this link to sign in to Osiris (it is valid for {{count}} hours and only once):\n\n{{link}}\n\nIf you didn't ask to sign in, ignore this email.\n"
+    },
+    "inquiry": {
+      "subject": "New inquiry: {{name}}",
+      "time": "Time: {{time}}",
+      "text": "The public assistant {{assistant}} received an inquiry.\n\nName: {{name}}\nContact: {{contact}}\n{{time}}\n{{description}}\n\nYou'll find inquiries in Osiris under Assistants."
+    }
+  },
+  "pages": {
+    "logout": {
+      "title": "Signing out",
+      "progress": "Signing out…",
+      "button": "Sign out"
+    },
+    "loggedOut": {
+      "title": "Signed out",
+      "back": "Back to Osiris"
+    },
+    "signInError": {
+      "title": "Sign-in error",
+      "heading": "Sign-in failed",
+      "retry": "Try again"
+    }
+  },
+  "domains": {
+    "notes": {
+      "txtMissing": "The TXT record {{record}} with the value {{token}} is missing.",
+      "aRecord": "an A record to {{ips}}",
+      "cname": "a CNAME to {{target}}",
+      "askAdmin": "the record your administrator gives you",
+      "notPointing": "The domain doesn't point to Osiris: set {{records}}."
+    }
+  },
+  "dashboard": {
+    "noService": "(no service)",
+    "pod": {
+      "running": "running",
+      "pending": "pending",
+      "failed": "failed",
+      "unknown": "unknown"
+    },
+    "tenant": {
+      "running": "running",
+      "sleeping": "sleeping",
+      "suspended": "suspended",
+      "unknown": "unknown"
+    },
+    "columns": {
+      "service": "Service",
+      "records": "Records",
+      "namespace": "Namespace",
+      "pod": "Pod",
+      "state": "State",
+      "restarts": "Restarts",
+      "time": "Time",
+      "object": "Object",
+      "reason": "Reason",
+      "message": "Message",
+      "count": "Count",
+      "tenants": "Tenants",
+      "running": "Running",
+      "sleeping": "Sleeping",
+      "noBackup": "No backup for {{hours}} h",
+      "tenant": "Tenant",
+      "lastActivity": "Last activity",
+      "lastBackup": "Last backup",
+      "backupSize": "Backup size",
+      "report": "Report",
+      "tokensMonth": "Tokens this month",
+      "files": "Files",
+      "users": "Users",
+      "tasks": "Tasks",
+      "tables": "Tables",
+      "database": "Database",
+      "dashboards": "Dashboards",
+      "reported": "Reported"
+    }
+  },
+  "agent": {
+    "publicUnavailable": "Sorry, the assistant can't answer right now. Please contact the company directly.",
+    "tokensExhausted": "This organization's monthly assistant usage limit is used up. Contact an administrator.",
+    "userTokensExhausted": "Your monthly assistant usage limit is used up. Contact your organization's administrator.",
+    "guardRefusal": "I can't do that; it goes against the rules set for this assistant.",
+    "answer": {
+      "cancelled": "Form cancelled.",
+      "summary": "Answer: {{values}}",
+      "yes": "Yes",
+      "no": "No"
+    },
+    "attachments": "Attachments: {{files}}"
+  }
+}

@@ -8,6 +8,7 @@ import {
   type StoredOAuthTokens,
 } from "@modelcontextprotocol/client";
 import type { SecretBox } from "../secrets.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 interface OAuthData {
   client?: StoredOAuthClientInformation;
@@ -117,7 +118,7 @@ export class StoredOAuthProvider implements OAuthClientProvider {
 
   async codeVerifier() {
     const { verifier } = await this.store.get(this.owner, this.name);
-    if (!verifier) throw new Error("Přihlášení k MCP serveru nebylo zahájeno");
+    if (!verifier) throw new LocalizedError("errors.mcp.signInNotStarted");
     return verifier;
   }
 
@@ -138,5 +139,5 @@ export async function startOAuth(provider: StoredOAuthProvider, serverUrl: strin
 /** Finishes signing in with the code the provider sent the user back with. */
 export async function finishOAuth(provider: StoredOAuthProvider, serverUrl: string, code: string, iss?: string, fetchFn?: typeof fetch) {
   const result = await auth(provider, { serverUrl, authorizationCode: code, iss, fetchFn });
-  if (result !== "AUTHORIZED") throw new Error("Přihlášení se nepodařilo dokončit");
+  if (result !== "AUTHORIZED") throw new LocalizedError("errors.mcp.signInFailed");
 }

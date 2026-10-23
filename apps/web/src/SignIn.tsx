@@ -1,7 +1,10 @@
 import type { SignInState, SocialProvider } from "@osiris/shared";
 import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/browser";
 import { useEffect, useState, type FormEvent } from "react";
+import { t } from "i18next";
+import { Trans } from "react-i18next";
 import { login } from "./auth.ts";
+import { currentLocale } from "./i18n.ts";
 
 export const SOCIAL_LABELS: Record<SocialProvider, string> = { google: "Google", facebook: "Facebook", microsoft: "Microsoft", seznam: "Seznam" };
 
@@ -9,7 +12,7 @@ export const SOCIAL_LABELS: Record<SocialProvider, string> = { google: "Google",
 async function step<T>(uid: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/auth/interaction/${encodeURIComponent(uid)}${path}`, {
     method: body === undefined ? "GET" : "POST",
-    headers: body === undefined ? {} : { "content-type": "application/json" },
+    headers: { "accept-language": currentLocale(), ...(body === undefined ? {} : { "content-type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const data = (await res.json().catch(() => ({}))) as T & { error?: string };
@@ -59,7 +62,7 @@ export function SignIn() {
     run(async () => {
       const optionsJSON = await step<Parameters<typeof startAuthentication>[0]["optionsJSON"]>(uid, "/passkey/options", {});
       const response = await startAuthentication({ optionsJSON }).catch((err: Error) => {
-        throw new Error(err.name === "NotAllowedError" ? "Přihlášení klíčem bylo zrušeno." : err.message);
+        throw new Error(err.name === "NotAllowedError" ? t("signin:passkeyCancelled") : err.message);
       });
       return step<Next>(uid, "/passkey", { response });
     });
@@ -70,7 +73,7 @@ export function SignIn() {
   };
 
   const emailLink = () => {
-    if (!form.email) return setError("Vyplň e-mail, na který ti máme poslat odkaz.");
+    if (!form.email) return setError(t("signin:emailRequired"));
     void run(async () => {
       await step(uid, "/email-link", { email: form.email });
       setSent(true);
@@ -92,7 +95,7 @@ export function SignIn() {
 
         {state.step === "second-factor" ? (
           <form onSubmit={secondFactor} className="space-y-3">
-            <p className="text-sm text-fg-secondary">Zadej kód z ověřovací aplikace. Když telefon nemáš po ruce, použij jeden ze záložních kódů.</p>
+            <p className="text-sm text-fg-secondary">{t("signin:secondFactor")}</p>
             <input
               value={code}
               onChange={(e) => setCode(e.target.value)}
@@ -105,32 +108,32 @@ export function SignIn() {
               className="field text-center text-lg tracking-widest"
             />
             <button disabled={busy} className="btn-primary w-full py-2.5">
-              Ověřit
+              {t("signin:verify")}
             </button>
           </form>
         ) : sent ? (
           <p className="notice px-3 py-2 text-sm">
-            Pokud u nás účet s adresou <strong>{form.email}</strong> máš, poslali jsme na ni odkaz pro přihlášení. Platí hodinu.
+            <Trans ns="signin" i18nKey="linkSent" values={{ email: form.email }} components={{ strong: <strong /> }} />
           </p>
         ) : (
           <>
             {state.methods.passkey && browserSupportsWebAuthn() && (
               <button onClick={() => void passkey()} disabled={busy} className="btn-primary w-full py-2.5">
-                Přihlásit se klíčem (passkey)
+                {t("signin:passkey")}
               </button>
             )}
             {state.methods.social.length > 0 && (
               <div className="space-y-2">
                 {state.methods.social.map((p) => (
                   <a key={p} href={`/auth/interaction/${encodeURIComponent(uid)}/social/${p}`} className="btn-secondary block w-full py-2.5 text-center">
-                    Pokračovat přes {SOCIAL_LABELS[p]}
+                    {t("signin:continueWith", { provider: SOCIAL_LABELS[p] })}
                   </a>
                 ))}
               </div>
             )}
             <div className="flex items-center gap-3 text-xs text-fg-muted">
               <span className="h-px flex-1 bg-line" />
-              nebo e-mailem
+              {t("signin:orEmail")}
               <span className="h-px flex-1 bg-line" />
             </div>
             <form onSubmit={password} className="space-y-3">
@@ -140,7 +143,7 @@ export function SignIn() {
                 onChange={(e) => setForm({ ...form, email: e.target.value })}
                 required
                 autoComplete="username"
-                placeholder="e-mail"
+                placeholder={t("signin:email")}
                 maxLength={200}
                 className="field"
               />
@@ -150,17 +153,17 @@ export function SignIn() {
                 onChange={(e) => setForm({ ...form, password: e.target.value })}
                 required
                 autoComplete="current-password"
-                placeholder="heslo"
+                placeholder={t("signin:password")}
                 maxLength={200}
                 className="field"
               />
               <button disabled={busy} className="btn-primary w-full py-2.5">
-                Přihlásit
+                {t("signin:signIn")}
               </button>
             </form>
             {state.methods.emailLink && (
               <button onClick={emailLink} disabled={busy} className="btn-link block w-full text-center text-sm">
-                Zapomněl(a) jsem heslo, pošlete mi odkaz e-mailem
+                {t("signin:forgot")}
               </button>
             )}
           </>

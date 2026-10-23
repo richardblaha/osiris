@@ -60,11 +60,11 @@ describe("DataStore", () => {
       { name: "Jana", email: "jana@example.cz", vip: true, extra: { city: "Brno" } },
       { name: "Petr", vip: "false" },
     ]);
-    await expect(data.insert("contacts", [{ name: "Eva", email: "jana@example.cz" }])).rejects.toThrow(/email už v tabulce je/);
-    await expect(data.insert("contacts", [{ email: "x@example.cz" }])).rejects.toThrow(/name je povinný/);
-    await expect(data.insert("contacts", [{ name: "X", phone: "1" }])).rejects.toThrow(/phone v tabulce contacts není/);
-    await expect(data.insert("deals", [{ contact_id: 999, value: 1 }])).rejects.toThrow(/Odkaz nesedí/);
-    await expect(data.insert("deals", [{ value: "hodně" }])).rejects.toThrow(/value čeká číslo/);
+    await expect(data.insert("contacts", [{ name: "Eva", email: "jana@example.cz" }])).rejects.toThrow(/column email is already in the table/);
+    await expect(data.insert("contacts", [{ email: "x@example.cz" }])).rejects.toThrow(/name is required/);
+    await expect(data.insert("contacts", [{ name: "X", phone: "1" }])).rejects.toThrow(/Table contacts has no column phone/);
+    await expect(data.insert("deals", [{ contact_id: 999, value: 1 }])).rejects.toThrow(/reference doesn't match/);
+    await expect(data.insert("deals", [{ value: "hodně" }])).rejects.toThrow(/value expects a number/);
     await data.insert("deals", [
       { contact_id: jana, value: "1500,5", closed_on: "2026-10-01" },
       { contact_id: jana, value: 500 },
@@ -102,7 +102,7 @@ describe("DataStore", () => {
     expect(t.columns.map((c) => c.name)).toEqual(["id", "full_name", "vip", "extra", "created_at", "updated_at", "phone"]);
     // The deals follow the renamed table.
     expect((await data.table("deals")).columns.find((c) => c.name === "contact_id")!.references).toBe("people");
-    await expect(data.alterTable("people", { addColumns: [{ name: "x", type: "text", required: true }] })).rejects.toThrow(/nemůže být povinný/);
+    await expect(data.alterTable("people", { addColumns: [{ name: "x", type: "text", required: true }] })).rejects.toThrow(/can't be required/);
     await data.dropTable("deals");
     expect((await data.tables()).map((x) => x.name)).toEqual(["people"]);
   });
@@ -118,7 +118,7 @@ describe("DataStore", () => {
   it("stops a runaway query without holding the runtime", async () => {
     const data = store();
     const started = Date.now();
-    await expect(data.query("WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT COUNT(*) FROM c")).rejects.toThrow(/déle než/);
+    await expect(data.query("WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c) SELECT COUNT(*) FROM c")).rejects.toThrow(/took longer than/);
     expect(Date.now() - started).toBeLessThan(8000);
   }, 15_000);
 });

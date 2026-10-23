@@ -7,6 +7,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { HTTPException } from "hono/http-exception";
 import type Provider from "oidc-provider";
 import { z } from "zod";
+import { HttpError, requestLocale, translate, ValidationError } from "@osiris/platform/i18n.ts";
 import { readAll } from "@osiris/platform/objects.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import type { UserDirectory } from "../users.ts";
@@ -50,15 +51,15 @@ const LINK_COOKIE_PATH = "/auth/interaction";
 const EMAIL_LINK_HOURS = 1;
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
-  const r = schema.safeParse(value);
-  if (!r.success) throw new HTTPException(400, { message: z.prettifyError(r.error) });
+  const r = schema.safeParse(value, { reportInput: true });
+  if (!r.success) throw new ValidationError(r.error);
   return r.data;
 };
 const body = async <T>(c: Context, schema: z.ZodType<T>) =>
   parse(
     schema,
     await c.req.json().catch(() => {
-      throw new HTTPException(400, { message: "Invalid JSON" });
+      throw new HttpError(400, "errors.invalidJson");
     }),
   );
 
@@ -89,7 +90,10 @@ const nodePair = (c: Context) => {
 
 const isProvider = (p: string): p is SocialProviderId => (SOCIAL_PROVIDERS as readonly string[]).includes(p);
 
-export class SignInError extends HTTPException {}
+export class SignInError extends HttpError {}
+
+/** A message in the language of the request (for redirects that carry it to the sign-in page). */
+const say = (c: Context, key: string) => translate(requestLocale(c.req.header("accept-language")), key);
 
 /**
  * The sign-in screens' API under `/auth` (the web app's `/login` page calls it), plus the redirects of social
@@ -103,9 +107,9 @@ export function authRoutes(deps: AuthDeps) {
   const interaction = async (c: Context) => {
     const [req, res] = nodePair(c);
     const details = await provider.interactionDetails(req, res).catch(() => {
-      throw new SignInError(400, { message: "Přihlášení vypršelo, začni prosím znovu" });
+      throw new SignInError(400, "errors.signIn.expired");
     });
-    if (details.uid !== c.req.param("uid")) throw new SignInError(400, { message: "Přihlášení vypršelo, začni prosím znovu" });
+    if (details.uid !== c.req.param("uid")) throw new SignInError(400, "errors.signIn.expired");
     return details;
   };
 
@@ -143,7 +147,7 @@ export function authRoutes(deps: AuthDeps) {
         if (details.prompt.name === "consent") {
           // Only our own web app exists: grant what it asked for.
           const accountId = details.session?.accountId;
-          if (!accountId) throw new SignInError(400, { message: "Přihlášení vypršelo, začni prosím znovu" });
+          if (!accountId) throw new SignInError(400, "errors.signIn.expired");
           const grant = (details.grantId && (await provider.Grant.find(details.grantId))) || new provider.Grant({ accountId, clientId: String(details.params.client_id) });
           const missing = details.prompt.details as { missingOIDCScope?: string[]; missingOIDCClaims?: string[] };
           if (missing.missingOIDCScope) grant.addOIDCScope(missing.missingOIDCScope.join(" "));
@@ -159,7 +163,7 @@ export function authRoutes(deps: AuthDeps) {
           deleteCookie(c, LINK_COOKIE, { path: LINK_COOKIE_PATH });
           const link = await credentials.takeLink(token);
           const user = link && (await activeUser(link.userId));
-          if (!link || !user) return c.redirect(loginPage(uid, { error: "Odkaz pro přihlášení je neplatný, použitý nebo vypršel." }), 303);
+          if (!link || !user) return c.redirect(loginPage(uid, { error: say(c, "errors.signIn.linkInvalid") }), 303);
           if (link.purpose === "email") await users.markEmailVerified(user.id);
           const next = await firstFactorDone(c, uid, user.id, ["link"]);
           return c.redirect("redirectTo" in next ? next.redirectTo : loginPage(uid), 303);
@@ -180,13 +184,13 @@ export function authRoutes(deps: AuthDeps) {
         const details = await interaction(c);
         const input = await body(c, z.object({ email, password }));
         const keys = [`ip:${clientIp(c)}`, `email:${input.email.toLowerCase()}`];
-        if (limiter.blocked(keys)) throw new SignInError(429, { message: "Příliš mnoho pokusů, zkus to za čtvrt hodiny" });
+        if (limiter.blocked(keys)) throw new SignInError(429, "errors.signIn.tooManyAttempts");
         const userId = await credentials.checkPassword(input.email, input.password);
         if (!userId) {
           limiter.fail(keys);
           const account = (await deps.db.query<{ id: string }>("SELECT id FROM users WHERE lower(email)=?", [input.email.toLowerCase()]))[0];
           if (account) await deps.activity.record(account.id, false, "pwd", clientIp(c), c.req.header("user-agent") ?? "");
-          throw new SignInError(401, { message: "Nesprávný e-mail nebo heslo" });
+          throw new SignInError(401, "errors.signIn.wrongPassword");
         }
         limiter.reset([keys[1]!]);
         return c.json(await firstFactorDone(c, details.uid, userId, ["pwd"]));
@@ -197,18 +201,18 @@ export function authRoutes(deps: AuthDeps) {
         const input = await body(c, z.object({ code }));
         const key = `second-factor:${details.uid}`;
         const pending = await credentials.peekChallenge<PendingSecondFactor>(key);
-        if (!pending) throw new SignInError(400, { message: "Přihlášení vypršelo, začni prosím znovu" });
+        if (!pending) throw new SignInError(400, "errors.signIn.expired");
         const keys = [`second-factor-user:${pending.userId}`, `ip:${clientIp(c)}`];
-        if (limiter.blocked(keys)) throw new SignInError(429, { message: "Příliš mnoho pokusů, zkus to za čtvrt hodiny" });
+        if (limiter.blocked(keys)) throw new SignInError(429, "errors.signIn.tooManyAttempts");
         const digits = input.code.replace(/\s/g, "");
         const ok = /^\d{6}$/.test(digits) ? await credentials.checkTotp(pending.userId, digits) : await credentials.useRecoveryCode(pending.userId, input.code);
         if (!ok) {
           limiter.fail(keys);
           await deps.activity.record(pending.userId, false, "otp", clientIp(c), c.req.header("user-agent") ?? "");
-          throw new SignInError(401, { message: "Kód nesouhlasí" });
+          throw new SignInError(401, "errors.signIn.wrongCode");
         }
         // Only one request gets past the second factor.
-        if (!(await credentials.takeChallenge(key))) throw new SignInError(400, { message: "Přihlášení vypršelo, začni prosím znovu" });
+        if (!(await credentials.takeChallenge(key))) throw new SignInError(400, "errors.signIn.expired");
         return c.json({ redirectTo: await finish(c, pending.userId, [...pending.amr, /^\d{6}$/.test(digits) ? "otp" : "kba"]) });
       })
 
@@ -220,12 +224,12 @@ export function authRoutes(deps: AuthDeps) {
         const details = await interaction(c);
         const { response } = await body(c, z.object({ response: passkeyResponse }));
         const keys = [`ip:${clientIp(c)}`];
-        if (limiter.blocked(keys)) throw new SignInError(429, { message: "Příliš mnoho pokusů, zkus to za čtvrt hodiny" });
+        if (limiter.blocked(keys)) throw new SignInError(429, "errors.signIn.tooManyAttempts");
         const userId = await passkeys.authenticate(details.uid, response as never);
         const user = userId && (await activeUser(userId));
         if (!user) {
           limiter.fail(keys);
-          throw new SignInError(401, { message: "Tento klíč neznáme. Přihlas se jinak a přidej si ho v profilu." });
+          throw new SignInError(401, "errors.signIn.unknownPasskey");
         }
         // A passkey with user verification is two factors on its own.
         return c.json({ redirectTo: await finish(c, user.id, ["hwk", "user"]) });
@@ -234,18 +238,19 @@ export function authRoutes(deps: AuthDeps) {
       // Sends a sign-in link; the answer is the same whether the address is known or not.
       .post("/interaction/:uid/email-link", async (c) => {
         await interaction(c);
-        if (!deps.mailer) throw new SignInError(404, { message: "Odesílání e-mailů není nastavené" });
+        if (!deps.mailer) throw new SignInError(404, "errors.signIn.mailOff");
         const input = await body(c, z.object({ email }));
         const keys = [`mail-ip:${clientIp(c)}`, `mail:${input.email.toLowerCase()}`];
-        if (limiter.blocked(keys)) throw new SignInError(429, { message: "Příliš mnoho pokusů, zkus to za čtvrt hodiny" });
+        if (limiter.blocked(keys)) throw new SignInError(429, "errors.signIn.tooManyAttempts");
         limiter.fail(keys);
         const user = await users.findByEmail(input.email);
         if (user && !user.disabled && user.email) {
           const link = await users.loginLink(user.id, EMAIL_LINK_HOURS, "email");
+          const locale = requestLocale(c.req.header("accept-language"));
           await deps.mailer.send({
             to: user.email,
-            subject: "Přihlášení do Osirisu",
-            text: `Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí ${EMAIL_LINK_HOURS} hodinu a jen jednou):\n\n${link}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n`,
+            subject: translate(locale, "email.signInLink.subject"),
+            text: translate(locale, "email.signInLink.text", { link, count: EMAIL_LINK_HOURS }),
           });
         }
         return c.json({ sent: true });
@@ -255,7 +260,7 @@ export function authRoutes(deps: AuthDeps) {
       .get("/interaction/:uid/social/:provider", async (c) => {
         const details = await interaction(c);
         const providerId = c.req.param("provider");
-        if (!isProvider(providerId) || !social.enabled().includes(providerId)) throw new SignInError(404, { message: "Neznámý poskytovatel" });
+        if (!isProvider(providerId) || !social.enabled().includes(providerId)) throw new SignInError(404, "errors.signIn.unknownProvider");
         const state = newToken();
         const s: SocialState = { provider: providerId, nonce: newToken(), verifier: newToken(), uid: details.uid };
         await credentials.putChallenge(`social:${state}`, s, STEP_TTL_MS);
@@ -266,13 +271,13 @@ export function authRoutes(deps: AuthDeps) {
         const uid = details.uid;
         const fail = (message: string) => c.redirect(loginPage(uid, { error: message }), 303);
         const s = await credentials.takeChallenge<SocialState>(`social:${c.req.query("state") ?? ""}`);
-        if (!s || s.uid !== uid) return fail("Přihlášení vypršelo, zkus to znovu.");
-        if (c.req.query("error")) return fail("Přihlášení u poskytovatele bylo zrušeno.");
+        if (!s || s.uid !== uid) return fail(say(c, "errors.signIn.expiredRetry"));
+        if (c.req.query("error")) return fail(say(c, "errors.signIn.providerCancelled"));
         let profile;
         try {
           profile = await social.profile(s.provider, c.req.query("code") ?? "", s);
         } catch (err) {
-          if (err instanceof SocialLoginError) return fail(err.message);
+          if (err instanceof SocialLoginError) return fail(err.in(requestLocale(c.req.header("accept-language"))));
           throw err;
         }
         let userId = await credentials.userForIdentity(s.provider, profile.subject);
@@ -287,7 +292,7 @@ export function authRoutes(deps: AuthDeps) {
         }
         const user = userId && (await activeUser(userId));
         if (!user) {
-          return fail("K tomuto účtu nemáme uživatele. Přihlas se jinak a propoj si ho v profilu, nebo požádej správce o pozvánku.");
+          return fail(say(c, "errors.signIn.noUser"));
         }
         const next = await firstFactorDone(c, uid, user.id, ["ext"]);
         return c.redirect("redirectTo" in next ? next.redirectTo : loginPage(uid), 303);
@@ -302,19 +307,19 @@ export function authRoutes(deps: AuthDeps) {
         if (s?.uid) return c.redirect(`/auth/interaction/${encodeURIComponent(s.uid)}/social-callback${query}`, 303);
         const back = (params: Record<string, string>) => c.redirect(`/?${new URLSearchParams({ profile: "security", ...params })}`, 303);
         const taken = await credentials.takeChallenge<SocialState>(`social:${stateId}`);
-        if (!taken?.linkUser || taken.provider !== c.req.param("provider")) return back({ error: "Propojení vypršelo, zkus to znovu." });
-        if (c.req.query("error")) return back({ error: "Propojení bylo zrušeno." });
+        if (!taken?.linkUser || taken.provider !== c.req.param("provider")) return back({ error: say(c, "errors.link.expired") });
+        if (c.req.query("error")) return back({ error: say(c, "errors.link.cancelled") });
         // The browser must be signed in as the user who asked to link, so nobody can slip their account into
         // someone else's (a link started by one person and finished in another's browser).
         const [req, res] = nodePair(c);
         const session = await provider.Session.get(provider.createContext(req, res) as never);
-        if (session.accountId !== taken.linkUser) return back({ error: "Přihlášení vypršelo. Přihlas se znovu a propojení zopakuj." });
+        if (session.accountId !== taken.linkUser) return back({ error: say(c, "errors.link.signedOut") });
         try {
           const profile = await social.profile(taken.provider, c.req.query("code") ?? "", taken);
           await credentials.linkIdentity(taken.linkUser, taken.provider, profile.subject, profile.email);
           if (profile.emailVerified && profile.email && profile.email === (await users.get(taken.linkUser)).email) await users.markEmailVerified(taken.linkUser);
         } catch (err) {
-          if (err instanceof SocialLoginError || err instanceof CredentialError) return back({ error: err.message });
+          if (err instanceof SocialLoginError || err instanceof CredentialError) return back({ error: err.in(requestLocale(c.req.header("accept-language"))) });
           throw err;
         }
         return back({ linked: taken.provider });
@@ -383,7 +388,7 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessi
   const requireSecondFactor = async (userId: string, value: string) => {
     const digits = value.replace(/\s/g, "");
     const ok = /^\d{6}$/.test(digits) ? await credentials.checkTotp(userId, digits) : await credentials.useRecoveryCode(userId, value);
-    if (!ok) throw new HTTPException(400, { message: "Kód nesouhlasí" });
+    if (!ok) throw new HttpError(400, "errors.signIn.wrongCode");
   };
 
   return new Hono()
@@ -398,7 +403,7 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessi
     .get("/activity", async (c) => c.json({ events: await deps.activity.history(me(c)), sessions: await deps.activity.sessions(me(c), sessionUid(c)) }))
     .delete("/sessions/:id", async (c) => {
       const id = parse(z.string().min(1).max(200), c.req.param("id"));
-      if (!(await deps.activity.revoke(me(c), id))) throw new HTTPException(404, { message: "Relace neexistuje" });
+      if (!(await deps.activity.revoke(me(c), id))) throw new HttpError(404, "errors.session.notFound");
       return c.body(null, 204);
     })
 
@@ -406,9 +411,9 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessi
       const userId = me(c);
       const input = await body(c, z.object({ current: z.string().max(PASSWORD_MAX).optional(), password: z.string() }));
       const problem = passwordProblem(input.password);
-      if (problem) throw new HTTPException(400, { message: problem });
+      if (problem) throw new HttpError(400, problem.key, problem.params);
       if ((await credentials.hasPassword(userId)) && !(await credentials.verifyOwnPassword(userId, input.current ?? ""))) {
-        throw new HTTPException(400, { message: "Současné heslo nesouhlasí" });
+        throw new HttpError(400, "errors.password.currentWrong");
       }
       await credentials.setPassword(userId, input.password);
       return c.json(await overview(userId));
@@ -442,14 +447,14 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessi
 
     .post("/totp", async (c) => {
       const user = await users.get(me(c));
-      if (await credentials.hasTotp(user.id)) throw new HTTPException(409, { message: "Ověřovací aplikace už je zapnutá" });
+      if (await credentials.hasTotp(user.id)) throw new HttpError(409, "errors.totp.alreadyOn");
       return c.json(await credentials.startTotp(user.id, user.email ?? user.name ?? user.id));
     })
     .post("/totp/confirm", async (c) => {
       const userId = me(c);
       const input = await body(c, z.object({ code }));
       const recoveryCodes = await credentials.confirmTotp(userId, input.code);
-      if (!recoveryCodes) throw new HTTPException(400, { message: "Kód nesouhlasí. Zkontroluj čas v telefonu a zkus další kód." });
+      if (!recoveryCodes) throw new HttpError(400, "errors.totp.wrongCode");
       return c.json({ recoveryCodes, security: await overview(userId) });
     })
     .delete("/totp", async (c) => {
@@ -462,7 +467,7 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessi
     .post("/recovery-codes", async (c) => {
       const userId = me(c);
       const input = await body(c, z.object({ code }));
-      if (!(await credentials.hasTotp(userId))) throw new HTTPException(400, { message: "Nejdřív si zapni ověřovací aplikaci" });
+      if (!(await credentials.hasTotp(userId))) throw new HttpError(400, "errors.totp.off");
       await requireSecondFactor(userId, input.code);
       return c.json({ recoveryCodes: await credentials.newRecoveryCodes(userId), security: await overview(userId) });
     })
@@ -470,7 +475,7 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessi
     // Linking a social account: the browser goes to the provider and comes back to /auth/social/:provider/callback.
     .post("/social/:provider", async (c) => {
       const providerId = c.req.param("provider");
-      if (!isProvider(providerId) || !social.enabled().includes(providerId)) throw new HTTPException(404, { message: "Neznámý poskytovatel" });
+      if (!isProvider(providerId) || !social.enabled().includes(providerId)) throw new HttpError(404, "errors.signIn.unknownProvider");
       const state = newToken();
       const s: SocialState = { provider: providerId, nonce: newToken(), verifier: newToken(), linkUser: me(c) };
       await credentials.putChallenge(`social:${state}`, s, STEP_TTL_MS);

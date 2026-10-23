@@ -1,0 +1,42 @@
+{
+  "scope": {
+    "personal": "Applies to you only.",
+    "tenant": "Applies to everyone in the tenant.",
+    "tenantAdminOnly": "Applies to everyone in the tenant. Only a tenant administrator can change it.",
+    "tenantAdminOnlyList": "Applies to everyone in the tenant. Only a tenant administrator can change them."
+  },
+  "badge": {
+    "bundled": "default",
+    "tenant": "tenant",
+    "personal": "personal"
+  },
+  "loading": "Loading",
+  "loadingCaption": "LOADING...",
+  "loadingApp": "Loading Osiris",
+  "selectItem": "Select an item from the list.",
+  "auth": {
+    "unavailable": "Sign-in isn't available."
+  },
+  "delete": "Delete",
+  "close": "Close",
+  "noneYet": "None yet.",
+  "nothingYet": "Nothing yet.",
+  "name": "Name",
+  "save": "Save",
+  "saving": "Saving…",
+  "add": "Add",
+  "unsaved": "unsaved",
+  "remove": "Remove",
+  "role": {
+    "member": "user",
+    "admin": "administrator",
+    "systemAdmin": "system administrator",
+    "systemAdminCap": "System administrator"
+  },
+  "copy": "Copy",
+  "savedNotice": "Saved.",
+  "cancel": "Cancel",
+  "download": "Download",
+  "nothingFound": "Nothing found.",
+  "loadingEditor": "Loading the editor…"
+}

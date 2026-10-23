@@ -1,5 +1,6 @@
 import type { Scope } from "@osiris/shared";
 import { useId, type ReactNode } from "react";
+import { t } from "i18next";
 
 /** What every detail form gets. Settings records are the tenant's. */
 export interface DetailProps<T> {
@@ -25,11 +26,7 @@ export function DetailHeader({ title, scope, canEdit, children }: { title: strin
       {children && <p className="mt-1 text-sm text-fg-secondary">{children}</p>}
       {scope && (
         <p className="mt-1 text-xs text-fg-muted">
-          {scope === "personal"
-            ? "Platí jen pro tebe."
-            : canEdit
-              ? "Platí pro všechny v tenantovi."
-              : "Platí pro všechny v tenantovi. Měnit ho může jen správce tenanta."}
+          {scope === "personal" ? t("scope.personal") : canEdit ? t("scope.tenant") : t("scope.tenantAdminOnly")}
         </p>
       )}
     </>
@@ -37,8 +34,8 @@ export function DetailHeader({ title, scope, canEdit, children }: { title: strin
 }
 
 export function ScopeBadge({ scope }: { scope: Scope | "bundled" }) {
-  if (scope === "bundled") return <span className="badge align-middle">výchozí</span>;
-  return scope === "tenant" ? <span className="badge badge-accent align-middle">tenant</span> : <span className="badge align-middle">osobní</span>;
+  if (scope === "bundled") return <span className="badge align-middle">{t("badge.bundled")}</span>;
+  return scope === "tenant" ? <span className="badge badge-accent align-middle">{t("badge.tenant")}</span> : <span className="badge align-middle">{t("badge.personal")}</span>;
 }
 
 export const Field = ({ label, children }: { label: string; children: ReactNode }) => (
@@ -90,17 +87,17 @@ function OrbitLogo() {
  */
 export const Loading = ({ show }: { show: boolean }) =>
   show ? (
-    <div role="status" aria-label="Načítám" className="loading-overlay">
+    <div role="status" aria-label={t("loading")} className="loading-overlay">
       <span className="orbit-loader">
         <OrbitLogo />
-        <span className="loader-caption">NAČÍTÁNÍ...</span>
+        <span className="loader-caption">{t("loadingCaption")}</span>
       </span>
     </div>
   ) : null;
 
 /** The app's splash (the same as index.html's, before the code loads), while it signs in and loads the user. */
 export const Splash = () => (
-  <div className="splash" role="status" aria-label="Načítám Osiris">
+  <div className="splash" role="status" aria-label={t("loadingApp")}>
     <img src="/splash.svg" alt="" />
     <strong>OSIRIS</strong>
   </div>

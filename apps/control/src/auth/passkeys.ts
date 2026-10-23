@@ -49,7 +49,7 @@ export class Passkeys {
 
   async register(userId: string, response: RegistrationResponseJSON, name: string) {
     const challenge = await this.credentials.takeChallenge<string>(`passkey-register:${userId}`);
-    if (!challenge) throw new CredentialError("Vypršel čas na přidání klíče, zkus to znovu");
+    if (!challenge) throw new CredentialError("errors.passkey.expired");
     const result = await verifyRegistrationResponse({
       response,
       expectedChallenge: challenge,
@@ -57,9 +57,9 @@ export class Passkeys {
       expectedRPID: this.rp.id,
       requireUserVerification: true,
     }).catch((err: Error) => {
-      throw new CredentialError(`Klíč se nepodařilo ověřit: ${err.message}`);
+      throw new CredentialError("errors.passkey.verifyFailedDetail", { detail: err.message });
     });
-    if (!result.verified) throw new CredentialError("Klíč se nepodařilo ověřit");
+    if (!result.verified) throw new CredentialError("errors.passkey.verifyFailed");
     const { credential } = result.registrationInfo;
     await this.credentials.addPasskey({
       id: credential.id,

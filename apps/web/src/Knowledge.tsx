@@ -3,10 +3,12 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
 import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps, Pending } from "./Scope.tsx";
+import { t } from "i18next";
+import { formatDateTime } from "./i18n.ts";
 
 export const documentKey = (d: DocumentSummary) => d.id;
 
-const INTRO = "Poznámky ke klientům, ceníky a postupy, ve kterých asistent vyhledává podle významu i slov.";
+const intro = () => t("knowledge:intro");
 
 /** A document of the knowledge base: kept in the tenant's database and indexed as it's saved. */
 export function KnowledgeDetail({ item, scope, onSaved, onDeleted }: DetailProps<DocumentSummary>) {
@@ -36,13 +38,12 @@ export function KnowledgeDetail({ item, scope, onSaved, onDeleted }: DetailProps
     return (
       <div className="detail max-w-4xl">
         <DetailHeader title={item.title} scope={item.scope} canEdit>
-          {INTRO}
+          {intro()}
         </DetailHeader>
         <p className="mt-2 text-xs text-fg-muted">
-          <code>{item.id}</code> · {item.chunks} {item.chunks === 1 ? "část" : item.chunks < 5 ? "části" : "částí"} v indexu · změněno{" "}
-          {new Date(item.createdAt).toLocaleString("cs-CZ")}
+          <code>{item.id}</code> · {t("knowledge:chunks", { count: item.chunks })} · {t("knowledge:changed", { time: formatDateTime(item.createdAt) })}
         </p>
-        <Field label="Název">
+        <Field label={t("name")}>
           <input value={title} onChange={(e) => setTitle(e.target.value)} required maxLength={200} className="field mt-1" />
         </Field>
         <div className="mt-4">
@@ -54,16 +55,16 @@ export function KnowledgeDetail({ item, scope, onSaved, onDeleted }: DetailProps
         </div>
         <div className="mt-4 flex items-center gap-4">
           <button disabled={busy || !dirty || !title.trim() || !content?.trim()} onClick={() => void save()} className="btn-primary">
-            {busy ? "Ukládám…" : "Uložit"}
+            {busy ? t("saving") : t("save")}
           </button>
-          {dirty && <span className="text-xs text-warning">neuloženo</span>}
+          {dirty && <span className="text-xs text-warning">{t("unsaved")}</span>}
           <span className="flex-1" />
           <button
             disabled={busy}
-            onClick={() => window.confirm(`Smazat dokument ${item.title}?`) && void attempt(setBusy, setError, async () => (await api.deleteDocument(item.id), onDeleted()))}
+            onClick={() => window.confirm(t("knowledge:confirmDelete", { title: item.title })) && void attempt(setBusy, setError, async () => (await api.deleteDocument(item.id), onDeleted()))}
             className="btn-danger text-sm"
           >
-            Smazat dokument
+            {t("knowledge:delete")}
           </button>
         </div>
         <ErrorNotice error={error} />
@@ -73,30 +74,30 @@ export function KnowledgeDetail({ item, scope, onSaved, onDeleted }: DetailProps
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (!content?.trim()) return setError("Napiš text dokumentu.");
+    if (!content?.trim()) return setError(t("knowledge:textRequired"));
     void attempt(setBusy, setError, async () => onSaved(documentKey(await api.addDocument(title, content, folder.trim() || undefined))));
   };
 
   return (
     <div className="detail max-w-4xl">
-      <DetailHeader title="Nový dokument" scope={scope} canEdit>
-        {INTRO}
+      <DetailHeader title={t("knowledge:new")} scope={scope} canEdit>
+        {intro()}
       </DetailHeader>
       <form onSubmit={submit} className="mt-6 space-y-4">
         <div className="grid gap-3 sm:grid-cols-[2fr_1fr]">
-          <Field label="Název">
-            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="např. Ceník 2026" required className="field" />
+          <Field label={t("name")}>
+            <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder={t("knowledge:titlePlaceholder")} required className="field" />
           </Field>
-          <Field label="Složka (nepovinná, např. public)">
+          <Field label={t("knowledge:folder")}>
             <input value={folder} onChange={(e) => setFolder(e.target.value)} placeholder="public" className="field" />
           </Field>
         </div>
         <div className="space-y-1">
-          <span className="section-header block">Text (Markdown)</span>
+          <span className="section-header block">{t("knowledge:text")}</span>
           <LazyCodeEditor path="novy.md" value={content ?? ""} onChange={setContent} height="50vh" />
         </div>
         <button disabled={busy} className="btn-primary">
-          {busy ? "Ukládám…" : "Přidat"}
+          {busy ? t("saving") : t("add")}
         </button>
       </form>
       <ErrorNotice error={error} />

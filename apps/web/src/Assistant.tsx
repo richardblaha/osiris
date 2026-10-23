@@ -1,8 +1,9 @@
 import { PersonaEditor } from "./PersonaEditor.tsx";
-import type { AssistantProfile, AssistantProfiles, Scope } from "@osiris/shared";
+import { CUSTOM_PERSONA, type AssistantProfile, type AssistantProfiles, type Scope } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Pending } from "./Scope.tsx";
+import { t } from "i18next";
 
 /**
  * The assistant's persona at one level (the tenant's, the user's own or a public assistant's). A persona is written
@@ -54,7 +55,7 @@ function ProfileForm({
   const submit = (e: FormEvent) => {
     e.preventDefault();
     setSaved(false);
-    const next: AssistantProfile = { persona: description.trim() ? { character: "Vlastní", source: "", description: description.trim() } : null };
+    const next: AssistantProfile = { persona: description.trim() ? { character: CUSTOM_PERSONA, source: "", description: description.trim() } : null };
     void attempt(setBusy, setError, async () => {
       onSaved(await api.saveAssistant(scope, next, assistant));
       setSaved(true);
@@ -64,10 +65,10 @@ function ProfileForm({
   return (
     <form onSubmit={submit} className="mt-4 space-y-4">
       <div>
-        <span className="section-header block">Persona</span>
+        <span className="section-header block">{t("assistant:persona")}</span>
         <p className="mt-1 text-xs text-fg-muted">
-          Jak má asistent komunikovat. Napiš vlastní popis nebo ho nech upravit pomocí AI.
-          {scope === "public" && " Platí jen pro tohoto asistenta pro zákazníky."}
+          {t("assistant:personaHint")}
+          {scope === "public" && ` ${t("assistant:publicOnly")}`}
         </p>
         <PersonaEditor value={description} onChange={(value) => { setDescription(value); setSaved(false); }} onGenerate={() => void generate()} busy={busy} disabled={!editable} />
       </div>
@@ -76,9 +77,9 @@ function ProfileForm({
       {editable && (
         <div className="flex items-center gap-3">
           <button disabled={busy} className="btn-primary">
-            Uložit personu
+            {t("assistant:save")}
           </button>
-          {saved && <span className="text-sm text-success">Uloženo.</span>}
+          {saved && <span className="text-sm text-success">{t("savedNotice")}</span>}
         </div>
       )}
     </form>

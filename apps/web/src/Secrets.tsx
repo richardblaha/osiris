@@ -2,6 +2,8 @@ import type { Scope, SecretSummary } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { t } from "i18next";
+import { Trans } from "react-i18next";
 
 const NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 const parseHosts = (text: string) => text.split(/[\s,]+/).map((h) => h.trim().toLowerCase()).filter(Boolean);
@@ -29,17 +31,16 @@ export function SecretDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: 
 
   return (
     <div className="detail">
-      <DetailHeader title={item?.name ?? "Nový klíč"} scope={scope} canEdit={editable}>
-        API klíč nebo token pro MCP servery a webová API. Ukládá se šifrovaně a po uložení už ho nikdo neuvidí, ani ty.
-        Používá se jako <code className="text-fg">{`{{secret:${name || "NÁZEV"}}}`}</code> a odešle se jen na povolené domény.
+      <DetailHeader title={item?.name ?? t("secrets:new")} scope={scope} canEdit={editable}>
+        <Trans ns="secrets" i18nKey="intro" values={{ reference: `{{secret:${name || t("secrets:namePlaceholderShort")}}}` }} components={{ code: <code className="text-fg" /> }} />
       </DetailHeader>
 
       <form onSubmit={submit} className="mt-6 space-y-4" autoComplete="off">
-        <Field label="Název">
+        <Field label={t("name")}>
           <input
             value={name}
             onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))}
-            placeholder="např. FAKTUROID_TOKEN"
+            placeholder={t("secrets:namePlaceholder")}
             pattern={NAME.source}
             readOnly={!!item}
             required
@@ -47,33 +48,33 @@ export function SecretDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: 
           />
         </Field>
         {editable && (
-          <Field label="Hodnota">
+          <Field label={t("secrets:value")}>
             <input
               type="password"
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              placeholder={item ? "Nová hodnota (prázdné = beze změny)" : ""}
+              placeholder={item ? t("secrets:valueKeep") : ""}
               required={!item}
               autoComplete="new-password"
               className="field"
             />
           </Field>
         )}
-        <Field label="Povolené domény">
+        <Field label={t("secrets:hosts")}>
           <input
             value={hosts}
             onChange={(e) => setHosts(e.target.value)}
-            placeholder="např. api.fakturoid.cz, *.example.com"
+            placeholder={t("secrets:hostsPlaceholder")}
             readOnly={!editable}
             required
             className="field"
           />
         </Field>
-        <Field label="K čemu slouží">
+        <Field label={t("secrets:purpose")}>
           <input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="vidí ho i asistent"
+            placeholder={t("secrets:purposePlaceholder")}
             readOnly={!editable}
             maxLength={300}
             className="field"
@@ -82,7 +83,7 @@ export function SecretDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: 
         {editable && (
           <div className="flex items-center gap-4">
             <button disabled={busy} className="btn-primary">
-              {busy ? "Ukládám…" : item ? "Uložit" : "Přidat"}
+              {busy ? t("saving") : item ? t("save") : t("add")}
             </button>
             {item && (
               <button
@@ -91,7 +92,7 @@ export function SecretDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: 
                 onClick={() => attempt(setBusy, setError, async () => (await api.deleteSecret(item.name, item.scope), onDeleted()))}
                 className="btn-danger text-sm"
               >
-                Smazat
+                {t("delete")}
               </button>
             )}
           </div>

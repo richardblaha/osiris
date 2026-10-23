@@ -1,6 +1,7 @@
 import Provider, { type Adapter, type AdapterPayload, type Configuration, type JWK, type KoaContextWithOIDC } from "oidc-provider";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import { CLAIMS } from "@osiris/platform/claims.ts";
+import { requestLocale, translate } from "@osiris/platform/i18n.ts";
 import type { UserDirectory, UserRecord } from "../users.ts";
 import { PHONE_CLAIM } from "../whatsapp/phones.ts";
 
@@ -88,10 +89,15 @@ export function userClaims(user: UserRecord) {
   };
 }
 
-const page = (title: string, body: string) => `<!doctype html>
-<html lang="cs"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${title}</title><link rel="stylesheet" href="/auth/assets/page.css"></head>
-<body><main>${body}</main></body></html>`;
+/** A plain page in the language of the browser's request; `body` is HTML, so every inserted value must be escaped. */
+const page = (ctx: KoaContextWithOIDC, titleKey: string, body: (t: (key: string) => string) => string) => {
+  const locale = requestLocale(ctx.get("accept-language"));
+  const t = (key: string) => escapeHtml(translate(locale, key));
+  return `<!doctype html>
+<html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${t(titleKey)}</title><link rel="stylesheet" href="/auth/assets/page.css"></head>
+<body><main>${body(t)}</main></body></html>`;
+};
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
@@ -159,10 +165,10 @@ export function createOidcProvider(options: OidcOptions): Provider {
         enabled: true,
         // Signing out of Osiris needs no confirmation; the form submits itself (script, as CSP forbids inline ones).
         logoutSource: async (ctx, form) => {
-          ctx.body = page("Odhlašování", `<p>Odhlašuji…</p>${form}<button type="submit" form="op.logoutForm" name="logout" value="yes">Odhlásit se</button><script src="/auth/assets/logout.js"></script>`);
+          ctx.body = page(ctx, "pages.logout.title", (t) => `<p>${t("pages.logout.progress")}</p>${form}<button type="submit" form="op.logoutForm" name="logout" value="yes">${t("pages.logout.button")}</button><script src="/auth/assets/logout.js"></script>`);
         },
         postLogoutSuccessSource: async (ctx) => {
-          ctx.body = page("Odhlášeno", `<h1>Odhlášeno</h1><p><a href="/">Zpět do Osirisu</a></p>`);
+          ctx.body = page(ctx, "pages.loggedOut.title", (t) => `<h1>${t("pages.loggedOut.title")}</h1><p><a href="/">${t("pages.loggedOut.back")}</a></p>`);
         },
       },
     },
@@ -197,7 +203,7 @@ export function createOidcProvider(options: OidcOptions): Provider {
     renderError: async (ctx, out) => {
       ctx.type = "html";
       const detail = typeof out.error_description === "string" ? out.error_description : String(out.error ?? "");
-      ctx.body = page("Chyba přihlášení", `<h1>Přihlášení se nepovedlo</h1><p>${escapeHtml(detail)}</p><p><a href="/">Zkusit znovu</a></p>`);
+      ctx.body = page(ctx, "pages.signInError.title", (t) => `<h1>${t("pages.signInError.heading")}</h1><p>${escapeHtml(detail)}</p><p><a href="/">${t("pages.signInError.retry")}</a></p>`);
     },
   };
 

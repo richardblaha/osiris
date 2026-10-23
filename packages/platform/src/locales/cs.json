@@ -1,0 +1,521 @@
+{
+  "errors": {
+    "access": {
+      "noRole": "Účet zatím nemá přístup do Osirisu (chybí role osiris-user). Požádej správce.",
+      "noTenant": "Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.",
+      "notMember": "Do tohoto tenanta nepatříš.",
+      "adminOnly": "Vyžaduje roli správce",
+      "systemAdminOnly": "Vyžaduje správce systému"
+    },
+    "tenantRequired": "Vyber tenanta (chybí hlavička X-Tenant-Id).",
+    "tooManyRequests": "Příliš mnoho požadavků, zkus to za chvíli",
+    "tooManyMessages": "Příliš mnoho zpráv za minutu, zkus to za chvíli",
+    "requestTooLarge": "Požadavek je příliš velký",
+    "serviceUnavailable": "Služba je dočasně nedostupná, zkus to za chvíli",
+    "public": {
+      "messageTooLong": "Zpráva je příliš dlouhá",
+      "tooManyRequests": "Příliš mnoho požadavků, zkuste to za chvíli",
+      "tooManyMessages": "Příliš mnoho zpráv za minutu, zkuste to za chvíli",
+      "visitorMissing": "Chybí identifikace návštěvníka"
+    },
+    "schedule": {
+      "cronFields": "Cron musí mít 5 polí (minuta hodina den měsíc den-v-týdnu)",
+      "cronInvalid": "Neplatný cron: {{detail}}",
+      "tooOften": "Úloha se smí spouštět nejvýš jednou za {{minutes}} minut",
+      "timezone": "Neznámé časové pásmo: {{timezone}}",
+      "timingMissing": "Zadej opakování (cron) nebo čas jednorázového spuštění",
+      "runAtInvalid": "Neplatný čas spuštění",
+      "runAtPast": "Čas spuštění je v minulosti",
+      "userLimit_one": "Můžeš mít nejvýš {{count}} plánovanou úlohu",
+      "userLimit_few": "Můžeš mít nejvýš {{count}} plánované úlohy",
+      "userLimit_many": "Můžeš mít nejvýš {{count}} plánované úlohy",
+      "userLimit_other": "Můžeš mít nejvýš {{count}} plánovaných úloh",
+      "tenantLimit_one": "Tenant může mít nejvýš {{count}} plánovanou úlohu",
+      "tenantLimit_few": "Tenant může mít nejvýš {{count}} plánované úlohy",
+      "tenantLimit_many": "Tenant může mít nejvýš {{count}} plánované úlohy",
+      "tenantLimit_other": "Tenant může mít nejvýš {{count}} plánovaných úloh",
+      "notFound": "Úloha nenalezena",
+      "featureOff": "Plánované úlohy nejsou pro tenant povolené"
+    },
+    "signIn": {
+      "expired": "Přihlášení vypršelo, začni prosím znovu",
+      "expiredRetry": "Přihlášení vypršelo, zkus to znovu.",
+      "tooManyAttempts": "Příliš mnoho pokusů, zkus to za čtvrt hodiny",
+      "wrongPassword": "Nesprávný e-mail nebo heslo",
+      "wrongCode": "Kód nesouhlasí",
+      "unknownPasskey": "Tento klíč neznáme. Přihlas se jinak a přidej si ho v profilu.",
+      "mailOff": "Odesílání e-mailů není nastavené",
+      "unknownProvider": "Neznámý poskytovatel",
+      "linkInvalid": "Odkaz pro přihlášení je neplatný, použitý nebo vypršel.",
+      "providerCancelled": "Přihlášení u poskytovatele bylo zrušeno.",
+      "noUser": "K tomuto účtu nemáme uživatele. Přihlas se jinak a propoj si ho v profilu, nebo požádej správce o pozvánku."
+    },
+    "link": {
+      "expired": "Propojení vypršelo, zkus to znovu.",
+      "cancelled": "Propojení bylo zrušeno.",
+      "signedOut": "Přihlášení vypršelo. Přihlas se znovu a propojení zopakuj."
+    },
+    "session": {
+      "notFound": "Relace neexistuje"
+    },
+    "password": {
+      "tooShort_one": "Heslo musí mít aspoň {{count}} znak",
+      "tooShort_few": "Heslo musí mít aspoň {{count}} znaky",
+      "tooShort_many": "Heslo musí mít aspoň {{count}} znaku",
+      "tooShort_other": "Heslo musí mít aspoň {{count}} znaků",
+      "tooLong_one": "Heslo může mít nejvýš {{count}} znak",
+      "tooLong_few": "Heslo může mít nejvýš {{count}} znaky",
+      "tooLong_many": "Heslo může mít nejvýš {{count}} znaku",
+      "tooLong_other": "Heslo může mít nejvýš {{count}} znaků",
+      "tooSimple": "Heslo je příliš jednoduché",
+      "currentWrong": "Současné heslo nesouhlasí"
+    },
+    "totp": {
+      "alreadyOn": "Ověřovací aplikace už je zapnutá",
+      "wrongCode": "Kód nesouhlasí. Zkontroluj čas v telefonu a zkus další kód.",
+      "off": "Nejdřív si zapni ověřovací aplikaci",
+      "notStarted": "Nejdřív začni nastavení ověřovací aplikace"
+    },
+    "passkey": {
+      "exists": "Tento klíč už je přidaný",
+      "notFound": "Klíč nenalezen",
+      "expired": "Vypršel čas na přidání klíče, zkus to znovu",
+      "verifyFailed": "Klíč se nepodařilo ověřit",
+      "verifyFailedDetail": "Klíč se nepodařilo ověřit: {{detail}}"
+    },
+    "identity": {
+      "taken": "Tento účet je už propojený, buď s tebou, nebo s jiným uživatelem",
+      "notLinked": "Účet není propojený",
+      "lastMethod": "Tohle je tvůj jediný způsob přihlášení. Nejdřív si přidej jiný."
+    },
+    "social": {
+      "notConfigured": "Přihlášení přes {{provider}} není nastavené",
+      "noIdToken": "Poskytovatel nevrátil ID token",
+      "badNonce": "Neplatná odpověď poskytovatele (nonce)",
+      "badToken": "Neplatný token od poskytovatele {{provider}}: {{detail}}",
+      "badIssuer": "Neplatný vydavatel tokenu Microsoftu",
+      "otherOrganization": "Účet z jiné organizace",
+      "noAccessToken": "{{provider}} nevrátil přístupový token",
+      "noProfile": "{{provider}} nevrátil profil",
+      "refused": "Poskytovatel odmítl přihlášení: {{detail}}"
+    },
+    "user": {
+      "emailTaken": "Uživatel s tímto e-mailem už existuje",
+      "exists": "Uživatel už existuje",
+      "notFound": "Uživatel nenalezen",
+      "selfLockout": "Sám sobě účet nezablokuješ ani neodebereš správu systému",
+      "disabled": "Účet je zablokovaný"
+    },
+    "domain": {
+      "invalid": "Neplatná doména (např. www.mojefirma.cz)",
+      "reserved": "Tuto doménu nelze použít",
+      "limit_one": "Tenant může mít nejvýš {{count}} doménu",
+      "limit_few": "Tenant může mít nejvýš {{count}} domény",
+      "limit_many": "Tenant může mít nejvýš {{count}} domény",
+      "limit_other": "Tenant může mít nejvýš {{count}} domén",
+      "taken": "Doménu už používá jiný tenant",
+      "notFound": "Doména nenalezena"
+    },
+    "publish": {
+      "foreignDomain": "Doména nepatří tenantovi",
+      "unverified": "Doména ještě není ověřená",
+      "noIndex": "Web musí mít v kořeni soubor index.html",
+      "releaseNotFound": "Vydání nenalezeno",
+      "entryType": "Nepovolený typ položky: {{path}}",
+      "path": "Nepovolená cesta: {{path}}",
+      "fileType": "Nepovolený typ souboru: {{path}}",
+      "fileTooLarge": "Soubor je příliš velký: {{path}}",
+      "tooManyFiles": "Web má víc než {{count}} souborů",
+      "tooLarge": "Web je příliš velký"
+    },
+    "quota": {
+      "members_one": "Tenant může mít nejvýš {{count}} uživatele",
+      "members_few": "Tenant může mít nejvýš {{count}} uživatele",
+      "members_many": "Tenant může mít nejvýš {{count}} uživatele",
+      "members_other": "Tenant může mít nejvýš {{count}} uživatelů",
+      "dashboards_one": "Tenant může mít nejvýš {{count}} vlastní dashboard",
+      "dashboards_few": "Tenant může mít nejvýš {{count}} vlastní dashboardy",
+      "dashboards_many": "Tenant může mít nejvýš {{count}} vlastního dashboardu",
+      "dashboards_other": "Tenant může mít nejvýš {{count}} vlastních dashboardů"
+    },
+    "phone": {
+      "invalid": "Neplatné telefonní číslo"
+    },
+    "dashboard": {
+      "sourceSystem": "Zdroj {{source}} na systémovém dashboardu není",
+      "sourceTenant": "Zdroj {{source}} na tenantovém dashboardu není",
+      "notFound": "Dashboard nenalezen",
+      "adminOnly": "Dashboardy mění jen správce",
+      "unknownView": "Neznámý pohled"
+    },
+    "telemetryOff": "Telemetrie (ClickHouse) tu není nastavená",
+    "telemetry": {
+      "traceId": "Neplatné id trasy",
+      "queryFailed": "Dotaz do ClickHouse selhal: {{detail}}"
+    },
+    "validation": {
+      "invalid": "Neplatný požadavek",
+      "slug": "Zkratka: malá písmena, číslice a pomlčky",
+      "name": "Název: malá písmena, číslice a pomlčky",
+      "phone": "Zadej číslo s předvolbou, např. +420 777 123 456",
+      "mailAccount": "Nastav SMTP nebo příchozí poštu",
+      "messageTooLong": "Zpráva je příliš dlouhá",
+      "headerName": "Neplatný název hlavičky",
+      "knowledgePath": "Neplatná cesta ve znalostní bázi",
+      "host": "Server: název nebo IP adresa",
+      "remoteDir": "Cílová složka musí být absolutní cesta, např. /var/www/firma",
+      "allowedHost": "Neplatná doména (např. api.example.com nebo *.example.com)",
+      "allowedHostsEmpty": "Zadej aspoň jednu povolenou doménu"
+    },
+    "invalidJson": "Tělo požadavku není platný JSON",
+    "tenant": {
+      "exists": "Tenant s touto zkratkou už existuje",
+      "notFound": "Tenant nenalezen",
+      "removed": "Tenant byl odstraněn"
+    },
+    "member": {
+      "notFound": "Člen nenalezen"
+    },
+    "featureOff": "Tato funkce není pro tenant povolená",
+    "sites": {
+      "featureOff": "Weby nejsou pro tenant povolené",
+      "name": "Název webu: malá písmena, číslice, pomlčky a tečky (např. firma.cz)",
+      "exists": "Web {{site}} už existuje",
+      "invalidName": "Neplatný název webu",
+      "notFound": "Web neexistuje"
+    },
+    "image": {
+      "tooLarge": "Obrázek může mít nejvýš {{mb}} MB",
+      "pictureType": "Profilový obrázek musí být PNG nebo JPEG",
+      "logoType": "Logo musí být PNG nebo JPEG"
+    },
+    "guard": {
+      "notFound": "Pravidlo neexistuje",
+      "adminOnly": "Pravidla (guards/) mění jen správce",
+      "level": "Úroveň: user, tenant nebo assistant"
+    },
+    "files": {
+      "pathMissing": "Chybí cesta k souboru",
+      "pathTooLong": "Cesta je příliš dlouhá",
+      "tooDeep": "Příliš mnoho vnořených složek",
+      "badName": "Neplatný název souboru nebo složky: \"{{name}}\"",
+      "folderMissing": "Složka neexistuje",
+      "notFolder": "Cesta není složka",
+      "invalid": "Neplatný soubor",
+      "fileMissing": "Soubor {{path}} neexistuje",
+      "isFolder": "{{path}} je složka, ne soubor",
+      "typeNotAllowed": "Typ souboru .{{extension}} není povolený",
+      "tooLarge": "Soubor je větší než povolených {{mb}} MB",
+      "contentMismatch": "Obsah souboru neodpovídá typu .{{extension}}",
+      "folderExists": "{{path}} je složka",
+      "fileExists": "Soubor {{path}} už existuje",
+      "quota": "Úložiště firmy je plné. Smaž nepotřebné soubory.",
+      "missing": "{{path}} neexistuje",
+      "exists": "{{path}} už existuje",
+      "renameMismatch": "Obsah souboru neodpovídá nové příponě",
+      "moveIntoItself": "Složku nelze přesunout do sebe sama",
+      "folderNotFound": "Složka {{path}} neexistuje",
+      "badPath": "Neplatná cesta",
+      "isFile": "{{path}} je soubor, ne složka",
+      "folderEmpty": "Složka {{path}} neexistuje nebo je prázdná.",
+      "featureOff": "Soubory nejsou povolené",
+      "threadRequired": "Dočasné soubory potřebují konverzaci (thread)",
+      "uploadTooLarge": "Soubor je příliš velký"
+    },
+    "db": {
+      "unterminated": "Dotaz má neukončený řetězec nebo komentář.",
+      "oneStatement": "Pošli jen jeden příkaz.",
+      "selectOnly": "Dotaz musí být SELECT (data se mění nástroji pro zápis).",
+      "keyword": "{{keyword}} v dotazu není dovolený.",
+      "tableName": "Neplatný název tabulky „{{name}}“: malá písmena bez diakritiky, číslice a _, na začátku písmeno.",
+      "columnName": "Neplatný název sloupce „{{name}}“: malá písmena bez diakritiky, číslice a _, na začátku písmeno.",
+      "wrongType": "Sloupec {{column}} čeká {{expected}}, dostal {{value}}.",
+      "required": "Sloupec {{column}} je povinný.",
+      "textTooLong": "Text ve sloupci {{column}} je delší než {{count}} znaků.",
+      "unique": "Hodnota ve sloupci {{column}} už v tabulce je (musí být jedinečná).",
+      "reference": "Odkaz nesedí: odkazovaný záznam neexistuje, nebo na mazaný záznam odkazují jiné.",
+      "tableExists": "Tabulka {{table}} už existuje.",
+      "tableQuota_one": "Firma může mít nejvýš {{count}} tabulku.",
+      "tableQuota_few": "Firma může mít nejvýš {{count}} tabulky.",
+      "tableQuota_many": "Firma může mít nejvýš {{count}} tabulky.",
+      "tableQuota_other": "Firma může mít nejvýš {{count}} tabulek.",
+      "columnCount": "Tabulka potřebuje 1 až {{count}} sloupců.",
+      "duplicateColumn": "Sloupec {{column}} je tam dvakrát.",
+      "systemColumnChange": "Sloupec {{column}} patří každé tabulce, ten měnit nejde.",
+      "noColumn": "Sloupec {{column}} v tabulce {{table}} není.",
+      "noColumnList": "Sloupec {{column}} v tabulce {{table}} není (sloupce: {{columns}}).",
+      "columnExists": "Sloupec {{column}} už v tabulce je.",
+      "columnLimit": "Tabulka může mít nejvýš {{count}} sloupců.",
+      "newRequired": "Nový sloupec {{column}} nemůže být povinný (stávající řádky ho nemají).",
+      "rowCount": "Najednou jde vložit 1 až {{count}} řádků.",
+      "nothingToChange": "Není co měnit.",
+      "notUnique": "Sloupec {{column}} nejde nastavit jako jedinečný, hodnoty se opakují.",
+      "systemColumnAdd": "Sloupec {{column}} má každá tabulka sama, nepřidávej ho.",
+      "unknownType": "Neznámý typ {{type}}; povolené: {{types}}.",
+      "noReferencedTable": "Odkazovaná tabulka {{table}} neexistuje.",
+      "referenceType": "Sloupec {{column}} odkazuje na tabulku, musí být typu integer.",
+      "rowShape": "Řádek musí být objekt sloupec → hodnota.",
+      "automatic": "Sloupec {{column}} se vyplňuje sám.",
+      "whereMissing": "Chybí podmínka where (aspoň jeden sloupec, např. id).",
+      "listSize": "Seznam hodnot pro {{column}} musí mít 1 až {{count}} položek.",
+      "quota": "Databáze firmy je plná. Smaž nepotřebné záznamy nebo tabulky.",
+      "timeout": "Dotaz trval déle než {{seconds}} s. Zjednoduš ho nebo omez počet řádků.",
+      "queryFailed": "Dotaz se nepodařilo spustit.",
+      "sqlite": "{{detail}}",
+      "noTable": "Tabulka {{table}} neexistuje.",
+      "rowId": "Neplatné id řádku",
+      "adminOnly": "Strukturu tabulek mění jen správce",
+      "rowNotFound": "Řádek neexistuje"
+    },
+    "question": {
+      "expired": "Předchozí otázka vypršela. Zadej prosím nový požadavek.",
+      "useForm": "Vyplň dotazník v chatu nebo odpověz JSON objektem. /zrusit dotazník zruší.",
+      "invalid": "Neplatná odpověď",
+      "closed": "Otázka už není otevřená nebo vypršela.",
+      "unknownField": "Neznámé pole odpovědi",
+      "required": "Vyplň: {{field}}",
+      "badValue": "Neplatná hodnota: {{field}}",
+      "answered": "Otázka už byla zodpovězena.",
+      "notFound": "Otázka neexistuje"
+    },
+    "attachment": {
+      "noReader": "Pro přepis audia a čtení PDF nastav MISTRAL_API_KEY.",
+      "pdfUnreadable": "PDF nelze přečíst nebo je zašifrované.",
+      "pdfEmpty": "PDF nemá žádné stránky.",
+      "failed": "Zpracování přílohy selhalo (HTTP {{status}}).",
+      "invalid": "Neplatné přílohy",
+      "tooLarge": "Přílohy dohromady přesahují {{mb}} MB.",
+      "unsupported": "Nepodporovaná příloha",
+      "unavailable": "Přílohy nejsou dostupné nebo je limit vyčerpán"
+    },
+    "url": {
+      "invalid": "Neplatná URL",
+      "credentials": "URL nesmí obsahovat přihlašovací údaje, použij hlavičky",
+      "scheme": "URL musí být http(s)",
+      "https": "URL musí používat https",
+      "unresolved": "Adresu {{host}} nelze přeložit",
+      "private": "URL míří do privátní sítě"
+    },
+    "secret": {
+      "inHost": "Secret nesmí být v doméně URL, jen v cestě nebo parametrech",
+      "valueRequired": "Nový secret musí mít hodnotu",
+      "notFound": "Secret {{name}} neexistuje",
+      "hostNotAllowed": "Secret {{name}} není povolen pro {{host}}",
+      "name": "Název musí být VELKÝMI_PÍSMENY (A-Z, 0-9, _)",
+      "missing": "Secret nenalezen"
+    },
+    "mcp": {
+      "nameTaken": "Název „{{name}}“ už ve firmě používá jiný server",
+      "signInNotStarted": "Přihlášení k MCP serveru nebylo zahájeno",
+      "signInFailed": "Přihlášení se nepodařilo dokončit",
+      "timeout": "Timeout po {{seconds}} s",
+      "signInRequired": "Nepřihlášeno: přihlas se k serveru v jeho nastavení",
+      "notFound": "MCP server nenalezen",
+      "notOauth": "Server se nepřihlašuje přes OAuth",
+      "otherUser": "Přihlášení patří jinému uživateli",
+      "providerFailed": "Přihlášení u poskytovatele selhalo: {{detail}}",
+      "finishFailed": "Přihlášení se nepodařilo dokončit: {{detail}}"
+    },
+    "integration": {
+      "notConfigured": "Propojení s {{provider}} není v Osirisu nastavené",
+      "expired": "Přihlášení vypršelo nebo už bylo dokončeno, zkus to znovu",
+      "notStarted": "Přihlášení nebylo zahájeno",
+      "notConnected": "Účet {{provider}} není propojený (Můj profil → Propojené účty)",
+      "reconnect": "Propojení s {{provider}} vypršelo, propoj účet znovu",
+      "revoked": "Propojení s {{provider}} už neplatí, propoj účet znovu ({{detail}})",
+      "accountMissing": "Účet není propojený",
+      "providerOff": "Propojení s tímto poskytovatelem není v Osirisu nastavené",
+      "expiredOrOther": "Přihlášení vypršelo nebo patří jinému uživateli, zkus to znovu",
+      "failed": "Propojení se nepodařilo: {{detail}}"
+    },
+    "sftp": {
+      "credentials": "Zadej heslo nebo privátní klíč",
+      "hostKey": "Server {{host}} se představil jiným klíčem ({{seen}}) než minule ({{expected}}). Pokud se server měnil, ulož cíl znovu.",
+      "targetNotFound": "Cíl {{name}} neexistuje",
+      "noIndex": "Ve složce {{path}} chybí index.html",
+      "targetMissing": "Cíl neexistuje",
+      "saveFailed": "{{detail}}",
+      "connectFailed": "Připojení selhalo: {{detail}}",
+      "publishFailed": "Publikování selhalo: {{detail}}"
+    },
+    "pdf": {
+      "failed": "Převod do PDF selhal ({{status}}): {{detail}}",
+      "tooLarge": "Výsledné PDF je příliš velké"
+    },
+    "vitepress": {
+      "failed": "Sestavení webu selhalo ({{status}}): {{detail}}",
+      "off": "Sestavování webů tu není nastavené",
+      "buildFailed": "{{detail}}"
+    },
+    "mail": {
+      "notFound": "Zpráva nenalezena"
+    },
+    "run": {
+      "inProgress": "Běh v této konverzaci už probíhá"
+    },
+    "thread": {
+      "notFound": "Konverzace nenalezena"
+    },
+    "scope": {
+      "personalGone": "Osobní nastavení už nejsou, vše platí pro celý tenant"
+    },
+    "assistant": {
+      "notFound": "Asistent neexistuje",
+      "unavailable": "Asistent není dostupný"
+    },
+    "knowledge": {
+      "folder": "Neplatná složka: písmena, číslice, tečky a pomlčky, / mezi složkami",
+      "notFound": "Dokument neexistuje"
+    },
+    "skill": {
+      "notFound": "Dovednost nenalezena"
+    },
+    "persona": {
+      "scope": "Persona je jen vlastní (scope=personal) nebo veřejného asistenta"
+    },
+    "inquiry": {
+      "notFound": "Poptávka neexistuje"
+    },
+    "memory": {
+      "notFound": "Záznam paměti nenalezen"
+    }
+  },
+  "schedules": {
+    "notes": {
+      "missed": "Úloha se nestihla spustit včas (služba nebyla dostupná)",
+      "tenantGone": "Tenant už neexistuje",
+      "featureOff": "Plánované úlohy jsou pro tenanta vypnuté",
+      "ownerLeft": "Vlastník úlohy už není členem tenanta",
+      "whatsappOff": "WhatsApp není nastavený, výsledek je jen ve webovém chatu",
+      "noPhone": "Uživatel nemá ověřené telefonní číslo, výsledek je jen ve webovém chatu",
+      "whatsappWindow": "WhatsApp dovolí poslat zprávu jen do 24 hodin od poslední zprávy uživatele, výsledek je jen ve webovém chatu"
+    }
+  },
+  "whatsapp": {
+    "notRegistered": "Tohle číslo nemá v Osirisu účet. Ověř si ho v profilu (Můj profil → Telefon), nebo požádej správce.",
+    "noTenant": "Nejsi přiřazený k žádnému tenantovi. Obrať se na správce.",
+    "unsupported": "Podporuji text, obrázky, dokumenty a hlasové zprávy.",
+    "failed": "Omlouvám se, něco se pokazilo. Zkus to prosím znovu.",
+    "newThread": "Dobře, začínáme novou konverzaci.",
+    "verified": "Číslo je ověřené. Teď mi můžeš psát.",
+    "badCode": "Kód nesedí nebo vypršel. Vyžádej si v profilu nový.",
+    "help": "*Příkazy*\n• /tenant – tvoji tenanti a který je aktivní\n• /tenant <zkratka> – přepne na jiného tenanta\n• /nova – začne novou konverzaci\n• /zrusit – zruší otevřenou otázku nebo dotazník",
+    "chooseTenant": "Napiš /tenant <zkratka> a vyber, se kterým chceš pracovat.",
+    "featureOff": "WhatsApp není pro tenanta *{{tenant}}* povolený.",
+    "attachmentOnly": "Přikládám soubor.",
+    "answerInvalid": "Odpověď není platná nebo otázka vypršela. Vyplň formulář znovu, případně pošli /zrusit.",
+    "activeTenant": "Aktivní tenant: *{{tenant}}*.",
+    "noActiveTenant": "Zatím nemáš vybraného tenanta.",
+    "switchHint": "Přepneš příkazem /tenant <zkratka>.",
+    "unknownTenant": "Tenanta „{{tenant}}“ nemáš.",
+    "switched": "Přepnuto na tenanta *{{tenant}}*.",
+    "tenants": "Tvoji tenanti: {{tenants}}.",
+    "scheduledTask": "Plánovaná úloha",
+    "question": {
+      "yes": "Ano",
+      "no": "Ne",
+      "choose": "Vybrat odpověď",
+      "fill": "Vyplnit",
+      "replyOrForm": "Odpověz zprávou, nebo otevři formulář.",
+      "openForm": "Otevři formulář:",
+      "cancelHint": "/zrusit — zrušit otázku"
+    }
+  },
+  "email": {
+    "signInLink": {
+      "subject": "Přihlášení do Osirisu",
+      "text_one": "Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí {{count}} hodinu a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
+      "text_few": "Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí {{count}} hodiny a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
+      "text_many": "Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí {{count}} hodiny a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
+      "text_other": "Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí {{count}} hodin a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n"
+    },
+    "inquiry": {
+      "subject": "Nová poptávka: {{name}}",
+      "time": "Termín: {{time}}",
+      "text": "Veřejný asistent {{assistant}} přijal poptávku.\n\nJméno: {{name}}\nKontakt: {{contact}}\n{{time}}\n{{description}}\n\nPoptávky najdete v Osirisu v části Asistenti."
+    }
+  },
+  "pages": {
+    "logout": {
+      "title": "Odhlašování",
+      "progress": "Odhlašuji…",
+      "button": "Odhlásit se"
+    },
+    "loggedOut": {
+      "title": "Odhlášeno",
+      "back": "Zpět do Osirisu"
+    },
+    "signInError": {
+      "title": "Chyba přihlášení",
+      "heading": "Přihlášení se nepovedlo",
+      "retry": "Zkusit znovu"
+    }
+  },
+  "domains": {
+    "notes": {
+      "txtMissing": "Chybí TXT záznam {{record}} s hodnotou {{token}}",
+      "aRecord": "A záznam na {{ips}}",
+      "cname": "CNAME na {{target}}",
+      "askAdmin": "záznam podle správce",
+      "notPointing": "Doména nemíří na Osiris: nastav {{records}}"
+    }
+  },
+  "dashboard": {
+    "noService": "(bez služby)",
+    "pod": {
+      "running": "běží",
+      "pending": "čeká",
+      "failed": "selhal",
+      "unknown": "neznámý"
+    },
+    "tenant": {
+      "running": "běží",
+      "sleeping": "spí",
+      "suspended": "pozastaven",
+      "unknown": "neznámý"
+    },
+    "columns": {
+      "service": "Služba",
+      "records": "Záznamů",
+      "namespace": "Namespace",
+      "pod": "Pod",
+      "state": "Stav",
+      "restarts": "Restartů",
+      "time": "Čas",
+      "object": "Objekt",
+      "reason": "Důvod",
+      "message": "Zpráva",
+      "count": "Počet",
+      "tenants": "Tenantů",
+      "running": "Běží",
+      "sleeping": "Spí",
+      "noBackup": "Bez zálohy {{hours}} h",
+      "tenant": "Tenant",
+      "lastActivity": "Poslední aktivita",
+      "lastBackup": "Poslední záloha",
+      "backupSize": "Velikost zálohy",
+      "report": "Hlášení",
+      "tokensMonth": "Tokeny tento měsíc",
+      "files": "Soubory",
+      "users": "Uživatelé",
+      "tasks": "Úlohy",
+      "tables": "Tabulky",
+      "database": "Databáze",
+      "dashboards": "Dashboardy",
+      "reported": "Nahlášeno"
+    }
+  },
+  "agent": {
+    "publicUnavailable": "Omlouvám se, asistent teď nemůže odpovídat. Kontaktujte prosím firmu přímo.",
+    "tokensExhausted": "Měsíční limit využití asistenta pro tuto firmu je vyčerpaný. Obrať se na správce.",
+    "userTokensExhausted": "Tvůj měsíční limit využití asistenta je vyčerpaný. Obrať se na správce firmy.",
+    "guardRefusal": "Tohle udělat nemůžu, je to v rozporu s pravidly nastavenými pro tohoto asistenta.",
+    "answer": {
+      "cancelled": "Dotazník zrušen.",
+      "summary": "Odpověď: {{values}}",
+      "yes": "Ano",
+      "no": "Ne"
+    },
+    "attachments": "Přílohy: {{files}}"
+  }
+}

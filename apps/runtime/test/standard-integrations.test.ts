@@ -22,7 +22,7 @@ describe("standard integrations", () => {
     const tenant = await tenants.get("acme");
     const rows = await tenant.db.execute("SELECT data_enc FROM standard_accounts");
     expect(String(rows.rows[0]!.data_enc)).not.toContain("secret-password");
-    await expect(tenant.standardAccounts.get("dev:eva", "work")).rejects.toThrow("není propojený");
+    await expect(tenant.standardAccounts.get("dev:eva", "work")).rejects.toThrow("isn't connected");
     const bound: string[][] = [];
     model.bindTools = ((tools: { name: string }[]) => { bound.push(tools.map(t => t.name)); return model; }) as never;
     for (const who of [bob, eva]) {
@@ -52,7 +52,7 @@ describe("standard integrations", () => {
   it("refuses cross-origin DAV discovery, private hosts and oversized responses", async () => {
     const fake = vi.fn(async () => new Response("OK")) as unknown as typeof fetch;
     await expect(davFetch("https://example.cz", true, fake)("https://evil.cz/calendar")).rejects.toThrow("origin");
-    await expect(davFetch("https://127.0.0.1", false, fake)("https://127.0.0.1/")).rejects.toThrow("privátní");
+    await expect(davFetch("https://127.0.0.1", false, fake)("https://127.0.0.1/")).rejects.toThrow("private network");
     expect(fake).not.toHaveBeenCalled();
     const big = (async () => new Response("x", { headers: { "content-length": "20000000" } })) as typeof fetch;
     await expect(davFetch("https://example.cz", true, big)("https://example.cz/")).rejects.toThrow("10 MB");

@@ -1,0 +1,9 @@
+{
+  "intro": "Facts the assistant remembers between conversations. It also saves them itself when you tell it something.",
+  "item": "Memory",
+  "saved": "Saved {{time}}",
+  "forget": "Forget",
+  "new": "New memory",
+  "what": "What to remember",
+  "placeholder": "For example: I'm not a VAT payer. I want a 50% deposit up front."
+}

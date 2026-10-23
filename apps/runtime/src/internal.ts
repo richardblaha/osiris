@@ -13,6 +13,7 @@ import type { Tenant } from "@osiris/core/tenants/tenant.ts";
 import type { InternalVerifier } from "@osiris/platform/internal-auth.ts";
 import type { Activity } from "./activity.ts";
 import { verifyCall, type AuthEnv } from "./auth.ts";
+import { configuredLocale, HttpError, ValidationError } from "@osiris/platform/i18n.ts";
 
 const scheduledRun = z.object({ title: z.string().min(1).max(100), prompt: z.string().min(1).max(4000), idempotencyKey: z.string().min(1).max(200) });
 const whatsappMessage = z.object({ messageId: z.string().min(1).max(200), text: z.string().min(1).max(20_000), attachment: z.object({ name: z.string().max(200), mime: z.string().max(100), data: z.string().max(28_000_000).regex(/^[A-Za-z0-9+/]*={0,2}$/) }).optional() });
@@ -44,16 +45,16 @@ export function createInternalRoutes({
 }) {
   const invoke = async (ctx: RunContext, text: string) => {
     const key = `${tenant.id}/${ctx.thread_id}`;
-    if (activeRuns.has(key)) throw new HTTPException(409, { message: "Běh už probíhá" });
+    if (activeRuns.has(key)) throw new HttpError(409, "errors.run.inProgress");
     activeRuns.add(key);
     try {
       const decoded = attachmentInput(text);
       try { text = await tenant.questions.prepare(ctx.user_id, ctx.thread_id, decoded.text); }
-      catch (err) { if (err instanceof QuestionError || err instanceof AttachmentError) throw new HTTPException(400, { message: err.message }); throw err; }
+      catch (err) { if (err instanceof QuestionError || err instanceof AttachmentError) throw new HttpError(400, err.key, err.params); throw err; }
       const { messages } = await activity.track(async () => {
         const quota = await tenant.features.quotas();
-        if (decoded.paths.length && (!(await tenant.features.get()).files || (quota.tokensPerMonth !== null && await tenant.usage.tokens() >= quota.tokensPerMonth) || (quota.tokensPerUserMonth !== null && await tenant.usage.tokens(Date.now(), { user: ctx.user_id }) >= quota.tokensPerUserMonth))) throw new HTTPException(403, { message: "Přílohy nejsou dostupné nebo je limit vyčerpán" });
-        const input = decoded.paths.length ? await attachmentMessage(tenant.files, tenant.media, ctx.thread_id, text, decoded.paths, n => tenant.usage.add(n, Date.now(), { user: ctx.user_id })) : new HumanMessage({ content: text, additional_kwargs: { display_text: displayUserText(text) } });
+        if (decoded.paths.length && (!(await tenant.features.get()).files || (quota.tokensPerMonth !== null && await tenant.usage.tokens() >= quota.tokensPerMonth) || (quota.tokensPerUserMonth !== null && await tenant.usage.tokens(Date.now(), { user: ctx.user_id }) >= quota.tokensPerUserMonth))) throw new HttpError(403, "errors.attachment.unavailable");
+        const input = decoded.paths.length ? await attachmentMessage(tenant.files, tenant.media, ctx.thread_id, text, decoded.paths, n => tenant.usage.add(n, Date.now(), { user: ctx.user_id }), ctx.locale) : new HumanMessage({ content: text, additional_kwargs: { display_text: displayUserText(text, ctx.locale) } });
         return tenant.graph.invoke({ messages: [input] }, { configurable: { ...ctx } });
       });
       const last = messages.at(-1);
@@ -105,7 +106,7 @@ export function createInternalRoutes({
     .post("/runs", async (c) => {
       const { user, role, channel } = asUser(c.get("call"));
       const body = scheduledRun.safeParse(await c.req.json());
-      if (!body.success) throw new HTTPException(400, { message: z.prettifyError(body.error) });
+      if (!body.success) throw new ValidationError(body.error);
       const { title, prompt, idempotencyKey } = body.data;
       return c.json(
         await once(tenant, `schedule:${idempotencyKey}`, async () => {
@@ -113,7 +114,7 @@ export function createInternalRoutes({
           await threads.createThread(tenant.db, user.sub, threadId, "web");
           await threads.touchThread(tenant.db, threadId, `⏰ ${title}`);
           const reply = await invoke(
-            { thread_id: threadId, tenant_id: tenant.id, user_id: user.sub, role, channel, user_name: user.name ?? undefined },
+            { thread_id: threadId, tenant_id: tenant.id, user_id: user.sub, role, channel, user_name: user.name ?? undefined, locale: configuredLocale() },
             `[Plánovaná úloha „${title}“, spuštěná automaticky bez přítomnosti uživatele. Udělej ji a výsledek shrň.]\n\n${prompt}`,
           );
           return { threadId, reply };
@@ -125,25 +126,25 @@ export function createInternalRoutes({
     .post("/whatsapp/message", async (c) => {
       const { user, role } = asUser(c.get("call"));
       const body = whatsappMessage.safeParse(await c.req.json());
-      if (!body.success) throw new HTTPException(400, { message: z.prettifyError(body.error) });
+      if (!body.success) throw new ValidationError(body.error);
       const { messageId, text } = body.data;
       const { reply } = await once(tenant, `whatsapp:${messageId}`, async () => {
         const threadId = await whatsappThread(tenant, user.sub);
         await threads.touchThread(tenant.db, threadId, text);
         let message = text;
         if (body.data.attachment) {
-          if (!(await tenant.features.get()).files) throw new HTTPException(403, { message: "Soubory nejsou povolené" });
+          if (!(await tenant.features.get()).files) throw new HttpError(403, "errors.files.featureOff");
           const a = body.data.attachment;
           const mime = a.mime.split(";")[0]!;
           const ext = Object.entries(FILE_TYPES).find(([, type]) => type.mime === mime)?.[0];
-          if (!ext) throw new HTTPException(400, { message: "Nepodporovaná příloha" });
+          if (!ext) throw new HttpError(400, "errors.attachment.unsupported");
           const filename = a.name.replace(/[^a-zA-Z0-9._-]/g, "-").replace(/^\.+/, "").slice(-100) || "priloha";
           const path = `wa-${messageId.replace(/[^a-zA-Z0-9]/g, "").slice(-40)}-${fileType(filename)?.mime === mime ? filename : `${filename}.${ext}`}`;
           await tenant.files.write({ scope: "temp", threadId }, path, Buffer.from(a.data, "base64"));
           message = `@osiris-attachments:${JSON.stringify({ text, paths: [path] })}`;
         }
         const answer = await invoke(
-          { thread_id: threadId, tenant_id: tenant.id, user_id: user.sub, role, channel: "whatsapp", user_name: user.name ?? undefined },
+          { thread_id: threadId, tenant_id: tenant.id, user_id: user.sub, role, channel: "whatsapp", user_name: user.name ?? undefined, locale: configuredLocale() },
           message,
         );
         return { threadId, reply: answer };

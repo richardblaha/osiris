@@ -1,0 +1,37 @@
+{
+  "presets": {
+    "weekdays": "každý všední den v {{time}}",
+    "daily": "každý den v {{time}}",
+    "monday": "každé pondělí v {{time}}",
+    "friday": "každý pátek v {{time}}",
+    "monthly": "1. den v měsíci v {{time}}"
+  },
+  "once": "jednou {{time}}",
+  "status": {
+    "done": "hotovo",
+    "failed": "selhalo",
+    "skipped": "vynecháno"
+  },
+  "allUsers": "všech uživatelů",
+  "empty": "Zatím žádné úlohy.",
+  "new": "Nová úloha",
+  "placeholder": "Asistent úlohu spustí sám v nastavený čas, s tvými oprávněními. Výsledek najdeš jako novou konverzaci, případně i ve WhatsAppu. Úlohu můžeš zadat i v chatu, např. „každé ráno v 7 mi shrň dnešní zakázky“.",
+  "alsoWhatsapp": "i na WhatsApp",
+  "next": "další spuštění {{time}}",
+  "last": "naposledy {{time}} ({{status}})",
+  "lastResult": "Poslední výsledek",
+  "started": "Spuštěno, výsledek bude v nové konverzaci.",
+  "runNow": "Spustit teď",
+  "confirmDelete": "Smazat úlohu „{{title}}“?",
+  "prompt": "Co má asistent udělat",
+  "when": "Kdy",
+  "repeat": "opakovaně",
+  "onceOption": "jednou",
+  "recurrence": "Opakování",
+  "custom": "vlastní (cron)",
+  "cron": "Cron (min hod den měsíc den-týdne)",
+  "dateTime": "Datum a čas",
+  "delivery": "Výsledek poslat",
+  "chatOnly": "jen do chatu",
+  "enabled": "zapnutá"
+}

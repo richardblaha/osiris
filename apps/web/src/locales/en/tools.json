@@ -1,0 +1,25 @@
+{
+  "groups": {
+    "standard_accounts": "Connected standard accounts",
+    "mail": "Mail SMTP / IMAP / POP3",
+    "caldav": "CalDAV calendar",
+    "carddav": "CardDAV contacts",
+    "google_mail": "Google Mail",
+    "google_contacts": "Google contacts",
+    "google_calendar": "Google calendar",
+    "microsoft_mail": "Microsoft Outlook mail",
+    "microsoft_contacts": "Microsoft contacts",
+    "microsoft_calendar": "Microsoft calendar",
+    "templates": "Templates",
+    "image": "Images"
+  },
+  "allOn": "switch all on",
+  "allOff": "switch all off",
+  "introAdmin": "The assistant won't use a tool that is switched off. The change applies within half a minute.",
+  "intro": "The tools the assistant has. A system administrator switches them on and off.",
+  "featureOff": "feature off",
+  "on": "switch on",
+  "off": "switch off",
+  "isOn": "on",
+  "isOff": "off"
+}

@@ -2,7 +2,8 @@
  * Osiris chat widget for a business's website:
  *   <script src="https://osiris.k6labs.cz/widget.js" data-tenant="<tenant>" data-assistant="<assistant>" async></script>
  * A button in the corner opens the business's public assistant (osiris.k6labs.cz/c/<tenant>/<assistant>) in a panel;
- * without data-assistant, the tenant's first one.
+ * without data-assistant, the tenant's first one. The button speaks the page's language (data-lang, else <html lang>,
+ * else the browser's): English, or Czech for Czech and Slovak; data-label replaces its text.
  */
 (function () {
   var script = document.currentScript;
@@ -11,7 +12,10 @@
   if (!tenant || document.getElementById("osiris-widget")) return;
   var origin = new URL(script.src).origin;
   var color = script.getAttribute("data-color") || "#0f766e";
-  var label = script.getAttribute("data-label") || "Zeptejte se nás";
+  var texts = { en: { label: "Ask us", close: "Close" }, cs: { label: "Zeptejte se nás", close: "Zavřít" } };
+  var lang = (script.getAttribute("data-lang") || document.documentElement.lang || navigator.language || "en").toLowerCase().split("-")[0];
+  var text = texts[lang === "sk" ? "cs" : lang] || texts.en;
+  var label = script.getAttribute("data-label") || text.label;
 
   var root = document.createElement("div");
   root.id = "osiris-widget";
@@ -28,14 +32,14 @@
   button.textContent = label;
   button.setAttribute("aria-expanded", "false");
   button.style.cssText =
-    "display:block;margin-left:auto;padding:12px 18px;border:0;border-radius:999px;color:#fff;cursor:pointer;" +
+    "display:block;margin-inline-start:auto;padding:12px 18px;border:0;border-radius:999px;color:#fff;cursor:pointer;" +
     "box-shadow:0 6px 20px rgba(0,0,0,.2);background:" + color;
   button.addEventListener("click", function () {
     var open = frame.style.display === "none";
     // The chat loads the first time it's opened.
     if (open && !frame.src) frame.src = origin + "/c/" + encodeURIComponent(tenant) + (assistant ? "/" + encodeURIComponent(assistant) : "") + "?embed=1";
     frame.style.display = open ? "block" : "none";
-    button.textContent = open ? "Zavřít" : label;
+    button.textContent = open ? text.close : label;
     button.setAttribute("aria-expanded", String(open));
   });
 

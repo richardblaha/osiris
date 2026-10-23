@@ -1,5 +1,6 @@
 import { connect } from "node:tls";
 import { once } from "node:events";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 /** Read-only POP3 over implicit TLS. Never issues DELE; IDs are stable UIDL values. */
 export async function pop3Read(
@@ -63,7 +64,7 @@ export async function pop3Read(
     });
     if (!uid) return JSON.stringify(entries.slice(-limit).reverse());
     const entry = entries.find(e => e.id === uid);
-    if (!entry) throw new Error("Zpráva nenalezena");
+    if (!entry) throw new LocalizedError("errors.mail.notFound");
     return (await command(`RETR ${entry.number}`, true)).join("\r\n");
   } finally {
     socket.destroy();

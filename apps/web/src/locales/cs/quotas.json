@@ -1,0 +1,27 @@
+{
+  "fields": {
+    "storageMb": "Úložiště souborů (MB)",
+    "tokensPerMonth": "AI tokeny za měsíc",
+    "members": "Uživatelé",
+    "schedules": "Plánované úlohy",
+    "tokensPerUserMonth": "AI tokeny za měsíc na uživatele",
+    "tables": "Tabulky databáze",
+    "databaseMb": "Databáze (MB)",
+    "dashboards": "Vlastní dashboardy"
+  },
+  "noLimit": "bez limitu",
+  "save": "Uložit kvóty",
+  "meters": {
+    "storage": "Úložiště",
+    "tokens": "AI tento měsíc",
+    "members": "Uživatelé",
+    "schedules": "Úlohy",
+    "userTokens": "Moje AI tento měsíc",
+    "tables": "Tabulky",
+    "database": "Databáze",
+    "dashboards": "Dashboardy"
+  },
+  "noTenant": "bez tenanta",
+  "exhausted": "vyčerpáno",
+  "runningOut": "dochází"
+}

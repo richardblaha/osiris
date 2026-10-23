@@ -6,6 +6,9 @@ import { readEvents } from "./api.ts";
 import { createAdapter, toInitialMessages } from "./chat/adapter.ts";
 import { QuestionLoaderContext } from "./chat/Question.tsx";
 import { Thread, ThreadIdContext } from "./chat/Thread.tsx";
+import { t } from "i18next";
+import { Trans } from "react-i18next";
+import { currentLocale } from "./i18n.ts";
 
 /** Per-browser conveniences only: without storage every visit is a new conversation. */
 const remember = (key: string, make?: () => string) => {
@@ -33,11 +36,11 @@ function publicApi(tenant: string, assistant: string) {
   const call = async (path: string, init: RequestInit = {}) => {
     const res = await fetch(`/public/${encodeURIComponent(tenant)}/${encodeURIComponent(assistant)}${path}`, {
       ...init,
-      headers: { "x-visitor-id": visitor, "content-type": "application/json", ...init.headers },
+      headers: { "x-visitor-id": visitor, "content-type": "application/json", "accept-language": currentLocale(), ...init.headers },
     });
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw Object.assign(new Error(body?.error ?? `Chyba ${res.status}`), { status: res.status });
+      throw Object.assign(new Error(body?.error ?? t("public:httpError", { status: res.status })), { status: res.status });
     }
     return res;
   };
@@ -89,7 +92,7 @@ export function PublicChat({ tenant, assistant = "_" }: { tenant: string; assist
         {error ? (
           <p className="notice notice-error m-6 px-3 py-2 text-sm">{error}</p>
         ) : info && !info.enabled ? (
-          <p className="m-6 text-center text-fg-secondary">Asistent teď není dostupný.</p>
+          <p className="m-6 text-center text-fg-secondary">{t("public:unavailable")}</p>
         ) : !info || !initial ? (
           <Pending className="relative h-full" />
         ) : (
@@ -97,11 +100,7 @@ export function PublicChat({ tenant, assistant = "_" }: { tenant: string; assist
         )}
       </div>
       <footer className="py-1 text-center text-[11px] text-fg-muted">
-        Odpovídá umělá inteligence a může se mýlit. Provozuje{" "}
-        <a href="https://osiris.k6labs.cz" target="_blank" rel="noreferrer" className="underline">
-          Osiris
-        </a>
-        .
+        <Trans ns="public" i18nKey="footer" components={{ a: <a href="https://osiris.k6labs.cz" target="_blank" rel="noreferrer" className="underline" /> }} />
       </footer>
     </div>
   );
@@ -126,7 +125,7 @@ function Chat({ client, threadKey, initial, greeting }: { client: ReturnType<typ
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadIdContext.Provider value={() => id.current}>
         <QuestionLoaderContext.Provider value={client.question}>
-          <Thread greeting={greeting || "Dobrý den, s čím vám můžu pomoct?"} placeholder="Napište zprávu…" />
+          <Thread greeting={greeting || t("public:defaultGreeting")} placeholder={t("public:placeholder")} />
         </QuestionLoaderContext.Provider>
       </ThreadIdContext.Provider>
     </AssistantRuntimeProvider>

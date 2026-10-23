@@ -1,0 +1,42 @@
+{
+  "scope": {
+    "personal": "Platí jen pro tebe.",
+    "tenant": "Platí pro všechny v tenantovi.",
+    "tenantAdminOnly": "Platí pro všechny v tenantovi. Měnit ho může jen správce tenanta.",
+    "tenantAdminOnlyList": "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."
+  },
+  "badge": {
+    "bundled": "výchozí",
+    "tenant": "tenant",
+    "personal": "osobní"
+  },
+  "loading": "Načítám",
+  "loadingCaption": "NAČÍTÁNÍ...",
+  "loadingApp": "Načítám Osiris",
+  "selectItem": "Vyber položku ze seznamu.",
+  "auth": {
+    "unavailable": "Přihlášení není k dispozici"
+  },
+  "delete": "Smazat",
+  "close": "Zavřít",
+  "noneYet": "Zatím žádné.",
+  "nothingYet": "Zatím nic.",
+  "name": "Název",
+  "save": "Uložit",
+  "saving": "Ukládám…",
+  "add": "Přidat",
+  "unsaved": "neuloženo",
+  "remove": "Odebrat",
+  "role": {
+    "member": "uživatel",
+    "admin": "správce",
+    "systemAdmin": "správce systému",
+    "systemAdminCap": "Správce systému"
+  },
+  "copy": "Kopírovat",
+  "savedNotice": "Uloženo.",
+  "cancel": "Zrušit",
+  "download": "Stáhnout",
+  "nothingFound": "Nic nenalezeno.",
+  "loadingEditor": "Načítám editor…"
+}

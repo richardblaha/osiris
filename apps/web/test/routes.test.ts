@@ -1,6 +1,5 @@
-// Run: npx tsx --test apps/web/test/routes.test.ts
 import { deepEqual, equal } from "node:assert/strict";
-import { test } from "node:test";
+import { test } from "vitest";
 import { fromPath, toPath, SETTINGS_PARTS, type View } from "../src/routes.ts";
 
 test("every view survives a round trip through its URL", () => {

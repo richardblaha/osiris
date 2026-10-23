@@ -24,9 +24,9 @@ async function setup() {
 describe("cron", () => {
   it("computes the next run in the schedule's time zone and refuses too frequent tasks", () => {
     expect(new Date(nextCron("0 7 * * 1-5", "Europe/Prague", T0)).toISOString()).toBe("2026-10-20T05:00:00.000Z");
-    expect(() => checkCron("*/5 * * * *", "Europe/Prague", T0)).toThrow("15 minut");
-    expect(() => checkCron("0 7 * *", "Europe/Prague", T0)).toThrow("5 polí");
-    expect(() => checkCron("0 25 * * *", "Europe/Prague", T0)).toThrow("Neplatný cron");
+    expect(() => checkCron("*/5 * * * *", "Europe/Prague", T0)).toThrow("15 minutes");
+    expect(() => checkCron("0 7 * *", "Europe/Prague", T0)).toThrow("5 fields");
+    expect(() => checkCron("0 25 * * *", "Europe/Prague", T0)).toThrow("Invalid cron");
     expect(() => checkCron("*/15 * * * *", "Europe/Prague", T0)).not.toThrow();
   });
 });
@@ -89,7 +89,7 @@ describe("scheduler", () => {
     await directory.setRole("acme", "bob", null);
     await worker.step(T0 + 1000);
     expect(runtimeCalls).toEqual([]);
-    expect(await schedules.get("acme", s.id)).toMatchObject({ enabled: false, lastError: "Vlastník úlohy už není členem tenanta" });
+    expect(await schedules.get("acme", s.id)).toMatchObject({ enabled: false, lastError: "The task's owner is no longer a member of the tenant." });
   });
 
   it("serves the schedules API per owner, with admins seeing all", async () => {

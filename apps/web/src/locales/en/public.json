@@ -1,0 +1,48 @@
+{
+  "tools": {
+    "estimate_price": {
+      "label": "Job price estimate",
+      "hint": "works out an indicative price from the price list in its knowledge"
+    },
+    "create_inquiry": {
+      "label": "Inquiry",
+      "hint": "takes the name, contact and job description and emails you"
+    }
+  },
+  "defaultGreeting": "Hello, how can I help you?",
+  "intro": "Assistants for customers on your website, without signing in. Each knows only what you choose for it.",
+  "inquiries": "Inquiries",
+  "on": "on",
+  "off": "off",
+  "add": "Add assistant",
+  "confirmDelete": "Delete the assistant {{name}}? Links and widgets on websites will stop working.",
+  "new": "New assistant",
+  "enabled": "On (customers can write)",
+  "name": "Name in the link (lowercase letters, digits, hyphens)",
+  "namePlaceholder": "for example web or eshop",
+  "title": "Company name for customers",
+  "tokens": "Monthly token limit (empty = only the organization's limit)",
+  "greeting": "Greeting",
+  "knowledgeHint": "Documents and folders the assistant searches. A chosen folder includes everything added to it later.",
+  "knowledgeEmpty": "The knowledge base is empty.",
+  "memoryHint": "Facts the assistant always gets (for example opening hours).",
+  "memoryEmpty": "There's nothing in memory.",
+  "skillsHint": "The organization's procedures the assistant may follow.",
+  "skillsEmpty": "The organization has no skills of its own.",
+  "toolsTitle": "Tools",
+  "delete": "Delete assistant",
+  "where": "Where customers find it",
+  "link": "Link:",
+  "snippetHint": "Put this on your website (for example in www/index.html before </body>):",
+  "persona": "Persona for customers",
+  "time": "Time: {{time}}",
+  "reopen": "Mark as new",
+  "done": "Done",
+  "hideConversation": "Hide conversation",
+  "conversation": "Conversation",
+  "customer": "Customer",
+  "httpError": "Error {{status}}",
+  "unavailable": "The assistant isn't available right now.",
+  "footer": "Answers come from artificial intelligence and may be wrong. Run by <a>Osiris</a>.",
+  "placeholder": "Write a message…"
+}

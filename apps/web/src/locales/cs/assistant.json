@@ -1,0 +1,10 @@
+{
+  "persona": "Persona",
+  "personaHint": "Jak má asistent komunikovat. Napiš vlastní popis nebo ho nech upravit pomocí AI.",
+  "publicOnly": "Platí jen pro tohoto asistenta pro zákazníky.",
+  "save": "Uložit personu",
+  "description": "Popis persony",
+  "placeholder": "Popiš, jak má asistent vystupovat, třeba stručně a s humorem jako Sherlock Holmes. Text můžeš upravit pomocí AI.",
+  "generating": "Připravuji…",
+  "generate": "Upravit pomocí AI"
+}

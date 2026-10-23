@@ -6,8 +6,8 @@ export interface Membership {
 }
 
 /**
- * PocketID custom claims that grant access, set on the user. Each takes one value or a comma-separated list
- * (PocketID stores one string per claim): `role=osiris-user`, `tenant=acme`, `tenant-admin=acme,beta`.
+ * The user's claims that grant access (rows of control's `users`). Each takes one value, a comma-separated list or a
+ * JSON array: `role=osiris-user`, `tenant=acme`, `tenant-admin=acme,beta`.
  */
 export const CLAIMS = { role: "role", tenant: "tenant", tenantAdmin: "tenant-admin" } as const;
 

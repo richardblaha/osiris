@@ -1,8 +1,11 @@
 import type { ChatQuestion } from "@osiris/shared";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
 
 // WhatsApp Business Cloud API (Meta Graph API).
+
+const t = (key: string) => translate(configuredLocale(), key);
 
 const GRAPH_API = "https://graph.facebook.com/v23.0";
 /** WhatsApp's limit for a text message body. */
@@ -130,7 +133,7 @@ export class WhatsAppClient {
   async sendQuestion(phone: string, to: string, q: ChatQuestion, fallbackUrl: string) {
     const encode = (value: unknown, name: string) => `@osiris-answer:${JSON.stringify({ id: q.id, values: { [name]: value } })}`;
     const f = q.fields[0]!;
-    const choices = q.fields.length === 1 && f.type === "boolean" ? [{ value: true, label: "Ano" }, { value: false, label: "Ne" }]
+    const choices = q.fields.length === 1 && f.type === "boolean" ? [{ value: true, label: t("whatsapp.question.yes") }, { value: false, label: t("whatsapp.question.no") }]
       : q.fields.length === 1 && f.type === "select" ? f.options ?? [] : [];
     const base = { messaging_product: "whatsapp", to, type: "interactive" };
     if (choices.length && choices.length <= 3 && choices.every(c => c.label.length <= 20)) {
@@ -138,23 +141,23 @@ export class WhatsAppClient {
       return;
     }
     if (choices.length && choices.every(c => c.label.length <= 24)) {
-      await this.post(phone, { ...base, interactive: { type: "list", body: { text: q.title }, action: { button: "Vybrat odpověď", sections: [{ rows: choices.map(c => ({ id: encode(c.value, f.name), title: c.label })) }] } } });
+      await this.post(phone, { ...base, interactive: { type: "list", body: { text: q.title }, action: { button: t("whatsapp.question.choose"), sections: [{ rows: choices.map(c => ({ id: encode(c.value, f.name), title: c.label })) }] } } });
       return;
     }
     const flow = this.options.flows?.find(flow => flow.fields.length === q.fields.length && flow.fields.every((f, i) => q.fields[i]?.name === f.name && q.fields[i]?.type === f.type));
     if (flow) {
       const data = Object.fromEntries(q.fields.flatMap(f => [[`${f.name}_label`, f.label], ...(f.options ? [[`${f.name}_options`, f.options.map(o => ({ id: o.value, title: o.label }))]] : [])]));
       try {
-        await this.post(phone, { ...base, interactive: { type: "flow", body: { text: q.title }, action: { name: "flow", parameters: { flow_message_version: "3", flow_id: flow.id, flow_token: q.id, flow_cta: "Vyplnit", flow_action: "navigate", flow_action_payload: { screen: flow.screen, data: { title: q.title, ...data } } } } } });
+        await this.post(phone, { ...base, interactive: { type: "flow", body: { text: q.title }, action: { name: "flow", parameters: { flow_message_version: "3", flow_id: flow.id, flow_token: q.id, flow_cta: t("whatsapp.question.fill"), flow_action: "navigate", flow_action_payload: { screen: flow.screen, data: { title: q.title, ...data } } } } } });
         return;
       } catch { /* Meta eligibility/template errors: always leave the user a working PWA form. */ }
     }
-    await this.sendText(phone, to, `${q.title}\n${q.fields.map(f => `${f.label}${f.options ? ` (${f.options.map((o, i) => `${i + 1}. ${o.label}`).join(", ")})` : ""}`).join("\n")}\n${q.fields.length === 1 ? "Odpověz zprávou, nebo otevři formulář." : "Otevři formulář:"}\n${fallbackUrl}\n/zrusit — zrušit otázku`);
+    await this.sendText(phone, to, `${q.title}\n${q.fields.map(f => `${f.label}${f.options ? ` (${f.options.map((o, i) => `${i + 1}. ${o.label}`).join(", ")})` : ""}`).join("\n")}\n${q.fields.length === 1 ? t("whatsapp.question.replyOrForm") : t("whatsapp.question.openForm")}\n${fallbackUrl}\n${t("whatsapp.question.cancelHint")}`);
   }
   async sendNotification(phone: string, to: string, title: string, detailPath: string) {
     const template = this.options.notificationTemplate;
     if (!template) return false;
-    await this.post(phone, { messaging_product: "whatsapp", to, type: "template", template: { name: template.name, language: { code: template.language }, components: [{ type: "body", parameters: [{ type: "text", text: title.replace(/\s+/g, " ").trim().slice(0, 200) || "Plánovaná úloha" }] }, { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: detailPath }] }] } });
+    await this.post(phone, { messaging_product: "whatsapp", to, type: "template", template: { name: template.name, language: { code: template.language }, components: [{ type: "body", parameters: [{ type: "text", text: title.replace(/\s+/g, " ").trim().slice(0, 200) || t("whatsapp.scheduledTask") }] }, { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: detailPath }] }] } });
     return true;
   }
   async sendFile(phone: string, to: string, file: { data: Buffer; mime: string; name: string }) {

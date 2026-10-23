@@ -57,7 +57,7 @@ export async function buildSite(files: FileStore, vitepress: VitepressClient, si
   const dst = `www/${site}`;
   const input: SiteFile[] = [];
   for await (const e of files.walk(tenant, src)) input.push({ path: e.path.slice(src.length + 1), data: (await files.read(tenant, e.path)).data });
-  if (!input.length) throw new FileError(`Složka ${src} neexistuje nebo je prázdná.`, "not_found");
+  if (!input.length) throw new FileError("not_found", "errors.files.folderEmpty", { path: src });
   const built = await vitepress.build(input);
   const written = new Set<string>();
   let bytes = 0;
@@ -154,8 +154,8 @@ export async function listSites(files: FileStore): Promise<string[]> {
 
 /** A new site from the default template; refused when the folder exists. */
 export async function createSite(files: FileStore, site: string): Promise<void> {
-  if (!SITE_NAME.test(site)) throw new FileError("Název webu: malá písmena, číslice, pomlčky a tečky (např. firma.cz)", "invalid");
-  if ((await listSites(files)).includes(site)) throw new FileError(`Web ${site} už existuje`, "exists");
+  if (!SITE_NAME.test(site)) throw new FileError("invalid", "errors.sites.name");
+  if ((await listSites(files)).includes(site)) throw new FileError("exists", "errors.sites.exists", { site });
   for (const [path, text] of Object.entries(defaultTemplate(site))) await files.write(tenant, `${VITEPRESS_DIR}/${site}/${path}`, Buffer.from(text), { overwrite: false });
 }
 

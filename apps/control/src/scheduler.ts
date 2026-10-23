@@ -6,6 +6,7 @@ import { tenantAudience, type InternalSigner } from "@osiris/platform/internal-a
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { isSystemAdmin } from "@osiris/platform/claims.ts";
+import { configuredLocale, LocalizedError, translate } from "@osiris/platform/i18n.ts";
 import { roleIn, userAccess, type TenantStore } from "./tenants.ts";
 import type { UserDirectory } from "./users.ts";
 import type { WhatsAppClient } from "./whatsapp/cloud-api.ts";
@@ -22,8 +23,11 @@ const LEASE_MS = 15 * 60_000;
 /** WhatsApp lets a business message a user freely only within 24 hours of the user's last message. */
 const WHATSAPP_WINDOW_MS = 24 * 60 * 60_000;
 
-export class ScheduleError extends Error {}
-export class ScheduleNotFoundError extends Error {}
+export class ScheduleError extends LocalizedError {}
+export class ScheduleNotFoundError extends LocalizedError {}
+
+/** A note stored with a schedule (shown in its detail), in the configured language. */
+const note = (key: string) => translate(configuredLocale(), key);
 
 interface Row {
   id: string;
@@ -72,24 +76,24 @@ export function nextCron(cron: string, timezone: string, after: number): number 
 
 /** Checks a cron expression: 5 fields, valid, and not firing more often than every 15 minutes. */
 export function checkCron(cron: string, timezone: string, now = Date.now()) {
-  if (cron.trim().split(/\s+/).length !== 5) throw new ScheduleError("Cron musí mít 5 polí (minuta hodina den měsíc den-v-týdnu)");
+  if (cron.trim().split(/\s+/).length !== 5) throw new ScheduleError("errors.schedule.cronFields");
   let times: number[];
   try {
     const it = CronExpressionParser.parse(cron, { currentDate: new Date(now), tz: timezone });
     times = Array.from({ length: 5 }, () => it.next().getTime());
   } catch (err) {
-    throw new ScheduleError(`Neplatný cron: ${(err as Error).message}`);
+    throw new ScheduleError("errors.schedule.cronInvalid", { detail: (err as Error).message });
   }
   for (let i = 1; i < times.length; i++) {
-    if (times[i]! - times[i - 1]! < MIN_INTERVAL_MS) throw new ScheduleError("Úloha se smí spouštět nejvýš jednou za 15 minut");
+    if (times[i]! - times[i - 1]! < MIN_INTERVAL_MS) throw new ScheduleError("errors.schedule.tooOften", { minutes: MIN_INTERVAL_MS / 60_000 });
   }
 }
 
 function checkTimezone(tz: string) {
   try {
-    new Intl.DateTimeFormat("cs-CZ", { timeZone: tz });
+    new Intl.DateTimeFormat("en", { timeZone: tz });
   } catch {
-    throw new ScheduleError(`Neznámé časové pásmo: ${tz}`);
+    throw new ScheduleError("errors.schedule.timezone", { timezone: tz });
   }
 }
 
@@ -109,7 +113,7 @@ export class ScheduleStore {
 
   async get(tenantId: string, id: string): Promise<Schedule> {
     const [row] = await this.db.query<Row>("SELECT * FROM schedules WHERE tenant_id = ? AND id = ?", [tenantId, id], { fresh: true });
-    if (!row) throw new ScheduleNotFoundError("Úloha nenalezena");
+    if (!row) throw new ScheduleNotFoundError("errors.schedule.notFound");
     return toSchedule(row);
   }
 
@@ -119,10 +123,10 @@ export class ScheduleStore {
       checkCron(input.cron, input.timezone, now);
       return { cron: input.cron.trim(), runAt: null, next: nextCron(input.cron, input.timezone, now) };
     }
-    if (!input.runAt) throw new ScheduleError("Zadej opakování (cron) nebo čas jednorázového spuštění");
+    if (!input.runAt) throw new ScheduleError("errors.schedule.timingMissing");
     const at = Date.parse(input.runAt);
-    if (Number.isNaN(at)) throw new ScheduleError("Neplatný čas spuštění");
-    if (at < now - 60_000) throw new ScheduleError("Čas spuštění je v minulosti");
+    if (Number.isNaN(at)) throw new ScheduleError("errors.schedule.runAtInvalid");
+    if (at < now - 60_000) throw new ScheduleError("errors.schedule.runAtPast");
     return { cron: null, runAt: at, next: at };
   }
 
@@ -137,8 +141,8 @@ export class ScheduleStore {
     );
     // The tenant's quota (set by a system admin) or the built-in ceiling.
     const max = (JSON.parse(counts?.quotas ?? "{}") as { schedules?: number | null }).schedules ?? MAX_PER_TENANT;
-    if (Number(counts?.mine ?? 0) >= MAX_PER_USER) throw new ScheduleError(`Můžeš mít nejvýš ${MAX_PER_USER} plánovaných úloh`);
-    if (Number(counts?.total ?? 0) >= max) throw new ScheduleError(`Tenant může mít nejvýš ${max} plánovaných úloh`);
+    if (Number(counts?.mine ?? 0) >= MAX_PER_USER) throw new ScheduleError("errors.schedule.userLimit", { count: MAX_PER_USER });
+    if (Number(counts?.total ?? 0) >= max) throw new ScheduleError("errors.schedule.tenantLimit", { count: max });
     const id = randomUUID();
     await this.db.execute([
       run(
@@ -199,7 +203,7 @@ export class ScheduleStore {
 
   async delete(tenantId: string, id: string) {
     const [r] = await this.db.execute([run("DELETE FROM schedules WHERE tenant_id = ? AND id = ?", tenantId, id)]);
-    if (!r?.rowsAffected) throw new ScheduleNotFoundError("Úloha nenalezena");
+    if (!r?.rowsAffected) throw new ScheduleNotFoundError("errors.schedule.notFound");
   }
 
   /** Claims the next due task; its lease keeps other workers off until it's finished or the lease runs out. */
@@ -294,22 +298,22 @@ export class SchedulerWorker {
     const s = await this.deps.schedules.claim(now);
     if (!s) return false;
     if (now - s.dueAt > MISFIRE_MS) {
-      await this.deps.schedules.finish(s, { status: "skipped", error: "Úloha se nestihla spustit včas (služba nebyla dostupná)" }, now);
+      await this.deps.schedules.finish(s, { status: "skipped", error: note("schedules.notes.missed") }, now);
       return true;
     }
     const tenant = await this.deps.tenants.get(s.tenantId);
     if (!tenant || tenant.status !== "active") {
-      await this.deps.schedules.disable(s.id, "Tenant už neexistuje", now);
+      await this.deps.schedules.disable(s.id, note("schedules.notes.tenantGone"), now);
       return true;
     }
     if (!tenant.features.scheduler) {
-      await this.deps.schedules.finish(s, { status: "skipped", error: "Plánované úlohy jsou pro tenanta vypnuté" }, now);
+      await this.deps.schedules.finish(s, { status: "skipped", error: note("schedules.notes.featureOff") }, now);
       return true;
     }
     const owner = await this.deps.users.get(s.ownerId).catch(() => null);
     const role = owner && !owner.disabled ? (isSystemAdmin(userAccess(owner)) ? "admin" : roleIn(owner, s.tenantId)) : null;
     if (!owner || !role) {
-      await this.deps.schedules.disable(s.id, "Vlastník úlohy už není členem tenanta", now);
+      await this.deps.schedules.disable(s.id, note("schedules.notes.ownerLeft"), now);
       return true;
     }
 
@@ -347,12 +351,12 @@ export class SchedulerWorker {
 
   /** Sends the result; returns a warning when WhatsApp can't be used (the result stays in the web thread). */
   private async sendWhatsApp(phone: string | undefined, title: string, reply: string, detailPath: string, now: number): Promise<string | null> {
-    if (!this.deps.whatsapp) return "WhatsApp není nastavený, výsledek je jen ve webovém chatu";
-    if (!phone) return "Uživatel nemá ověřené telefonní číslo, výsledek je jen ve webovém chatu";
+    if (!this.deps.whatsapp) return note("schedules.notes.whatsappOff");
+    if (!phone) return note("schedules.notes.noPhone");
     const last = await this.deps.whatsapp.inbox.lastPhoneNumberId(phoneKey(phone));
     if (last && now - last.at > WHATSAPP_WINDOW_MS && await this.deps.whatsapp.client.sendNotification(last.phoneNumberId, phoneKey(phone), title, detailPath)) return null;
     if (!last || now - last.at > WHATSAPP_WINDOW_MS) {
-      return "WhatsApp dovolí poslat zprávu jen do 24 hodin od poslední zprávy uživatele, výsledek je jen ve webovém chatu";
+      return note("schedules.notes.whatsappWindow");
     }
     await this.deps.whatsapp.client.sendText(last.phoneNumberId, phoneKey(phone), `*${title}*\n\n${reply}`);
     return null;

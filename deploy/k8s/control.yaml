@@ -48,6 +48,7 @@ spec:
             - { name: PUBLIC_URL, value: https://osiris.k6labs.cz }
             - { name: MAIL_FROM, value: "Osiris <auth@k6labs.cz>" }
             - { name: TIMEZONE, value: Europe/Prague }
+            - { name: DEFAULT_LOCALE, value: cs }
             - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
             - { name: CLICKHOUSE_URL, value: http://clickhouse.observability.svc.cluster.local:8123 }
           envFrom:

@@ -1,6 +1,7 @@
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessage, AIMessageChunk } from "@langchain/core/messages";
 import { GUARD_REFUSAL } from "@osiris/core/agent/assistant.ts";
+import { translate } from "@osiris/platform/i18n.ts";
 import { TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import type { RunEvent, ThreadMessage } from "@osiris/shared";
 import { NO_QUOTAS } from "@osiris/shared";
@@ -250,8 +251,15 @@ describe("tenant features", () => {
     // The model's tokens are counted per month; once the quota is used up the model isn't called any more.
     acme.features.limits = { ...NO_QUOTAS, storageMb: 1, tokensPerMonth: 100, members: 5 };
     expect(await chat()).toContain("Ahoj.");
-    expect(await chat()).toContain(TOKENS_EXHAUSTED);
+    expect(await chat()).toContain(translate("en", TOKENS_EXHAUSTED));
     expect(model.calls).toHaveLength(1);
+    // The run writes its own texts in the language of the request (the web app sends its own).
+    const { id: czech } = await (await bob("/threads", { method: "POST" })).json();
+    const reply = await (await bob(`/threads/${czech}/runs`, { method: "POST", headers: { "accept-language": "cs" }, body: JSON.stringify({ message: "Ahoj" }) })).text();
+    expect(reply).toContain(translate("cs", TOKENS_EXHAUSTED));
+    expect(reply).toContain("Měsíční limit využití asistenta");
+    const history = await (await bob(`/threads/${czech}/messages`)).json();
+    expect(history.at(-1).content).toEqual([{ type: "text", text: translate("cs", TOKENS_EXHAUSTED) }]);
 
     // Files can't go past the storage quota.
     const big = "x".repeat(700 * 1024);
@@ -281,7 +289,7 @@ describe("tenant features", () => {
       return (await as(user)(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
     };
     expect(await chat("bob:tenant=acme")).toContain("Ahoj.");
-    expect(await chat("bob:tenant=acme")).toContain(USER_TOKENS_EXHAUSTED);
+    expect(await chat("bob:tenant=acme")).toContain(translate("en", USER_TOKENS_EXHAUSTED));
     // Another member still has their own.
     expect(await chat("eve:tenant=acme")).toContain("Ahoj.");
     expect(model.calls).toHaveLength(2);
@@ -401,14 +409,14 @@ describe("assistant persona and rules", () => {
 
     // The message is refused before the agent sees it.
     const refused = await run(bob, "Co si myslíš o volbách?");
-    expect(refused.text).toBe(GUARD_REFUSAL);
+    expect(refused.text).toBe(translate("en", GUARD_REFUSAL));
     expect(model.calls).toHaveLength(1);
     expect(model.calls[0]!.at(-1)!.text).toContain("Pravidla systému:\nNikdy neprozrazuj interní postupy.");
 
     // A breaking answer never reaches the user and is replaced in the history too.
     const replaced = await run(bob, "Jak to děláte?");
-    expect(replaced.text).toBe(GUARD_REFUSAL);
-    expect(replaced.history.at(-1)!.content).toEqual([{ type: "text", text: GUARD_REFUSAL }]);
+    expect(replaced.text).toBe(translate("en", GUARD_REFUSAL));
+    expect(replaced.history.at(-1)!.content).toEqual([{ type: "text", text: translate("en", GUARD_REFUSAL) }]);
     const prompt = model.calls[2]![0]!.text;
     expect(prompt).toContain("# ZÁVAZNÁ PRAVIDLA");
     expect(prompt).toMatch(/Pravidla systému:[\s\S]*Pravidla firmy:\nNemluv o politice\.[\s\S]*Pravidla uživatele:\nNepoužívej anglicismy\./);

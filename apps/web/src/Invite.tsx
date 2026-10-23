@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { attempt, ErrorNotice } from "./Scope.tsx";
+import { t } from "i18next";
 
 type Invite = { email: string; firstName: string; lastName: string; role: "admin" | "member" };
 
@@ -17,15 +18,15 @@ export function InviteForm({ onInvite }: { onInvite: (body: Invite) => Promise<v
   };
   return (
     <form onSubmit={submit} className="mt-3 flex flex-wrap gap-2">
-      <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="e-mail" required className="field min-w-0 flex-[2]" />
-      <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} placeholder="jméno" required className="field min-w-0 flex-1" />
-      <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} placeholder="příjmení" className="field min-w-0 flex-1" />
+      <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t("signin:email")} required className="field min-w-0 flex-[2]" />
+      <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} placeholder={t("invite:firstName")} required className="field min-w-0 flex-1" />
+      <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} placeholder={t("invite:lastName")} className="field min-w-0 flex-1" />
       <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Invite["role"] })} className="field w-auto">
-        <option value="member">uživatel</option>
-        <option value="admin">správce</option>
+        <option value="member">{t("role.member")}</option>
+        <option value="admin">{t("role.admin")}</option>
       </select>
       <button disabled={busy} className="btn-primary">
-        Pozvat
+        {t("invite:invite")}
       </button>
       <ErrorNotice error={error} />
     </form>

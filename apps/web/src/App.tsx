@@ -12,6 +12,7 @@ import type {
   TenantUsage,
   ThreadSummary,
 } from "@osiris/shared";
+import { t } from "i18next";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, setTenant } from "./api.ts";
 import { getAccessToken, login, logout } from "./auth.ts";
@@ -65,10 +66,10 @@ function Gate() {
         <img src="/logo.svg" alt="" className="h-28 w-28" />
         <h1 className="text-4xl font-semibold tracking-[0.2em]">OSIRIS</h1>
         <button
-          onClick={() => login().catch((e: Error) => setLoginError(`Přihlášení selhalo: ${e.message}`))}
+          onClick={() => login().catch((e: Error) => setLoginError(t("app:loginFailed", { detail: e.message })))}
           className="btn-primary px-6 py-3"
         >
-          Přihlásit se
+          {t("app:signIn")}
         </button>
         {loginError && <p className="notice notice-error max-w-md px-3 py-2 text-sm">{loginError}</p>}
       </div>
@@ -95,12 +96,13 @@ const LOADERS: { [S in Section]: () => Promise<Lists[S]> } = {
   secrets: api.secrets,
 };
 
-const SECTIONS: { id: Section; label: string; add: string; icon: string; enabled: (f: TenantFeatures) => boolean }[] = [
-  { id: "knowledge", label: "Znalosti", add: "Přidat dokument", icon: "M2 3h5l1 1 1-1h5v10H9l-1 1-1-1H2zM8 4v9", enabled: (f) => f.knowledge },
-  { id: "skills", label: "Dovednosti", add: "Přidat dovednost", icon: "M3 4h10M3 8h10M3 12h6", enabled: (f) => f.skills },
-  { id: "memory", label: "Paměť", add: "Přidat záznam", icon: "M8 2a4 4 0 0 0-2 7.5V11h4V9.5A4 4 0 0 0 8 2zM6.5 13.5h3", enabled: (f) => f.memory },
-  { id: "mcp", label: "Nástroje a MCP", add: "Přidat MCP server", icon: "M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2", enabled: (f) => f.mcp },
-  { id: "secrets", label: "Klíče a hesla", add: "Přidat klíč", icon: "M10 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM7 9l-5 5M4 12l1.5 1.5", enabled: (f) => f.http || f.mcp },
+/** Labels are read when shown (`label()`, `add()`), so they follow the current language. */
+const SECTIONS: { id: Section; label: () => string; add: () => string; icon: string; enabled: (f: TenantFeatures) => boolean }[] = [
+  { id: "knowledge", label: () => t("app:nav.knowledge"), add: () => t("app:add.knowledge"), icon: "M2 3h5l1 1 1-1h5v10H9l-1 1-1-1H2zM8 4v9", enabled: (f) => f.knowledge },
+  { id: "skills", label: () => t("app:nav.skills"), add: () => t("app:add.skills"), icon: "M3 4h10M3 8h10M3 12h6", enabled: (f) => f.skills },
+  { id: "memory", label: () => t("app:nav.memory"), add: () => t("app:add.memory"), icon: "M8 2a4 4 0 0 0-2 7.5V11h4V9.5A4 4 0 0 0 8 2zM6.5 13.5h3", enabled: (f) => f.memory },
+  { id: "mcp", label: () => t("app:nav.mcp"), add: () => t("app:add.mcp"), icon: "M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2", enabled: (f) => f.mcp },
+  { id: "secrets", label: () => t("app:nav.secrets"), add: () => t("app:add.secrets"), icon: "M10 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM7 9l-5 5M4 12l1.5 1.5", enabled: (f) => f.http || f.mcp },
 ];
 
 interface Row {
@@ -270,8 +272,8 @@ function Workspace() {
   useEffect(() => {
     if (!mcpReturn || mcpDone || !tenant || (mcpReturn.tenant && tenant.id !== mcpReturn.tenant)) return;
     setMcpDone(true);
-    const fail = (message: string) => setFlash(`Přihlášení k MCP serveru se nepodařilo: ${message}`);
-    if (mcpReturn.error || !mcpReturn.code || !mcpReturn.state) return fail(mcpReturn.error ?? "poskytovatel nevrátil kód");
+    const fail = (message: string) => setFlash(t("app:mcpSignInFailed", { detail: message }));
+    if (mcpReturn.error || !mcpReturn.code || !mcpReturn.state) return fail(mcpReturn.error ?? t("app:noCode"));
     api.finishMcpSignIn({ state: mcpReturn.state, code: mcpReturn.code, iss: mcpReturn.iss }).then(
       async (done) => {
         await api.testMcpServer(done.name, done.scope).catch(() => {});
@@ -287,8 +289,8 @@ function Workspace() {
   useEffect(() => {
     if (!integrationReturn || integrationDone || !tenant || (integrationReturn.tenant && tenant.id !== integrationReturn.tenant)) return;
     setIntegrationDone(true);
-    const fail = (message: string) => setFlash(`Propojení účtu se nepodařilo: ${message}`);
-    if (integrationReturn.error || !integrationReturn.code || !integrationReturn.state) return fail(integrationReturn.error ?? "poskytovatel nevrátil kód");
+    const fail = (message: string) => setFlash(t("app:integrationFailed", { detail: message }));
+    if (integrationReturn.error || !integrationReturn.code || !integrationReturn.state) return fail(integrationReturn.error ?? t("app:noCode"));
     api.finishIntegration({ state: integrationReturn.state, code: integrationReturn.code }).then(
       () => (setConnections((n) => n + 1), setView({ kind: "profile" })),
       (e: Error) => fail(e.message),
@@ -339,7 +341,7 @@ function Workspace() {
       <div className="m-6 max-w-2xl space-y-3">
         <p className="notice notice-error px-3 py-2 text-sm whitespace-pre-wrap">{error}</p>
         <button onClick={logout} className="btn-secondary">
-          Odhlásit
+          {t("app:signOut")}
         </button>
       </div>
     );
@@ -358,7 +360,7 @@ function Workspace() {
         <NavLink
           active={(view.kind === "list" || view.kind === "item") && view.section === id}
           onClick={() => setView({ kind: "list", section: id })}
-          label={s.label}
+          label={s.label()}
           icon={s.icon}
           count={rows(id, lists).length}
         />
@@ -371,7 +373,7 @@ function Workspace() {
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1">
         {/* Collapsed: icons only; `side-label` parts hide. */}
-        <aside data-collapsed={collapsed} className={`group/side flex shrink-0 flex-col border-r border-line bg-sidebar text-sm ${collapsed ? "w-16" : "w-72"}`}>
+        <aside data-collapsed={collapsed} className={`group/side flex shrink-0 flex-col border-e border-line bg-sidebar text-sm ${collapsed ? "w-16" : "w-72"}`}>
           <div className={`flex items-center gap-2 pt-3 ${collapsed ? "flex-col px-2" : "px-3"}`}>
             <img src="/logo.svg" alt="" className="h-8 w-8" />
             {/* Centred between the logo and the toggle; the letter spacing also follows the last letter, so it's taken back. */}
@@ -380,14 +382,14 @@ function Workspace() {
                 <span className="-mr-[0.2em] tracking-[0.2em]">OSIRIS</span>
               </span>
             )}
-            <button onClick={toggleSidebar} className="list-row p-1.5 text-fg-secondary" aria-label={collapsed ? "Rozbalit panel" : "Sbalit panel"} title={collapsed ? "Rozbalit panel" : "Sbalit panel"}>
+            <button onClick={toggleSidebar} className="list-row p-1.5 text-fg-secondary" aria-label={collapsed ? t("app:expand") : t("app:collapse")} title={collapsed ? t("app:expand") : t("app:collapse")}>
               <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
                 <path d={collapsed ? "M2 3h12v10H2zM6 3v10M8.5 6.5 10 8l-1.5 1.5" : "M2 3h12v10H2zM6 3v10M11 6.5 9.5 8 11 9.5"} fill="none" stroke="currentColor" strokeWidth="1.3" />
               </svg>
             </button>
           </div>
           {tenant && collapsed && (
-            <button onClick={() => openThread(null)} className="btn-primary mx-auto mt-3 flex h-10 w-10 items-center justify-center p-0" aria-label="Nový chat" title="Nový chat">
+            <button onClick={() => openThread(null)} className="btn-primary mx-auto mt-3 flex h-10 w-10 items-center justify-center p-0" aria-label={t("app:newChat")} title={t("app:newChat")}>
               <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
                 <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" />
               </svg>
@@ -395,77 +397,77 @@ function Workspace() {
           )}
           {tenant && !collapsed && (
             <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
-              + Nový chat
+              + {t("app:newChat")}
             </button>
           )}
           <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
             {tenant && collapsed && (
-              <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label="Konverzace" icon="M2 4h12v7H9l-3 3v-3H2z" />
+              <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label={t("app:nav.conversations")} icon="M2 4h12v7H9l-3 3v-3H2z" />
             )}
             {tenant && !collapsed && (
               <section className="relative min-h-16">
                 <Loading show={!threads} />
                 <h2 className="section-header flex items-center gap-1 px-2 py-1">
-                  Konverzace {!!threads?.length && <span className="font-normal text-fg-muted">{threads.length}</span>}
+                  {t("app:nav.conversations")} {!!threads?.length && <span className="font-normal text-fg-muted">{threads.length}</span>}
                 </h2>
-                {threads?.map((t) => (
-                  <div key={t.id} data-active={view.kind === "chat" && view.threadId === t.id} className="list-row group flex items-center px-2">
-                    <button onClick={() => openThread(t.id)} className="flex-1 truncate py-1.5 text-left">
-                      {t.channel === "whatsapp" && <span className="mr-1 text-fg-muted">WA</span>}
-                      {t.title ?? "Nový chat"}
+                {threads?.map((th) => (
+                  <div key={th.id} data-active={view.kind === "chat" && view.threadId === th.id} className="list-row group flex items-center px-2">
+                    <button onClick={() => openThread(th.id)} className="flex-1 truncate py-1.5 text-start">
+                      {th.channel === "whatsapp" && <span className="me-1 text-fg-muted" title="WhatsApp">WA</span>}
+                      {th.title ?? t("app:newChat")}
                     </button>
-                    <button onClick={() => removeThread(t.id)} className="hidden px-1 text-fg-muted hover:text-error group-hover:block" aria-label="Smazat">
+                    <button onClick={() => removeThread(th.id)} className="hidden px-1 text-fg-muted hover:text-error group-hover:block" aria-label={t("delete")}>
                       ×
                     </button>
                   </div>
                 ))}
-                {threads && !threads.length && <p className="px-2 py-1.5 text-fg-muted">Zatím žádné.</p>}
+                {threads && !threads.length && <p className="px-2 py-1.5 text-fg-muted">{t("noneYet")}</p>}
               </section>
             )}
             {tenant && (
-              <NavSection title="Kontext">
+              <NavSection title={t("app:nav.context")}>
                 {sectionLink("knowledge")}
                 {sectionLink("memory")}
-                {tenant.features.files && <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label="Soubory" icon="M2 4h4l1.5 1.5H14V13H2z" />}
+                {tenant.features.files && <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label={t("app:nav.files")} icon="M2 4h4l1.5 1.5H14V13H2z" />}
                 {sectionLink("mcp")}
                 {sectionLink("skills")}
-                <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label="Kontroly" icon="M8 1.5 13.5 3.5v4c0 3.2-2.3 5.8-5.5 7-3.2-1.2-5.5-3.8-5.5-7v-4zM5.5 8l2 2 3-3.5" />
+                <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label={t("app:nav.guards")} icon="M8 1.5 13.5 3.5v4c0 3.2-2.3 5.8-5.5 7-3.2-1.2-5.5-3.8-5.5-7v-4zM5.5 8l2 2 3-3.5" />
                 {sectionLink("secrets")}
               </NavSection>
             )}
             {tenant && (
-              <NavSection title="Tenant">
-                <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
-                {tenant.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label="Asistenti" icon="M2 4h12v7H6l-3 3V4z" />}
+              <NavSection title={t("app:nav.tenant")}>
+                <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label={t("app:nav.dashboard")} icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
+                {tenant.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label={t("app:nav.assistants")} icon="M2 4h12v7H6l-3 3V4z" />}
                 {tenant.features.database && (
-                  <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label="Databáze" icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
+                  <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label={t("app:nav.database")} icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
                 )}
                 {tenant.features.scheduler && (
-                  <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label="Plánované úlohy" icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
+                  <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label={t("app:nav.schedules")} icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
                 )}
                 <NavLink
                   active={view.kind === "users"}
                   onClick={() => (me.systemAdmin && void refreshTenants(), setView({ kind: "users" }))}
-                  label="Uživatelé"
+                  label={t("app:nav.users")}
                   icon="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M11 2.5a2.5 2.5 0 0 1 0 4.5M12.5 9.7c1.2.6 2 2 2 3.8"
                 />
                 {tenant.features.sites && (
-                  <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label="Weby" icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
+                  <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label={t("app:nav.sites")} icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
                 )}
                 {tenant.features.sites && (
-                  <NavLink active={view.kind === "analytics"} onClick={() => setView({ kind: "analytics" })} label="Návštěvnost" icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
+                  <NavLink active={view.kind === "analytics"} onClick={() => setView({ kind: "analytics" })} label={t("app:nav.analytics")} icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
                 )}
               </NavSection>
             )}
             {me.systemAdmin && (
-              <NavSection title="Systém">
-                <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label="Dashboard" icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
-                <NavLink active={view.kind === "logs" || view.kind === "metrics" || view.kind === "traces"} onClick={() => setView({ kind: "logs" })} label="Diagnostika" icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
-                <NavLink active={view.kind === "tenants"} onClick={() => setView({ kind: "tenants" })} label="Tenanti" icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
+              <NavSection title={t("app:nav.system")}>
+                <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label={t("app:nav.dashboard")} icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
+                <NavLink active={view.kind === "logs" || view.kind === "metrics" || view.kind === "traces"} onClick={() => setView({ kind: "logs" })} label={t("app:nav.diagnostics")} icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
+                <NavLink active={view.kind === "tenants"} onClick={() => setView({ kind: "tenants" })} label={t("app:nav.tenants")} icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
                 <NavLink
                   active={view.kind === "settings"}
                   onClick={() => setView({ kind: "settings" })}
-                  label="Nastavení"
+                  label={t("app:nav.settings")}
                   icon="M12.83 6.72L14.51 6.92L14.51 9.08L12.83 9.28L12.32 10.51L13.37 11.84L11.84 13.37L10.51 12.32L9.28 12.83L9.08 14.51L6.92 14.51L6.72 12.83L5.49 12.32L4.16 13.37L2.63 11.84L3.68 10.51L3.17 9.28L1.49 9.08L1.49 6.92L3.17 6.72L3.68 5.49L2.63 4.16L4.16 2.63L5.49 3.68L6.72 3.17L6.92 1.49L9.08 1.49L9.28 3.17L10.51 3.68L11.84 2.63L13.37 4.16L12.32 5.49zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"
                 />
               </NavSection>
@@ -478,7 +480,7 @@ function Workspace() {
               onClick={() => setView({ kind: "profile" })}
               data-active={view.kind === "profile"}
               title={collapsed ? (me.user.name ?? me.user.email ?? undefined) : undefined}
-              className="list-row flex w-full items-center gap-3 px-2 py-2 text-left"
+              className="list-row flex w-full items-center gap-3 px-2 py-2 text-start"
             >
               <Avatar user={me.user} />
               <span className="side-label min-w-0 flex-1">
@@ -493,7 +495,7 @@ function Workspace() {
           {flash && (
             <div className="notice notice-error absolute inset-x-3 top-3 z-10 flex items-start gap-3 px-3 py-2 text-sm">
               <span className="flex-1">{flash}</span>
-              <button onClick={() => setFlash(undefined)} aria-label="Zavřít" className="text-fg-secondary">
+              <button onClick={() => setFlash(undefined)} aria-label={t("close")} className="text-fg-secondary">
                 ×
               </button>
             </div>
@@ -534,7 +536,7 @@ function Workspace() {
             me.tenants.length ? <Pending className="relative h-full" /> : null
           ) : view.kind === "files" ? (
             tenant.features.files ? (
-              <Files key={tenant.id} hide={OWN_VIEWS} intro="Dokumenty, šablony a obrázky, se kterými asistent pracuje. Šablony dokumentů patří do složky sablony." />
+              <Files key={tenant.id} hide={OWN_VIEWS} intro={t("app:filesIntro")} />
             ) : null
           ) : view.kind === "schedules" ? (
             tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
@@ -632,16 +634,16 @@ function TenantSwitcher({
         data-active={active || open}
         aria-haspopup={menu ? "menu" : undefined}
         aria-expanded={menu ? open : undefined}
-        className="list-row flex w-full items-center gap-3 px-2 py-2 text-left"
+        className="list-row flex w-full items-center gap-3 px-2 py-2 text-start"
       >
         <TenantLogo tenant={tenant ?? { name: "?", logo: null }} />
         <span className="side-label min-w-0 flex-1">
-          <span className="block truncate text-base font-semibold">{tenant?.name ?? "Žádný tenant"}</span>
-          <span className="block truncate text-xs text-fg-muted">{tenant ? roleLabel(tenant.role) : "vyber nebo založ tenanta"}</span>
+          <span className="block truncate text-base font-semibold">{tenant?.name ?? t("app:noTenant")}</span>
+          <span className="block truncate text-xs text-fg-muted">{tenant ? roleLabel(tenant.role) : t("app:chooseTenant")}</span>
         </span>
       </button>
       {open && (
-        <div role="menu" className="absolute bottom-full left-0 w-64 z-10 mb-1 max-h-96 overflow-y-auto rounded-md border border-line bg-canvas p-1 shadow-[var(--shadow-popup)]">
+        <div role="menu" className="absolute bottom-full start-0 w-64 z-10 mb-1 max-h-96 overflow-y-auto rounded-md border border-line bg-canvas p-1 shadow-[var(--shadow-popup)]">
           {me.tenants.map((t) => (
             <button
               key={t.id}
@@ -649,7 +651,7 @@ function TenantSwitcher({
               aria-checked={t.id === tenant?.id}
               data-active={t.id === tenant?.id}
               onClick={pick(() => t.id !== tenant?.id && onSelect(t.id))}
-              className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left"
+              className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-start"
             >
               <TenantLogo tenant={t} size={24} />
               <span className="min-w-0 flex-1">
@@ -685,10 +687,10 @@ function TenantUsers({ me, isAdmin, tenants }: { me: MeResponse; isAdmin: boolea
       {me.systemAdmin && (
         <div className="flex gap-1 border-b border-line px-4 py-2 text-sm">
           <button data-active={!all} onClick={() => setAll(false)} className="list-row px-3 py-1">
-            Tento tenant
+            {t("app:users.thisTenant")}
           </button>
           <button data-active={all} onClick={() => setAll(true)} className="list-row px-3 py-1">
-            Všichni uživatelé (systém)
+            {t("app:users.all")}
           </button>
         </div>
       )}
@@ -700,7 +702,7 @@ function TenantUsers({ me, isAdmin, tenants }: { me: MeResponse; isAdmin: boolea
             <Members self={me.user.id} />
           </div>
         ) : (
-          <p className="detail text-sm text-fg-secondary">Uživatele tenanta spravuje jeho správce.</p>
+          <p className="detail text-sm text-fg-secondary">{t("app:users.adminManages")}</p>
         )}
       </div>
     </div>
@@ -715,7 +717,7 @@ function NavLink({ active, onClick, label, icon, count }: { active: boolean; onC
       data-active={active}
       title={label}
       aria-label={label}
-      className="section-header list-row mt-1 flex w-full items-center gap-2 px-2 py-1.5 text-left group-data-[collapsed=true]/side:justify-center"
+      className="section-header list-row mt-1 flex w-full items-center gap-2 px-2 py-1.5 text-start group-data-[collapsed=true]/side:justify-center"
     >
       <svg viewBox="0 0 16 16" className="h-5 w-5 shrink-0" aria-hidden="true">
         <path d={icon} fill="none" stroke="currentColor" strokeWidth="1.3" />
@@ -747,17 +749,17 @@ function SectionPanel(props: {
   const selected = view.kind === "item" ? view.id : props.tools ? BUILTIN_TOOLS : undefined;
   return (
     <MasterDetail
-      title={section.label}
-      top={<p className="px-2 text-xs text-fg-muted">{props.canAdd ? "Platí pro všechny v tenantovi." : "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."}</p>}
+      title={section.label()}
+      top={<p className="px-2 text-xs text-fg-muted">{props.canAdd ? t("scope.tenant") : t("scope.tenantAdminOnlyList")}</p>}
       groups={
         props.tools
-          ? [{ items: [{ key: BUILTIN_TOOLS, label: "Interní nástroje" }] }, { title: "MCP servery", items, empty: "Zatím žádné." }]
-          : [{ items, empty: "Zatím nic." }]
+          ? [{ items: [{ key: BUILTIN_TOOLS, label: t("app:builtinTools") }] }, { title: t("app:mcpServers"), items, empty: t("noneYet") }]
+          : [{ items, empty: t("nothingYet") }]
       }
       selected={selected}
       loading={props.loading}
       onSelect={(id) => setView(id === BUILTIN_TOOLS ? { kind: "list", section: view.section } : { kind: "item", section: view.section, id })}
-      add={props.canAdd ? { label: section.add, onClick: () => setView({ kind: "item", section: view.section, id: null }) } : undefined}
+      add={props.canAdd ? { label: section.add(), onClick: () => setView({ kind: "item", section: view.section, id: null }) } : undefined}
     >
       {props.children || (props.tools && <div className="detail">{props.tools}</div>) || undefined}
     </MasterDetail>

@@ -1,3 +1,5 @@
+export * from "./i18n.ts";
+
 /** `public`: the tenant's customers, anonymous, on its public chat page or website widget. */
 export type Channel = "web" | "whatsapp" | "public";
 
@@ -35,7 +37,7 @@ export type RunEvent =
 
 export type Role = "admin" | "member";
 
-/** Identity and memberships come from PocketID custom claims (`role`, `tenant`, `tenant-admin`); see apps/api/src/auth/. */
+/** Identity and memberships from the user's claims (`role`, `tenant`, `tenant-admin`); see `@osiris/platform/claims.ts`. */
 export interface MeResponse {
   user: { id: string; email: string | null; name: string | null; phone: string | null; picture: string | null };
   /** Claim `role=osiris-admin`: admin of every tenant, manages tenants. */
@@ -291,7 +293,7 @@ export interface TenantDetail extends TenantSummary {
   backups: { key: string; bytes: number; reason: string; createdAt: string }[];
 }
 
-/** A PocketID user, for adding members to a tenant. */
+/** A user of Osiris, for adding members to a tenant. */
 export interface DirectoryUser {
   id: string;
   name: string | null;
@@ -365,12 +367,19 @@ export interface DocumentSummary {
 /** "Můj profil": how the agent should treat this user. */
 export interface UserSettings {
   address: "auto" | "ty" | "vy";
-  language: "auto" | "cs" | "sk";
+  /** The language the user reads: the web app's and the assistant's. `auto` follows the browser (web) and the user's own messages (assistant). */
+  language: "auto" | "en" | "cs" | "sk";
   /** Appended to e-mails, quotes and other texts written on the user's behalf. */
   signature: string;
   /** The user's own standing instructions for the agent. */
   instructions: string;
 }
+
+/**
+ * The `character` of a persona written as a free description rather than after a known character. It goes into the
+ * agent's (Czech) prompt as the persona's name, so it is model-facing text, not UI.
+ */
+export const CUSTOM_PERSONA = "Vlastní";
 
 /** The system's default personalization for users (System > Nastavení). */
 export type UserDefaults = UserSettings & { persona: Persona | null };
@@ -439,7 +448,7 @@ export interface SiteRelease {
   current: boolean;
 }
 
-/** The user's PocketID profile, edited from Osiris (`/api/me/profile`). */
+/** The user's account profile (`/api/me/profile`). */
 export interface UserProfile {
   firstName: string;
   lastName: string;

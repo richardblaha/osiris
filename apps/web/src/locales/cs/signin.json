@@ -1,0 +1,14 @@
+{
+  "passkeyCancelled": "Přihlášení klíčem bylo zrušeno.",
+  "emailRequired": "Vyplň e-mail, na který ti máme poslat odkaz.",
+  "secondFactor": "Zadej kód z ověřovací aplikace. Když telefon nemáš po ruce, použij jeden ze záložních kódů.",
+  "verify": "Ověřit",
+  "linkSent": "Pokud u nás účet s adresou <strong>{{email}}</strong> máš, poslali jsme na ni odkaz pro přihlášení. Platí hodinu.",
+  "passkey": "Přihlásit se klíčem (passkey)",
+  "continueWith": "Pokračovat přes {{provider}}",
+  "orEmail": "nebo e-mailem",
+  "email": "e-mail",
+  "password": "heslo",
+  "signIn": "Přihlásit",
+  "forgot": "Zapomněl(a) jsem heslo, pošlete mi odkaz e-mailem"
+}

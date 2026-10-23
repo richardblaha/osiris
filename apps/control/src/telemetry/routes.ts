@@ -2,6 +2,7 @@ import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, 
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import { HttpError, ValidationError } from "@osiris/platform/i18n.ts";
 import type { Telemetry } from "./clickhouse.ts";
 
 const HOUR = 3_600_000;
@@ -14,24 +15,24 @@ const rangeQuery = z
   });
 const text = z.string().trim().max(200).optional();
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
-  const r = schema.safeParse(value);
-  if (!r.success) throw new HTTPException(400, { message: z.prettifyError(r.error) });
+  const r = schema.safeParse(value, { reportInput: true });
+  if (!r.success) throw new ValidationError(r.error);
   return r.data;
 };
 
 /** System > Logy, Metriky, Trasy: the cluster's telemetry, read from ClickHouse (system admins, under /api/admin). */
 export function telemetryRoutes(telemetry?: Telemetry) {
   const t = () => {
-    if (!telemetry) throw new HTTPException(503, { message: "Telemetrie (ClickHouse) tu není nastavená" });
+    if (!telemetry) throw new HttpError(503, "errors.telemetryOff");
     return telemetry;
   };
   const failing = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
     } catch (err) {
-      if (err instanceof HTTPException) throw err;
+      if (err instanceof HTTPException || err instanceof HttpError) throw err;
       console.error("Telemetry query failed", err);
-      throw new HTTPException(502, { message: `Dotaz do ClickHouse selhal: ${(err as Error).message.slice(0, 300)}` });
+      throw new HttpError(502, "errors.telemetry.queryFailed", { detail: (err as Error).message.slice(0, 300) });
     }
   };
   return new Hono()
@@ -70,7 +71,7 @@ export function telemetryRoutes(telemetry?: Telemetry) {
     })
     .get("/traces/:id", async (c) => {
       const id = c.req.param("id");
-      if (!/^[0-9a-f]{32}$/.test(id)) throw new HTTPException(400, { message: "Neplatné id trasy" });
+      if (!/^[0-9a-f]{32}$/.test(id)) throw new HttpError(400, "errors.telemetry.traceId");
       return c.json<SpanRecord[]>(await failing(() => t().trace(id)));
     })
     .get("/metrics", async (c) => {

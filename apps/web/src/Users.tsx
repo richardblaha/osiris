@@ -4,6 +4,7 @@ import { api } from "./api.ts";
 import { Avatar } from "./Profile.tsx";
 import { attempt, ErrorNotice, Field, Loading } from "./Scope.tsx";
 import { LoginLink, roleLabel } from "./TenantInfo.tsx";
+import { t } from "i18next";
 
 /** The system admin's user administration: everyone on the left, the chosen user's detail or a new user on the right. */
 export function UserAdmin({ self, tenants }: { self: string; tenants: TenantSummary[] }) {
@@ -16,23 +17,23 @@ export function UserAdmin({ self, tenants }: { self: string; tenants: TenantSumm
 
   return (
     <div className="flex h-full">
-      <nav className="relative flex w-72 shrink-0 flex-col border-r border-line p-2 text-sm">
+      <nav className="relative flex w-72 shrink-0 flex-col border-e border-line p-2 text-sm">
         <Loading show={!users && !error} />
-        <h2 className="section-header px-2 py-1">Správa uživatelů</h2>
+        <h2 className="section-header px-2 py-1">{t("users:title")}</h2>
         <ErrorNotice error={error} />
         <div className="mt-1 min-h-0 flex-1 overflow-y-auto">
           {users?.map((u) => (
-            <button key={u.id} onClick={() => setSelected(u.id)} data-active={selected === u.id} className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left">
+            <button key={u.id} onClick={() => setSelected(u.id)} data-active={selected === u.id} className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-start">
               <Avatar user={{ ...u, phone: null }} size={24} />
               <span className={`min-w-0 flex-1 ${u.disabled ? "text-fg-muted line-through" : ""}`}>
                 <span className="block truncate">{u.name ?? u.email}</span>
                 {u.name && <span className="block truncate text-xs text-fg-muted">{u.email}</span>}
               </span>
-              {u.systemAdmin && <span className="badge badge-accent">správce</span>}
+              {u.systemAdmin && <span className="badge badge-accent">{t("role.admin")}</span>}
             </button>
           ))}
-          <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-left text-primary">
-            + Přidat uživatele
+          <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-start text-primary">
+            + {t("users:add")}
           </button>
         </div>
       </nav>
@@ -42,7 +43,7 @@ export function UserAdmin({ self, tenants }: { self: string; tenants: TenantSumm
         ) : user ? (
           <UserDetail key={user.id} user={user} self={user.id === self} tenants={tenants} onChanged={() => void load()} />
         ) : (
-          <p className="detail text-sm text-fg-muted">Vyber uživatele vlevo.</p>
+          <p className="detail text-sm text-fg-muted">{t("users:select")}</p>
         )}
       </div>
     </div>
@@ -68,32 +69,32 @@ function NewUser({ onCreated }: { onCreated: (id: string) => void }) {
   if (created) {
     return (
       <div className="detail">
-        <h1 className="text-lg font-semibold">Uživatel přidán</h1>
+        <h1 className="text-lg font-semibold">{t("users:added")}</h1>
         <LoginLink who={created.who} url={created.link} />
-        <p className="mt-3 text-sm text-fg-secondary">Do tenantů ho přidáš v jeho detailu.</p>
+        <p className="mt-3 text-sm text-fg-secondary">{t("users:addToTenants")}</p>
         <button onClick={() => onCreated(created.id)} className="btn-primary mt-4">
-          Otevřít detail
+          {t("users:openDetail")}
         </button>
       </div>
     );
   }
   return (
     <form onSubmit={submit} className="detail space-y-4">
-      <h1 className="text-lg font-semibold">Nový uživatel</h1>
-      <Field label="E-mail">
+      <h1 className="text-lg font-semibold">{t("users:new")}</h1>
+      <Field label={t("profile:email")}>
         <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="field" />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Jméno">
+        <Field label={t("invite:firstNameLabel")}>
           <input required value={firstName} onChange={(e) => setFirstName(e.target.value)} className="field" />
         </Field>
-        <Field label="Příjmení">
+        <Field label={t("invite:lastNameLabel")}>
           <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="field" />
         </Field>
       </div>
       <ErrorNotice error={error} />
       <button disabled={busy} className="btn-primary">
-        Přidat a vytvořit přihlašovací odkaz
+        {t("users:create")}
       </button>
     </form>
   );
@@ -117,7 +118,7 @@ function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self:
 
   const save = (e: FormEvent) => {
     e.preventDefault();
-    void act(() => api.admin.updateUser(user.id, { firstName, lastName, ...(email !== (user.email ?? "") ? { email } : {}) }), "Uloženo.");
+    void act(() => api.admin.updateUser(user.id, { firstName, lastName, ...(email !== (user.email ?? "") ? { email } : {}) }), t("savedNotice"));
   };
   const role = (tenant: string) => user.tenants.find((t) => t.id === tenant)?.role ?? "";
   const setRole = (tenant: string, value: Role | "") =>
@@ -131,7 +132,7 @@ function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self:
           <h1 className="truncate text-lg font-semibold">{user.name ?? user.email}</h1>
           <p className="text-xs text-fg-muted">
             {user.id}
-            {self && " · to jsi ty"}
+            {self && ` · ${t("users:you")}`}
           </p>
         </div>
       </div>
@@ -140,23 +141,23 @@ function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self:
 
       <form onSubmit={save} className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Jméno">
+          <Field label={t("invite:firstNameLabel")}>
             <input required value={firstName} onChange={(e) => setFirstName(e.target.value)} className="field" />
           </Field>
-          <Field label="Příjmení">
+          <Field label={t("invite:lastNameLabel")}>
             <input value={lastName} onChange={(e) => setLastName(e.target.value)} className="field" />
           </Field>
         </div>
-        <Field label="E-mail">
+        <Field label={t("profile:email")}>
           <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} className="field" />
         </Field>
         <button disabled={busy} className="btn-primary">
-          Uložit
+          {t("save")}
         </button>
       </form>
 
       <section className="space-y-2 text-sm">
-        <h2 className="section-header">Přístup</h2>
+        <h2 className="section-header">{t("users:access")}</h2>
         <label className="flex items-center gap-2">
           <input
             type="checkbox"
@@ -164,41 +165,41 @@ function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self:
             disabled={busy || self}
             onChange={(e) => void act(() => api.admin.updateUser(user.id, { systemAdmin: e.target.checked }))}
           />
-          Správce systému <span className="text-fg-muted">· spravuje tenanty a uživatele, je správcem každého tenanta</span>
+          {t("role.systemAdminCap")} <span className="text-fg-muted">· {t("users:systemAdminHint")}</span>
         </label>
         <label className="flex items-center gap-2">
           <input type="checkbox" checked={user.disabled} disabled={busy || self} onChange={(e) => void act(() => api.admin.updateUser(user.id, { disabled: e.target.checked }))} />
-          Zablokovaný <span className="text-fg-muted">· nepřihlásí se a jeho přihlášení přestane platit do minuty</span>
+          {t("users:blocked")} <span className="text-fg-muted">· {t("users:blockedHint")}</span>
         </label>
       </section>
 
       <section>
-        <h2 className="section-header">Tenanti</h2>
+        <h2 className="section-header">{t("app:nav.tenants")}</h2>
         <ul className="mt-2 space-y-1 text-sm">
-          {tenants.map((t) => (
-            <li key={t.id} className="flex items-center gap-3">
+          {tenants.map((tenant) => (
+            <li key={tenant.id} className="flex items-center gap-3">
               <span className="min-w-0 flex-1 truncate">
-                {t.name} <span className="text-xs text-fg-muted">· {t.id}</span>
+                {tenant.name} <span className="text-xs text-fg-muted">· {tenant.id}</span>
               </span>
-              <select value={role(t.id)} disabled={busy} onChange={(e) => setRole(t.id, e.target.value as Role | "")} className="field w-auto">
-                <option value="">bez přístupu</option>
+              <select value={role(tenant.id)} disabled={busy} onChange={(e) => setRole(tenant.id, e.target.value as Role | "")} className="field w-auto">
+                <option value="">{t("users:noAccess")}</option>
                 <option value="member">{roleLabel("member")}</option>
                 <option value="admin">{roleLabel("admin")}</option>
               </select>
             </li>
           ))}
         </ul>
-        {!tenants.length && <p className="mt-2 text-sm text-fg-muted">Zatím žádní tenanti.</p>}
+        {!tenants.length && <p className="mt-2 text-sm text-fg-muted">{t("users:noTenants")}</p>}
       </section>
 
       <section>
-        <h2 className="section-header">Přihlášení</h2>
+        <h2 className="section-header">{t("users:signIn")}</h2>
         <div className="mt-2 flex flex-wrap gap-2">
           <button disabled={busy || user.disabled} onClick={() => void attempt(setBusy, setError, async () => setLink((await api.admin.loginLink(user.id)).loginLink))} className="btn-secondary">
-            Vytvořit přihlašovací odkaz
+            {t("users:createLink")}
           </button>
-          <button disabled={busy} onClick={() => void act(() => api.admin.resetSecondFactor(user.id), "Dvoufázové ověření je vypnuté.")} className="btn-secondary">
-            Vypnout 2FA
+          <button disabled={busy} onClick={() => void act(() => api.admin.resetSecondFactor(user.id), t("users:twoFactorOff"))} className="btn-secondary">
+            {t("tenants:reset2fa")}
           </button>
         </div>
         {link && <LoginLink who={user.name ?? user.email ?? user.id} url={link} />}

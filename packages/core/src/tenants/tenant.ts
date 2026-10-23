@@ -53,6 +53,7 @@ import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 import { databaseTools } from "../agent/tools/database.ts";
 import { DataStore } from "../database/store.ts";
 import { createDb } from "../db/client.ts";
+import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
 
 /** Everything one tenant owns, all on the tenant's own database. */
 export interface Tenant {
@@ -247,8 +248,14 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
         const notify = deps.notifyAdmins
           ? (i: Inquiry) =>
               deps.notifyAdmins!(
-                `Nová poptávka: ${i.name}`,
-                `Veřejný asistent ${assistant.title || assistant.name} přijal poptávku.\n\nJméno: ${i.name}\nKontakt: ${i.contact}\n${i.preferredTime ? `Termín: ${i.preferredTime}\n` : ""}\n${i.description}\n\nPoptávky najdete v Osirisu v části Asistenti.`,
+                translate(configuredLocale(), "email.inquiry.subject", { name: i.name }),
+                translate(configuredLocale(), "email.inquiry.text", {
+                  assistant: assistant.title || assistant.name,
+                  name: i.name,
+                  contact: i.contact,
+                  time: i.preferredTime ? `${translate(configuredLocale(), "email.inquiry.time", { time: i.preferredTime })}\n` : "",
+                  description: i.description,
+                }),
               )
           : undefined;
         return publicTools({ knowledge, inquiries, skills, notify }, assistant);

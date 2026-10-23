@@ -1,0 +1,30 @@
+{
+  "title": "Propojené účty pro asistenta",
+  "intro": "Asistent pak umí číst a odesílat tvoji poštu, hledat a upravovat kontakty a plánovat v kalendáři. Odesílá a mění jen na tvůj výslovný pokyn.",
+  "connected": "Propojeno: {{account}}",
+  "account": "účet",
+  "what": {
+    "google": "Gmail, Google kontakty (v telefonu s Androidem) a Google kalendář",
+    "microsoft": "Outlook / Microsoft 365: pošta, kontakty a kalendář"
+  },
+  "reconnect": "Propojit znovu",
+  "standardTitle": "Vlastní pošta, kalendář a kontakty",
+  "kind": "Typ účtu",
+  "name": "Název účtu pro asistenta",
+  "namePlaceholder": "pracovni-posta",
+  "from": "E-mailová adresa",
+  "smtp": "Odesílání přes SMTP",
+  "smtpTls": "Zabezpečení SMTP",
+  "implicitTls": "TLS od připojení (obvykle 465)",
+  "starttls": "STARTTLS (obvykle 587)",
+  "incoming": "Příchozí pošta",
+  "imap": "IMAP přes TLS",
+  "pop3": "POP3 přes TLS",
+  "noIncoming": "Bez příchozí pošty",
+  "url": "URL serveru",
+  "username": "Uživatelské jméno",
+  "password": "Heslo nebo heslo aplikace",
+  "connect": "Připojit účet",
+  "server": "Server",
+  "port": "Port"
+}

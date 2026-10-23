@@ -17,6 +17,8 @@ import type { UsageStore } from "./usage.ts";
 import type { SecretVault } from "../vault/vault.ts";
 import type { FeatureSource } from "../tenants/features.ts";
 import { DEFAULT_FEATURES } from "../tenants/features.ts";
+import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
+import { LOCALES } from "@osiris/shared";
 
 export interface AgentDeps {
   /** The tenant this graph serves; runs carrying another `tenant_id` are refused. */
@@ -55,12 +57,15 @@ export interface AgentDeps {
   database?: () => Promise<DbTable[]>;
 }
 
-/** What a customer gets when the public assistant's (or the tenant's) quota is used up. */
-export const PUBLIC_UNAVAILABLE = "Omlouvám se, asistent teď nemůže odpovídat. Kontaktujte prosím firmu přímo.";
+/** What a customer gets when the public assistant's (or the tenant's) quota is used up (catalog keys, like the two below). */
+export const PUBLIC_UNAVAILABLE = "agent.publicUnavailable";
+export const TOKENS_EXHAUSTED = "agent.tokensExhausted";
+export const USER_TOKENS_EXHAUSTED = "agent.userTokensExhausted";
 
-export const TOKENS_EXHAUSTED = "Měsíční limit využití asistenta pro tuto firmu je vyčerpaný. Obrať se na správce.";
-
-export const USER_TOKENS_EXHAUSTED = "Tvůj měsíční limit využití asistenta je vyčerpaný. Obrať se na správce firmy.";
+/** A text the run writes itself, in the run's language. */
+const say = (ctx: RunContext | undefined, key: string) => translate(ctx?.locale ?? configuredLocale(), key);
+/** The quota notices in every language: they are never checked against the rules. */
+const NOTICES = new Set(LOCALES.flatMap((l) => [PUBLIC_UNAVAILABLE, TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED].map((k) => translate(l, k))));
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
 export function createAgentGraph(deps: AgentDeps) {
@@ -105,14 +110,14 @@ export function createAgentGraph(deps: AgentDeps) {
   const guardInput = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const last = state.messages.at(-1);
     if (!HumanMessage.isInstance(last) || !(await check(config, "input", last.text))) return {};
-    return { messages: [new AIMessage(GUARD_REFUSAL)] };
+    return { messages: [new AIMessage(say(getRunContext(config), GUARD_REFUSAL))] };
   };
 
   /** A final answer breaking the rules is replaced (same id) by a refusal, in the history too. */
   const guardOutput = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const last = state.messages.at(-1);
-    if (!AIMessage.isInstance(last) || [TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED, PUBLIC_UNAVAILABLE].includes(last.text) || !(await check(config, "output", last.text))) return {};
-    return { messages: [new AIMessage({ id: last.id, content: GUARD_REFUSAL })] };
+    if (!AIMessage.isInstance(last) || NOTICES.has(last.text) || !(await check(config, "output", last.text))) return {};
+    return { messages: [new AIMessage({ id: last.id, content: say(getRunContext(config), GUARD_REFUSAL) })] };
   };
 
   const callModel = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
@@ -120,7 +125,7 @@ export function createAgentGraph(deps: AgentDeps) {
     if (ctx.tenant_id !== tenantId) throw new Error(`Run for tenant ${ctx.tenant_id} sent to graph of ${tenantId}`);
     const on = (await features?.get()) ?? DEFAULT_FEATURES;
     const used = await exhausted(ctx);
-    if (used) return { messages: [new AIMessage(used)] };
+    if (used) return { messages: [new AIMessage(say(ctx, used))] };
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.
     const availableTools = await allTools(ctx);
     const system = new SystemMessage(

@@ -31,20 +31,20 @@ export function safePath(path: string): string[] | null {
  * every build all processes it may have left behind are killed and the folder is removed; builds run one at a time.
  */
 export async function build(files: BuildFile[]): Promise<BuildResult> {
-  if (files.length > LIMITS.inputFiles) return { ok: false, log: `Příliš mnoho souborů (nejvýš ${LIMITS.inputFiles})` };
+  if (files.length > LIMITS.inputFiles) return { ok: false, log: `Too many files (at most ${LIMITS.inputFiles})` };
   const dir = await mkdtemp(join(tmpdir(), "vitepress-"));
   const src = join(dir, "src");
   const out = join(dir, "out");
   try {
     for (const f of files) {
       const segs = safePath(f.path);
-      if (!segs) return { ok: false, log: `Neplatná cesta: ${f.path}` };
+      if (!segs) return { ok: false, log: `Invalid path: ${f.path}` };
       if (segs[0] === CONFIG_DIR) segs[0] = ".vitepress";
       const abs = join(src, ...segs);
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, f.data);
     }
-    if (!files.some((f) => f.path === "index.md")) return { ok: false, log: "Chybí index.md" };
+    if (!files.some((f) => f.path === "index.md")) return { ok: false, log: "index.md is missing" };
     // The config imports vitepress; ESM resolves it from the files' folders upwards.
     await symlink(NODE_MODULES, join(dir, "node_modules"), "dir");
     await writeFile(join(dir, "package.json"), JSON.stringify({ type: "module" }));
@@ -56,7 +56,7 @@ export async function build(files: BuildFile[]): Promise<BuildResult> {
     for await (const path of walk(out, "")) {
       const data = await readFile(join(out, path));
       bytes += data.length;
-      if (built.length >= LIMITS.outputFiles || bytes > LIMITS.outputBytes) return { ok: false, log: "Výsledný web je příliš velký" };
+      if (built.length >= LIMITS.outputFiles || bytes > LIMITS.outputBytes) return { ok: false, log: "The built site is too large" };
       built.push({ path, data });
     }
     return { ok: true, files: built };
@@ -80,7 +80,7 @@ function run(cwd: string, args: string[]): Promise<{ code: number | null; log: s
     child.stdout.on("data", keep);
     child.stderr.on("data", keep);
     const timer = setTimeout(() => {
-      keep(Buffer.from("\nSestavení trvalo příliš dlouho."));
+      keep(Buffer.from("\nThe build took too long."));
       killAll(child.pid);
     }, LIMITS.timeoutMs);
     child.on("close", (code) => {

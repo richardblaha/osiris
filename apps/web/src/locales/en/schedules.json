@@ -1,0 +1,37 @@
+{
+  "presets": {
+    "weekdays": "every weekday at {{time}}",
+    "daily": "every day at {{time}}",
+    "monday": "every Monday at {{time}}",
+    "friday": "every Friday at {{time}}",
+    "monthly": "on the 1st of the month at {{time}}"
+  },
+  "once": "once {{time}}",
+  "status": {
+    "done": "done",
+    "failed": "failed",
+    "skipped": "skipped"
+  },
+  "allUsers": "all users",
+  "empty": "No tasks yet.",
+  "new": "New task",
+  "placeholder": "The assistant runs the task by itself at the set time, with your permissions. You'll find the result as a new conversation, and on WhatsApp if you like. You can also set up a task in the chat, for example “every morning at 7, summarize today's jobs”.",
+  "alsoWhatsapp": "also on WhatsApp",
+  "next": "next run {{time}}",
+  "last": "last {{time}} ({{status}})",
+  "lastResult": "Last result",
+  "started": "Started; the result will be in a new conversation.",
+  "runNow": "Run now",
+  "confirmDelete": "Delete the task “{{title}}”?",
+  "prompt": "What the assistant should do",
+  "when": "When",
+  "repeat": "repeatedly",
+  "onceOption": "once",
+  "recurrence": "Recurrence",
+  "custom": "custom (cron)",
+  "cron": "Cron (min hour day month weekday)",
+  "dateTime": "Date and time",
+  "delivery": "Send the result",
+  "chatOnly": "to the chat only",
+  "enabled": "enabled"
+}

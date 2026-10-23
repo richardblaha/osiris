@@ -12,6 +12,7 @@ import {
   type WebSummary,
 } from "@osiris/shared";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { HttpError, requestLocale, translate, ValidationError, type Params } from "@osiris/platform/i18n.ts";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
@@ -53,13 +54,13 @@ function checkSources(def: DashboardDefinition, system: boolean) {
   for (const p of def.panels) {
     const s = p.source;
     const ok = system ? SYSTEM_SOURCES.has(s.type) && (s.type !== "usage" || s.view === "tenants") : TENANT_SOURCES.has(s.type) && !(s.type === "usage" && s.view === "tenants");
-    if (!ok) throw new HTTPException(400, { message: `Zdroj ${s.type}${"view" in s ? `/${s.view}` : ""} na ${system ? "systémovém" : "tenantovém"} dashboardu není` });
+    if (!ok) throw new HttpError(400, system ? "errors.dashboard.sourceSystem" : "errors.dashboard.sourceTenant", { source: `${s.type}${"view" in s ? `/${s.view}` : ""}` });
   }
 }
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
-  const r = schema.safeParse(value);
-  if (!r.success) throw new HTTPException(400, { message: z.prettifyError(r.error) });
+  const r = schema.safeParse(value, { reportInput: true });
+  if (!r.success) throw new ValidationError(r.error);
   return r.data;
 };
 
@@ -106,7 +107,7 @@ export class DashboardStore {
         limit,
       ),
     ]);
-    if (!r?.rowsAffected) throw new QuotaError(`Tenant může mít nejvýš ${limit} vlastních dashboardů`);
+    if (!r?.rowsAffected) throw new QuotaError("errors.quota.dashboards", { count: limit ?? 0 });
     return { id, name: d.name, definition: d.definition, updatedAt: new Date(now).toISOString() };
   }
 
@@ -115,13 +116,13 @@ export class DashboardStore {
     const [r] = await this.db.execute([
       run(`UPDATE dashboards SET name = ?, definition = ?, updated_at = ? WHERE id = ? AND ${OWNER}`, d.name, JSON.stringify(d.definition), now, id, tenant),
     ]);
-    if (!r?.rowsAffected) throw new HTTPException(404, { message: "Dashboard nenalezen" });
+    if (!r?.rowsAffected) throw new HttpError(404, "errors.dashboard.notFound");
     return { id, ...d, updatedAt: new Date(now).toISOString() };
   }
 
   async delete(tenant: string | null, id: string) {
     const [r] = await this.db.execute([run(`DELETE FROM dashboards WHERE id = ? AND ${OWNER}`, id, tenant)]);
-    if (!r?.rowsAffected) throw new HTTPException(404, { message: "Dashboard nenalezen" });
+    if (!r?.rowsAffected) throw new HttpError(404, "errors.dashboard.notFound");
   }
 }
 
@@ -145,7 +146,7 @@ const rangeOf = (c: Context) => {
 function crud(deps: DashboardDeps, owner: (c: Context) => { tenant: string | null; canEdit: boolean; limit: number | null; by: string }) {
   const edit = (c: Context) => {
     const o = owner(c);
-    if (!o.canEdit) throw new HTTPException(403, { message: "Dashboardy mění jen správce" });
+    if (!o.canEdit) throw new HttpError(403, "errors.dashboard.adminOnly");
     return o;
   };
   const body = async (c: Context, system: boolean) => {
@@ -170,11 +171,10 @@ function crud(deps: DashboardDeps, owner: (c: Context) => { tenant: string | nul
 }
 
 const ch = (deps: DashboardDeps) => {
-  if (!deps.telemetry) throw new HTTPException(503, { message: "Telemetrie (ClickHouse) tu není nastavená" });
+  if (!deps.telemetry) throw new HttpError(503, "errors.telemetryOff");
   return deps.telemetry;
 };
 
-/** A tenant's dashboards (its admins edit, members see) and its sites' web analytics. Mounted at /api/dashboards. */
 /**
  * Tenant > Návštěvnost: one of the tenant's sites at a time (the sites of its domains and those a system admin gave
  * it), kept for two years. Mounted at /api/analytics.
@@ -189,6 +189,7 @@ export function tenantAnalyticsRoutes(deps: DashboardDeps, tenant: (c: Context) 
   });
 }
 
+/** A tenant's dashboards (its admins edit, members see) and its sites' web analytics. Mounted at /api/dashboards. */
 export function tenantDashboardRoutes(deps: DashboardDeps, ctx: (c: Context) => { tenant: string; role: string; user: string; quotas: TenantQuotas }) {
   return new Hono()
     .get("/data/web", async (c) => {
@@ -206,6 +207,9 @@ export function tenantDashboardRoutes(deps: DashboardDeps, ctx: (c: Context) => 
     );
 }
 
+/** Translates for the caller of a data endpoint. */
+const say = (c: Context) => (key: string, params?: Params) => translate(requestLocale(c.req.header("accept-language")), key, params);
+
 const meter = (used: number, limit: number | null) => ({ used, limit });
 
 /** The system's dashboards and the data only system admins see. Mounted at /api/admin/dashboards. */
@@ -219,37 +223,40 @@ export function systemDashboardRoutes(deps: DashboardDeps, user: (c: Context) =>
     .get("/data/logs", async (c) => {
       const q = parse(z.object({ severity: z.enum(["warn", "error", "fatal"]).optional(), namespace: name }), c.req.query());
       const rows = await ch(deps).logCounts({ ...rangeOf(c), ...q });
-      return c.json<PanelData>({ columns: ["Služba", "Záznamů"], rows: rows.map((r) => [r.service, r.count]), formats: ["text", "number"] });
+      const t = say(c);
+      return c.json<PanelData>({ columns: [t("dashboard.columns.service"), t("dashboard.columns.records")], rows: rows.map((r) => [r.service || t("dashboard.noService"), r.count]), formats: ["text", "number"] });
     })
     .get("/data/cluster/:view", async (c) => {
       const view = c.req.param("view");
+      const t = say(c);
       if (view === "pods") {
         const rows = await ch(deps).podProblems(rangeOf(c));
-        const phase = (p: number | null) => (p === null ? "běží" : ({ 1: "čeká", 4: "selhal", 5: "neznámý" } as Record<number, string>)[p] ?? String(p));
-        return c.json<PanelData>({ columns: ["Namespace", "Pod", "Stav", "Restartů"], rows: rows.map((r) => [r.namespace, r.pod, phase(r.phase), r.restarts]), formats: ["text", "text", "text", "number"] });
+        // Kubernetes pod phases (k8s.pod.phase): 1 Pending, 2 Running, 4 Failed, 5 Unknown.
+        const phase = (p: number | null) => (p === null ? t("dashboard.pod.running") : ({ 1: t("dashboard.pod.pending"), 4: t("dashboard.pod.failed"), 5: t("dashboard.pod.unknown") } as Record<number, string>)[p] ?? String(p));
+        return c.json<PanelData>({ columns: [t("dashboard.columns.namespace"), t("dashboard.columns.pod"), t("dashboard.columns.state"), t("dashboard.columns.restarts")], rows: rows.map((r) => [r.namespace, r.pod, phase(r.phase), r.restarts]), formats: ["text", "text", "text", "number"] });
       }
       if (view === "events") {
         const rows = await ch(deps).warningEvents(rangeOf(c));
         return c.json<PanelData>({
-          columns: ["Čas", "Namespace", "Objekt", "Důvod", "Zpráva", "Počet"],
+          columns: ["time", "namespace", "object", "reason", "message", "count"].map((k) => t(`dashboard.columns.${k}`)),
           rows: rows.map((r) => [r.ts, r.namespace, r.object, r.reason, r.note, r.count]),
           formats: ["time", "text", "text", "text", "text", "number"],
         });
       }
       const [tenants, statuses, backups] = await Promise.all([deps.tenants.list(), deps.orchestrator.statuses().catch(() => new Map()), deps.backups.newest()]);
-      const label = { Running: "běží", Sleeping: "spí", Suspended: "pozastaven", Unknown: "neznámý" } as const;
+      const label = { Running: t("dashboard.tenant.running"), Sleeping: t("dashboard.tenant.sleeping"), Suspended: t("dashboard.tenant.suspended"), Unknown: t("dashboard.tenant.unknown") } as const;
       if (view === "summary") {
         const phases = tenants.map((t) => statuses.get(t.id)?.phase ?? "Unknown");
         const stale = tenants.filter((t) => (backups.get(t.id)?.createdAt ?? 0) < Date.now() - 48 * HOUR).length;
         return c.json<PanelData>({
-          columns: ["Tenantů", "Běží", "Spí", "Bez zálohy 48 h"],
+          columns: ["tenants", "running", "sleeping", "noBackup"].map((k) => t(`dashboard.columns.${k}`, { hours: 48 })),
           rows: [[tenants.length, phases.filter((p) => p === "Running").length, phases.filter((p) => p === "Sleeping").length, stale]],
           formats: ["number", "number", "number", "number"],
         });
       }
       if (view === "tenants") {
         return c.json<PanelData>({
-          columns: ["Tenant", "Stav", "Poslední aktivita", "Poslední záloha", "Velikost zálohy", "Hlášení"],
+          columns: ["tenant", "state", "lastActivity", "lastBackup", "backupSize", "report"].map((k) => t(`dashboard.columns.${k}`)),
           rows: tenants.map((t) => {
             const s = statuses.get(t.id);
             const b = backups.get(t.id);
@@ -258,10 +265,11 @@ export function systemDashboardRoutes(deps: DashboardDeps, user: (c: Context) =>
           formats: ["text", "text", "time", "time", "bytes", "text"],
         });
       }
-      throw new HTTPException(404, { message: "Neznámý pohled" });
+      throw new HttpError(404, "errors.dashboard.unknownView");
     })
     // Every tenant's quotas and how full they are: control's own counts, the runtimes' last reports for the rest.
     .get("/data/usage", async (c) => {
+      const t = say(c);
       const tenants = await deps.tenants.list();
       const month = new Date().toISOString().slice(0, 7);
       const rows = await Promise.all(
@@ -283,7 +291,7 @@ export function systemDashboardRoutes(deps: DashboardDeps, user: (c: Context) =>
         }),
       );
       return c.json<PanelData>({
-        columns: ["Tenant", "Tokeny tento měsíc", "Soubory", "Uživatelé", "Úlohy", "Tabulky", "Databáze", "Dashboardy", "Nahlášeno"],
+        columns: ["tenant", "tokensMonth", "files", "users", "tasks", "tables", "database", "dashboards", "reported"].map((k) => t(`dashboard.columns.${k}`)),
         rows,
         formats: ["text", "meter", "meterBytes", "meter", "meter", "meter", "meterBytes", "meter", "time"],
       });

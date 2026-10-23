@@ -30,20 +30,19 @@ import { z } from "zod";
 import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, TENANT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, InternalAuthError, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
 import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
-import { CredentialError } from "./auth/credentials.ts";
 import { WEB_CLIENT_ID } from "./auth/oidc.ts";
 import { authRoutes, securityRoutes, type AuthDeps } from "./auth/routes.ts";
-import { SocialLoginError } from "./auth/social.ts";
 import type { Backups } from "./backups.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";
-import { ScheduleError, ScheduleNotFoundError, type ScheduleStore } from "./scheduler.ts";
-import { DomainError, type DomainStore } from "./sites/domains.ts";
-import { PublishError, SITE_LIMITS, type SitePublisher } from "./sites/publisher.ts";
-import { QuotaError, TenantExistsError, TenantNotFoundError, type TenantDirectory, type TenantRow } from "./tenants.ts";
-import { UserInputError, UserNotFoundError, type UserDirectory } from "./users.ts";
+import { ScheduleNotFoundError, type ScheduleStore } from "./scheduler.ts";
+import type { DomainStore } from "./sites/domains.ts";
+import { SITE_LIMITS, type SitePublisher } from "./sites/publisher.ts";
+import { TenantExistsError, TenantNotFoundError, type TenantDirectory, type TenantRow } from "./tenants.ts";
+import { UserNotFoundError, type UserDirectory } from "./users.ts";
 import { PHONE_CLAIM, type PhoneVerification } from "./whatsapp/phones.ts";
 import { whatsappWebhook, type WhatsAppWebhookOptions } from "./whatsapp/webhook.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
+import { errorResponse, HttpError, requestLocale, translate, ValidationError, type Params } from "@osiris/platform/i18n.ts";
 
 export interface ControlDeps {
   verifier: InternalVerifier;
@@ -71,7 +70,7 @@ type Env = { Variables: { call: VerifiedCall & { user: NonNullable<VerifiedCall[
 const featuresBody = z.object(Object.fromEntries(FEATURES.map((f) => [f, z.boolean().optional()]))) as z.ZodType<Partial<TenantFeatures>>;
 const tenantName = z.string().trim().min(1).max(100);
 const createTenantBody = z.object({
-  id: z.string().trim().max(40).regex(TENANT_SLUG, "Zkratka: malá písmena, číslice a pomlčky"),
+  id: z.string().trim().max(40).regex(TENANT_SLUG, "errors.validation.slug"),
   name: tenantName,
   features: featuresBody.optional(),
 });
@@ -105,7 +104,7 @@ const defaultsBody = z.object({
   }),
   user: z.object({
     address: z.enum(["auto", "ty", "vy"]),
-    language: z.enum(["auto", "cs", "sk"]),
+    language: z.enum(["auto", "en", "cs", "sk"]),
     signature: z.string().trim().max(1000),
     instructions: z.string().trim().max(4000),
     persona: z
@@ -125,7 +124,7 @@ const profileBody = z.object({ firstName: personName.min(1).optional(), lastName
 const guardBody = z.object({ description: z.string().trim().max(300).default(""), rule: z.string().trim().min(1).max(4000) });
 const newUserBody = z.object({ email: z.email().max(200), firstName: personName.min(1), lastName: personName });
 const adminUserBody = profileBody.extend({ disabled: z.boolean().optional(), systemAdmin: z.boolean().optional() });
-const phoneBody = z.object({ phone: z.string().trim().min(8).max(20).regex(/^\+?[\d\s()-]+$/, "Zadej číslo s předvolbou, např. +420 777 123 456") });
+const phoneBody = z.object({ phone: z.string().trim().min(8).max(20).regex(/^\+?[\d\s()-]+$/, "errors.validation.phone") });
 const scheduleBody = z.object({
   title: z.string().trim().min(1).max(100),
   prompt: z.string().trim().min(1).max(4000),
@@ -141,37 +140,31 @@ const domainBody = z.object({ domain: z.string().trim().min(4).max(253) });
 const PICTURE_TYPES: Record<string, number[]> = { "image/png": [0x89, 0x50, 0x4e, 0x47], "image/jpeg": [0xff, 0xd8, 0xff] };
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
-  const r = schema.safeParse(value);
-  if (!r.success) throw new HTTPException(400, { message: z.prettifyError(r.error) });
+  const r = schema.safeParse(value, { reportInput: true });
+  if (!r.success) throw new ValidationError(r.error);
   return r.data;
 };
 const json = async (c: Context) => c.req.json().catch(() => {
-  throw new HTTPException(400, { message: "Invalid JSON" });
+  throw new HttpError(400, "errors.invalidJson");
 });
 
-/** Maps domain errors of the stores to HTTP answers. */
-function errors(err: unknown): HTTPException | null {
-  if (err instanceof HTTPException) return err;
-  if (err instanceof TenantExistsError) return new HTTPException(409, { message: "Tenant s touto zkratkou už existuje" });
-  if (err instanceof TenantNotFoundError) return new HTTPException(404, { message: "Tenant not found" });
-  if (err instanceof QuotaError) return new HTTPException(400, { message: err.message });
-  if (err instanceof UserNotFoundError) return new HTTPException(404, { message: "User not found" });
-  if (err instanceof ScheduleNotFoundError) return new HTTPException(404, { message: err.message });
-  if (
-    err instanceof UserInputError ||
-    err instanceof ScheduleError ||
-    err instanceof DomainError ||
-    err instanceof PublishError ||
-    err instanceof CredentialError ||
-    err instanceof SocialLoginError
-  ) {
-    return new HTTPException(400, { message: err.message });
-  }
+/**
+ * Maps errors of the stores to HTTP errors. The stores' own input errors (`ScheduleError`, `DomainError`, …) are
+ * `LocalizedError`s and answer 400 in `onError`.
+ */
+function errors(err: unknown): Error | null {
+  if (err instanceof HTTPException || err instanceof HttpError) return err;
+  if (err instanceof TenantExistsError) return new HttpError(409, "errors.tenant.exists");
+  if (err instanceof TenantNotFoundError) return new HttpError(404, "errors.tenant.notFound");
+  if (err instanceof UserNotFoundError) return new HttpError(404, "errors.user.notFound");
+  if (err instanceof ScheduleNotFoundError) return new HttpError(404, err.key, err.params);
   if (err instanceof InternalAuthError || err instanceof RuntimeIdentityError) return new HTTPException(401, { message: "Unauthorized" });
   return null;
 }
 
 const iso = (ms: number) => new Date(ms).toISOString();
+
+const tooLarge = (key: string, params?: Params) => (c: Context) => c.json({ error: translate(requestLocale(c.req.header("accept-language")), key, params), code: key }, 413);
 
 /**
  * Control: sign-in (the OIDC provider's screens; the provider itself is mounted next to this app, see server.ts),
@@ -197,19 +190,19 @@ export function createControlApp(deps: ControlDeps) {
     const call = c.get("call");
     const id = c.req.header("x-tenant-id");
     const membership = call.memberships?.find((m) => m.tenantId === id);
-    if (!membership) throw new HTTPException(id ? 403 : 400, { message: id ? "Not a member of this tenant" : "X-Tenant-Id header required" });
+    if (!membership) throw id ? new HttpError(403, "errors.access.notMember") : new HttpError(400, "errors.tenantRequired");
     const tenant = await tenants.get(membership.tenantId);
-    if (!tenant || tenant.status !== "active") throw new HTTPException(403, { message: "Tenant was removed" });
+    if (!tenant || tenant.status !== "active") throw new HttpError(403, "errors.tenant.removed");
     c.set("tenant", tenant);
     c.set("role", membership.role);
     await next();
   });
   const requireTenantAdmin = (c: Context<Env>) => {
-    if (c.get("role") !== "admin") throw new HTTPException(403, { message: "Requires admin role" });
+    if (c.get("role") !== "admin") throw new HttpError(403, "errors.access.adminOnly");
   };
   const requireFeature = (feature: keyof TenantFeatures) =>
     createMiddleware<Env>(async (c, next) => {
-      if (!c.get("tenant").features[feature]) throw new HTTPException(403, { message: "Tato funkce není pro tenant povolená" });
+      if (!c.get("tenant").features[feature]) throw new HttpError(403, "errors.featureOff");
       await next();
     });
 
@@ -256,18 +249,16 @@ export function createControlApp(deps: ControlDeps) {
       await users.updateProfile(c.get("call").user.sub, changes);
       return c.json<UserProfile>(await profile(c.get("call").user.sub));
     })
-    .put("/picture", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ error: "Obrázek může mít nejvýš 2 MB" }, 413) }), async (c) => {
+    .put("/picture", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooLarge("errors.image.tooLarge", { mb: 2 }) }), async (c) => {
       const data = new Uint8Array(await c.req.arrayBuffer());
       const mime = Object.entries(PICTURE_TYPES).find(([, sig]) => sig.every((b, i) => data[i] === b))?.[0];
-      if (!mime) throw new HTTPException(415, { message: "Profilový obrázek musí být PNG nebo JPEG" });
+      if (!mime) throw new HttpError(415, "errors.image.pictureType");
       await users.setPicture(c.get("call").user.sub, data, mime);
       return c.body(null, 204);
     })
     .post("/phone", async (c) => {
       const { phone } = parse(phoneBody, await json(c));
-      const { code, expiresAt } = await phones.start(c.get("call").user.sub, phone).catch((err: Error) => {
-        throw new HTTPException(400, { message: err.message });
-      });
+      const { code, expiresAt } = await phones.start(c.get("call").user.sub, phone);
       return c.json<UserProfile>({
         ...(await profile(c.get("call").user.sub)),
         phoneChallenge: { phone, code, whatsappNumber: deps.whatsapp?.displayNumber ?? null, expiresAt: iso(expiresAt) },
@@ -298,11 +289,11 @@ export function createControlApp(deps: ControlDeps) {
       const t = c.get("tenant");
       return c.json<TenantInfo>({ id: t.id, name: t.name, role: c.get("role"), features: t.features, logo: t.logo });
     })
-    .put("/tenant/logo", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: (c) => c.json({ error: "Obrázek může mít nejvýš 2 MB" }, 413) }), async (c) => {
+    .put("/tenant/logo", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooLarge("errors.image.tooLarge", { mb: 2 }) }), async (c) => {
       requireTenantAdmin(c);
       const data = new Uint8Array(await c.req.arrayBuffer());
       const mime = Object.entries(PICTURE_TYPES).find(([, sig]) => sig.every((b, i) => data[i] === b))?.[0];
-      if (!mime) throw new HTTPException(415, { message: "Logo musí být PNG nebo JPEG" });
+      if (!mime) throw new HttpError(415, "errors.image.logoType");
       await tenants.setLogo(c.get("tenant").id, data, mime);
       return c.body(null, 204);
     })
@@ -321,7 +312,7 @@ export function createControlApp(deps: ControlDeps) {
       requireTenantAdmin(c);
       const { role } = parse(roleBody, await json(c));
       const id = c.get("tenant").id;
-      if (!(await directory.members(id)).some((m) => m.userId === c.req.param("userId"))) throw new HTTPException(404, { message: "Member not found" });
+      if (!(await directory.members(id)).some((m) => m.userId === c.req.param("userId"))) throw new HttpError(404, "errors.member.notFound");
       await directory.setRole(id, c.req.param("userId"), role);
       return c.body(null, 204);
     })
@@ -329,7 +320,7 @@ export function createControlApp(deps: ControlDeps) {
       requireTenantAdmin(c);
       const id = c.get("tenant").id;
       const userId = c.req.param("userId");
-      if (!(await directory.members(id)).some((m) => m.userId === userId)) throw new HTTPException(404, { message: "Member not found" });
+      if (!(await directory.members(id)).some((m) => m.userId === userId)) throw new HttpError(404, "errors.member.notFound");
       await directory.setRole(id, userId, null);
       await schedules.deleteOwner(id, userId);
       return c.body(null, 204);
@@ -337,7 +328,7 @@ export function createControlApp(deps: ControlDeps) {
     .post("/members/:userId/login-link", async (c) => {
       requireTenantAdmin(c);
       const userId = c.req.param("userId");
-      if (!(await directory.members(c.get("tenant").id)).some((m) => m.userId === userId)) throw new HTTPException(404, { message: "Member not found" });
+      if (!(await directory.members(c.get("tenant").id)).some((m) => m.userId === userId)) throw new HttpError(404, "errors.member.notFound");
       return c.json({ loginLink: await users.loginLink(userId, 72) });
     })
 
@@ -406,14 +397,14 @@ export function createControlApp(deps: ControlDeps) {
   /** A schedule the caller may change: their own, or any in the tenant for an admin. */
   async function ownSchedule(c: Context<Env>) {
     const s = await schedules.get(c.get("tenant").id, c.req.param("id")!);
-    if (s.ownerId !== c.get("call").user.sub && c.get("role") !== "admin") throw new HTTPException(404, { message: "Úloha nenalezena" });
+    if (s.ownerId !== c.get("call").user.sub && c.get("role") !== "admin") throw new HttpError(404, "errors.schedule.notFound");
     return s;
   }
 
   // --- system administration (claim role=osiris-admin) ------------------------------------------------------------
   const admin = new Hono<Env>()
     .use(async (c, next) => {
-      if (!c.get("call").systemAdmin) throw new HTTPException(403, { message: "Requires osiris-admin" });
+      if (!c.get("call").systemAdmin) throw new HttpError(403, "errors.access.systemAdminOnly");
       await next();
     })
     .get("/tenants", async (c) => c.json<TenantSummary[]>(await directory.list()))
@@ -462,20 +453,20 @@ export function createControlApp(deps: ControlDeps) {
     .get("/guards", async (c) => c.json<Guard[]>(await tenants.systemGuards()))
     .put("/guards/:name", async (c) => {
       const name = c.req.param("name");
-      if (!GUARD_NAME.test(name) || name.length > 60) throw new HTTPException(400, { message: "Název: malá písmena, číslice a pomlčky" });
+      if (!GUARD_NAME.test(name) || name.length > 60) throw new HttpError(400, "errors.validation.name");
       const guard = { name, ...parse(guardBody, await json(c)) };
       await tenants.putSystemGuard(guard);
       return c.json<Guard>(guard);
     })
     .delete("/guards/:name", async (c) => {
-      if (!(await tenants.deleteSystemGuard(c.req.param("name")))) throw new HTTPException(404, { message: "Pravidlo neexistuje" });
+      if (!(await tenants.deleteSystemGuard(c.req.param("name")))) throw new HttpError(404, "errors.guard.notFound");
       return c.body(null, 204);
     })
     .get("/users", async (c) => c.json<AdminUser[]>(await directory.adminUsers()))
     // A new user gets in with a one-time link; access comes from tenants and the system admin switch afterwards.
     .post("/users", async (c) => {
       const person = parse(newUserBody, await json(c));
-      if (await users.findByEmail(person.email)) throw new HTTPException(409, { message: "Uživatel s tímto e-mailem už existuje" });
+      if (await users.findByEmail(person.email)) throw new HttpError(409, "errors.user.emailTaken");
       const user = await users.create({ ...person, claims: { [CLAIMS.role]: USER_ROLE } });
       return c.json({ userId: user.id, loginLink: await users.loginLink(user.id, 72, "invite") }, 201);
     })
@@ -484,7 +475,7 @@ export function createControlApp(deps: ControlDeps) {
       const { disabled, systemAdmin, ...profile } = parse(adminUserBody, await json(c));
       // Nobody locks themselves out of the administration.
       if (id === c.get("call").user.sub && (disabled === true || systemAdmin === false)) {
-        throw new HTTPException(400, { message: "Sám sobě účet nezablokuješ ani neodebereš správu systému" });
+        throw new HttpError(400, "errors.user.selfLockout");
       }
       const user = await users.get(id);
       if (Object.keys(profile).length) await users.updateProfile(id, profile);
@@ -497,7 +488,7 @@ export function createControlApp(deps: ControlDeps) {
     })
     .post("/users/:id/login-link", async (c) => {
       const user = await users.get(c.req.param("id"));
-      if (user.disabled) throw new HTTPException(400, { message: "Účet je zablokovaný" });
+      if (user.disabled) throw new HttpError(400, "errors.user.disabled");
       return c.json({ loginLink: await users.loginLink(user.id, 72, "admin") });
     })
     // A user who lost both their authenticator and recovery codes gets in again with password or passkey alone.
@@ -604,23 +595,23 @@ export function createControlApp(deps: ControlDeps) {
     })
     .get("/schedules", async (c) => c.json<Schedule[]>(await schedules.list(c.get("runtimeTenant"), c.req.query("owner") || undefined)))
     .post("/schedules", async (c) => {
-      if (!c.get("tenant").features.scheduler) throw new HTTPException(403, { message: "Plánované úlohy nejsou pro tenant povolené" });
+      if (!c.get("tenant").features.scheduler) throw new HttpError(403, "errors.schedule.featureOff");
       const { owner, ...body } = parse(runtimeScheduleBody, await json(c));
       return c.json<Schedule>(await schedules.create(c.get("runtimeTenant"), owner, body), 201);
     })
     .delete("/schedules/:id", async (c) => {
       const s = await schedules.get(c.get("runtimeTenant"), c.req.param("id"));
       const owner = c.req.query("owner");
-      if (owner && s.ownerId !== owner) throw new HTTPException(404, { message: "Úloha nenalezena" });
+      if (owner && s.ownerId !== owner) throw new HttpError(404, "errors.schedule.notFound");
       await schedules.delete(c.get("runtimeTenant"), s.id);
       return c.body(null, 204);
     })
     .get("/domains", async (c) => c.json<SiteDomain[]>(await domains.list(c.get("runtimeTenant"))))
     .post(
       "/sites/publish",
-      bodyLimit({ maxSize: SITE_LIMITS.uploadBytes, onError: (c) => c.json({ error: "Web je příliš velký" }, 413) }),
+      bodyLimit({ maxSize: SITE_LIMITS.uploadBytes, onError: tooLarge("errors.publish.tooLarge") }),
       async (c) => {
-        if (!c.get("tenant").features.sites) throw new HTTPException(403, { message: "Weby nejsou pro tenant povolené" });
+        if (!c.get("tenant").features.sites) throw new HttpError(403, "errors.sites.featureOff");
         const domain = c.req.query("domain") ?? "";
         const body = c.req.raw.body;
         if (!body) throw new HTTPException(400, { message: "Missing body" });
@@ -653,8 +644,11 @@ export function createControlApp(deps: ControlDeps) {
     );
 
   return app.onError((err, c) => {
-    const http = errors(err);
-    if (http) return c.json({ error: http.message }, http.status);
+    const locale = requestLocale(c.req.header("accept-language"));
+    const mapped = errors(err) ?? err;
+    if (mapped instanceof HTTPException) return c.json({ error: mapped.message }, mapped.status);
+    const localized = errorResponse(mapped, locale);
+    if (localized) return c.json(localized.body, localized.status);
     console.error(err);
     return c.json({ error: "Internal server error" }, 500);
   });

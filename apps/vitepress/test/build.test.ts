@@ -42,6 +42,6 @@ describe("the VitePress builder", () => {
     expect(safePath("a//b")).toBeNull();
     expect(safePath("_vitepress/theme/index.js")).toEqual(["_vitepress", "theme", "index.js"]);
     const res = await createVitepressApp().request("/build", { method: "POST", body: form({ "readme.md": "x" }) });
-    expect(await res.json()).toEqual({ error: "Chybí index.md" });
+    expect(await res.json()).toEqual({ error: "index.md is missing" });
   });
 });

@@ -4,6 +4,7 @@ import type { InternalUser } from "@osiris/platform/internal-auth.ts";
 import type { Access } from "@osiris/platform/claims.ts";
 import { userAccess } from "../tenants.ts";
 import type { UserDirectory } from "../users.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 /** Digits only, so a stored "+420 777 123 456" matches WhatsApp's "420777123456". */
 export const phoneKey = (phone: string) => phone.replace(/\D/g, "");
@@ -25,8 +26,8 @@ export async function userByPhone(users: UserDirectory, phone: string): Promise<
 
 const CODE_TTL_MS = 15 * 60_000;
 
-/** "OVERENI 123456" (also with diacritics or in Slovak), sent from the phone being verified. */
-export const VERIFY_MESSAGE = /^\s*ov[eě][rř]en[ií]e?\s+(\d{6})\s*$/iu;
+/** "OVERENI 123456" (also with diacritics, in Slovak, or "VERIFY 123456"), sent from the phone being verified. */
+export const VERIFY_MESSAGE = /^\s*(?:ov[eě][rř]en[ií]e?|verify)\s+(\d{6})\s*$/iu;
 
 /**
  * Proves that a user owns a number: they ask for a code in their profile and send it from that phone to our WhatsApp
@@ -41,7 +42,7 @@ export class PhoneVerification {
 
   async start(userId: string, phone: string, now = Date.now()): Promise<{ code: string; expiresAt: number }> {
     const digits = phoneKey(phone);
-    if (digits.length < 8 || digits.length > 15) throw new Error("Neplatné telefonní číslo");
+    if (digits.length < 8 || digits.length > 15) throw new LocalizedError("errors.phone.invalid");
     for (let attempt = 0; ; attempt++) {
       const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
       try {

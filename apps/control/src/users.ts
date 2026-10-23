@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
 import { DbError, run, type Db } from "@osiris/platform/rqlite.ts";
 import { newToken, sha256 } from "./auth/secrets.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 /** A user with their claims (`phone_number`, `role`, `tenant`, `tenant-admin`, ...). */
 export interface UserRecord {
@@ -58,7 +59,7 @@ export interface UserDirectory {
 
 export class UserNotFoundError extends Error {}
 /** The data was refused, e.g. the email is taken; the message can be shown. */
-export class UserInputError extends Error {}
+export class UserInputError extends LocalizedError {}
 
 interface Row {
   id: string;
@@ -120,7 +121,7 @@ export function dbUsers(db: Db, options: { objects: ObjectStore; publicUrl: stri
     try {
       return (await db.execute([statement]))[0]!.rowsAffected;
     } catch (err) {
-      if (isUniqueViolation(err)) throw new UserInputError("Uživatel s tímto e-mailem už existuje");
+      if (isUniqueViolation(err)) throw new UserInputError("errors.user.emailTaken");
       throw err;
     }
   };
@@ -176,7 +177,7 @@ export function dbUsers(db: Db, options: { objects: ObjectStore; publicUrl: stri
           now,
         ),
       ).catch((err) => {
-        if (err instanceof DbError && /UNIQUE constraint failed: users\.id/i.test(err.message)) throw new UserInputError("Uživatel už existuje");
+        if (err instanceof DbError && /UNIQUE constraint failed: users\.id/i.test(err.message)) throw new UserInputError("errors.user.exists");
         throw err;
       });
       return directory.get(id);

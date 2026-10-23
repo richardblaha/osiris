@@ -52,7 +52,7 @@ describe("durable chat questions", () => {
     await tenant.db.execute({ sql: "UPDATE chat_questions SET expires_at=0 WHERE id=?", args: [next.id] });
     await expect(tenant.questions.resolve("dev:bob", id, next.id, { confirm: true }, false)).rejects.toThrow();
     expect((await tenant.questions.get("dev:bob", id, next.id))?.state).toBe("expired");
-    await expect(tenant.questions.prepare("dev:bob", id, "ano")).rejects.toThrow("vypršela");
+    await expect(tenant.questions.prepare("dev:bob", id, "ano")).rejects.toThrow("has expired");
     expect(await tenant.questions.prepare("dev:bob", id, "Nová otázka")).toBe("Nová otázka");
   });
 

@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { Resolver } from "node:dns/promises";
 import type { SiteDomain } from "@osiris/shared";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { configuredLocale, LocalizedError, translate } from "@osiris/platform/i18n.ts";
 
 /** A lowercase hostname with at least two labels; no IPs, no wildcards, no trailing dot. */
 const DOMAIN = /^(?=.{4,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z][a-z0-9-]{0,61}[a-z0-9]$/;
@@ -9,7 +10,7 @@ export const CHALLENGE_PREFIX = "_osiris-challenge";
 /** Verified domains are re-checked this often; one that no longer points at us is taken offline. */
 const RECHECK_MS = 6 * 60 * 60_000;
 
-export class DomainError extends Error {}
+export class DomainError extends LocalizedError {}
 
 export interface DnsLookup {
   resolveTxt(name: string): Promise<string[][]>;
@@ -68,11 +69,11 @@ export class DomainStore {
 
   async add(tenantId: string, input: string, now = Date.now()): Promise<SiteDomain> {
     const domain = input.trim().toLowerCase().replace(/\.$/, "");
-    if (!DOMAIN.test(domain)) throw new DomainError("Neplatná doména (např. www.mojefirma.cz)");
-    if (this.options.reserved.some((r) => domain === r || domain.endsWith(`.${r}`))) throw new DomainError("Tuto doménu nelze použít");
+    if (!DOMAIN.test(domain)) throw new DomainError("errors.domain.invalid");
+    if (this.options.reserved.some((r) => domain === r || domain.endsWith(`.${r}`))) throw new DomainError("errors.domain.reserved");
     const existing = await this.list(tenantId);
     if (existing.some((d) => d.domain === domain)) return existing.find((d) => d.domain === domain)!;
-    if (existing.length >= this.options.maxPerTenant) throw new DomainError(`Tenant může mít nejvýš ${this.options.maxPerTenant} domén`);
+    if (existing.length >= this.options.maxPerTenant) throw new DomainError("errors.domain.limit", { count: this.options.maxPerTenant });
     const [r] = await this.db.execute([
       run(
         "INSERT INTO domains (domain, tenant_id, token, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (domain) DO NOTHING",
@@ -82,14 +83,14 @@ export class DomainStore {
         now,
       ),
     ]);
-    if (!r?.rowsAffected) throw new DomainError("Doménu už používá jiný tenant");
+    if (!r?.rowsAffected) throw new DomainError("errors.domain.taken");
     return (await this.get(tenantId, domain))!;
   }
 
   /** Checks the TXT record and where the domain points; returns the new state. */
   async verify(tenantId: string, domain: string, now = Date.now()): Promise<SiteDomain> {
     const current = await this.get(tenantId, domain);
-    if (!current) throw new DomainError("Doména nenalezena");
+    if (!current) throw new DomainError("errors.domain.notFound");
     const error = (await this.proofError(domain, current.token)) ?? (await this.pointsError(domain));
     await this.db.execute([
       run(
@@ -109,7 +110,7 @@ export class DomainStore {
 
   async remove(tenantId: string, domain: string) {
     const [r] = await this.db.execute([run("DELETE FROM domains WHERE tenant_id = ? AND domain = ?", tenantId, domain)]);
-    if (!r?.rowsAffected) throw new DomainError("Doména nenalezena");
+    if (!r?.rowsAffected) throw new DomainError("errors.domain.notFound");
   }
 
   /**
@@ -143,7 +144,7 @@ export class DomainStore {
     const records = await this.dns.resolveTxt(`${CHALLENGE_PREFIX}.${domain}`).catch(() => [] as string[][]);
     return records.some((chunks) => chunks.join("") === token)
       ? null
-      : `Chybí TXT záznam ${CHALLENGE_PREFIX}.${domain} s hodnotou ${token}`;
+      : translate(configuredLocale(), "domains.notes.txtMissing", { record: `${CHALLENGE_PREFIX}.${domain}`, token });
   }
 
   private async pointsError(domain: string): Promise<string | null> {
@@ -153,9 +154,13 @@ export class DomainStore {
     const addresses = [...(await this.dns.resolve4(domain).catch(() => [])), ...(await this.dns.resolve6(domain).catch(() => []))];
     // Every address must be ours: a domain still half pointing elsewhere would fail certificate checks randomly.
     if (addresses.length && ingressIps.length && addresses.every((a) => ingressIps.includes(a))) return null;
-    const want = [ingressIps.length ? `A záznam na ${ingressIps.join(", ")}` : null, cnameTarget ? `CNAME na ${cnameTarget}` : null]
-      .filter(Boolean)
-      .join(" nebo ");
-    return `Doména nemíří na Osiris: nastav ${want || "záznam podle správce"}`;
+    // Stored with the domain and shown in its detail, so in the configured language.
+    const locale = configuredLocale();
+    const want = [
+      ingressIps.length ? translate(locale, "domains.notes.aRecord", { ips: ingressIps.join(", ") }) : null,
+      cnameTarget ? translate(locale, "domains.notes.cname", { target: cnameTarget }) : null,
+    ].filter((w): w is string => !!w);
+    const records = want.length ? new Intl.ListFormat(locale, { type: "disjunction" }).format(want) : translate(locale, "domains.notes.askAdmin");
+    return translate(locale, "domains.notes.notPointing", { records });
   }
 }

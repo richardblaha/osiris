@@ -1,0 +1,41 @@
+{
+  "ranges": {
+    "day": "24 h",
+    "week": "7 days",
+    "month": "30 days",
+    "quarter": "90 days",
+    "year": "Year"
+  },
+  "sources": {
+    "search": "search engine",
+    "social": "social network",
+    "referral": "link",
+    "email": "email",
+    "direct": "direct"
+  },
+  "devices": {
+    "desktop": "computer",
+    "mobile": "phone",
+    "tablet": "tablet"
+  },
+  "empty": "No data yet. Website visits show up here once the organization has a website with traffic measurement (the /_e/e.js script) assigned by an Osiris administrator.",
+  "uniquePerDay": "unique per day",
+  "pageviews": "Page views",
+  "noVisits": "No visits in this period.",
+  "pages": "Pages",
+  "referrers": "Traffic sources",
+  "directOnly": "Direct visits only.",
+  "campaigns": "Campaigns (UTM)",
+  "noCampaigns": "No links with UTM.",
+  "unknown": "unknown",
+  "regions": "Regions",
+  "cities": "Cities (approximate)",
+  "networks": "Internet providers",
+  "browsers": "Browsers",
+  "systems": "Systems",
+  "devicesTitle": "Devices",
+  "customEvents": "Custom events",
+  "noEvents": "None (window.wa.event).",
+  "approximate": "Location is approximate.",
+  "nothing": "Nothing."
+}

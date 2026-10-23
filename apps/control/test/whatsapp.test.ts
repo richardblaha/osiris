@@ -95,15 +95,15 @@ describe("WhatsApp router", () => {
   it("lets a user in several tenants switch with /tenant and start over with /nova", async () => {
     const { send, replies, runs } = await setup([{ ...bob, claims: { ...bob.claims, tenant: "acme,beta" } }]);
     await send("420777123456", "ahoj");
-    expect(replies().at(-1)).toContain("Napiš /tenant <zkratka>");
+    expect(replies().at(-1)).toContain("Send /tenant <slug>");
     await send("420777123456", "/tenant gamma");
-    expect(replies().at(-1)).toContain("Tenanta „gamma“ nemáš");
+    expect(replies().at(-1)).toContain("You don't have a tenant “gamma”");
     await send("420777123456", "/tenant beta");
     await send("420777123456", "ahoj");
     expect(runs.at(-1)).toMatchObject({ tenant: "beta", text: "ahoj" });
     await send("420777123456", "/nova");
     expect(runs.at(-1)).toMatchObject({ tenant: "beta", path: "/internal/whatsapp/new-thread" });
-    expect(replies().at(-1)).toBe("Dobře, začínáme novou konverzaci.");
+    expect(replies().at(-1)).toBe("OK, starting a new conversation.");
   });
 
   it("refuses unknown numbers, users without a tenant and tenants with WhatsApp off", async () => {
@@ -113,11 +113,22 @@ describe("WhatsApp router", () => {
     await store.update("acme", { features: { whatsapp: false } });
     await send("420777123456", "ahoj");
     expect(replies()).toEqual([
-      expect.stringContaining("nemá v Osirisu účet"),
-      expect.stringContaining("Nejsi přiřazený"),
-      "WhatsApp není pro tenanta *acme* povolený.",
+      expect.stringContaining("has no Osiris account"),
+      expect.stringContaining("aren't assigned"),
+      "WhatsApp is not enabled for tenant *acme*.",
     ]);
     expect(runs).toEqual([]);
+  });
+
+  it("replies in the configured language (DEFAULT_LOCALE)", async () => {
+    const { send, replies } = await setup([bob]);
+    process.env.DEFAULT_LOCALE = "cs";
+    try {
+      await send("420111111111", "ahoj");
+    } finally {
+      delete process.env.DEFAULT_LOCALE;
+    }
+    expect(replies()).toEqual([expect.stringContaining("nemá v Osirisu účet")]);
   });
 
   it("verifies a phone number by a code sent from it and takes the number from anyone else", async () => {
@@ -132,7 +143,7 @@ describe("WhatsApp router", () => {
     // From another phone, the code doesn't count.
     await send("420111222333", `OVERENI ${phoneChallenge.code}`);
     await send("420777999888", `ověření ${phoneChallenge.code}`);
-    expect(replies()).toEqual([expect.stringContaining("nesedí"), "Číslo je ověřené. Teď mi můžeš psát."]);
+    expect(replies()).toEqual([expect.stringContaining("doesn't match"), "Your number is verified. You can write to me now."]);
     expect((await users.get("alice")).claims.phone_number).toBe("+420777999888");
     expect((await users.get("old")).claims.phone_number).toBeUndefined();
     expect(await phones.confirm("420777999888", phoneChallenge.code)).toBeNull();

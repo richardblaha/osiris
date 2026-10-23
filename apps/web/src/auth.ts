@@ -1,5 +1,6 @@
 import { LAST_PATH } from "./routes.ts";
 import { UserManager, WebStorageStateStore } from "oidc-client-ts";
+import { t } from "i18next";
 
 const devUser = (import.meta.env.VITE_DEV_USER as string | undefined) || undefined;
 
@@ -49,7 +50,7 @@ export async function getAccessToken(): Promise<string | undefined> {
 }
 
 export const login = async () => {
-  if (!manager) throw new Error("Přihlášení není k dispozici");
+  if (!manager) throw new Error(t("auth.unavailable"));
   await manager.signinRedirect({ state: { path: `${location.pathname}${location.search}` } satisfies ReturnState });
 };
 export const logout = () => {

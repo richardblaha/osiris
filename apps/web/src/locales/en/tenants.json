@@ -1,0 +1,84 @@
+{
+  "features": {
+    "title": "Enabled features",
+    "knowledge": {
+      "label": "Knowledge base",
+      "hint": "documents the assistant searches"
+    },
+    "skills": {
+      "label": "Skills",
+      "hint": "procedures the assistant follows"
+    },
+    "memory": {
+      "label": "Memory",
+      "hint": "facts the assistant remembers between conversations"
+    },
+    "mcp": {
+      "label": "MCP servers",
+      "hint": "external services and tools connected over MCP"
+    },
+    "http": {
+      "label": "HTTP client",
+      "hint": "the http_request tool for calling APIs from skills"
+    },
+    "whatsapp": {
+      "label": "WhatsApp",
+      "hint": "the assistant answers on WhatsApp too"
+    },
+    "files": {
+      "label": "Files",
+      "hint": "storage for the templates, images and documents the assistant works with"
+    },
+    "scheduler": {
+      "label": "Scheduled tasks",
+      "hint": "the assistant runs a given task by itself at a set time"
+    },
+    "sites": {
+      "label": "Websites",
+      "hint": "publishing the company website from the www folder to hosting over SFTP"
+    },
+    "public": {
+      "label": "Assistants",
+      "hint": "assistants for the company's customers on its website, with chosen knowledge and tools"
+    },
+    "database": {
+      "label": "Database",
+      "hint": "tables the assistant stores data in (contacts, jobs…), with a browser"
+    },
+    "integrations": {
+      "label": "Mail, contacts and calendars",
+      "hint": "the assistant works with the mail, contacts and calendar of users who connect their account"
+    }
+  },
+  "new": "New tenant",
+  "newIntro": "Each tenant runs in its own container with its own database and files. Memberships are user claims: <code>tenant={{slug}}</code> for users and <code>tenant-admin={{slug}}</code> for administrators; both need <code>role=osiris-user</code>.",
+  "slug": "Slug",
+  "slugPlaceholder": "for example novak-builders",
+  "slugHint": "Lowercase letters, digits and hyphens",
+  "namePlaceholder": "for example Novák Builders Ltd.",
+  "creating": "Creating…",
+  "create": "Create tenant",
+  "rename": "Rename",
+  "slugValue": "Slug: {{id}}",
+  "operation": "Operation",
+  "idle": "Sleep after (minutes idle, 0 = always running)",
+  "disk": "Disk (GB, increase only)",
+  "quotas": "Quotas",
+  "quotasHint": "An empty field means no limit (storage: 80% of the disk). Members see usage above the tenant in the sidebar.",
+  "backups": "Backups",
+  "backupNow": "Back up now",
+  "noBackups": "None yet. A backup is made before every sleep and daily.",
+  "reset2faHint": "For a user who lost the phone with the authenticator app and the recovery codes",
+  "reset2faConfirm": "Turn off two-step verification for {{name}}?",
+  "reset2fa": "Turn off 2FA",
+  "noMembers": "Nobody yet.",
+  "addUser": "Add a user…",
+  "inviteHint": "A new user gets a one-time sign-in link. Membership changes apply within a minute.",
+  "remove": "Remove tenant",
+  "removeHint": "Removes the tenant from every user's claims, so nobody from the tenant can sign in any more. The container stops; the disk and backups are kept.",
+  "removeConfirm": "Type {{id}} to confirm",
+  "webSites": "Websites in traffic analytics",
+  "webSitesHint": "Sites from Traffic the tenant sees on its Websites dashboard (one per line, for example k6labs.cz). It always sees the sites of its own domains.",
+  "saveWebSites": "Save websites",
+  "slugToken": "<slug>"
+}

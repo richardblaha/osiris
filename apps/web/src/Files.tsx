@@ -3,6 +3,8 @@ import { useEffect, useRef, useState, type DragEvent, type FormEvent, type React
 import { api, saveBlob } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
 import { attempt, ErrorNotice, Loading, Pending } from "./Scope.tsx";
+import { t } from "i18next";
+import { formatDateTime, formatNumber } from "./i18n.ts";
 
 type Editing = { kind: "mkdir" } | { kind: "newfile" } | { kind: "rename"; entry: FileEntry };
 /** A file open on the right: text in the editor (`saved` is what's on disk), an image, or anything else. */
@@ -14,8 +16,13 @@ const IMAGE = /^image\/(png|jpeg|gif|webp|svg\+xml)$/;
 /** Folders with their own views (Dovednosti, Kontroly, Weby): not in Soubory. */
 export const OWN_VIEWS = ["skills", "guards", "vitepress", "www"];
 
+/** A size in the reader's number format, with its unit (B, kB, MB). */
 export const fileSize = (n: number) =>
-  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${Math.round(n / 1024)} kB` : `${(n / 1024 / 1024).toFixed(1)} MB`;
+  n < 1024
+    ? formatNumber(n, { style: "unit", unit: "byte" })
+    : n < 1024 * 1024
+      ? formatNumber(Math.round(n / 1024), { style: "unit", unit: "kilobyte" })
+      : formatNumber(n / 1024 / 1024, { style: "unit", unit: "megabyte", minimumFractionDigits: 1, maximumFractionDigits: 1 });
 
 const join = (dir: string, name: string) => (dir ? `${dir}/${name}` : name);
 const nameOf = (path: string) => path.split("/").at(-1) ?? path;
@@ -64,7 +71,7 @@ function Icon({ entry }: { entry: Pick<FileEntry, "type" | "name"> }) {
  * The tenant's files, folder by folder; everyone in the tenant may change them. `root` limits the view to one folder
  * (a website's template), `hide` leaves out top-level folders that have views of their own.
  */
-export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root?: string; title?: string; intro?: ReactNode; hide?: string[] }) {
+export function Files({ root = "", title = t("app:nav.files"), intro, hide = [] }: { root?: string; title?: string; intro?: ReactNode; hide?: string[] }) {
   const tab = "tenant";
   const [dir, setDir] = useState(root);
   const [entries, setEntries] = useState<FileEntry[]>();
@@ -99,7 +106,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
   /** Text files open in the editor, images in the preview, anything else with its download. */
   const openPath = (path: string, size = 0) =>
     attempt((b) => (setBusy(b), setOpening(b)), setError, async () => {
-      if (open?.kind === "text" && open.text !== open.saved && !window.confirm("Zavřít bez uložení změn?")) return;
+      if (open?.kind === "text" && open.text !== open.saved && !window.confirm(t("files:closeUnsaved"))) return;
       const type = fileType(path);
       if (type?.text) {
         const text = await (await api.downloadFile({ scope: tab, path })).text();
@@ -118,7 +125,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
       await load();
     });
   const close = () => {
-    if (open?.kind !== "text" || open.text === open.saved || window.confirm("Zavřít bez uložení změn?")) setOpen(undefined);
+    if (open?.kind !== "text" || open.text === open.saved || window.confirm(t("files:closeUnsaved"))) setOpen(undefined);
   };
 
   /** Uploads into the current folder one by one; files that exist are asked about once, at the end. */
@@ -142,7 +149,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
     };
     const existing: number[] = [];
     for (let i = 0; i < queue.length; i++) if ((await send(i, false)) === "exists") existing.push(i);
-    if (existing.length && window.confirm(existing.length === 1 ? `Soubor ${nameOf(queue[existing[0]!]!.path)} už existuje. Přepsat?` : `${existing.length} souborů už existuje. Přepsat je?`)) {
+    if (existing.length && window.confirm(existing.length === 1 ? t("files:overwriteOne", { name: nameOf(queue[existing[0]!]!.path) }) : t("files:overwriteMany", { count: existing.length }))) {
       for (const i of existing) await send(i, true);
     }
     await load();
@@ -176,8 +183,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
   };
 
   const remove = (e: FileEntry) => {
-    const what = e.type === "dir" ? `složku ${e.name} i se vším, co obsahuje` : `soubor ${e.name}`;
-    if (!window.confirm(`Opravdu smazat ${what}?`)) return;
+    if (!window.confirm(e.type === "dir" ? t("files:confirmDeleteDir", { name: e.name }) : t("files:confirmDeleteFile", { name: e.name }))) return;
     void attempt(setBusy, setError, async () => {
       await api.deleteFile({ scope: tab, path: e.path });
       if (open && (open.path === e.path || open.path.startsWith(`${e.path}/`))) setOpen(undefined);
@@ -191,7 +197,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
     void attempt(setBusy, setError, async () => {
       if (editing.kind === "newfile") {
         const path = join(dir, name.includes(".") ? name : `${name}.md`);
-        if (!fileType(path)?.text) throw new Error("Nový soubor musí být textový (např. .md, .txt, .html, .css, .json)");
+        if (!fileType(path)?.text) throw new Error(t("files:newMustBeText"));
         setOpen({ path, kind: "text", text: "", saved: "", isNew: true });
       } else if (editing.kind === "mkdir") await api.makeDir({ scope: tab, path: join(dir, name) });
       else await api.moveFile({ scope: tab, path: editing.entry.path }, { scope: tab, path: join(dir, name) });
@@ -223,16 +229,16 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
       <Loading show={opening} />
       {dragging && (
         <div className="pointer-events-none absolute inset-2 z-20 flex items-center justify-center rounded-md border-2 border-dashed border-primary bg-[var(--accent-primary-soft)] text-sm font-medium text-primary">
-          Pusťte soubory nebo složky sem, nahrají se do {crumbs.length ? crumbs.join("/") : title}
+          {t("files:dropHere", { folder: crumbs.length ? crumbs.join("/") : title })}
         </div>
       )}
-      <div className={`min-w-0 overflow-y-auto p-6 ${open ? "w-[28rem] shrink-0 border-r border-line" : "flex-1"}`}>
+      <div className={`min-w-0 overflow-y-auto p-6 ${open ? "w-[28rem] shrink-0 border-e border-line" : "flex-1"}`}>
         <div className={open ? "" : "mx-auto max-w-4xl"}>
           <h1 className="text-lg font-semibold">{title}</h1>
           {intro && <p className="mt-1 text-sm text-fg-secondary">{intro}</p>}
 
 
-          <p className="mt-1 text-xs text-fg-muted">Soubory i celé složky můžete sem přetáhnout, obrázek vložit ze schránky (Ctrl+V).</p>
+          <p className="mt-1 text-xs text-fg-muted">{t("files:dragHint")}</p>
 
           {editing && (
             <form onSubmit={submitEdit} className="mt-3 flex gap-2">
@@ -240,15 +246,15 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={editing.kind === "mkdir" ? "Název složky" : editing.kind === "newfile" ? "Název souboru, např. poznamky.md" : "Nový název"}
+                placeholder={editing.kind === "mkdir" ? t("files:folderName") : editing.kind === "newfile" ? t("files:fileName") : t("files:newName")}
                 required
                 className="field"
               />
               <button disabled={busy} className="btn-primary text-sm">
-                {editing.kind === "rename" ? "Přejmenovat" : "Vytvořit"}
+                {editing.kind === "rename" ? t("tenants:rename") : t("files:create")}
               </button>
               <button type="button" onClick={() => setEditing(undefined)} className="btn-secondary text-sm">
-                Zrušit
+                {t("cancel")}
               </button>
             </form>
           )}
@@ -258,12 +264,14 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
               <div className="flex items-center gap-2">
                 <span className="flex-1">
                   {finished < uploads.length && !uploads.every((u) => u.state !== "waiting" && u.state !== "uploading")
-                    ? `Nahrávám ${finished + 1} z ${uploads.length}…`
-                    : `Nahráno ${finished} z ${uploads.length}${failed.length ? `, ${failed.length} se nepodařilo` : ""}.`}
+                    ? t("files:uploading", { current: finished + 1, total: uploads.length })
+                    : failed.length
+                      ? t("files:uploadedFailed", { done: finished, total: uploads.length, count: failed.length })
+                      : t("files:uploaded", { done: finished, total: uploads.length })}
                 </span>
                 {uploads.every((u) => u.state !== "waiting" && u.state !== "uploading") && (
                   <button onClick={() => setUploads([])} className="btn-link text-xs">
-                    Skrýt
+                    {t("files:hide")}
                   </button>
                 )}
               </div>
@@ -288,24 +296,24 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
                 setSearch(e.target.value);
                 if (!e.target.value) setHits(undefined);
               }}
-              placeholder="Hledat v textu souborů"
+              placeholder={t("files:searchPlaceholder")}
               className="field"
             />
             <button disabled={busy} className="btn-secondary text-sm">
-              Hledat
+              {t("files:search")}
             </button>
           </form>
           {hits && (
             <ul className="mt-2 text-sm">
               {hits.map((h) => (
                 <li key={h.path}>
-                  <button onClick={() => void openPath(h.path)} className="list-row block w-full px-2 py-1.5 text-left">
+                  <button onClick={() => void openPath(h.path)} className="list-row block w-full px-2 py-1.5 text-start">
                     <code className="text-xs">{h.path.slice(root ? root.length + 1 : 0)}</code>
                     <span className="block truncate text-xs text-fg-secondary">{highlight(h.snippet)}</span>
                   </button>
                 </li>
               ))}
-              {!hits.length && <li className="px-2 py-1.5 text-fg-muted">Nic nenalezeno.</li>}
+              {!hits.length && <li className="px-2 py-1.5 text-fg-muted">{t("nothingFound")}</li>}
             </ul>
           )}
 
@@ -326,53 +334,53 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
           <ul className="mt-2 text-sm">
             {dir !== root && (
               <li>
-                <button onClick={() => setDir(dir.slice(0, Math.max(dir.lastIndexOf("/"), 0)))} className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-left text-fg-secondary">
+                <button onClick={() => setDir(dir.slice(0, Math.max(dir.lastIndexOf("/"), 0)))} className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-start text-fg-secondary">
                   <span className="w-4 text-center">↑</span> ..
                 </button>
               </li>
             )}
             {entries?.map((e) => (
               <li key={e.path} data-active={open?.path === e.path} className="list-row group flex items-center gap-2 px-2">
-                <button onClick={() => openEntry(e)} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-left">
+                <button onClick={() => openEntry(e)} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-start">
                   <Icon entry={e} />
                   <span className={`truncate ${e.type === "dir" ? "font-medium" : ""}`}>{e.name}</span>
                 </button>
                 {!open && (
                   <>
-                    <span className="w-20 shrink-0 text-right text-xs text-fg-muted">{e.type === "file" && fileSize(e.size)}</span>
-                    <span className="hidden w-36 shrink-0 text-xs text-fg-muted md:block">{new Date(e.modifiedAt).toLocaleString("cs-CZ")}</span>
+                    <span className="w-20 shrink-0 text-end text-xs text-fg-muted">{e.type === "file" && fileSize(e.size)}</span>
+                    <span className="hidden w-36 shrink-0 text-xs text-fg-muted md:block">{formatDateTime(e.modifiedAt)}</span>
                   </>
                 )}
                 <span className="flex shrink-0 gap-2 text-xs opacity-0 group-hover:opacity-100 focus-within:opacity-100">
                   {e.type === "file" && (
                     <button onClick={() => void download(e.path)} className="btn-link">
-                      Stáhnout
+                      {t("download")}
                     </button>
                   )}
                   <button onClick={() => startEdit({ kind: "rename", entry: e })} className="btn-link">
-                    Přejmenovat
+                    {t("tenants:rename")}
                   </button>
                   <button onClick={() => remove(e)} className="btn-danger">
-                    Smazat
+                    {t("delete")}
                   </button>
                 </span>
               </li>
             ))}
           </ul>
-          {entries && !entries.length && <p className="px-2 py-3 text-sm text-fg-muted">Prázdná složka. Přetáhněte sem soubory.</p>}
+          {entries && !entries.length && <p className="px-2 py-3 text-sm text-fg-muted">{t("files:emptyFolder")}</p>}
           {!entries && !error && <Pending />}
           <div className="mt-3 flex flex-wrap gap-2">
             <button onClick={() => pickFiles.current?.click()} disabled={busy} className="btn-primary text-sm">
-              Nahrát soubory
+              {t("files:uploadFiles")}
             </button>
             <button onClick={() => pickFolder.current?.click()} disabled={busy} className="btn-secondary text-sm">
-              Nahrát složku
+              {t("files:uploadFolder")}
             </button>
             <button onClick={() => startEdit({ kind: "newfile" })} disabled={busy} className="btn-secondary text-sm">
-              Nový soubor
+              {t("files:newFile")}
             </button>
             <button onClick={() => startEdit({ kind: "mkdir" })} disabled={busy} className="btn-secondary text-sm">
-              Nová složka
+              {t("files:newFolder")}
             </button>
             <input ref={pickFiles} type="file" multiple hidden onChange={(e) => void upload([...(e.target.files ?? [])].map((file) => ({ path: file.name, file }))).finally(() => (e.target.value = ""))} />
             <input
@@ -394,19 +402,19 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
         <section className="flex min-w-0 flex-1 flex-col p-6">
           <div className="mb-2 flex items-center gap-2 text-sm">
             <code className="min-w-0 flex-1 truncate">{open.path.slice(root ? root.length + 1 : 0)}</code>
-            {open.kind === "text" && open.text !== open.saved && <span className="text-xs text-warning">neuloženo</span>}
+            {open.kind === "text" && open.text !== open.saved && <span className="text-xs text-warning">{t("unsaved")}</span>}
             {open.kind === "text" && (
               <button onClick={() => void saveDoc()} disabled={busy || (open.text === open.saved && !open.isNew)} className="btn-primary text-sm">
-                Uložit
+                {t("save")}
               </button>
             )}
             {!(open.kind === "text" && open.isNew) && (
               <button onClick={() => void download(open.path)} className="btn-secondary text-sm">
-                Stáhnout
+                {t("download")}
               </button>
             )}
-            <button onClick={close} className="btn-secondary text-sm" aria-label="Zavřít">
-              Zavřít
+            <button onClick={close} className="btn-secondary text-sm" aria-label={t("close")}>
+              {t("close")}
             </button>
           </div>
           <div className="min-h-0 flex-1">
@@ -416,7 +424,7 @@ export function Files({ root = "", title = "Soubory", intro, hide = [] }: { root
               <img src={open.url} alt={open.path} className="max-h-full max-w-full object-contain" />
             ) : (
               <p className="text-sm text-fg-muted">
-                {fileType(open.path)?.mime ?? "Soubor"} · {fileSize(open.size)}. Náhled tu není, soubor si můžete stáhnout.
+                {t("files:noPreview", { type: fileType(open.path)?.mime ?? t("files:file"), size: fileSize(open.size) })}
               </p>
             )}
           </div>

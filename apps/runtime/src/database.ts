@@ -4,6 +4,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import type { AuthEnv, RequestContext } from "./auth.ts";
+import { HttpError, ValidationError } from "@osiris/platform/i18n.ts";
 
 const STATUS: Record<DataErrorCode, 400 | 404 | 409 | 507> = { invalid: 400, not_found: 404, exists: 409, quota: 507 };
 
@@ -34,13 +35,13 @@ const rowsQuery = z.object({
 const queryBody = z.object({ sql: z.string().min(1).max(10_000) });
 const rowId = (value: string) => {
   const id = Number(value);
-  if (!Number.isSafeInteger(id)) throw new HTTPException(400, { message: "Neplatné id řádku" });
+  if (!Number.isSafeInteger(id)) throw new HttpError(400, "errors.db.rowId");
   return id;
 };
 
 function parse<T>(schema: z.ZodType<T>, value: unknown): T {
-  const r = schema.safeParse(value);
-  if (!r.success) throw new HTTPException(400, { message: z.prettifyError(r.error) });
+  const r = schema.safeParse(value, { reportInput: true });
+  if (!r.success) throw new ValidationError(r.error);
   return r.data;
 }
 
@@ -48,14 +49,14 @@ async function data<T>(action: () => Promise<T>): Promise<T> {
   try {
     return await action();
   } catch (err) {
-    if (err instanceof DataError) throw new HTTPException(STATUS[err.code], { message: err.message });
+    if (err instanceof DataError) throw new HttpError(STATUS[err.code], err.key, err.params);
     throw err;
   }
 }
 
 /** Tables are the admins' to shape (what the agent does for members aside); rows and reading are every member's. */
 const requireAdmin = (ctx: RequestContext) => {
-  if (ctx.role !== "admin") throw new HTTPException(403, { message: "Strukturu tabulek mění jen správce" });
+  if (ctx.role !== "admin") throw new HttpError(403, "errors.db.adminOnly");
 };
 
 /** The tenant's database (Tenant > Databáze): tables, their rows, and read-only SQL. Mounted at /api/database. */
@@ -92,12 +93,12 @@ export function databaseRoutes() {
     .patch("/tables/:table/rows/:id", async (c) => {
       const values = parse(row, await c.req.json());
       const n = await data(() => c.get("ctx").tenant.data.update(c.req.param("table"), { id: rowId(c.req.param("id")) }, values));
-      if (!n) throw new HTTPException(404, { message: "Řádek neexistuje" });
+      if (!n) throw new HttpError(404, "errors.db.rowNotFound");
       return c.body(null, 204);
     })
     .delete("/tables/:table/rows/:id", async (c) => {
       const n = await data(() => c.get("ctx").tenant.data.delete(c.req.param("table"), { id: rowId(c.req.param("id")) }));
-      if (!n) throw new HTTPException(404, { message: "Řádek neexistuje" });
+      if (!n) throw new HttpError(404, "errors.db.rowNotFound");
       return c.body(null, 204);
     })
     .post("/query", async (c) => {

@@ -1,0 +1,13 @@
+{
+  "intro": "Notes on clients, price lists and procedures the assistant searches by meaning and by words.",
+  "chunks_one": "{{count}} chunk in the index",
+  "chunks_other": "{{count}} chunks in the index",
+  "changed": "changed {{time}}",
+  "confirmDelete": "Delete the document {{title}}?",
+  "delete": "Delete document",
+  "textRequired": "Write the document's text.",
+  "new": "New document",
+  "titlePlaceholder": "for example Price list 2026",
+  "folder": "Folder (optional, for example public)",
+  "text": "Text (Markdown)"
+}

@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import type { Client } from "@libsql/client";
 import type { SecretBox } from "../secrets.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 export type IntegrationProvider = "google" | "microsoft";
 
@@ -64,7 +65,7 @@ interface Data {
 }
 
 /** The account has to be connected (again): never was, or the provider revoked it. */
-export class NotConnectedError extends Error {}
+export class NotConnectedError extends LocalizedError {}
 
 /**
  * Users' connections to Google and Microsoft: authorization code with PKCE against Osiris's own OAuth clients, the
@@ -87,7 +88,7 @@ export class IntegrationAccounts {
 
   private client(provider: IntegrationProvider) {
     const client = this.clients[provider];
-    if (!client) throw new Error(`Propojení s ${provider} není v Osirisu nastavené`);
+    if (!client) throw new LocalizedError("errors.integration.notConfigured", { provider });
     return client;
   }
 
@@ -151,10 +152,10 @@ export class IntegrationAccounts {
   /** Exchanges the code the provider sent the user back with; returns the connected account. */
   async finish(state: string, code: string): Promise<{ owner: string; provider: IntegrationProvider; account: string | null }> {
     const pending = await this.pending(state);
-    if (!pending) throw new Error("Přihlášení vypršelo nebo už bylo dokončeno, zkus to znovu");
+    if (!pending) throw new LocalizedError("errors.integration.expired");
     const { owner, provider } = pending;
     const stored = await this.read(owner, provider);
-    if (!stored?.data.verifier) throw new Error("Přihlášení nebylo zahájeno");
+    if (!stored?.data.verifier) throw new LocalizedError("errors.integration.notStarted");
     const tokens = await this.token(provider, {
       grant_type: "authorization_code",
       code,
@@ -174,11 +175,11 @@ export class IntegrationAccounts {
   async accessToken(owner: string, provider: IntegrationProvider): Promise<string> {
     const stored = await this.read(owner, provider);
     const tokens = stored?.data.tokens;
-    if (!tokens) throw new NotConnectedError(`Účet ${provider} není propojený (Můj profil → Propojené účty)`);
+    if (!tokens) throw new NotConnectedError("errors.integration.notConnected", { provider });
     if (tokens.expires_at - 60_000 > Date.now()) return tokens.access_token;
-    if (!tokens.refresh_token) throw new NotConnectedError(`Propojení s ${provider} vypršelo, propoj účet znovu`);
+    if (!tokens.refresh_token) throw new NotConnectedError("errors.integration.reconnect", { provider });
     const fresh = await this.token(provider, { grant_type: "refresh_token", refresh_token: tokens.refresh_token }).catch((err: Error) => {
-      throw new NotConnectedError(`Propojení s ${provider} už neplatí, propoj účet znovu (${err.message})`);
+      throw new NotConnectedError("errors.integration.revoked", { provider, detail: err.message });
     });
     // Google keeps the refresh token the same and doesn't send it again.
     await this.write(owner, provider, { tokens: { ...fresh, refresh_token: fresh.refresh_token ?? tokens.refresh_token } }, {});

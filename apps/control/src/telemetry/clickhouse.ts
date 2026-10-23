@@ -82,10 +82,10 @@ export class Telemetry {
     return rows.map((r) => ({ ...r, ts: Number(r.ts), severityNumber: Number(r.severityNumber) }));
   }
 
-  /** Log records at or above a severity per service (Dashboard). */
+  /** Log records at or above a severity per service (Dashboard); records without a service count under `''`. */
   async logCounts(f: Range & { severity?: string; namespace?: string }): Promise<{ service: string; count: number }[]> {
     const rows = await this.ch.query<{ service: string; count: string }>(
-      `SELECT if(ServiceName = '', '(bez služby)', ServiceName) AS service, count() AS count FROM otel_logs
+      `SELECT ServiceName AS service, count() AS count FROM otel_logs
        WHERE Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9) AND SeverityNumber >= {severity:UInt8}
          AND ({namespace:String} = '' OR ${NS} = {namespace:String})
        GROUP BY service ORDER BY count DESC LIMIT 20`,

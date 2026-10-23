@@ -1,3 +1,4 @@
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 const TIMEOUT_MS = 180_000;
 
 export interface SiteFile {
@@ -22,7 +23,7 @@ export class VitepressClient {
     const res = await this.fetchFn(new URL("build", this.base), { method: "POST", body: form, signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (!res.ok) {
       const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new Error(`Sestavení webu selhalo (${res.status}): ${(body?.error ?? "").slice(-2000)}`);
+      throw new LocalizedError("errors.vitepress.failed", { status: res.status, detail: (body?.error ?? "").slice(-2000) });
     }
     const out: SiteFile[] = [];
     for (const [path, value] of (await res.formData()).entries()) {

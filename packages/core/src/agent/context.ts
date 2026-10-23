@@ -1,5 +1,5 @@
 import type { RunnableConfig } from "@langchain/core/runnables";
-import type { Channel, Role } from "@osiris/shared";
+import type { Channel, Locale, Role } from "@osiris/shared";
 
 /**
  * Per-run context passed in `config.configurable`. Tools must read user identity and role from here, never from
@@ -13,8 +13,10 @@ export interface RunContext {
   channel: Channel;
   /** On the `public` channel: which of the tenant's public assistants. */
   assistant?: string;
-  /** Display name from PocketID, for the prompt. */
+  /** The user's display name, for the prompt. */
   user_name?: string;
+  /** The language of texts the run itself writes for people (quota notices, refusals, answer summaries); absent in runs from before it existed. */
+  locale?: Locale;
 }
 
 export function getRunContext(config: RunnableConfig | undefined): RunContext {

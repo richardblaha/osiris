@@ -136,9 +136,12 @@ describe("gateway", () => {
     const refused = await as("alice:tenant-admin=&role=osiris-user")("/me");
     expect(refused.status).toBe(403);
     expect(await refused.json()).toEqual({
-      error: "Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.",
+      error: "This account doesn't belong to any organization yet. Ask an administrator for an invitation.",
+      code: "errors.access.noTenant",
       user: { sub: "dev:alice", name: "alice", email: "alice@dev.local", role: ["osiris-user"], tenant: [], "tenant-admin": [] },
     });
+    const czech = await as("alice:tenant-admin=&role=osiris-user")("/me", { headers: { "accept-language": "sk-SK, en;q=0.5" } });
+    expect((await czech.json()).error).toBe("Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.");
     expect((await as("alice:tenant=acme&role=")("/me")).status).toBe(403);
     // Claims naming a removed tenant don't count.
     expect((await as("alice:tenant=gone")("/me")).status).toBe(403);

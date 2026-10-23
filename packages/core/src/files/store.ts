@@ -4,6 +4,7 @@ import { lstat, mkdir, open, readdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type { FileEntry, FileScope } from "@osiris/shared";
 import { contentMatches, extensionOf, fileType } from "@osiris/shared";
+import { LocalizedError, type Params } from "@osiris/platform/i18n.ts";
 
 /** Where a file lives: the tenant's shared files, a user's own files, or one thread's temporary files. */
 export type FileLocation = { scope: "tenant" } | { scope: "personal"; userId: string } | { scope: "temp"; threadId: string };
@@ -13,13 +14,14 @@ export type FileChange = { kind: "write" | "delete"; loc: FileLocation; path: st
 
 export type FileErrorCode = "invalid" | "not_found" | "exists" | "too_large" | "quota" | "type";
 
-/** A refused file operation; the message is Czech and safe to show to the user and the model. */
-export class FileError extends Error {
+/** A refused file operation; its message is safe to show to the user and the model. */
+export class FileError extends LocalizedError {
   constructor(
-    message: string,
     readonly code: FileErrorCode,
+    key: string,
+    params?: Params,
   ) {
-    super(message);
+    super(key, params);
   }
 }
 
@@ -46,14 +48,14 @@ export function pathSegments(path: string, { allowRoot = false } = {}): string[]
   const p = path.normalize("NFC").replace(/^\/+|\/+$/g, "");
   if (!p) {
     if (allowRoot) return [];
-    throw new FileError("Chybí cesta k souboru", "invalid");
+    throw new FileError("invalid", "errors.files.pathMissing");
   }
-  if (p.length > MAX_PATH) throw new FileError("Cesta je příliš dlouhá", "invalid");
+  if (p.length > MAX_PATH) throw new FileError("invalid", "errors.files.pathTooLong");
   const segments = p.split("/");
-  if (segments.length > MAX_DEPTH) throw new FileError("Příliš mnoho vnořených složek", "invalid");
+  if (segments.length > MAX_DEPTH) throw new FileError("invalid", "errors.files.tooDeep");
   for (const s of segments) {
     if (!s || s === "." || s === ".." || s.startsWith(".") || s.length > MAX_SEGMENT || s !== s.trim() || /[\\\x00-\x1f\x7f]/.test(s)) {
-      throw new FileError(`Neplatný název souboru nebo složky: "${s}"`, "invalid");
+      throw new FileError("invalid", "errors.files.badName", { name: s });
     }
   }
   return segments;
@@ -109,10 +111,10 @@ export class FileStore {
       names = await readdir(abs, { withFileTypes: true });
     } catch (err) {
       if (isMissing(err)) {
-        if (segments.length) throw new FileError("Složka neexistuje", "not_found");
+        if (segments.length) throw new FileError("not_found", "errors.files.folderMissing");
         return [];
       }
-      if ((err as NodeJS.ErrnoException).code === "ENOTDIR") throw new FileError("Cesta není složka", "invalid");
+      if ((err as NodeJS.ErrnoException).code === "ENOTDIR") throw new FileError("invalid", "errors.files.notFolder");
       throw err;
     }
     const entries: FileEntry[] = [];
@@ -130,13 +132,13 @@ export class FileStore {
     const segments = pathSegments(path);
     const abs = await this.resolve(loc, segments);
     const handle = await open(abs, constants.O_RDONLY | constants.O_NOFOLLOW).catch((err) => {
-      if (isMissing(err)) throw new FileError(`Soubor ${path} neexistuje`, "not_found");
-      if ((err as NodeJS.ErrnoException).code === "ELOOP") throw new FileError("Neplatný soubor", "invalid");
+      if (isMissing(err)) throw new FileError("not_found", "errors.files.fileMissing", { path });
+      if ((err as NodeJS.ErrnoException).code === "ELOOP") throw new FileError("invalid", "errors.files.invalid");
       throw err;
     });
     try {
       const s = await handle.stat();
-      if (!s.isFile()) throw new FileError(`${path} je složka, ne soubor`, "invalid");
+      if (!s.isFile()) throw new FileError("invalid", "errors.files.isFolder", { path });
       const data = await handle.readFile();
       return { entry: this.entry(loc, segments.join("/"), false, s.size, s.mtime), data };
     } finally {
@@ -148,19 +150,19 @@ export class FileStore {
     this.maybeSweep();
     const segments = pathSegments(path);
     const type = fileType(path);
-    if (!type) throw new FileError(`Typ souboru .${extensionOf(path) || "?"} není povolený`, "type");
+    if (!type) throw new FileError("type", "errors.files.typeNotAllowed", { extension: extensionOf(path) || "?" });
     if (data.length > this.maxFileBytes) {
-      throw new FileError(`Soubor je větší než povolených ${Math.round(this.maxFileBytes / 1024 / 1024)} MB`, "too_large");
+      throw new FileError("too_large", "errors.files.tooLarge", { mb: Math.round(this.maxFileBytes / 1024 / 1024) });
     }
-    if (!contentMatches(path, data)) throw new FileError(`Obsah souboru neodpovídá typu .${extensionOf(path)}`, "type");
+    if (!contentMatches(path, data)) throw new FileError("type", "errors.files.contentMismatch", { extension: extensionOf(path) });
 
     const abs = await this.resolve(loc, segments);
     const existing = await lstat(abs).catch((err) => (isMissing(err) ? undefined : Promise.reject(err)));
-    if (existing?.isDirectory()) throw new FileError(`${path} je složka`, "exists");
-    if (existing && !overwrite) throw new FileError(`Soubor ${path} už existuje`, "exists");
+    if (existing?.isDirectory()) throw new FileError("exists", "errors.files.folderExists", { path });
+    if (existing && !overwrite) throw new FileError("exists", "errors.files.fileExists", { path });
     const used = await this.usage();
     if (used - (existing?.size ?? 0) + data.length > (await this.quotaInForce())) {
-      throw new FileError("Úložiště firmy je plné. Smaž nepotřebné soubory.", "quota");
+      throw new FileError("quota", "errors.files.quota");
     }
 
     await this.mkdirs(loc, segments.slice(0, -1));
@@ -192,7 +194,7 @@ export class FileStore {
     const segments = pathSegments(path);
     const abs = await this.resolve(loc, segments);
     const s = await lstat(abs).catch((err) => {
-      if (isMissing(err)) throw new FileError(`${path} neexistuje`, "not_found");
+      if (isMissing(err)) throw new FileError("not_found", "errors.files.missing", { path });
       throw err;
     });
     const size = s.isDirectory() ? await sizeOf(abs) : s.isFile() ? s.size : 0;
@@ -208,17 +210,17 @@ export class FileStore {
     const srcAbs = await this.resolve(from, src);
     const dstAbs = await this.resolve(to, dst);
     const s = await lstat(srcAbs).catch((err) => {
-      if (isMissing(err)) throw new FileError(`${fromPath} neexistuje`, "not_found");
+      if (isMissing(err)) throw new FileError("not_found", "errors.files.missing", { path: fromPath });
       throw err;
     });
-    if (s.isSymbolicLink()) throw new FileError("Neplatný soubor", "invalid");
-    if (await lstat(dstAbs).then(() => true, () => false)) throw new FileError(`${toPath} už existuje`, "exists");
+    if (s.isSymbolicLink()) throw new FileError("invalid", "errors.files.invalid");
+    if (await lstat(dstAbs).then(() => true, () => false)) throw new FileError("exists", "errors.files.exists", { path: toPath });
     if (s.isFile() && extensionOf(fromPath) !== extensionOf(toPath)) {
       // A new extension must still match the content.
       const { data } = await this.read(from, fromPath);
-      if (!fileType(toPath) || !contentMatches(toPath, data)) throw new FileError("Obsah souboru neodpovídá nové příponě", "type");
+      if (!fileType(toPath) || !contentMatches(toPath, data)) throw new FileError("type", "errors.files.renameMismatch");
     }
-    if (s.isDirectory() && dstAbs.startsWith(`${srcAbs}/`)) throw new FileError("Složku nelze přesunout do sebe sama", "invalid");
+    if (s.isDirectory() && dstAbs.startsWith(`${srcAbs}/`)) throw new FileError("invalid", "errors.files.moveIntoItself");
     await this.mkdirs(to, dst.slice(0, -1));
     await rename(srcAbs, dstAbs);
     await this.changed({ kind: "delete", loc: from, path: src.join("/") });
@@ -256,7 +258,7 @@ export class FileStore {
   async folderPath(loc: FileLocation, path: string): Promise<string> {
     const abs = await this.resolve(loc, pathSegments(path, { allowRoot: true }));
     const s = await lstat(abs).catch(() => undefined);
-    if (!s?.isDirectory()) throw new FileError(`Složka ${path || "/"} neexistuje`, "not_found");
+    if (!s?.isDirectory()) throw new FileError("not_found", "errors.files.folderNotFound", { path: path || "/" });
     return abs;
   }
 
@@ -319,7 +321,7 @@ export class FileStore {
       if (i > 0) path = join(path, segments[i - 1]!);
       const s = await lstat(path).catch((err) => (isMissing(err) ? undefined : Promise.reject(err)));
       if (!s) return join(path, ...segments.slice(i));
-      if (s.isSymbolicLink()) throw new FileError("Neplatná cesta", "invalid");
+      if (s.isSymbolicLink()) throw new FileError("invalid", "errors.files.badPath");
     }
     return path;
   }
@@ -327,7 +329,7 @@ export class FileStore {
   private async mkdirs(loc: FileLocation, segments: string[]) {
     const abs = await this.resolve(loc, segments);
     const s = await lstat(abs).catch(() => undefined);
-    if (s && !s.isDirectory()) throw new FileError(`${segments.join("/")} je soubor, ne složka`, "exists");
+    if (s && !s.isDirectory()) throw new FileError("exists", "errors.files.isFile", { path: segments.join("/") });
     await mkdir(abs, { recursive: true, mode: 0o750 });
   }
 

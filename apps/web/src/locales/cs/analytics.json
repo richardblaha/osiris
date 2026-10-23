@@ -1,0 +1,41 @@
+{
+  "ranges": {
+    "day": "24 h",
+    "week": "7 dní",
+    "month": "30 dní",
+    "quarter": "90 dní",
+    "year": "Rok"
+  },
+  "sources": {
+    "search": "vyhledávač",
+    "social": "sociální síť",
+    "referral": "odkaz",
+    "email": "e-mail",
+    "direct": "přímo"
+  },
+  "devices": {
+    "desktop": "počítač",
+    "mobile": "mobil",
+    "tablet": "tablet"
+  },
+  "empty": "Zatím žádná data. Návštěvy webu se tu ukážou, až bude mít firma web s měřením návštěvnosti (skript /_e/e.js) přiřazený správcem Osirisu.",
+  "uniquePerDay": "unikátní za den",
+  "pageviews": "Zobrazení stránek",
+  "noVisits": "V tomto období žádné návštěvy.",
+  "pages": "Stránky",
+  "referrers": "Zdroje návštěv",
+  "directOnly": "Jen přímé návštěvy.",
+  "campaigns": "Kampaně (UTM)",
+  "noCampaigns": "Žádné odkazy s UTM.",
+  "unknown": "neznámá",
+  "regions": "Regiony",
+  "cities": "Města (orientačně)",
+  "networks": "Poskytovatelé připojení",
+  "browsers": "Prohlížeče",
+  "systems": "Systémy",
+  "devicesTitle": "Zařízení",
+  "customEvents": "Vlastní události",
+  "noEvents": "Žádné (window.wa.event).",
+  "approximate": "Poloha je orientační.",
+  "nothing": "Nic."
+}

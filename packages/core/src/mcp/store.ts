@@ -1,6 +1,7 @@
 import type { Client } from "@libsql/client";
 import type { McpServer, Scope } from "@osiris/shared";
 import type { SecretBox } from "../secrets.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 export const MCP_SERVER_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -17,7 +18,7 @@ export interface McpServerConfig {
 const authOf = (r: Record<string, unknown>): McpAuth => (r.auth === "oauth" ? "oauth" : "headers");
 
 /** The name is used by another server in the tenant (tool names `<server>_<tool>` must not clash). */
-export class McpNameTakenError extends Error {}
+export class McpNameTakenError extends LocalizedError {}
 
 /** Row owner: '' for tenant-wide servers, the user's sub for personal ones. */
 export const mcpOwner = (scope: Scope, userId: string) => (scope === "tenant" ? "" : userId);
@@ -76,7 +77,7 @@ export class McpServerStore {
   ) {
     if (!MCP_SERVER_NAME.test(name)) throw new Error(`Invalid MCP server name "${name}"`);
     const taken = await this.db.execute({ sql: "SELECT 1 FROM mcp_servers WHERE name = ? AND owner <> ?", args: [name, owner] });
-    if (taken.rows.length) throw new McpNameTakenError(`Název „${name}“ už ve firmě používá jiný server`);
+    if (taken.rows.length) throw new McpNameTakenError("errors.mcp.nameTaken", { name });
     const sealed = headers === undefined ? undefined : Object.keys(headers).length ? this.secrets.seal(JSON.stringify(headers)) : null;
     await this.db.execute({
       sql: `INSERT INTO mcp_servers (owner, name, url, enabled, headers_enc, auth) VALUES (?, ?, ?, ?, ?, ?)

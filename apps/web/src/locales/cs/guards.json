@@ -1,0 +1,28 @@
+{
+  "levels": {
+    "system": "Systém",
+    "tenant": "Firma",
+    "user": "Moje",
+    "assistant": "Asistent"
+  },
+  "places": {
+    "system": "Systém (všichni tenanti)",
+    "assistant": "Asistent {{name}}"
+  },
+  "none": "Žádná.",
+  "intro": "Pravidla, která asistent musí dodržet. Každá zpráva i odpověď se proti nim kontroluje.",
+  "add": "Přidat kontrolu",
+  "select": "Vyber kontrolu ze seznamu.",
+  "nowhere": "Nemáš kam kontrolu přidat.",
+  "confirmDelete": "Smazat kontrolu {{name}}?",
+  "new": "Nová kontrola",
+  "systemAdminOnly": "mění ho jen správce systému",
+  "tenantAdminOnly": "mění ho jen správce tenanta",
+  "target": "Pro koho platí",
+  "name": "Název (malá písmena, číslice, pomlčky)",
+  "namePlaceholder": "např. bez-politiky",
+  "description": "Popis",
+  "rule": "Pravidlo",
+  "rulePlaceholder": "např. Nemluv o politice ani o konkurenci.",
+  "systemDelay": "Projeví se do půl minuty."
+}

@@ -1,0 +1,20 @@
+{
+  "title": "User administration",
+  "add": "Add user",
+  "select": "Select a user from the list.",
+  "added": "User added",
+  "addToTenants": "Add them to tenants in their detail.",
+  "openDetail": "Open detail",
+  "new": "New user",
+  "create": "Add and create a sign-in link",
+  "you": "that's you",
+  "access": "Access",
+  "systemAdminHint": "manages tenants and users and is an administrator of every tenant",
+  "blocked": "Blocked",
+  "blockedHint": "can't sign in, and their sign-in stops working within a minute",
+  "noAccess": "no access",
+  "noTenants": "No tenants yet.",
+  "signIn": "Sign-in",
+  "createLink": "Create sign-in link",
+  "twoFactorOff": "Two-step verification is off."
+}

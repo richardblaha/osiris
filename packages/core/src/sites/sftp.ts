@@ -5,6 +5,7 @@ import type { PublishResult, SiteTarget } from "@osiris/shared";
 import SftpClient from "ssh2-sftp-client";
 import type { FileLocation, FileStore } from "../files/store.ts";
 import type { SecretBox } from "../secrets.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 /** What Osiris published to a target, so it changes only its own files there. Kept next to the site. */
 export const MANIFEST = ".osiris-manifest.json";
@@ -22,7 +23,7 @@ export interface SiteTargetInput {
 }
 
 /** The server's host key changed since it was pinned: possibly someone in between. */
-export class HostKeyMismatchError extends Error {}
+export class HostKeyMismatchError extends LocalizedError {}
 
 const fingerprint = (key: Buffer) => `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
 
@@ -57,7 +58,7 @@ export class SiteTargetStore {
   async put(name: string, t: SiteTargetInput) {
     const existing = await this.get(name);
     const secret = t.secret ?? existing?.secret;
-    if (!secret) throw new Error("Zadej heslo nebo privátní klíč");
+    if (!secret) throw new LocalizedError("errors.sftp.credentials");
     // A different server or user means a different host key.
     const sameServer = existing && existing.host === t.host && existing.port === t.port;
     await this.db.execute({
@@ -97,7 +98,7 @@ async function connect(store: SiteTargetStore, target: SiteTarget & { secret: st
     },
   }).catch((err: Error) => {
     if (target.hostKey && seen && seen !== target.hostKey) {
-      throw new HostKeyMismatchError(`Server ${target.host} se představil jiným klíčem (${seen}) než minule (${target.hostKey}). Pokud se server měnil, ulož cíl znovu.`);
+      throw new HostKeyMismatchError("errors.sftp.hostKey", { host: target.host, seen, expected: target.hostKey });
     }
     throw err;
   });
@@ -108,7 +109,7 @@ async function connect(store: SiteTargetStore, target: SiteTarget & { secret: st
 /** Connects and lists the target folder, to check a target's settings. */
 export async function testTarget(store: SiteTargetStore, name: string): Promise<string[]> {
   const target = await store.get(name);
-  if (!target) throw new Error(`Cíl ${name} neexistuje`);
+  if (!target) throw new LocalizedError("errors.sftp.targetNotFound", { name });
   const sftp = await connect(store, target);
   try {
     if (!(await sftp.exists(target.remoteDir))) return [];
@@ -132,7 +133,7 @@ export async function publishFolder(
   sftp?: SftpClient,
 ): Promise<PublishResult> {
   const target = await store.get(name);
-  if (!target) throw new Error(`Cíl ${name} neexistuje`);
+  if (!target) throw new LocalizedError("errors.sftp.targetNotFound", { name });
   const local = new Map<string, { path: string; hash: string; size: number }>();
   for await (const entry of files.walk(loc, dir)) {
     const rel = dir ? entry.path.slice(dir.length + 1) : entry.path;
@@ -140,7 +141,7 @@ export async function publishFolder(
     const { data } = await files.read(loc, entry.path);
     local.set(rel, { path: entry.path, hash: createHash("sha256").update(data).digest("hex"), size: data.length });
   }
-  if (!local.has("index.html")) throw new Error(`Ve složce ${dir || "/"} chybí index.html`);
+  if (!local.has("index.html")) throw new LocalizedError("errors.sftp.noIndex", { path: dir || "/" });
 
   const at = new Date().toISOString();
   let client: SftpClient | undefined;

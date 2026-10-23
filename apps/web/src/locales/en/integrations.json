@@ -1,0 +1,30 @@
+{
+  "title": "Accounts connected for the assistant",
+  "intro": "The assistant can then read and send your mail, search and edit contacts and plan in your calendar. It only sends and changes things on your explicit instruction.",
+  "connected": "Connected: {{account}}",
+  "account": "account",
+  "what": {
+    "google": "Gmail, Google contacts (on Android phones) and Google Calendar",
+    "microsoft": "Outlook / Microsoft 365: mail, contacts and calendar"
+  },
+  "reconnect": "Connect again",
+  "standardTitle": "Your own mail, calendar and contacts",
+  "kind": "Account type",
+  "name": "Account name for the assistant",
+  "namePlaceholder": "work-mail",
+  "from": "Email address",
+  "smtp": "Send with SMTP",
+  "smtpTls": "SMTP security",
+  "implicitTls": "TLS from the start (usually 465)",
+  "starttls": "STARTTLS (usually 587)",
+  "incoming": "Incoming mail",
+  "imap": "IMAP over TLS",
+  "pop3": "POP3 over TLS",
+  "noIncoming": "No incoming mail",
+  "url": "Server URL",
+  "username": "User name",
+  "password": "Password or app password",
+  "connect": "Connect account",
+  "server": "Server",
+  "port": "Port"
+}

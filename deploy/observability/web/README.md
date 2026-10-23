@@ -15,7 +15,7 @@ consent banner.
                                        └─ *_mv → stats_hourly, stats_daily, pages_daily, referrers_daily,
                                                  campaigns_daily, countries_daily, locations_daily, networks_daily, devices_daily, events_daily
                                                  │
-                       Osiris System > Návštěvnost (control → /api/admin/telemetry/web)  ·  grafana-dashboard.json
+                       Osiris System > Traffic (control → /api/admin/telemetry/web)  ·  grafana-dashboard.json
 ```
 
 - **Script** (`apps/web-events/src/e.js`, ~0.6 kB gzip): sends a pageview on load and on every SPA navigation

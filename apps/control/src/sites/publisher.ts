@@ -9,12 +9,13 @@ import * as tar from "tar";
 import { fileType, type SiteRelease } from "@osiris/shared";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 export const SITE_LIMITS = { files: 2000, fileBytes: 25 * 1024 * 1024, totalBytes: 200 * 1024 * 1024, uploadBytes: 220 * 1024 * 1024 };
 /** Releases kept per domain, for rollback. */
 const KEEP_RELEASES = 5;
 
-export class PublishError extends Error {}
+export class PublishError extends LocalizedError {}
 
 /** A path inside a site: no `..`, no hidden files except `.well-known`, only types we serve. */
 function sitePath(raw: string): string | null {
@@ -42,8 +43,8 @@ export class SitePublisher {
 
   async publish(tenantId: string, domain: string, archive: Readable, createdBy: string | null, now = Date.now()): Promise<SiteRelease> {
     const [d] = await this.db.query<{ status: string }>("SELECT status FROM domains WHERE tenant_id = ? AND domain = ?", [tenantId, domain], { fresh: true });
-    if (!d) throw new PublishError("Doména nepatří tenantovi");
-    if (d.status !== "verified") throw new PublishError("Doména ještě není ověřená");
+    if (!d) throw new PublishError("errors.publish.foreignDomain");
+    if (d.status !== "verified") throw new PublishError("errors.publish.unverified");
 
     const work = await mkdtemp(join(tmpdir(), "osiris-site-"));
     try {
@@ -51,7 +52,7 @@ export class SitePublisher {
       await pipeline(archive, createWriteStream(upload));
       const root = join(work, "site");
       const files = await this.extract(upload, root);
-      if (!files.some((f) => f.path === "index.html")) throw new PublishError("Web musí mít v kořeni soubor index.html");
+      if (!files.some((f) => f.path === "index.html")) throw new PublishError("errors.publish.noIndex");
 
       const release = `${new Date(now).toISOString().replace(/[-:.TZ]/g, "").slice(0, 14)}-${randomBytes(4).toString("hex")}`;
       let bytes = 0;
@@ -85,7 +86,7 @@ export class SitePublisher {
     await mkdir(root, { recursive: true });
     let count = 0;
     let total = 0;
-    let problem: string | null = null;
+    let problem: PublishError | null = null;
     await tar.x({
       file: archive,
       cwd: root,
@@ -96,17 +97,17 @@ export class SitePublisher {
         const e = entry as { type?: string; size?: number };
         if (e.type === "Directory") return !!sitePath(path) || path === "./" || path === ".";
         const clean = sitePath(path);
-        if (e.type !== "File" && e.type !== "OldFile" && e.type !== "ContiguousFile") problem ??= `Nepovolený typ položky: ${path}`;
-        else if (!clean) problem ??= `Nepovolená cesta: ${path}`;
-        else if (!fileType(clean)) problem ??= `Nepovolený typ souboru: ${clean}`;
-        else if ((e.size ?? 0) > SITE_LIMITS.fileBytes) problem ??= `Soubor je příliš velký: ${clean}`;
-        else if (++count > SITE_LIMITS.files) problem ??= `Web má víc než ${SITE_LIMITS.files} souborů`;
-        else if ((total += e.size ?? 0) > SITE_LIMITS.totalBytes) problem ??= "Web je příliš velký";
+        if (e.type !== "File" && e.type !== "OldFile" && e.type !== "ContiguousFile") problem ??= new PublishError("errors.publish.entryType", { path });
+        else if (!clean) problem ??= new PublishError("errors.publish.path", { path });
+        else if (!fileType(clean)) problem ??= new PublishError("errors.publish.fileType", { path: clean });
+        else if ((e.size ?? 0) > SITE_LIMITS.fileBytes) problem ??= new PublishError("errors.publish.fileTooLarge", { path: clean });
+        else if (++count > SITE_LIMITS.files) problem ??= new PublishError("errors.publish.tooManyFiles", { count: SITE_LIMITS.files });
+        else if ((total += e.size ?? 0) > SITE_LIMITS.totalBytes) problem ??= new PublishError("errors.publish.tooLarge");
         else return true;
         return false;
       },
     });
-    if (problem) throw new PublishError(problem);
+    if (problem) throw problem;
     const out: { path: string }[] = [];
     const walk = async (dir: string) => {
       for (const d of await readdir(dir, { withFileTypes: true })) {
@@ -150,7 +151,7 @@ export class SitePublisher {
         domain,
       ),
     ]);
-    if (!r?.rowsAffected) throw new PublishError("Vydání nenalezeno");
+    if (!r?.rowsAffected) throw new PublishError("errors.publish.releaseNotFound");
   }
 
   /** Deletes releases beyond the newest few (never the current one). */

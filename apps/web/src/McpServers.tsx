@@ -2,6 +2,7 @@ import type { McpServer, McpServerStatus, Scope } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api, getTenant } from "./api.ts";
 import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { t } from "i18next";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -13,7 +14,7 @@ function parseHeaders(text: string): Record<string, string> {
   for (const line of text.split("\n")) {
     const i = line.indexOf(":");
     if (!line.trim()) continue;
-    if (i < 1) throw new Error(`Hlavička „${line.trim()}“ musí být ve tvaru Název: hodnota`);
+    if (i < 1) throw new Error(t("mcp:headerFormat", { line: line.trim() }));
     headers[line.slice(0, i).trim()] = line.slice(i + 1).trim();
   }
   return headers;
@@ -21,25 +22,25 @@ function parseHeaders(text: string): Record<string, string> {
 
 export function McpStatus({ server }: { server: McpServer }) {
   const status = server.status;
-  if (!server.enabled) return <span className="badge">vypnuto</span>;
-  if (!status) return <span className="badge">nevyzkoušeno</span>;
+  if (!server.enabled) return <span className="badge">{t("mcp:off")}</span>;
+  if (!status) return <span className="badge">{t("mcp:untested")}</span>;
   return status.ok ? (
-    <span className="badge text-success">{status.tools.length} nástrojů</span>
+    <span className="badge text-success">{t("mcp:toolCount", { count: status.tools.length })}</span>
   ) : (
     <span className="badge text-error" title={status.error}>
-      nedostupný
+      {t("mcp:unavailable")}
     </span>
   );
 }
 
 /** Services Osiris knows: filled in with one click. Each tenant (or user) connects its own account. */
-const PRESETS: { label: string; name: string; url: string; auth: McpServer["auth"]; headers?: string; hint: string }[] = [
+const PRESETS: { label: string; name: string; url: string; auth: McpServer["auth"]; headers?: string; hint: () => string }[] = [
   {
     label: "vas-hosting.cz",
     name: "vas-hosting",
     url: "https://portal.vas-hosting.cz/mcp",
     auth: "oauth",
-    hint: "Hosting webu, domény, DNS, databáze a soubory na VPS. Po uložení se přihlas účtem vas-hosting a schval oprávnění.",
+    hint: () => t("mcp:presets.vasHosting"),
   },
   {
     label: "Emailit",
@@ -47,7 +48,7 @@ const PRESETS: { label: string; name: string; url: string; auth: McpServer["auth
     url: "https://api.emailit.com/mcp",
     auth: "headers",
     headers: "Authorization: Bearer {{secret:EMAILIT_API_KEY}}",
-    hint: "Odesílání e-mailů, šablony, kontakty a domény. Nejdřív přidej v Klíčích a heslech klíč EMAILIT_API_KEY pro api.emailit.com.",
+    hint: () => t("mcp:presets.emailit"),
   },
 ];
 
@@ -101,34 +102,33 @@ export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted 
     setUrl(p.url);
     setAuth(p.auth);
     setHeaders(p.headers ?? "");
-    setHint(p.hint);
+    setHint(p.hint());
   };
   const status = tested ?? item?.status;
 
   return (
     <div className="detail">
-      <DetailHeader title={item?.name ?? "Nový MCP server"} scope={scope} canEdit={editable}>
-        Externí služba, jejíž nástroje může asistent používat (např. CRM, kalendář, účetnictví). Připojuje se přes Model
-        Context Protocol, jen vzdáleně přes https.
+      <DetailHeader title={item?.name ?? t("mcp:new")} scope={scope} canEdit={editable}>
+        {t("mcp:intro")}
       </DetailHeader>
 
       {item && (
         <p className={`notice mt-6 px-3 py-2 text-sm ${(status && !status.ok) || (item.auth === "oauth" && !item.signedIn) ? "notice-error" : ""}`}>
           {!item.enabled
-            ? "Server je vypnutý."
+            ? t("mcp:status.off")
             : item.auth === "oauth" && !item.signedIn
-              ? "Nepřihlášeno: přihlas se u poskytovatele tlačítkem Přihlásit."
+              ? t("mcp:status.signedOut")
               : !status
-                ? "Zatím nevyzkoušeno."
+                ? t("mcp:status.untested")
                 : status.ok
-                  ? `Připojeno, nástroje: ${status.tools.join(", ") || "žádné"}`
-                  : `Nepodařilo se připojit (${status.error})`}
+                  ? t("mcp:status.connected", { tools: status.tools.join(", ") || t("mcp:status.noTools") })
+                  : t("mcp:status.failed", { error: status.error })}
         </p>
       )}
 
       {!item && editable && (
         <div className="mt-6 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-fg-secondary">Předvolby:</span>
+          <span className="text-fg-secondary">{t("mcp:presets.label")}</span>
           {PRESETS.map((p) => (
             <button key={p.name} type="button" onClick={() => preset(p)} className="btn-secondary text-sm">
               {p.label}
@@ -140,35 +140,35 @@ export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted 
 
       {editable ? (
         <form onSubmit={submit} className="mt-6 space-y-4">
-          <Field label="Název">
+          <Field label={t("name")}>
             <input
               value={name}
               onChange={(e) => setName(e.target.value.toLowerCase())}
-              placeholder="např. crm"
+              placeholder={t("mcp:namePlaceholder")}
               pattern={NAME.source}
               readOnly={!!item}
               required
               className="field"
             />
           </Field>
-          <Field label="Adresa">
+          <Field label={t("mcp:url")}>
             <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com/mcp" type="url" required className="field" />
           </Field>
-          <Field label="Přihlášení">
+          <Field label={t("mcp:auth")}>
             <select value={auth} onChange={(e) => setAuth(e.target.value as McpServer["auth"])} className="field w-auto">
-              <option value="headers">klíčem v hlavičkách</option>
-              <option value="oauth">přihlášením u poskytovatele (OAuth)</option>
+              <option value="headers">{t("mcp:authHeaders")}</option>
+              <option value="oauth">{t("mcp:authOauth")}</option>
             </select>
           </Field>
           {auth === "headers" && (
-          <Field label="Hlavičky">
+          <Field label={t("mcp:headers")}>
             <textarea
               value={headers}
               onChange={(e) => setHeaders(e.target.value)}
               placeholder={
                 item?.headerNames.length
-                  ? `Uložené hlavičky: ${item.headerNames.join(", ")}. Nech prázdné pro zachování, nebo zadej nové.`
-                  : "Jedna na řádek (nepovinné). Klíče vkládej ze sekce Klíče a hesla:\nAuthorization: Bearer {{secret:CRM_TOKEN}}"
+                  ? t("mcp:headersStored", { names: item.headerNames.join(", ") })
+                  : `${t("mcp:headersHint")}\nAuthorization: Bearer {{secret:CRM_TOKEN}}`
               }
               rows={3}
               className="field text-sm"
@@ -177,27 +177,27 @@ export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted 
           )}
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <label className="flex items-center gap-1">
-              <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> zapnuto
+              <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> {t("mcp:enabled")}
             </label>
             {!!item?.headerNames.length && (
               <label className="flex items-center gap-1">
-                <input type="checkbox" checked={clearHeaders} onChange={(e) => setClearHeaders(e.target.checked)} /> odebrat uložené hlavičky
+                <input type="checkbox" checked={clearHeaders} onChange={(e) => setClearHeaders(e.target.checked)} /> {t("mcp:clearHeaders")}
               </label>
             )}
           </div>
           <div className="flex items-center gap-4">
             <button disabled={busy} className="btn-primary">
-              {busy ? "Ukládám…" : item ? "Uložit" : auth === "oauth" ? "Přidat a přihlásit" : "Přidat"}
+              {busy ? t("saving") : item ? t("save") : auth === "oauth" ? t("mcp:addSignIn") : t("add")}
             </button>
             {item && (
               <>
                 {item.auth === "oauth" && (
                   <button type="button" onClick={() => void attempt(setBusy, setError, () => signIn(item.name))} disabled={busy} className="btn-secondary">
-                    {item.signedIn ? "Přihlásit znovu" : "Přihlásit"}
+                    {item.signedIn ? t("mcp:signInAgain") : t("mcp:signIn")}
                   </button>
                 )}
                 <button type="button" onClick={test} disabled={busy || !item.enabled} className="btn-secondary">
-                  Vyzkoušet
+                  {t("mcp:test")}
                 </button>
                 <button
                   type="button"
@@ -205,14 +205,14 @@ export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted 
                   onClick={() => attempt(setBusy, setError, async () => (await api.deleteMcpServer(item.name, item.scope), onDeleted()))}
                   className="btn-danger text-sm"
                 >
-                  Smazat
+                  {t("delete")}
                 </button>
               </>
             )}
           </div>
         </form>
       ) : (
-        <p className="mt-4 text-sm text-fg-secondary">Adresu a hlavičky vidí jen správce tenanta.</p>
+        <p className="mt-4 text-sm text-fg-secondary">{t("mcp:adminOnly")}</p>
       )}
       <ErrorNotice error={error} />
     </div>

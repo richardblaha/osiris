@@ -2,10 +2,12 @@ import type { Memory, Scope } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { attempt, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { t } from "i18next";
+import { formatDateTime } from "./i18n.ts";
 
 export const memoryKey = (m: Memory) => m.id;
 
-const INTRO = "Fakta, která si asistent pamatuje mezi konverzacemi. Ukládá si je i sám, když mu něco řekneš.";
+const intro = () => t("memory:intro");
 
 export function MemoryDetail({ item, scope, isAdmin, onSaved, onDeleted }: DetailProps<Memory>) {
   const [content, setContent] = useState("");
@@ -16,18 +18,18 @@ export function MemoryDetail({ item, scope, isAdmin, onSaved, onDeleted }: Detai
     const editable = true;
     return (
       <div className="detail">
-        <DetailHeader title="Záznam v paměti" scope={item.scope} canEdit={editable}>
-          {INTRO}
+        <DetailHeader title={t("memory:item")} scope={item.scope} canEdit={editable}>
+          {intro()}
         </DetailHeader>
         <p className="notice mt-6 px-3 py-2 whitespace-pre-wrap">{item.content}</p>
-        <p className="mt-1 text-xs text-fg-muted">Uloženo {new Date(item.createdAt).toLocaleString("cs-CZ")}</p>
+        <p className="mt-1 text-xs text-fg-muted">{t("memory:saved", { time: formatDateTime(item.createdAt) })}</p>
         {editable && (
           <button
             disabled={busy}
             onClick={() => attempt(setBusy, setError, async () => (await api.deleteMemory(item.id, item.scope), onDeleted()))}
             className="btn-danger mt-6 text-sm"
           >
-            Zapomenout
+            {t("memory:forget")}
           </button>
         )}
         <ErrorNotice error={error} />
@@ -42,15 +44,15 @@ export function MemoryDetail({ item, scope, isAdmin, onSaved, onDeleted }: Detai
 
   return (
     <div className="detail">
-      <DetailHeader title="Nový záznam v paměti" scope={scope} canEdit>
-        {INTRO}
+      <DetailHeader title={t("memory:new")} scope={scope} canEdit>
+        {intro()}
       </DetailHeader>
       <form onSubmit={submit} className="mt-6 space-y-4">
-        <Field label="Co si má pamatovat">
+        <Field label={t("memory:what")}>
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="Např. Nejsem plátce DPH. Zálohy chci 50 % předem."
+            placeholder={t("memory:placeholder")}
             maxLength={500}
             rows={4}
             required
@@ -58,7 +60,7 @@ export function MemoryDetail({ item, scope, isAdmin, onSaved, onDeleted }: Detai
           />
         </Field>
         <button disabled={busy} className="btn-primary">
-          {busy ? "Ukládám…" : "Přidat"}
+          {busy ? t("saving") : t("add")}
         </button>
       </form>
       <ErrorNotice error={error} />

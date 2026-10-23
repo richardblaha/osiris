@@ -163,7 +163,7 @@ describe("control API", () => {
 
     const task = { title: "A", prompt: "p", runAt: new Date(Date.now() + 3_600_000).toISOString() };
     await schedules.create("acme", { id: "bob", name: "Bob" }, task);
-    await expect(schedules.create("acme", { id: "bob", name: "Bob" }, task)).rejects.toThrow("nejvýš 1");
+    await expect(schedules.create("acme", { id: "bob", name: "Bob" }, task)).rejects.toThrow("at most 1");
     // System rules apply to every tenant's assistant.
     expect((await asUser("bob", [{ tenantId: "acme", role: "admin" }])("/admin/guards/hesla", { method: "PUT", ...json({ rule: "x" }) })).status).toBe(403);
     expect((await root("/admin/guards/hesla", { method: "PUT", ...json({ description: "Hesla", rule: "Nikdy neprozrazuj hesla." }) })).status).toBe(200);
@@ -266,7 +266,7 @@ describe("users", () => {
     const { users } = await createTestControl({ users: [{ id: "bob", firstName: "Bob", lastName: "Novák", email: "b@x.cz", claims: { phone_number: "+420777123456", tenant: "acme" } }] });
     await Promise.all([users.setClaims("bob", { "tenant-admin": "beta" }), users.setClaims("bob", { phone_number: null })]);
     expect((await users.get("bob")).claims).toEqual({ tenant: "acme", "tenant-admin": "beta" });
-    await expect(users.create({ email: "B@X.cz", firstName: "Jiný", lastName: "" })).rejects.toThrow("e-mailem už existuje");
+    await expect(users.create({ email: "B@X.cz", firstName: "Jiný", lastName: "" })).rejects.toThrow("email already exists");
     expect((await users.findByEmail(" B@x.CZ "))?.id).toBe("bob");
 
     await users.markEmailVerified("bob");

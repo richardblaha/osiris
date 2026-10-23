@@ -1,0 +1,20 @@
+{
+  "newTenant": "New tenant",
+  "newUser": "New user",
+  "titles": {
+    "features": "Features",
+    "quotas": "Limits",
+    "runtime": "Operation and storage",
+    "personalization": "Personalization",
+    "persona": "Assistant persona"
+  },
+  "intro": "Defaults for new tenants and users. Existing ones keep theirs.",
+  "quotaField": "{{label}} (empty = no limit)",
+  "idle": "Sleep when idle (minutes, 0 = never)",
+  "disk": "Disk (GB)",
+  "personalizationIntro": "The personalization a user starts with until they set their own in Personalization.",
+  "byUser": "follow the user",
+  "instructions": "Instructions for the assistant",
+  "instructionsPlaceholder": "For example: Always quote prices including VAT.",
+  "personaHint": "Applies until the user sets their own. Empty = no persona."
+}

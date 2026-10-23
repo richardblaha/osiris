@@ -1,3 +1,4 @@
+import type { Message } from "@osiris/shared";
 import { argon2, createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 
 // --- passwords ------------------------------------------------------------------------------------------------------
@@ -38,10 +39,12 @@ export async function verifyPassword(password: string, stored: string | null): P
   return timingSafeEqual(hash, expected) && stored !== null;
 }
 
-export function passwordProblem(password: string): string | null {
-  if (password.length < PASSWORD_MIN) return `Heslo musí mít aspoň ${PASSWORD_MIN} znaků`;
-  if (password.length > PASSWORD_MAX) return `Heslo může mít nejvýš ${PASSWORD_MAX} znaků`;
-  if (new Set(password).size < 4) return "Heslo je příliš jednoduché";
+/** Why a new password is refused (a catalog key and its parameters); null when it is fine. Lengths count characters, not UTF-16 units. */
+export function passwordProblem(password: string): Message | null {
+  const chars = [...password];
+  if (chars.length < PASSWORD_MIN) return { key: "errors.password.tooShort", params: { count: PASSWORD_MIN } };
+  if (chars.length > PASSWORD_MAX) return { key: "errors.password.tooLong", params: { count: PASSWORD_MAX } };
+  if (new Set(chars).size < 4) return { key: "errors.password.tooSimple" };
   return null;
 }
 

@@ -3,7 +3,7 @@ import { QuestionError } from "@osiris/core/agent/questions.ts";
 import { standardAccountSchema } from "@osiris/core/integrations/standard.ts";
 import { randomUUID } from "node:crypto";
 import type { AssistantProfile, AssistantProfiles, BuiltinTool, Guard, Guards, Feature, FileEntry, FileScope, FileSearchHit, Inquiry, Integration, McpServer, PublicAssistantSettings, PublicInfo, ThreadMessage, Persona, PublishResult, Scope, SecretSummary, SiteTarget, Skill, TenantUsage, UsageBreakdown, UserSettings } from "@osiris/shared";
-import { GUARD_NAME, PUBLIC_ASSISTANT_NAME, PUBLIC_TOOLS } from "@osiris/shared";
+import { CUSTOM_PERSONA, GUARD_NAME, PUBLIC_ASSISTANT_NAME, PUBLIC_TOOLS } from "@osiris/shared";
 import { Hono, type Context } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
@@ -33,9 +33,10 @@ import { publicAuth, userAuth, type AuthEnv, type RequestContext } from "./auth.
 import { createInternalRoutes } from "./internal.ts";
 import { databaseRoutes } from "./database.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
+import { detail, errorResponse, HttpError, requestLocale, translate, ValidationError } from "@osiris/platform/i18n.ts";
 
 
-const runBody = z.object({ message: z.string().trim().min(1).max(60_000).refine(v => v.length <= 20_000 || v.startsWith("@osiris-answer:"), "Zpráva je příliš dlouhá") });
+const runBody = z.object({ message: z.string().trim().min(1).max(60_000).refine(v => v.length <= 20_000 || v.startsWith("@osiris-answer:"), "errors.validation.messageTooLong") });
 // Everything is the tenant's; "personal" is gone (only the user's profile is theirs).
 const scope = z.literal("tenant").default("tenant");
 const documentBody = z.object({
@@ -56,13 +57,13 @@ const mcpServerBody = z.object({
   auth: z.enum(["headers", "oauth"]).default("headers"),
   // Omitted = keep the stored headers. Values are secrets (tokens) and are never returned.
   headers: z
-    .record(z.string().regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/, "Neplatný název hlavičky"), z.string().max(4000).regex(/^[^\r\n]*$/))
+    .record(z.string().regex(/^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/, "errors.validation.headerName"), z.string().max(4000).regex(/^[^\r\n]*$/))
     .optional(),
   scope,
 });
 const settingsBody = z.object({
   address: z.enum(["auto", "ty", "vy"]),
-  language: z.enum(["auto", "cs", "sk"]),
+  language: z.enum(["auto", "en", "cs", "sk"]),
   signature: z.string().trim().max(1000),
   instructions: z.string().trim().max(4000),
 });
@@ -75,7 +76,7 @@ const guardBody = z.object({ description: z.string().trim().max(300).default("")
 const knowledgePath = z
   .string()
   .max(512)
-  .refine((p) => p.split("/").every((seg) => seg && seg !== "." && seg !== ".." && !seg.startsWith(".")), "Neplatná cesta ve znalostní bázi");
+  .refine((p) => p.split("/").every((seg) => seg && seg !== "." && seg !== ".." && !seg.startsWith(".")), "errors.validation.knowledgePath");
 const publicSettingsBody = z.object({
   enabled: z.boolean(),
   title: z.string().trim().max(120),
@@ -87,10 +88,10 @@ const publicSettingsBody = z.object({
   tokensPerMonth: z.number().int().min(0).max(1e12).nullable(),
 });
 const siteTargetBody = z.object({
-  host: z.string().trim().min(1).max(253).regex(/^[A-Za-z0-9.-]+$/, "Server: název nebo IP adresa"),
+  host: z.string().trim().min(1).max(253).regex(/^[A-Za-z0-9.-]+$/, "errors.validation.host"),
   port: z.number().int().min(1).max(65535).default(22),
   username: z.string().trim().min(1).max(100),
-  remoteDir: z.string().trim().min(1).max(500).regex(/^\//, "Cílová složka musí být absolutní cesta, např. /var/www/firma"),
+  remoteDir: z.string().trim().min(1).max(500).regex(/^\//, "errors.validation.remoteDir"),
   auth: z.enum(["password", "key"]),
   // Omitted = keep the stored one. Never returned.
   secret: z.string().min(1).max(20_000).optional(),
@@ -101,8 +102,8 @@ const secretBody = z.object({
   // Omitted = keep the stored value (e.g. when only the hosts change). Never returned.
   value: z.string().min(1).max(10_000).optional(),
   allowedHosts: z
-    .array(z.string().trim().toLowerCase().regex(HOST_PATTERN, "Neplatná doména (např. api.example.com nebo *.example.com)"))
-    .min(1, "Zadej aspoň jednu povolenou doménu")
+    .array(z.string().trim().toLowerCase().regex(HOST_PATTERN, "errors.validation.allowedHost"))
+    .min(1, "errors.validation.allowedHostsEmpty")
     .max(20),
   description: z.string().trim().max(300).default(""),
   scope,
@@ -148,8 +149,8 @@ export interface RuntimeAppDeps {
 }
 
 /**
- * The tenant runtime's API. Every request carries an internal token: user calls come from the gateway (which verified
- * the PocketID token and the membership), scheduled runs and WhatsApp messages from control, activity checks and
+ * The tenant runtime's API. Every request carries an internal token: user calls come from the gateway (which had control
+ * identify the access token and checked the membership), scheduled runs and WhatsApp messages from control, activity checks and
  * snapshots from the operator. The tenant is fixed: this process serves one tenant and refuses tokens for another.
  */
 export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts }: RuntimeAppDeps) {
@@ -159,29 +160,30 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
   /** Runs the agent on one message of a thread and streams its events (web and public chats). */
   const runThread = async (c: Context, ctx: RequestContext, id: string, message: string, assistant?: string) => {
     const { tenant, user, role, channel } = ctx;
+    const locale = requestLocale(c.req.header("accept-language"));
     const runKey = `${tenant.id}/${id}`;
-    if (activeRuns.has(runKey)) throw new HTTPException(409, { message: "A run is already in progress for this thread" });
+    if (activeRuns.has(runKey)) throw new HttpError(409, "errors.run.inProgress");
 
     activeRuns.add(runKey);
     let paths: string[] = [];
     try {
       const decoded = attachmentInput(message); paths = decoded.paths;
-      if (paths.length && !(await tenant.features.get()).files) throw new HTTPException(403, { message: "Soubory nejsou povolené" });
+      if (paths.length && !(await tenant.features.get()).files) throw new HttpError(403, "errors.files.featureOff");
       message = await tenant.questions.prepare(user.sub, id, decoded.text);
     }
-    catch (err) { activeRuns.delete(runKey); if (err instanceof QuestionError || err instanceof AttachmentError) throw new HTTPException(400, { message: err.message }); throw err; }
+    catch (err) { activeRuns.delete(runKey); if (err instanceof QuestionError || err instanceof AttachmentError) throw new HttpError(400, err.key, err.params); throw err; }
     activity.activeRuns++;
     const abort = new AbortController();
     return streamSSE(c, async (sse) => {
       sse.onAbort(() => abort.abort());
       try {
         await threads.touchThread(tenant.db, id, message);
-        const runCtx = { thread_id: id, tenant_id: tenant.id, user_id: user.sub, role, channel, assistant, user_name: user.name ?? undefined };
+        const runCtx = { thread_id: id, tenant_id: tenant.id, user_id: user.sub, role, channel, assistant, user_name: user.name ?? undefined, locale };
         // With rules, the answer is sent only after the output check (the public assistant's rules too).
         const guarded = channel === "public" ? true : hasRules(await tenant.rules(user.sub));
         const quota = await tenant.features.quotas();
-        if (paths.length && ((quota.tokensPerMonth !== null && await tenant.usage.tokens() >= quota.tokensPerMonth) || (quota.tokensPerUserMonth !== null && await tenant.usage.tokens(Date.now(), { user: user.sub }) >= quota.tokensPerUserMonth))) throw new Error("Limit tokenů vyčerpán");
-        const input = paths.length ? await attachmentMessage(tenant.files, tenant.media, id, message, paths, n => tenant.usage.add(n, Date.now(), { user: user.sub })) : undefined;
+        if (paths.length && ((quota.tokensPerMonth !== null && await tenant.usage.tokens() >= quota.tokensPerMonth) || (quota.tokensPerUserMonth !== null && await tenant.usage.tokens(Date.now(), { user: user.sub }) >= quota.tokensPerUserMonth))) throw new Error("Token quota used up");
+        const input = paths.length ? await attachmentMessage(tenant.files, tenant.media, id, message, paths, n => tenant.usage.add(n, Date.now(), { user: user.sub }), locale) : undefined;
         for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal, { guarded, input })) {
           await sse.writeSSE({ data: JSON.stringify(event) });
         }
@@ -199,35 +201,35 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
   };
 
   const requireThread = async ({ tenant, user }: RequestContext, id: string) => {
-    if (!(await threads.ownsThread(tenant.db, user.sub, id))) throw new HTTPException(404, { message: "Thread not found" });
+    if (!(await threads.ownsThread(tenant.db, user.sub, id))) throw new HttpError(404, "errors.thread.notFound");
   };
   const requireAdmin = (ctx: RequestContext) => {
-    if (ctx.role !== "admin") throw new HTTPException(403, { message: "Requires admin role" });
+    if (ctx.role !== "admin") throw new HttpError(403, "errors.access.adminOnly");
   };
   /** Anyone may change their personal settings; tenant-wide ones need an admin. */
   /** Tenant settings (skills, MCP servers, secrets, rules) are the admins'; the knowledge base, memory and files everyone's. */
   const requireScope = (ctx: RequestContext, _scope: Scope) => requireAdmin(ctx);
   const queryScope = (value: string | undefined): Scope => {
     if (value === undefined || value === "tenant") return "tenant";
-    throw new HTTPException(400, { message: "Osobní nastavení už nejsou, vše platí pro celý tenant" });
+    throw new HttpError(400, "errors.scope.personalGone");
   };
   const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
-    const r = schema.safeParse(value);
-    if (!r.success) throw new HTTPException(400, { message: z.prettifyError(r.error) });
+    const r = schema.safeParse(value, { reportInput: true });
+    if (!r.success) throw new ValidationError(r.error);
     return r.data;
   };
   const checkMcpUrl = async ({ tenant }: RequestContext, url: string) => {
     try {
       await tenant.mcp.checkUrl(url);
     } catch (err) {
-      if (err instanceof UnsafeUrlError || err instanceof SecretUseError) throw new HTTPException(400, { message: err.message });
+      if (err instanceof UnsafeUrlError || err instanceof SecretUseError) throw new HttpError(400, err.key, err.params);
       throw err;
     }
   };
   /** The file scope a request names; temp files belong to one of the caller's threads. */
   const fileLocation = async (ctx: RequestContext, scope: FileScope, thread: string | undefined): Promise<FileLocation> => {
     if (scope === "tenant") return { scope };
-    if (!thread) throw new HTTPException(400, { message: "thread is required for temp files" });
+    if (!thread) throw new HttpError(400, "errors.files.threadRequired");
     await requireThread(ctx, thread);
     return { scope: "temp", threadId: thread };
   };
@@ -235,13 +237,13 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     parse(fileRef.partial({ path: true }), { scope: c.req.query("scope"), path: c.req.query("path"), thread: c.req.query("thread") });
   /** The tenant's files are everyone's to write, but guards/ only admins'; temp files are checked to be the caller's own thread's. */
   const requireFileWrite = (ctx: RequestContext, scope: FileScope, path: string | undefined) => {
-    if (scope === "tenant" && isGuardPath(path ?? "") && ctx.role !== "admin") throw new HTTPException(403, { message: "Pravidla (guards/) mění jen správce" });
+    if (scope === "tenant" && isGuardPath(path ?? "") && ctx.role !== "admin") throw new HttpError(403, "errors.guard.adminOnly");
   };
   const fileErrors = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
     } catch (err) {
-      if (err instanceof FileError) throw new HTTPException(FILE_ERROR_STATUS[err.code], { message: err.message });
+      if (err instanceof FileError) throw new HttpError(FILE_ERROR_STATUS[err.code], err.key, err.params);
       throw err;
     }
   };
@@ -253,14 +255,14 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     if (level === "tenant") return { level: "tenant" };
     if (level === "assistant") {
       const a = await ctx.tenant.publicAssistants.get(assistant ?? "");
-      if (!a || a.name !== assistant) throw new HTTPException(404, { message: "Asistent neexistuje" });
+      if (!a || a.name !== assistant) throw new HttpError(404, "errors.assistant.notFound");
       return { level: "assistant", assistant: a.name };
     }
-    throw new HTTPException(400, { message: "Úroveň: user, tenant nebo assistant" });
+    throw new HttpError(400, "errors.guard.level");
   };
 
   const skillName = (name: string) => {
-    if (!SKILL_NAME.test(name)) throw new HTTPException(400, { message: "Skill name must be lowercase-kebab-case" });
+    if (!SKILL_NAME.test(name)) throw new HttpError(400, "errors.validation.name");
     return name;
   };
 
@@ -271,7 +273,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
   };
   const requirePublic = async (name: string) => {
     const a = await publicAssistant(name);
-    if (!a) throw new HTTPException(404, { message: "Asistent není dostupný" });
+    if (!a) throw new HttpError(404, "errors.assistant.unavailable");
     return a;
   };
 
@@ -304,7 +306,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       await requireThread(ctx, c.req.param("id"));
       const q = await tenant.questions.get(ctx.user.sub, c.req.param("id"), c.req.param("question"));
-      if (!q) throw new HTTPException(404);
+      if (!q) throw new HttpError(404, "errors.question.notFound");
       return c.json(q);
     })
     .post("/:assistant/threads/:id/runs", async (c) => {
@@ -326,7 +328,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const route = FEATURE_ROUTES.find(([prefix]) => c.req.path === `/api${prefix}` || c.req.path.startsWith(`/api${prefix}/`));
       if (route) {
         const on = await c.get("ctx").tenant.features.get();
-        if (!route[1].some((f) => on[f])) throw new HTTPException(403, { message: "Tato funkce není pro tenant povolená" });
+        if (!route[1].some((f) => on[f])) throw new HttpError(403, "errors.featureOff");
       }
       await next();
     })
@@ -363,7 +365,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       await requireThread(ctx, c.req.param("id"));
       const question = await tenant.questions.get(ctx.user.sub, c.req.param("id"), c.req.param("question"));
-      if (!question) throw new HTTPException(404, { message: "Otázka neexistuje" });
+      if (!question) throw new HttpError(404, "errors.question.notFound");
       return c.json(question);
     })
 
@@ -394,25 +396,25 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const base = `${folder ? `${folder}/` : ""}${slug(title)}`;
       let id = `${base}.md`;
       for (let n = 2; await tenant.knowledge.getDocument(id); n++) id = `${base}-${n}.md`;
-      if (!DOCUMENT_ID.test(id)) throw new HTTPException(400, { message: "Neplatná složka: písmena, číslice, tečky a pomlčky, / mezi složkami" });
+      if (!DOCUMENT_ID.test(id)) throw new HttpError(400, "errors.knowledge.folder");
       await tenant.knowledge.putDocument(id, content, title);
       return c.json((await tenant.knowledge.listDocuments()).find((d) => d.id === id), 201);
     })
     .get("/knowledge/documents/:id{.+}", async (c) => {
       const doc = await c.get("ctx").tenant.knowledge.getDocument(c.req.param("id"));
-      if (!doc) throw new HTTPException(404, { message: "Dokument neexistuje" });
+      if (!doc) throw new HttpError(404, "errors.knowledge.notFound");
       return c.json(doc);
     })
     .put("/knowledge/documents/:id{.+}", async (c) => {
       const { tenant } = c.get("ctx");
       const id = c.req.param("id");
-      if (!(await tenant.knowledge.getDocument(id))) throw new HTTPException(404, { message: "Dokument neexistuje" });
+      if (!(await tenant.knowledge.getDocument(id))) throw new HttpError(404, "errors.knowledge.notFound");
       const { title, content } = parse(documentBody, await c.req.json());
       await tenant.knowledge.putDocument(id, content, title);
       return c.json(await tenant.knowledge.getDocument(id));
     })
     .delete("/knowledge/documents/:id{.+}", async (c) => {
-      if (!(await c.get("ctx").tenant.knowledge.deleteDocument(c.req.param("id")))) throw new HTTPException(404, { message: "Dokument neexistuje" });
+      if (!(await c.get("ctx").tenant.knowledge.deleteDocument(c.req.param("id")))) throw new HttpError(404, "errors.knowledge.notFound");
       return c.body(null, 204);
     })
 
@@ -421,7 +423,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     .get("/skills/:name", async (c) => {
       const skill = await c.get("ctx").tenant.skills.get(c.req.param("name"));
-      if (!skill) throw new HTTPException(404, { message: "Skill not found" });
+      if (!skill) throw new HttpError(404, "errors.skill.notFound");
       return c.json<Skill>(skill);
     })
 
@@ -439,7 +441,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const scope = queryScope(c.req.query("scope"));
       requireScope(ctx, scope);
       if (!(await fileErrors(() => ctx.tenant.skills.delete(c.req.param("name"))))) {
-        throw new HTTPException(404, { message: "Skill not found" });
+        throw new HttpError(404, "errors.skill.notFound");
       }
       return c.body(null, 204);
     })
@@ -461,7 +463,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .put("/mcp-servers/:name", async (c) => {
       const ctx = c.get("ctx");
       const name = c.req.param("name");
-      if (!MCP_SERVER_NAME.test(name)) throw new HTTPException(400, { message: "Server name must be lowercase-kebab-case" });
+      if (!MCP_SERVER_NAME.test(name)) throw new HttpError(400, "errors.validation.name");
       const { scope, ...body } = parse(mcpServerBody, await c.req.json());
       requireScope(ctx, scope);
       await checkMcpUrl(ctx, body.url);
@@ -469,7 +471,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       try {
         await ctx.tenant.mcpServers.put(name, owner, body);
       } catch (err) {
-        if (err instanceof McpNameTakenError) throw new HTTPException(409, { message: err.message });
+        if (err instanceof McpNameTakenError) throw new HttpError(409, err.key, err.params);
         throw err;
       }
       ctx.tenant.mcp.invalidate(owner);
@@ -482,7 +484,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       requireScope(ctx, scope);
       const owner = mcpOwner(scope, ctx.user.sub);
       if (!(await ctx.tenant.mcpServers.delete(c.req.param("name"), owner))) {
-        throw new HTTPException(404, { message: "MCP server not found" });
+        throw new HttpError(404, "errors.mcp.notFound");
       }
       ctx.tenant.mcp.invalidate(owner);
       return c.body(null, 204);
@@ -495,10 +497,10 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       requireScope(ctx, scope);
       const owner = mcpOwner(scope, ctx.user.sub);
       const server = await ctx.tenant.mcpServers.get(c.req.param("name"), owner);
-      if (!server) throw new HTTPException(404, { message: "MCP server not found" });
-      if (server.auth !== "oauth") throw new HTTPException(400, { message: "Server se nepřihlašuje přes OAuth" });
+      if (!server) throw new HttpError(404, "errors.mcp.notFound");
+      if (server.auth !== "oauth") throw new HttpError(400, "errors.mcp.notOauth");
       const url = await ctx.tenant.mcp.startSignIn(server, owner).catch((err: Error) => {
-        throw new HTTPException(502, { message: `Přihlášení u poskytovatele selhalo: ${err.message}` });
+        throw new HttpError(502, "errors.mcp.providerFailed", { detail: detail(err) });
       });
       return c.json({ authorizationUrl: url });
     })
@@ -507,13 +509,13 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       const { state, code, iss } = parse(oauthCallbackBody, await c.req.json());
       const pending = await ctx.tenant.mcp.pendingSignIn(state);
-      if (!pending) throw new HTTPException(400, { message: "Přihlášení vypršelo nebo už bylo dokončeno, zkus to znovu" });
+      if (!pending) throw new HttpError(400, "errors.integration.expired");
       requireScope(ctx, pending.owner === "" ? "tenant" : "personal");
-      if (pending.owner !== "" && pending.owner !== ctx.user.sub) throw new HTTPException(403, { message: "Přihlášení patří jinému uživateli" });
+      if (pending.owner !== "" && pending.owner !== ctx.user.sub) throw new HttpError(403, "errors.mcp.otherUser");
       const done = await ctx.tenant.mcp.finishSignIn(state, code, iss).catch((err: Error) => {
-        throw new HTTPException(502, { message: `Přihlášení se nepodařilo dokončit: ${err.message}` });
+        throw new HttpError(502, "errors.mcp.finishFailed", { detail: detail(err) });
       });
-      if (!done) throw new HTTPException(400, { message: "Přihlášení vypršelo, zkus to znovu" });
+      if (!done) throw new HttpError(400, "errors.signIn.expiredRetry");
       return c.json({ name: done.name, scope: done.owner === "" ? "tenant" : "personal" });
     })
 
@@ -524,7 +526,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       requireScope(ctx, scope);
       const owner = mcpOwner(scope, ctx.user.sub);
       const server = await ctx.tenant.mcpServers.get(c.req.param("name"), owner);
-      if (!server) throw new HTTPException(404, { message: "MCP server not found" });
+      if (!server) throw new HttpError(404, "errors.mcp.notFound");
       return c.json(await ctx.tenant.mcp.test(server, owner));
     })
 
@@ -552,10 +554,10 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
         await ctx.tenant.profiles.put(ctx.user.sub, profile);
         return c.json<AssistantProfile>(profile);
       }
-      if (which !== "public") throw new HTTPException(400, { message: "Persona je jen vlastní (scope=personal) nebo veřejného asistenta" });
+      if (which !== "public") throw new HttpError(400, "errors.persona.scope");
       requireAdmin(ctx);
       const a = await ctx.tenant.publicAssistants.get(c.req.query("assistant") ?? "");
-      if (!a || c.req.query("assistant") !== a.name) throw new HTTPException(404, { message: "Asistent neexistuje" });
+      if (!a || c.req.query("assistant") !== a.name) throw new HttpError(404, "errors.assistant.notFound");
       await ctx.tenant.profiles.put(publicProfile(a.name), profile);
       return c.json<AssistantProfile>(profile);
     })
@@ -575,7 +577,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       const owner = await guardOwner(ctx, c.req.param("level"), c.req.query("assistant"));
       const name = c.req.param("name");
-      if (!GUARD_NAME.test(name) || name.length > 60) throw new HTTPException(400, { message: "Název: malá písmena, číslice a pomlčky" });
+      if (!GUARD_NAME.test(name) || name.length > 60) throw new HttpError(400, "errors.validation.name");
       const guard = { name, ...parse(guardBody, await c.req.json()) };
       await fileErrors(() => ctx.tenant.guards.put(owner, guard));
       return c.json<Guard>(guard);
@@ -583,19 +585,19 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .delete("/guards/:level/:name", async (c) => {
       const ctx = c.get("ctx");
       const owner = await guardOwner(ctx, c.req.param("level"), c.req.query("assistant"));
-      if (!(await ctx.tenant.guards.delete(owner, c.req.param("name")))) throw new HTTPException(404, { message: "Pravidlo neexistuje" });
+      if (!(await ctx.tenant.guards.delete(owner, c.req.param("name")))) throw new HttpError(404, "errors.guard.notFound");
       return c.body(null, 204);
     })
     // Expands a persona brief; nothing is saved until the (edited) profile is put.
     .post("/assistant/persona", async (c) => {
       const { tenant, user } = c.get("ctx");
       const input = parse(z.union([z.object({ description: z.string().trim().min(1).max(2000) }), personaBody]), await c.req.json());
-      const character = "description" in input ? "Vlastní" : input.character;
+      const character = "description" in input ? CUSTOM_PERSONA : input.character;
       const source = "description" in input ? "" : input.source;
       const quotas = await tenant.features.quotas();
-      if (quotas.tokensPerMonth !== null && (await tenant.usage.tokens()) >= quotas.tokensPerMonth) throw new HTTPException(429, { message: TOKENS_EXHAUSTED });
+      if (quotas.tokensPerMonth !== null && (await tenant.usage.tokens()) >= quotas.tokensPerMonth) throw new HttpError(429, TOKENS_EXHAUSTED);
       if (quotas.tokensPerUserMonth !== null && (await tenant.usage.tokens(Date.now(), { user: user.sub })) >= quotas.tokensPerUserMonth) {
-        throw new HTTPException(429, { message: USER_TOKENS_EXHAUSTED });
+        throw new HttpError(429, USER_TOKENS_EXHAUSTED);
       }
       const { description, tokens } = await describePersona(tenant.personaModel, "description" in input ? input.description : character, "description" in input ? undefined : source);
       await tenant.usage.add(tokens, Date.now(), { user: user.sub });
@@ -611,7 +613,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       requireAdmin(ctx);
       const name = c.req.param("name");
-      if (!PUBLIC_ASSISTANT_NAME.test(name) || name.length > 40) throw new HTTPException(400, { message: "Název: malá písmena, číslice a pomlčky" });
+      if (!PUBLIC_ASSISTANT_NAME.test(name) || name.length > 40) throw new HttpError(400, "errors.validation.name");
       const settings = { ...parse(publicSettingsBody, await c.req.json()), name };
       await ctx.tenant.publicAssistants.put(settings);
       return c.json<PublicAssistantSettings>(settings);
@@ -619,21 +621,21 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .delete("/public-assistants/:name", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
-      if (!(await ctx.tenant.publicAssistants.delete(c.req.param("name")))) throw new HTTPException(404, { message: "Asistent neexistuje" });
+      if (!(await ctx.tenant.publicAssistants.delete(c.req.param("name")))) throw new HttpError(404, "errors.assistant.notFound");
       await ctx.tenant.guards.deleteAll({ level: "assistant", assistant: c.req.param("name") });
       return c.body(null, 204);
     })
     .get("/inquiries", async (c) => c.json<Inquiry[]>(await c.get("ctx").tenant.inquiries.list()))
     .patch("/inquiries/:id", async (c) => {
       const { status } = parse(z.object({ status: z.enum(["new", "done"]) }), await c.req.json());
-      if (!(await c.get("ctx").tenant.inquiries.setStatus(c.req.param("id"), status))) throw new HTTPException(404, { message: "Poptávka neexistuje" });
+      if (!(await c.get("ctx").tenant.inquiries.setStatus(c.req.param("id"), status))) throw new HttpError(404, "errors.inquiry.notFound");
       return c.body(null, 204);
     })
     // The conversation an inquiry came from, for the tenant's people.
     .get("/inquiries/:id/messages", async (c) => {
       const { tenant } = c.get("ctx");
       const inquiry = (await tenant.inquiries.list()).find((i) => i.id === c.req.param("id"));
-      if (!inquiry?.threadId) throw new HTTPException(404, { message: "Konverzace není" });
+      if (!inquiry?.threadId) throw new HttpError(404, "errors.thread.notFound");
       const state = await tenant.graph.getState({ configurable: { thread_id: inquiry.threadId } });
       return c.json<ThreadMessage[]>(toThreadMessages(state.values.messages ?? []));
     })
@@ -662,7 +664,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .post("/integrations/:provider/connect", async (c) => {
       const { tenant, user } = c.get("ctx");
       const provider = parse(z.enum(["google", "microsoft"]), c.req.param("provider"));
-      if (!tenant.integrations.available().includes(provider)) throw new HTTPException(404, { message: "Propojení s tímto poskytovatelem není v Osirisu nastavené" });
+      if (!tenant.integrations.available().includes(provider)) throw new HttpError(404, "errors.integration.providerOff");
       return c.json({ authorizationUrl: await tenant.integrations.start(user.sub, provider) });
     })
     .delete("/integrations/:provider", async (c) => {
@@ -675,9 +677,9 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const { tenant, user } = c.get("ctx");
       const { state, code } = parse(oauthCallbackBody, await c.req.json());
       const pending = await tenant.integrations.pending(state);
-      if (!pending || pending.owner !== user.sub) throw new HTTPException(400, { message: "Přihlášení vypršelo nebo patří jinému uživateli, zkus to znovu" });
+      if (!pending || pending.owner !== user.sub) throw new HttpError(400, "errors.integration.expiredOrOther");
       const done = await tenant.integrations.finish(state, code).catch((err: Error) => {
-        throw new HTTPException(502, { message: `Propojení se nepodařilo: ${err.message}` });
+        throw new HttpError(502, "errors.integration.failed", { detail: detail(err) });
       });
       return c.json({ provider: done.provider, account: done.account });
     })
@@ -744,7 +746,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       queryScope(c.req.query("scope"));
       if (!(await ctx.tenant.memory.delete(c.req.param("id"), "tenant", ctx.user.sub))) {
-        throw new HTTPException(404, { message: "Memory not found" });
+        throw new HttpError(404, "errors.memory.notFound");
       }
       return c.body(null, 204);
     })
@@ -783,7 +785,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     .put(
       "/files/content",
-      async (c, next) => bodyLimit({ maxSize: c.get("ctx").tenant.files.limits.maxFileBytes, onError: (c) => c.json({ error: "Soubor je příliš velký" }, 413) })(c, next),
+      async (c, next) => bodyLimit({ maxSize: c.get("ctx").tenant.files.limits.maxFileBytes, onError: (c) => c.json({ error: translate(requestLocale(c.req.header("accept-language")), "errors.files.uploadTooLarge"), code: "errors.files.uploadTooLarge" }, 413) })(c, next),
       async (c) => {
         const ctx = c.get("ctx");
         const q = fileQuery(c);
@@ -836,12 +838,12 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .post("/vitepress-sites/:name/build", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
-      if (!ctx.tenant.vitepress) throw new HTTPException(503, { message: "Sestavování webů tu není nastavené" });
+      if (!ctx.tenant.vitepress) throw new HttpError(503, "errors.vitepress.off");
       const name = c.req.param("name");
-      if (!SITE_NAME.test(name)) throw new HTTPException(400, { message: "Neplatný název webu" });
+      if (!SITE_NAME.test(name)) throw new HttpError(400, "errors.sites.invalidName");
       const result = await fileErrors(() => buildSite(ctx.tenant.files, ctx.tenant.vitepress!, name)).catch((err: Error) => {
-        if (err instanceof HTTPException) throw err;
-        throw new HTTPException(502, { message: err.message });
+        if (err instanceof HTTPException || err instanceof HttpError) throw err;
+        throw new HttpError(502, "errors.vitepress.buildFailed", { detail: detail(err) });
       });
       return c.json({ ...result, message: describeBuild(result) });
     })
@@ -849,7 +851,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       requireAdmin(ctx);
       const name = c.req.param("name");
-      if (!(await listSites(ctx.tenant.files)).includes(name)) throw new HTTPException(404, { message: "Web neexistuje" });
+      if (!(await listSites(ctx.tenant.files)).includes(name)) throw new HttpError(404, "errors.sites.notFound");
       await fileErrors(() => ctx.tenant.files.delete({ scope: "tenant" }, `${VITEPRESS_DIR}/${name}`));
       await ctx.tenant.files.delete({ scope: "tenant" }, `www/${name}`).catch(() => {});
       return c.body(null, 204);
@@ -864,17 +866,17 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       requireAdmin(ctx);
       const name = c.req.param("name");
-      if (!MCP_SERVER_NAME.test(name)) throw new HTTPException(400, { message: "Název: malá písmena, číslice a pomlčky" });
+      if (!MCP_SERVER_NAME.test(name)) throw new HttpError(400, "errors.validation.name");
       const body = parse(siteTargetBody, await c.req.json());
       await ctx.tenant.siteTargets.put(name, body).catch((err: Error) => {
-        throw new HTTPException(400, { message: err.message });
+        throw new HttpError(400, "errors.sftp.saveFailed", { detail: detail(err) });
       });
       return c.body(null, 204);
     })
     .delete("/site-targets/:name", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
-      if (!(await ctx.tenant.siteTargets.delete(c.req.param("name")))) throw new HTTPException(404, { message: "Cíl neexistuje" });
+      if (!(await ctx.tenant.siteTargets.delete(c.req.param("name")))) throw new HttpError(404, "errors.sftp.targetMissing");
       return c.body(null, 204);
     })
     // Connects and lists the target folder (pins the server's host key on the first connection).
@@ -882,7 +884,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const ctx = c.get("ctx");
       requireAdmin(ctx);
       const entries = await testTarget(ctx.tenant.siteTargets, c.req.param("name")).catch((err: Error) => {
-        throw new HTTPException(502, { message: `Připojení selhalo: ${err.message}` });
+        throw new HttpError(502, "errors.sftp.connectFailed", { detail: detail(err) });
       });
       return c.json({ entries });
     })
@@ -892,8 +894,8 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const { dir } = parse(z.object({ dir: z.string().max(512).default("www") }), await c.req.json().catch(() => ({})));
       const result = await fileErrors(() => publishSftp(ctx.tenant.files, { scope: "tenant" }, dir, ctx.tenant.siteTargets, c.req.param("name"))).catch(
         (err: Error) => {
-          if (err instanceof HTTPException) throw err;
-          throw new HTTPException(502, { message: `Publikování selhalo: ${err.message}` });
+          if (err instanceof HTTPException || err instanceof HttpError) throw err;
+          throw new HttpError(502, "errors.sftp.publishFailed", { detail: detail(err) });
         },
       );
       return c.json<PublishResult>(result);
@@ -908,13 +910,13 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .put("/secrets/:name", async (c) => {
       const ctx = c.get("ctx");
       const name = c.req.param("name");
-      if (!SECRET_NAME.test(name)) throw new HTTPException(400, { message: "Název musí být VELKÝMI_PÍSMENY (A-Z, 0-9, _)" });
+      if (!SECRET_NAME.test(name)) throw new HttpError(400, "errors.secret.name");
       const { scope, ...body } = parse(secretBody, await c.req.json());
       requireScope(ctx, scope);
       try {
         await ctx.tenant.secrets.put(name, secretOwner(scope, ctx.user.sub), body);
       } catch (err) {
-        if (err instanceof SecretUseError) throw new HTTPException(400, { message: err.message });
+        if (err instanceof SecretUseError) throw new HttpError(400, err.key, err.params);
         throw err;
       }
       // MCP servers may use the secret: reconnect with the new value.
@@ -927,7 +929,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const scope = queryScope(c.req.query("scope"));
       requireScope(ctx, scope);
       if (!(await ctx.tenant.secrets.delete(c.req.param("name"), secretOwner(scope, ctx.user.sub)))) {
-        throw new HTTPException(404, { message: "Secret not found" });
+        throw new HttpError(404, "errors.secret.missing");
       }
       ctx.tenant.mcp.invalidateAll();
       return c.body(null, 204);
@@ -948,6 +950,8 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     .route("/internal", internal)
     .onError((err, c) => {
       if (err instanceof HTTPException) return c.json({ error: err.message }, err.status);
+      const localized = errorResponse(err, requestLocale(c.req.header("accept-language")));
+      if (localized) return c.json(localized.body, localized.status);
       console.error(err);
       return c.json({ error: "Internal server error" }, 500);
     });

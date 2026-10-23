@@ -15,25 +15,25 @@ import { AssistantSettings } from "./Assistant.tsx";
 import { attempt, ErrorNotice, Field, Loading } from "./Scope.tsx";
 import { loadSkills } from "./Skills.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
+import { t } from "i18next";
+import { formatDateTime } from "./i18n.ts";
 
-const TOOL_LABELS: Record<PublicTool, { label: string; hint: string }> = {
-  estimate_price: { label: "Odhad ceny zakázky", hint: "spočítá orientační cenu z ceníku v jeho znalostech" },
-  create_inquiry: { label: "Poptávka", hint: "převezme jméno, kontakt a popis zakázky a pošle vám e-mail" },
-};
+const toolLabel = (tool: PublicTool) => ({ label: t(`public:tools.${tool}.label`), hint: t(`public:tools.${tool}.hint`) });
 
 const INQUIRIES = " inquiries";
 
-const NEW: PublicAssistantSettings = {
+/** A new assistant; its greeting is a starting point in the admin's language. */
+const newAssistant = (): PublicAssistantSettings => ({
   name: "",
   enabled: false,
   title: "",
-  greeting: "Dobrý den, s čím vám můžu pomoct?",
+  greeting: t("public:defaultGreeting"),
   knowledge: [],
   memories: [],
   skills: [],
   tools: [],
   tokensPerMonth: null,
-};
+});
 
 /**
  * The tenant's assistants for its customers: each with what it knows (picked knowledge, memories), which skills and
@@ -51,29 +51,29 @@ export function PublicAssistants({ tenantId, isAdmin }: { tenantId: string; isAd
 
   return (
     <MasterDetail
-      title="Asistenti"
+      title={t("app:nav.assistants")}
       loading={isAdmin && !list && !error}
-      top={<p className="px-2 text-xs text-fg-muted">Asistenti pro zákazníky na webu, bez přihlášení. Každý ví jen to, co mu vyberete.</p>}
+      top={<p className="px-2 text-xs text-fg-muted">{t("public:intro")}</p>}
       groups={[
-        { items: [{ key: INQUIRIES, label: "Poptávky" }] },
+        { items: [{ key: INQUIRIES, label: t("public:inquiries") }] },
         ...(isAdmin
           ? [
               {
-                title: "Asistenti",
+                title: t("app:nav.assistants"),
                 items: (list ?? []).map((a) => ({
                   key: a.name,
                   label: a.title || a.name,
                   hint: a.name,
-                  badge: <span className={`text-xs ${a.enabled ? "text-success" : "text-fg-muted"}`}>{a.enabled ? "zapnutý" : "vypnutý"}</span>,
+                  badge: <span className={`text-xs ${a.enabled ? "text-success" : "text-fg-muted"}`}>{a.enabled ? t("public:on") : t("public:off")}</span>,
                 })),
-                empty: "Zatím žádný.",
+                empty: t("noneYet"),
               },
             ]
           : []),
       ]}
       selected={selected}
       onSelect={setSelected}
-      add={isAdmin ? { label: "Přidat asistenta", onClick: () => setSelected(null) } : undefined}
+      add={isAdmin ? { label: t("public:add"), onClick: () => setSelected(null) } : undefined}
     >
       {error ? (
         <div className="detail">
@@ -87,7 +87,7 @@ export function PublicAssistants({ tenantId, isAdmin }: { tenantId: string; isAd
         <Editor
           key={open?.name ?? "new"}
           tenantId={tenantId}
-          initial={open ?? NEW}
+          initial={open ?? newAssistant()}
           onSaved={(name) => void load().then(() => setSelected(name))}
           onDeleted={() => void load().then(() => setSelected(INQUIRIES))}
         />
@@ -145,7 +145,7 @@ function Editor({
     });
   };
   const remove = () =>
-    window.confirm(`Smazat asistenta ${settings.title || settings.name}? Odkazy a widgety na webu přestanou fungovat.`) &&
+    window.confirm(t("public:confirmDelete", { name: settings.title || settings.name })) &&
     void attempt(setBusy, setError, async () => (await api.deletePublicAssistant(settings.name), onDeleted()));
   // Inside a picked folder everything is picked.
   const covered = (path: string) => settings.knowledge.some((k) => k !== path && path.startsWith(`${k}/`));
@@ -155,15 +155,15 @@ function Editor({
   return (
     <div className="detail max-w-3xl space-y-10">
       <div>
-        <h1 className="text-lg font-semibold">{isNew ? "Nový asistent" : settings.title || settings.name}</h1>
+        <h1 className="text-lg font-semibold">{isNew ? t("public:new") : settings.title || settings.name}</h1>
       </div>
       <form onSubmit={submit} className="space-y-6">
         <label className="flex items-center gap-2 text-sm font-medium">
           <input type="checkbox" checked={settings.enabled} onChange={(e) => set("enabled", e.target.checked)} />
-          Zapnuto (zákazníci mohou psát)
+          {t("public:enabled")}
         </label>
         <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="Název v odkazu (malá písmena, číslice, pomlčky)">
+          <Field label={t("public:name")}>
             <input
               value={settings.name}
               onChange={(e) => set("name", e.target.value.trim().toLowerCase())}
@@ -171,14 +171,14 @@ function Editor({
               required
               maxLength={40}
               pattern={PUBLIC_ASSISTANT_NAME.source}
-              placeholder="např. web nebo eshop"
+              placeholder={t("public:namePlaceholder")}
               className="field"
             />
           </Field>
-          <Field label="Název firmy pro zákazníky">
+          <Field label={t("public:title")}>
             <input value={settings.title} onChange={(e) => set("title", e.target.value)} placeholder={tenantId} maxLength={120} className="field" />
           </Field>
-          <Field label="Měsíční limit tokenů (prázdné = jen limit firmy)">
+          <Field label={t("public:tokens")}>
             <input
               type="number"
               min={0}
@@ -188,11 +188,11 @@ function Editor({
             />
           </Field>
         </div>
-        <Field label="Uvítání">
+        <Field label={t("public:greeting")}>
           <input value={settings.greeting} onChange={(e) => set("greeting", e.target.value)} maxLength={500} className="field" />
         </Field>
 
-        <Picker title="Znalostní báze" hint="Dokumenty a složky, ve kterých asistent hledá. Vybraná složka zahrnuje i vše, co do ní přibude." empty="Znalostní báze je prázdná.">
+        <Picker title={t("tenants:features.knowledge.label")} hint={t("public:knowledgeHint")} empty={t("public:knowledgeEmpty")}>
           {knowledgeEntries(docs).map((k) => (
             <Check
               key={k.path}
@@ -204,24 +204,24 @@ function Editor({
             </Check>
           ))}
         </Picker>
-        <Picker title="Paměť" hint="Fakta, která asistent dostane vždy (např. otevírací doba)." empty="V paměti nic není.">
+        <Picker title={t("app:nav.memory")} hint={t("public:memoryHint")} empty={t("public:memoryEmpty")}>
           {memories.map((m) => (
             <Check key={m.id} checked={settings.memories.includes(m.id)} onChange={(on) => toggle("memories", m.id, on)}>
               {m.content}
             </Check>
           ))}
         </Picker>
-        <Picker title="Dovednosti" hint="Postupy firmy, podle kterých smí asistent pracovat." empty="Firma nemá vlastní dovednosti.">
+        <Picker title={t("app:nav.skills")} hint={t("public:skillsHint")} empty={t("public:skillsEmpty")}>
           {skills.map((s) => (
             <Check key={s.name} checked={settings.skills.includes(s.name)} onChange={(on) => toggle("skills", s.name, on)}>
               {s.name} <span className="text-fg-muted">· {s.description}</span>
             </Check>
           ))}
         </Picker>
-        <Picker title="Nástroje">
-          {PUBLIC_TOOLS.map((t) => (
-            <Check key={t} checked={settings.tools.includes(t)} onChange={(on) => toggle("tools", t, on)}>
-              {TOOL_LABELS[t].label} <span className="text-fg-muted">· {TOOL_LABELS[t].hint}</span>
+        <Picker title={t("public:toolsTitle")}>
+          {PUBLIC_TOOLS.map((tool) => (
+            <Check key={tool} checked={settings.tools.includes(tool)} onChange={(on) => toggle("tools", tool, on)}>
+              {toolLabel(tool).label} <span className="text-fg-muted">· {toolLabel(tool).hint}</span>
             </Check>
           ))}
         </Picker>
@@ -229,13 +229,13 @@ function Editor({
         <ErrorNotice error={error} />
         <div className="flex items-center gap-3">
           <button disabled={busy} className="btn-primary">
-            Uložit
+            {t("save")}
           </button>
-          {saved && <span className="text-sm text-success">Uloženo.</span>}
+          {saved && <span className="text-sm text-success">{t("savedNotice")}</span>}
           <span className="flex-1" />
           {!isNew && (
             <button type="button" disabled={busy} onClick={remove} className="btn-danger text-sm">
-              Smazat asistenta
+              {t("public:delete")}
             </button>
           )}
         </div>
@@ -244,24 +244,24 @@ function Editor({
       {!isNew && (
         <>
           <section>
-            <h2 className="section-header">Kde ho zákazníci najdou</h2>
+            <h2 className="section-header">{t("public:where")}</h2>
             <p className="mt-2 text-sm">
-              Odkaz:{" "}
+              {t("public:link")}{" "}
               <a href={link} target="_blank" rel="noreferrer" className="btn-link">
                 {link}
               </a>
             </p>
-            <p className="mt-3 text-sm">Na váš web (např. do www/index.html před &lt;/body&gt;) vložte:</p>
+            <p className="mt-3 text-sm">{t("public:snippetHint")}</p>
             <div className="mt-1 flex gap-2">
               <input readOnly value={snippet} onFocus={(e) => e.target.select()} className="field min-w-0 flex-1 font-mono text-xs" />
               <button type="button" onClick={() => void navigator.clipboard.writeText(snippet)} className="btn-secondary text-sm">
-                Kopírovat
+                {t("copy")}
               </button>
             </div>
           </section>
 
           <section>
-            <h2 className="section-header">Persona pro zákazníky</h2>
+            <h2 className="section-header">{t("public:persona")}</h2>
             <AssistantSettings scope="public" assistant={settings.name} editable />
           </section>
         </>
@@ -300,9 +300,9 @@ function Inquiries() {
   return (
     <section className="relative min-h-32">
       <Loading show={!list && !error} />
-      <h2 className="section-header">Poptávky</h2>
+      <h2 className="section-header">{t("public:inquiries")}</h2>
       <ErrorNotice error={error} />
-      {list && !list.length && <p className="mt-2 text-sm text-fg-muted">Zatím žádné.</p>}
+      {list && !list.length && <p className="mt-2 text-sm text-fg-muted">{t("noneYet")}</p>}
       <ul className="mt-2 space-y-2">
         {list?.map((i) => (
           <li key={i.id} className={`notice px-3 py-2 text-sm ${i.status === "done" ? "opacity-60" : ""}`}>
@@ -310,17 +310,17 @@ function Inquiries() {
               <span className="font-medium">{i.name}</span>
               <span className="text-fg-secondary">{i.contact}</span>
               {i.assistant && <code className="text-xs text-fg-muted">{i.assistant}</code>}
-              <span className="flex-1 text-right text-xs text-fg-muted">{new Date(`${i.createdAt.replace(" ", "T")}Z`).toLocaleString("cs-CZ")}</span>
+              <span className="flex-1 text-end text-xs text-fg-muted">{formatDateTime(`${i.createdAt.replace(" ", "T")}Z`)}</span>
             </div>
             <p className="mt-1 whitespace-pre-wrap">{i.description}</p>
-            {i.preferredTime && <p className="mt-1 text-xs text-fg-secondary">Termín: {i.preferredTime}</p>}
+            {i.preferredTime && <p className="mt-1 text-xs text-fg-secondary">{t("public:time", { time: i.preferredTime })}</p>}
             <div className="mt-2 flex gap-3 text-xs">
               <button
                 disabled={busy}
                 onClick={() => void attempt(setBusy, setError, async () => (await api.setInquiryStatus(i.id, i.status === "done" ? "new" : "done"), await load()))}
                 className="btn-link"
               >
-                {i.status === "done" ? "Vrátit mezi nové" : "Vyřízeno"}
+                {i.status === "done" ? t("public:reopen") : t("public:done")}
               </button>
               {i.threadId && (
                 <button
@@ -332,7 +332,7 @@ function Inquiries() {
                   }
                   className="btn-link"
                 >
-                  {open?.id === i.id ? "Skrýt konverzaci" : "Konverzace"}
+                  {open?.id === i.id ? t("public:hideConversation") : t("public:conversation")}
                 </button>
               )}
             </div>
@@ -340,7 +340,7 @@ function Inquiries() {
               <div className="mt-2 space-y-1 border-t border-line pt-2 text-xs">
                 {open.messages.map((m) => (
                   <p key={m.id} className="whitespace-pre-wrap">
-                    <span className="font-medium">{m.role === "user" ? "Zákazník" : "Asistent"}:</span>{" "}
+                    <span className="font-medium">{m.role === "user" ? t("public:customer") : t("dashboards:columns.assistant")}:</span>{" "}
                     {m.content.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("")}
                   </p>
                 ))}

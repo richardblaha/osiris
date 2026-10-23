@@ -1,0 +1,51 @@
+{
+  "loginFailed": "Sign-in failed: {{detail}}",
+  "signIn": "Sign in",
+  "signOut": "Sign out",
+  "nav": {
+    "knowledge": "Knowledge",
+    "skills": "Skills",
+    "memory": "Memory",
+    "mcp": "Tools and MCP",
+    "secrets": "Keys and passwords",
+    "conversations": "Conversations",
+    "context": "Context",
+    "files": "Files",
+    "guards": "Checks",
+    "tenant": "Tenant",
+    "dashboard": "Dashboard",
+    "assistants": "Assistants",
+    "database": "Database",
+    "schedules": "Scheduled tasks",
+    "users": "Users",
+    "sites": "Websites",
+    "analytics": "Traffic",
+    "system": "System",
+    "diagnostics": "Diagnostics",
+    "tenants": "Tenants",
+    "settings": "Settings"
+  },
+  "add": {
+    "knowledge": "Add document",
+    "skills": "Add skill",
+    "memory": "Add memory",
+    "mcp": "Add MCP server",
+    "secrets": "Add key"
+  },
+  "mcpSignInFailed": "Signing in to the MCP server failed: {{detail}}",
+  "integrationFailed": "Connecting the account failed: {{detail}}",
+  "noCode": "the provider returned no code",
+  "expand": "Expand sidebar",
+  "collapse": "Collapse sidebar",
+  "newChat": "New chat",
+  "filesIntro": "Documents, templates and images the assistant works with. Document templates belong in the sablony folder.",
+  "noTenant": "No tenant",
+  "chooseTenant": "choose or create a tenant",
+  "users": {
+    "thisTenant": "This tenant",
+    "all": "All users (system)",
+    "adminManages": "The tenant's administrator manages its users."
+  },
+  "builtinTools": "Built-in tools",
+  "mcpServers": "MCP servers"
+}

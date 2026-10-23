@@ -1,0 +1,27 @@
+{
+  "fields": {
+    "storageMb": "File storage (MB)",
+    "tokensPerMonth": "AI tokens per month",
+    "members": "Users",
+    "schedules": "Scheduled tasks",
+    "tokensPerUserMonth": "AI tokens per month per user",
+    "tables": "Database tables",
+    "databaseMb": "Database (MB)",
+    "dashboards": "Own dashboards"
+  },
+  "noLimit": "no limit",
+  "save": "Save quotas",
+  "meters": {
+    "storage": "Storage",
+    "tokens": "AI this month",
+    "members": "Users",
+    "schedules": "Tasks",
+    "userTokens": "My AI this month",
+    "tables": "Tables",
+    "database": "Database",
+    "dashboards": "Dashboards"
+  },
+  "noTenant": "no tenant",
+  "exhausted": "used up",
+  "runningOut": "running out"
+}

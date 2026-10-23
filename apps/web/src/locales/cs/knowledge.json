@@ -1,0 +1,15 @@
+{
+  "intro": "Poznámky ke klientům, ceníky a postupy, ve kterých asistent vyhledává podle významu i slov.",
+  "chunks_one": "{{count}} část v indexu",
+  "chunks_few": "{{count}} části v indexu",
+  "chunks_many": "{{count}} části v indexu",
+  "chunks_other": "{{count}} částí v indexu",
+  "changed": "změněno {{time}}",
+  "confirmDelete": "Smazat dokument {{title}}?",
+  "delete": "Smazat dokument",
+  "textRequired": "Napiš text dokumentu.",
+  "new": "Nový dokument",
+  "titlePlaceholder": "např. Ceník 2026",
+  "folder": "Složka (nepovinná, např. public)",
+  "text": "Text (Markdown)"
+}

@@ -1,0 +1,11 @@
+{
+  "intro": "Postupy, podle kterých asistent pracuje (např. jak sestavit nabídku). Jsou to soubory skills/<název>/SKILL.md. Dovednost tenanta má přednost před výchozí se stejným názvem.",
+  "instructionsRequired": "Napiš postup dovednosti.",
+  "new": "Nová dovednost",
+  "bundled": "Výchozí dovednost, která je součástí aplikace. Správce ji změní uložením kopie se stejným názvem.",
+  "namePlaceholder": "malá písmena a pomlčky, např. revize-elektro",
+  "when": "Kdy ji použít",
+  "whenPlaceholder": "jedna věta",
+  "instructions": "Postup (Markdown, uloží se jako {{path}})",
+  "saveCopy": "Uložit kopii"
+}

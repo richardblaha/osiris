@@ -21,7 +21,7 @@ export async function* streamRun(
   { guarded = false, input }: { guarded?: boolean; input?: HumanMessage } = {},
 ): AsyncGenerator<RunEvent> {
   const stream = await graph.stream(
-    { messages: [input ?? new HumanMessage({ content: text, additional_kwargs: { display_text: displayUserText(text) } })] },
+    { messages: [input ?? new HumanMessage({ content: text, additional_kwargs: { display_text: displayUserText(text, ctx.locale) } })] },
     { configurable: { ...ctx }, streamMode: ["messages", "updates", "tasks", "custom"], signal },
   );
 

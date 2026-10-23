@@ -1,5 +1,6 @@
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 /** Addresses a tenant's MCP URL must not reach: loopback, private, link-local (cloud metadata), CGNAT, ... */
 const blocked = new BlockList();
@@ -31,7 +32,7 @@ function isBlocked(address: string): boolean {
   return blocked.check(address, isIP(address) === 6 ? "ipv6" : "ipv4");
 }
 
-export class UnsafeUrlError extends Error {}
+export class UnsafeUrlError extends LocalizedError {}
 
 /**
  * Guards against SSRF: users choose MCP and http_request URLs, and the API runs inside the cluster.
@@ -44,18 +45,18 @@ export async function assertSafePublicUrl(raw: string, { allowPrivate = false } 
   try {
     url = new URL(raw);
   } catch {
-    throw new UnsafeUrlError("Neplatná URL");
+    throw new UnsafeUrlError("errors.url.invalid");
   }
-  if (url.username || url.password) throw new UnsafeUrlError("URL nesmí obsahovat přihlašovací údaje, použij hlavičky");
+  if (url.username || url.password) throw new UnsafeUrlError("errors.url.credentials");
   if (allowPrivate) {
-    if (url.protocol !== "https:" && url.protocol !== "http:") throw new UnsafeUrlError("URL musí být http(s)");
+    if (url.protocol !== "https:" && url.protocol !== "http:") throw new UnsafeUrlError("errors.url.scheme");
     return url;
   }
-  if (url.protocol !== "https:") throw new UnsafeUrlError("URL musí používat https");
+  if (url.protocol !== "https:") throw new UnsafeUrlError("errors.url.https");
 
   const host = url.hostname.replace(/^\[|\]$/g, "");
   const addresses = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((a) => a.address);
-  if (!addresses.length) throw new UnsafeUrlError(`Adresu ${host} nelze přeložit`);
-  if (addresses.some(isBlocked)) throw new UnsafeUrlError("URL míří do privátní sítě");
+  if (!addresses.length) throw new UnsafeUrlError("errors.url.unresolved", { host });
+  if (addresses.some(isBlocked)) throw new UnsafeUrlError("errors.url.private");
   return url;
 }

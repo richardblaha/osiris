@@ -7,7 +7,7 @@ process.once("message", async ({ url, sql }) => {
     const db = createClient({ url });
     await db.execute("PRAGMA query_only = ON");
     const r = await db.execute(sql);
-    const cell = (v) => (typeof v === "bigint" ? Number(v) : v instanceof ArrayBuffer ? `<binární data, ${v.byteLength} B>` : v);
+    const cell = (v) => (typeof v === "bigint" ? Number(v) : v instanceof ArrayBuffer ? `<binary data, ${v.byteLength} B>` : v);
     process.send({ columns: r.columns, rows: r.rows.map((row) => r.columns.map((_, i) => cell(row[i]))) });
   } catch (err) {
     process.send({ error: err instanceof Error ? err.message : String(err) });

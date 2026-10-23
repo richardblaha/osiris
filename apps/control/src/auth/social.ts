@@ -1,6 +1,7 @@
 import { createHash, createHmac } from "node:crypto";
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose";
 import { SOCIAL_PROVIDERS, type SocialProvider as SocialProviderId } from "@osiris/shared";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 export { SOCIAL_PROVIDERS, type SocialProviderId };
 
@@ -28,7 +29,7 @@ export interface AuthorizeState {
   verifier: string;
 }
 
-export class SocialLoginError extends Error {}
+export class SocialLoginError extends LocalizedError {}
 
 const challenge = (verifier: string) => createHash("sha256").update(verifier).digest("base64url");
 const str = (v: unknown) => (typeof v === "string" ? v : "");
@@ -60,7 +61,7 @@ export class SocialLogin {
 
   private client(provider: SocialProviderId) {
     const client = this.clients[provider];
-    if (!client) throw new SocialLoginError(`Přihlášení přes ${provider} není nastavené`);
+    if (!client) throw new SocialLoginError("errors.social.notConfigured", { provider });
     return client;
   }
 
@@ -105,10 +106,10 @@ export class SocialLogin {
         code_verifier: s.verifier,
       }),
     });
-    if (!tokens.id_token) throw new SocialLoginError("Poskytovatel nevrátil ID token");
+    if (!tokens.id_token) throw new SocialLoginError("errors.social.noIdToken");
 
     const claims = provider === "google" ? await this.verifyGoogle(tokens.id_token, client) : await this.verifyMicrosoft(tokens.id_token, client);
-    if (claims.nonce !== s.nonce) throw new SocialLoginError("Neplatná odpověď poskytovatele (nonce)");
+    if (claims.nonce !== s.nonce) throw new SocialLoginError("errors.social.badNonce");
     const [first = "", ...rest] = str(claims.name).split(" ");
     const email = str(claims.email) || (provider === "microsoft" ? str(claims.preferred_username) : "");
     return {
@@ -126,7 +127,7 @@ export class SocialLogin {
       issuer: ["https://accounts.google.com", "accounts.google.com"],
       audience: client.clientId,
     }).catch((err: Error) => {
-      throw new SocialLoginError(`Neplatný token od Googlu: ${err.message}`);
+      throw new SocialLoginError("errors.social.badToken", { provider: "Google", detail: err.message });
     });
     return payload;
   }
@@ -137,11 +138,11 @@ export class SocialLogin {
     const { payload } = await jwtVerify<JWTPayload & { tid?: string }>(idToken, this.keys(`https://login.microsoftonline.com/${tenant}/discovery/v2.0/keys`), {
       audience: client.clientId,
     }).catch((err: Error) => {
-      throw new SocialLoginError(`Neplatný token od Microsoftu: ${err.message}`);
+      throw new SocialLoginError("errors.social.badToken", { provider: "Microsoft", detail: err.message });
     });
     const tid = str(payload.tid);
-    if (!tid || payload.iss !== `https://login.microsoftonline.com/${tid}/v2.0`) throw new SocialLoginError("Neplatný vydavatel tokenu Microsoftu");
-    if (!["common", "organizations", "consumers"].includes(tenant) && tid !== tenant) throw new SocialLoginError("Účet z jiné organizace");
+    if (!tid || payload.iss !== `https://login.microsoftonline.com/${tid}/v2.0`) throw new SocialLoginError("errors.social.badIssuer");
+    if (!["common", "organizations", "consumers"].includes(tenant) && tid !== tenant) throw new SocialLoginError("errors.social.otherOrganization");
     return payload;
   }
 
@@ -154,12 +155,12 @@ export class SocialLogin {
         code,
       })}`,
     );
-    if (!access_token) throw new SocialLoginError("Facebook nevrátil přístupový token");
+    if (!access_token) throw new SocialLoginError("errors.social.noAccessToken", { provider: "Facebook" });
     const proof = createHmac("sha256", client.clientSecret).update(access_token).digest("hex");
     const me = await this.call<{ id?: string; email?: string; first_name?: string; last_name?: string }>(
       `${FACEBOOK_GRAPH}/me?${new URLSearchParams({ fields: "id,email,first_name,last_name", access_token, appsecret_proof: proof })}`,
     );
-    if (!me.id) throw new SocialLoginError("Facebook nevrátil profil");
+    if (!me.id) throw new SocialLoginError("errors.social.noProfile", { provider: "Facebook" });
     return {
       subject: me.id,
       email: me.email?.toLowerCase() ?? null,
@@ -182,11 +183,11 @@ export class SocialLogin {
         client_secret: client.clientSecret,
       }),
     });
-    if (!access_token) throw new SocialLoginError("Seznam nevrátil přístupový token");
+    if (!access_token) throw new SocialLoginError("errors.social.noAccessToken", { provider: "Seznam" });
     const me = await this.call<{ oauth_user_id?: string; email?: string | null; firstname?: string; lastname?: string }>(`${SEZNAM}/user`, {
       headers: { authorization: `bearer ${access_token}` },
     });
-    if (!me.oauth_user_id) throw new SocialLoginError("Seznam nevrátil profil");
+    if (!me.oauth_user_id) throw new SocialLoginError("errors.social.noProfile", { provider: "Seznam" });
     const email = me.email?.includes("@") ? me.email.toLowerCase() : null;
     return {
       subject: String(me.oauth_user_id),
@@ -202,7 +203,7 @@ export class SocialLogin {
     const body = (await res.json().catch(() => ({}))) as T & { error?: unknown; error_description?: string };
     if (!res.ok) {
       const detail = body.error_description ?? (typeof body.error === "string" ? body.error : JSON.stringify(body.error ?? res.status));
-      throw new SocialLoginError(`Poskytovatel odmítl přihlášení: ${detail}`);
+      throw new SocialLoginError("errors.social.refused", { detail });
     }
     return body;
   }

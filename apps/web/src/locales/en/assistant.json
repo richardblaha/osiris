@@ -1,0 +1,10 @@
+{
+  "persona": "Persona",
+  "personaHint": "How the assistant should communicate. Write your own description, or let AI refine it.",
+  "publicOnly": "Applies only to this customer assistant.",
+  "save": "Save persona",
+  "description": "Persona description",
+  "placeholder": "Describe how the assistant should come across, for example briefly and with humour like Sherlock Holmes. AI can refine the text.",
+  "generating": "Preparing…",
+  "generate": "Refine with AI"
+}

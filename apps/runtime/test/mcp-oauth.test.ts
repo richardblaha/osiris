@@ -78,7 +78,7 @@ describe("MCP servers signed in with OAuth", () => {
     const config = (await store.get("vas-hosting", ""))!;
 
     // Not signed in: the server is skipped with a clear reason, without trying to connect.
-    expect(await mcp.test(config, "")).toEqual({ ok: false, error: "Nepřihlášeno: přihlas se k serveru v jeho nastavení" });
+    expect(await mcp.test(config, "")).toEqual({ ok: false, error: "Not signed in: sign in to the server in its settings." });
     expect(connectedWith).toBeUndefined();
 
     const url = new URL((await mcp.startSignIn(config, ""))!);

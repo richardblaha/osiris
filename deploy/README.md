@@ -55,16 +55,16 @@ Users, credentials and the provider's sessions and tokens live in rqlite (tables
   A Google or Facebook account whose verified email matches an Osiris user signs straight into that user (so invited
   people can use it at once), as does a Seznam account with a Seznam mailbox (@seznam.cz, @email.cz, @post.cz, …).
   Microsoft doesn't verify emails and a Seznam account can carry an outside address, so those must be linked in
-  Můj profil → Přihlášení a zabezpečení first.
+  My profile → Connected accounts first.
 - **People:** the first system admin comes from the command line:
-  `kubectl -n osiris exec deploy/control -- node_modules/.bin/tsx src/auth/users-cli.ts add-admin you@example.cz Jméno Příjmení`
-  prints a one-time sign-in link. System admins create tenants and add people in the web app (Tenanti); tenant admins
-  add people to their own tenant (tenant info → Lidé v tenantovi). New people get a one-time sign-in link (3 days) and
+  `kubectl -n osiris exec deploy/control -- node_modules/.bin/tsx src/auth/users-cli.ts add-admin you@example.com First Last`
+  prints a one-time sign-in link. System admins create tenants and add people in the web app (System → Tenants); tenant admins
+  add people to their own tenant (Tenant → Users). New people get a one-time sign-in link (3 days) and
   set up a passkey or password in their profile. Membership is stored in the user's claims: `tenant` / `tenant-admin`
   = `<slug>` (comma-separated for several) plus `role` = `osiris-user`.
-- **Lost second factor:** a system admin turns it off in the tenant detail (Vypnout 2FA next to the person).
+- **Lost second factor:** a system admin turns it off in the tenant detail (Turn off 2FA next to the person).
 
-Users verify their phone number for WhatsApp themselves (Můj profil → Telefon): they send `OVERENI <code>` from the phone
+Users verify their phone number for WhatsApp themselves (My profile → Account → Phone for WhatsApp): they send `VERIFY <code>` or `OVERENI <code>` from the phone
 to the business number, which sets the claim `phone_number`.
 
 ### From PocketID (one-off)
@@ -76,7 +76,7 @@ to the business number, which sets the claim `phone_number`.
      node_modules/.bin/tsx src/auth/users-cli.ts import-pocketid --links
    ```
    Passkeys can't move (they belong to auth.k6labs.cz), so people sign in once with Google/Facebook, a link by email
-   ("Zapomněl(a) jsem heslo") or the printed 72-hour link, and add a new passkey in their profile. Running it again
+   ("I forgot my password") or the printed 72-hour link, and add a new passkey in their profile. Running it again
    skips users already imported.
 3. Remove the Osiris client and API key in PocketID.
 
@@ -120,12 +120,12 @@ the NetworkPolicy lets only the collector write and control read).
 ## Web analytics
 
 Cookieless analytics for the cluster's websites (web-events → collector → ClickHouse `web`, shown in System >
-Návštěvnost): deployment, the snippet, a new site and the move from GoatCounter are in
+Traffic): deployment, the snippet, a new site and the move from GoatCounter are in
 [observability/web/README.md](observability/web/README.md).
 
 ## Users' Google and Microsoft accounts
 
-Users connect their own Google or Microsoft account in Můj profil → Propojené účty; the assistant then reads and sends
+Users connect their own Google or Microsoft account in My profile → Connected accounts; the assistant then reads and sends
 their mail, manages their contacts (those on their phone, when synced with the account) and their calendar. Osiris
 needs one OAuth client per provider, whose redirect URI is `https://osiris.k6labs.cz/integration-callback`; runtimes
 get them from the operator's secret (`RUNTIME_SECRET_*`, see Secrets). A provider without a client is not offered.
@@ -297,7 +297,7 @@ Locally control passes its environment to runtimes. In Kubernetes configure oper
 then restart runtimes to apply changes. No tenant or user can override these assignments.
 
 Users connect their own named SMTP/IMAP/POP3, CalDAV and CardDAV accounts in
-Profile > Propojené účty. The existing `integrations` feature gates their routes and tools.
+My profile → Connected accounts. The existing `integrations` feature gates their routes and tools.
 Secrets are encrypted with the tenant key and are never returned by the API. SMTP uses
 implicit TLS or mandatory STARTTLS; IMAP and POP3 require implicit TLS. DAV requires
 HTTPS and a canonical URL on one origin (redirects and cross-origin discovery are refused).

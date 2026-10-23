@@ -1,0 +1,51 @@
+{
+  "loginFailed": "Přihlášení selhalo: {{detail}}",
+  "signIn": "Přihlásit se",
+  "signOut": "Odhlásit",
+  "nav": {
+    "knowledge": "Znalosti",
+    "skills": "Dovednosti",
+    "memory": "Paměť",
+    "mcp": "Nástroje a MCP",
+    "secrets": "Klíče a hesla",
+    "conversations": "Konverzace",
+    "context": "Kontext",
+    "files": "Soubory",
+    "guards": "Kontroly",
+    "tenant": "Tenant",
+    "dashboard": "Dashboard",
+    "assistants": "Asistenti",
+    "database": "Databáze",
+    "schedules": "Plánované úlohy",
+    "users": "Uživatelé",
+    "sites": "Weby",
+    "analytics": "Návštěvnost",
+    "system": "Systém",
+    "diagnostics": "Diagnostika",
+    "tenants": "Tenanti",
+    "settings": "Nastavení"
+  },
+  "add": {
+    "knowledge": "Přidat dokument",
+    "skills": "Přidat dovednost",
+    "memory": "Přidat záznam",
+    "mcp": "Přidat MCP server",
+    "secrets": "Přidat klíč"
+  },
+  "mcpSignInFailed": "Přihlášení k MCP serveru se nepodařilo: {{detail}}",
+  "integrationFailed": "Propojení účtu se nepodařilo: {{detail}}",
+  "noCode": "poskytovatel nevrátil kód",
+  "expand": "Rozbalit panel",
+  "collapse": "Sbalit panel",
+  "newChat": "Nový chat",
+  "filesIntro": "Dokumenty, šablony a obrázky, se kterými asistent pracuje. Šablony dokumentů patří do složky sablony.",
+  "noTenant": "Žádný tenant",
+  "chooseTenant": "vyber nebo založ tenanta",
+  "users": {
+    "thisTenant": "Tento tenant",
+    "all": "Všichni uživatelé (systém)",
+    "adminManages": "Uživatele tenanta spravuje jeho správce."
+  },
+  "builtinTools": "Interní nástroje",
+  "mcpServers": "MCP servery"
+}

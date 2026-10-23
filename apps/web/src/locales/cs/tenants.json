@@ -1,0 +1,84 @@
+{
+  "features": {
+    "title": "Povolené funkce",
+    "knowledge": {
+      "label": "Znalostní báze",
+      "hint": "dokumenty, ve kterých asistent vyhledává"
+    },
+    "skills": {
+      "label": "Dovednosti",
+      "hint": "postupy, podle kterých asistent pracuje"
+    },
+    "memory": {
+      "label": "Paměť",
+      "hint": "fakta, která si asistent pamatuje mezi konverzacemi"
+    },
+    "mcp": {
+      "label": "MCP servery",
+      "hint": "externí služby a nástroje připojené přes MCP"
+    },
+    "http": {
+      "label": "HTTP klient",
+      "hint": "nástroj http_request pro volání API z dovedností"
+    },
+    "whatsapp": {
+      "label": "WhatsApp",
+      "hint": "asistent odpovídá i ve WhatsAppu"
+    },
+    "files": {
+      "label": "Soubory",
+      "hint": "úložiště šablon, obrázků a dokumentů, se kterými asistent pracuje"
+    },
+    "scheduler": {
+      "label": "Plánované úlohy",
+      "hint": "asistent v nastavený čas sám spustí zadaný úkol"
+    },
+    "sites": {
+      "label": "Weby",
+      "hint": "publikování webu firmy ze složky www na hosting přes SFTP"
+    },
+    "public": {
+      "label": "Asistenti",
+      "hint": "asistenti pro zákazníky firmy na webu, s vybranými znalostmi a nástroji"
+    },
+    "database": {
+      "label": "Databáze",
+      "hint": "tabulky, do kterých si asistent ukládá data (kontakty, zakázky…), s prohlížečem"
+    },
+    "integrations": {
+      "label": "Pošta, kontakty a kalendáře",
+      "hint": "asistent pracuje s poštou, kontakty a kalendářem uživatelů, kteří si účet propojí"
+    }
+  },
+  "new": "Nový tenant",
+  "newIntro": "Každý tenant běží ve vlastním kontejneru s vlastní databází a soubory. Členství jsou claimy uživatelů: <code>tenant={{slug}}</code> pro uživatele a <code>tenant-admin={{slug}}</code> pro správce, oba potřebují <code>role=osiris-user</code>.",
+  "slug": "Zkratka",
+  "slugPlaceholder": "např. novak-stavby",
+  "slugHint": "Malá písmena, číslice a pomlčky",
+  "namePlaceholder": "např. Novák stavby s.r.o.",
+  "creating": "Zakládám…",
+  "create": "Založit tenanta",
+  "rename": "Přejmenovat",
+  "slugValue": "Zkratka: {{id}}",
+  "operation": "Provoz",
+  "idle": "Uspat po (minut nečinnosti, 0 = stále běží)",
+  "disk": "Disk (GB, jen zvětšit)",
+  "quotas": "Kvóty",
+  "quotasHint": "Prázdné pole = bez limitu (úložiště: 80 % disku). Plnění vidí členové nad tenantem v panelu.",
+  "backups": "Zálohy",
+  "backupNow": "Zálohovat teď",
+  "noBackups": "Zatím žádné. Záloha vzniká před každým uspáním a denně.",
+  "reset2faHint": "Pro uživatele, který ztratil telefon s ověřovací aplikací i záložní kódy",
+  "reset2faConfirm": "Vypnout dvoufázové ověření pro {{name}}?",
+  "reset2fa": "Vypnout 2FA",
+  "noMembers": "Zatím nikdo.",
+  "addUser": "Přidat uživatele…",
+  "inviteHint": "Nový uživatel dostane jednorázový přihlašovací odkaz. Změny členství platí do minuty.",
+  "remove": "Odebrat tenanta",
+  "removeHint": "Odebere tenanta z claimů všech uživatelů, takže nikdo z tenanta se už nepřihlásí. Kontejner se zastaví, disk a zálohy zůstanou zachované.",
+  "removeConfirm": "Pro potvrzení napiš {{id}}",
+  "webSites": "Weby v návštěvnosti",
+  "webSitesHint": "Weby z Návštěvnosti, které tenant vidí na dashboardu Weby (jeden na řádek, např. k6labs.cz). Weby jeho domén vidí vždy.",
+  "saveWebSites": "Uložit weby",
+  "slugToken": "<zkratka>"
+}

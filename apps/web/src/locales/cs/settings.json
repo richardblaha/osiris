@@ -1,0 +1,20 @@
+{
+  "newTenant": "Nový tenant",
+  "newUser": "Nový uživatel",
+  "titles": {
+    "features": "Funkce",
+    "quotas": "Limity",
+    "runtime": "Provoz a úložiště",
+    "personalization": "Personalizace",
+    "persona": "Persona asistenta"
+  },
+  "intro": "Výchozí hodnoty pro nové tenanty a uživatele. Stávající si nechávají svoje.",
+  "quotaField": "{{label}} (prázdné = bez limitu)",
+  "idle": "Uspat po nečinnosti (minut, 0 = nikdy)",
+  "disk": "Disk (GB)",
+  "personalizationIntro": "Personalizace, se kterou uživatel začíná, dokud si v Personalizaci nenastaví vlastní.",
+  "byUser": "podle uživatele",
+  "instructions": "Pokyny pro asistenta",
+  "instructionsPlaceholder": "Např. Ceny uváděj vždy s DPH.",
+  "personaHint": "Platí, dokud si uživatel nenastaví vlastní. Prázdná = bez persony."
+}

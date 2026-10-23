@@ -5,6 +5,7 @@ import type { ObjectStore } from "@osiris/platform/objects.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import type { Orchestrator, TenantSpec } from "./orchestrator/types.ts";
 import type { UserDirectory, UserRecord } from "./users.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 export interface TenantRow {
   id: string;
@@ -27,7 +28,7 @@ export interface TenantRow {
 
 export class TenantExistsError extends Error {}
 /** A quota is full; the message can be shown. */
-export class QuotaError extends Error {}
+export class QuotaError extends LocalizedError {}
 export class TenantNotFoundError extends Error {}
 
 /** Everything is on until a system admin switches it off, so features added later reach existing tenants. */
@@ -354,7 +355,7 @@ export class TenantDirectory {
     const user = await this.users.get(userId);
     // A new member needs room; changing a member's role or removing them always works.
     if (role && !roleIn(user, id) && tenant.quotas.members !== null && (await this.memberCount(id)) >= tenant.quotas.members) {
-      throw new QuotaError(`Tenant může mít nejvýš ${tenant.quotas.members} uživatelů`);
+      throw new QuotaError("errors.quota.members", { count: tenant.quotas.members });
     }
     await this.users.setClaims(userId, {
       // A user is in one of the two claims only.

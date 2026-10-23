@@ -259,14 +259,14 @@
     color: var(--accent-secondary);
   }
 
-  /* Toast-style box: sidebar bg, strong border, 3px left bar in the state colour. */
+  /* Toast-style box: sidebar bg, strong border, 3px bar at the start edge in the state colour. */
   .notice {
     border: 1px solid var(--border-strong);
-    border-left: 3px solid var(--state-info);
+    border-inline-start: 3px solid var(--state-info);
     border-radius: var(--radius);
     background: var(--bg-sidebar);
   }
   .notice-error {
-    border-left-color: var(--state-error);
+    border-inline-start-color: var(--state-error);
   }
 }

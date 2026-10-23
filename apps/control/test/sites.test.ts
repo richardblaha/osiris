@@ -36,14 +36,14 @@ async function setup() {
 describe("domains", () => {
   it("validates, keeps one tenant per domain, refuses our own domains and limits the count", async () => {
     const { domains } = await setup();
-    await expect(domains.add("acme", "not a domain")).rejects.toThrow("Neplatná doména");
-    await expect(domains.add("acme", "osiris.k6labs.cz")).rejects.toThrow("nelze použít");
+    await expect(domains.add("acme", "not a domain")).rejects.toThrow("Invalid domain");
+    await expect(domains.add("acme", "osiris.k6labs.cz")).rejects.toThrow("can't be used");
     const d = await domains.add("acme", "WWW.acme.cz.");
     expect(d).toMatchObject({ domain: "www.acme.cz", status: "pending", token: expect.stringMatching(/^osiris-/) });
-    await expect(domains.add("beta", "www.acme.cz")).rejects.toThrow("jiný tenant");
+    await expect(domains.add("beta", "www.acme.cz")).rejects.toThrow("Another tenant");
     await domains.add("acme", "b.acme.cz");
     await domains.add("acme", "c.acme.cz");
-    await expect(domains.add("acme", "d.acme.cz")).rejects.toThrow("nejvýš 3");
+    await expect(domains.add("acme", "d.acme.cz")).rejects.toThrow("at most 3");
   });
 
   it("verifies by TXT record and where the domain points, and takes a moved domain offline", async () => {
@@ -65,7 +65,7 @@ describe("domains", () => {
     // Half pointing elsewhere is not enough.
     const half = await domains.add("acme", "half.acme.cz");
     dns.resolveTxt = async (name) => [[name.includes("half") ? half.token : token]];
-    expect((await domains.verify("acme", "half.acme.cz")).error).toContain("nemíří");
+    expect((await domains.verify("acme", "half.acme.cz")).error).toContain("doesn't point");
 
     // Six hours later the domain points elsewhere: it goes offline.
     (control.dns as unknown as { resolve4: (n: string) => Promise<string[]> }).resolve4 = async () => ["198.51.100.7"];
@@ -103,17 +103,17 @@ describe("site publishing", () => {
     expect(all).toHaveLength(5);
     await sites.activate("acme", "www.acme.cz", all[3]!.id);
     expect((await domains.get("acme", "www.acme.cz"))!.releaseId).toBe(all[3]!.id);
-    await expect(sites.activate("acme", "www.acme.cz", release.id)).rejects.toThrow("nenalezeno");
+    await expect(sites.activate("acme", "www.acme.cz", release.id)).rejects.toThrow("not found");
   });
 
   it("refuses sites without index.html, with links, scripts for servers or unsafe paths", async () => {
     const { sites } = await verified();
     const publish = (s: Readable) => sites.publish("acme", "www.acme.cz", s, null);
     await expect(publish(site({ "about.html": "x" }))).rejects.toThrow("index.html");
-    await expect(publish(site({ "index.html": "x", "run.php": "<?php" }))).rejects.toThrow("Nepovolený typ souboru");
-    await expect(publish(site({ "index.html": "x", ".env": "SECRET=1" }))).rejects.toThrow("Nepovolená cesta");
-    await expect(publish(site({ "index.html": "x" }, (dir) => symlinkSync("/etc/passwd", join(dir, "passwd.txt"))))).rejects.toThrow("Nepovolený typ položky");
-    await expect(sites.publish("acme", "unknown.cz", site({ "index.html": "x" }), null)).rejects.toThrow("nepatří");
+    await expect(publish(site({ "index.html": "x", "run.php": "<?php" }))).rejects.toThrow("File type not allowed");
+    await expect(publish(site({ "index.html": "x", ".env": "SECRET=1" }))).rejects.toThrow("Path not allowed");
+    await expect(publish(site({ "index.html": "x" }, (dir) => symlinkSync("/etc/passwd", join(dir, "passwd.txt"))))).rejects.toThrow("Entry type not allowed");
+    await expect(sites.publish("acme", "unknown.cz", site({ "index.html": "x" }), null)).rejects.toThrow("doesn't belong");
   });
 });
 

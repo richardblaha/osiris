@@ -2,8 +2,8 @@ import { exportPKCS8, exportSPKI, generateKeyPair, importPKCS8, importSPKI, jwtV
 import type { Channel, Role } from "@osiris/shared";
 
 /**
- * Identity carried between Osiris services in a short-lived ES256 JWT. Only the gateway sees PocketID tokens; it
- * verifies them and passes on who the user is. Control (scheduled runs, WhatsApp) and the operator (activity,
+ * Identity carried between Osiris services in a short-lived ES256 JWT. Only the gateway sees access tokens; it
+ * has control identify them and passes on who the user is. Control (scheduled runs, WhatsApp) and the operator (activity,
  * snapshots) sign the same way for their own calls. Runtimes hold only the public key.
  */
 export interface InternalUser {
@@ -28,7 +28,7 @@ export interface InternalClaims {
   /** Gateway → control: every tenant the user may open, and whether they are a system admin. */
   memberships?: { tenantId: string; role: Role }[];
   systemAdmin?: boolean;
-  /** Claim names PocketID returned, to explain a refused account. */
+  /** The user's claim names, to explain a refused account. */
   claimKeys?: string[];
 }
 

@@ -6,6 +6,7 @@ import type { SecretVault } from "../vault/vault.ts";
 import { finishOAuth, StoredOAuthProvider, startOAuth, type McpOAuthStore } from "./oauth.ts";
 import type { McpServerConfig, McpServerStore } from "./store.ts";
 import { assertSafePublicUrl } from "./url.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 export interface McpConnection {
   tools: StructuredToolInterface[];
@@ -26,7 +27,7 @@ export interface McpOptions {
 }
 
 /** The server uses OAuth and its owner hasn't signed in (or the sign-in expired for good). */
-export class McpSignInRequiredError extends Error {}
+export class McpSignInRequiredError extends LocalizedError {}
 
 const CONNECT_TIMEOUT_MS = 15_000;
 const TOOL_TIMEOUT_MS = 60_000;
@@ -52,7 +53,7 @@ export const defaultConnector =
   };
 
 const withTimeout = <T>(p: Promise<T>, ms: number) =>
-  Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout po ${ms / 1000} s`)), ms))]);
+  Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new LocalizedError("errors.mcp.timeout", { seconds: ms / 1000 })), ms))]);
 
 const message = (err: unknown) => (err instanceof Error ? err.message : String(err)).slice(0, 300);
 
@@ -153,7 +154,7 @@ export class McpToolset {
       (async () => {
         const resolved = await this.resolve(server, owner);
         if (server.auth !== "oauth") return this.connect(resolved);
-        if (!(await this.oauth.connected(owner, server.name))) throw new McpSignInRequiredError("Nepřihlášeno: přihlas se k serveru v jeho nastavení");
+        if (!(await this.oauth.connected(owner, server.name))) throw new McpSignInRequiredError("errors.mcp.signInRequired");
         return this.connect({ ...resolved, authProvider: this.provider(owner, server.name) });
       })(),
       CONNECT_TIMEOUT_MS,

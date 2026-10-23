@@ -49,7 +49,7 @@ describe("standard mail protocols", () => {
     expect(read.writes.some(command => command.startsWith("DELE"))).toBe(false);
     expect(read.destroyed).toBe(true);
     const missing = popServer();
-    await expect(pop3Read(endpoint, "absent")).rejects.toThrow("nenalezena");
+    await expect(pop3Read(endpoint, "absent")).rejects.toThrow("not found");
     expect(missing.destroyed).toBe(true);
   });
 
@@ -66,7 +66,7 @@ describe("standard mail protocols", () => {
     expect(mocks.sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: "bob@example.cz", text: "Ahoj" }));
     expect(mocks.close).toHaveBeenCalled();
     await expect(send.invoke({ account: "work", to: ["eva@example.cz"], subject: "Test\r\nBcc: bad@example.cz", body: "Ahoj" }, config)).rejects.toThrow();
-    await expect(send.invoke({ account: "work", to: ["eva@example.cz"], subject: "Test", body: "Ahoj" }, { configurable: { ...config.configurable, user_id: "eva" } })).rejects.toThrow("není propojený");
+    await expect(send.invoke({ account: "work", to: ["eva@example.cz"], subject: "Test", body: "Ahoj" }, { configurable: { ...config.configurable, user_id: "eva" } })).rejects.toThrow("isn't connected");
     db.close();
   });
 });

@@ -1,8 +1,9 @@
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 /** `{{secret:NAME}}` placeholders, usable in MCP server URLs and headers and in http_request arguments. */
 export const SECRET_REF = /\{\{\s*secret:([A-Z][A-Z0-9_]{0,63})\s*\}\}/g;
 export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 
-export class SecretUseError extends Error {}
+export class SecretUseError extends LocalizedError {}
 
 export function secretRefs(text: string): string[] {
   return [...text.matchAll(SECRET_REF)].map((m) => m[1]!);
@@ -17,9 +18,9 @@ export function templateHost(url: string): string {
   try {
     parsed = new URL(url.replace(SECRET_REF, "SECRETREF"));
   } catch {
-    throw new SecretUseError("Neplatná URL");
+    throw new SecretUseError("errors.url.invalid");
   }
-  if (/secretref/i.test(parsed.protocol + parsed.host)) throw new SecretUseError("Secret nesmí být v doméně URL, jen v cestě nebo parametrech");
+  if (/secretref/i.test(parsed.protocol + parsed.host)) throw new SecretUseError("errors.secret.inHost");
   return parsed.hostname.toLowerCase();
 }
 

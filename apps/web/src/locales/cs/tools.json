@@ -1,0 +1,25 @@
+{
+  "groups": {
+    "standard_accounts": "Propojené standardní účty",
+    "mail": "Pošta SMTP / IMAP / POP3",
+    "caldav": "Kalendář CalDAV",
+    "carddav": "Kontakty CardDAV",
+    "google_mail": "Google Mail",
+    "google_contacts": "Google kontakty",
+    "google_calendar": "Google kalendář",
+    "microsoft_mail": "Microsoft Outlook pošta",
+    "microsoft_contacts": "Microsoft kontakty",
+    "microsoft_calendar": "Microsoft kalendář",
+    "templates": "Šablony",
+    "image": "Obrázky"
+  },
+  "allOn": "zapnout vše",
+  "allOff": "vypnout vše",
+  "introAdmin": "Vypnutý nástroj asistent nepoužije. Změna se projeví do půl minuty.",
+  "intro": "Nástroje, které asistent má. Zapíná a vypíná je správce systému.",
+  "featureOff": "funkce vypnutá",
+  "on": "zapnout",
+  "off": "vypnout",
+  "isOn": "zapnuto",
+  "isOff": "vypnuto"
+}

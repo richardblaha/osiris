@@ -134,6 +134,6 @@ describe("Google and Microsoft accounts", () => {
     expect(await search.invoke({ query: "777111" }, config)).toBe("Jan Dvořák · +420 777 111 222 · id c1");
     // Not connected: a sentence for the model, not a failure.
     const eva = { configurable: { ...config.configurable, user_id: "dev:eva" } };
-    expect(await search.invoke({ query: "Eva" }, eva)).toContain("není propojený");
+    expect(await search.invoke({ query: "Eva" }, eva)).toContain("isn't connected");
   });
 });

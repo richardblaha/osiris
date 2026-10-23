@@ -4,16 +4,18 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Client, InValue } from "@libsql/client";
 import { DB_COLUMN_TYPES, type DbColumn, type DbColumnType, type DbQueryResult, type DbRows, type DbTable } from "@osiris/shared";
+import { LocalizedError, type Params } from "@osiris/platform/i18n.ts";
 
 export type DataErrorCode = "invalid" | "not_found" | "exists" | "quota";
 
-/** A refused request, its message for the user (Czech). */
-export class DataError extends Error {
+/** A refused request; its message is safe to show to the user and the model. */
+export class DataError extends LocalizedError {
   constructor(
-    message: string,
     readonly code: DataErrorCode,
+    key: string,
+    params?: Params,
   ) {
-    super(message);
+    super(key, params);
   }
 }
 
@@ -71,38 +73,38 @@ const FORBIDDEN = /\b(attach|detach|pragma|vacuum|load_extension)\b/i;
  */
 export function readOnlySql(sql: string): string {
   const bare = sql.replace(LITERALS, (m) => " ".repeat(m.length));
-  if (/['"`]|\/\*/.test(bare)) throw new DataError("Dotaz má neukončený řetězec nebo komentář.", "invalid");
+  if (/['"`]|\/\*/.test(bare)) throw new DataError("invalid", "errors.db.unterminated");
   const end = bare.search(/;[\s;]*$/);
   const body = end >= 0 ? bare.slice(0, end) : bare;
-  if (body.includes(";")) throw new DataError("Pošli jen jeden příkaz.", "invalid");
-  if (!/^\s*(select|with|values)\b/i.test(body)) throw new DataError("Dotaz musí být SELECT (data se mění nástroji pro zápis).", "invalid");
+  if (body.includes(";")) throw new DataError("invalid", "errors.db.oneStatement");
+  if (!/^\s*(select|with|values)\b/i.test(body)) throw new DataError("invalid", "errors.db.selectOnly");
   const bad = FORBIDDEN.exec(body);
-  if (bad) throw new DataError(`${bad[1]!.toUpperCase()} v dotazu není dovolený.`, "invalid");
+  if (bad) throw new DataError("invalid", "errors.db.keyword", { keyword: bad[1]!.toUpperCase() });
   return sql.slice(0, end >= 0 ? end : sql.length);
 }
 
-function checkName(name: string, what: string) {
-  if (!NAME.test(name)) throw new DataError(`Neplatný název ${what} „${name}“: malá písmena bez diakritiky, číslice a _, na začátku písmeno.`, "invalid");
+function checkName(name: string, what: "table" | "column") {
+  if (!NAME.test(name)) throw new DataError("invalid", what === "table" ? "errors.db.tableName" : "errors.db.columnName", { name });
 }
 
 /** A value for a column, as SQLite stores it; null for none (refused when the column is required). */
 function encode(col: DbColumn, v: unknown): InValue {
-  const bad = (expected: string) => new DataError(`Sloupec ${col.name} čeká ${expected}, dostal ${JSON.stringify(v)?.slice(0, 80)}.`, "invalid");
+  const bad = (expected: string) => new DataError("invalid", "errors.db.wrongType", { column: col.name, expected, value: JSON.stringify(v)?.slice(0, 80) ?? "undefined" });
   if (v === null || v === undefined || v === "") {
-    if (col.required) throw new DataError(`Sloupec ${col.name} je povinný.`, "invalid");
+    if (col.required) throw new DataError("invalid", "errors.db.required", { column: col.name });
     return null;
   }
   switch (col.type) {
     case "text": {
       if (typeof v !== "string" && typeof v !== "number" && typeof v !== "boolean") throw bad("text");
       const s = String(v);
-      if (s.length > MAX_TEXT) throw new DataError(`Text ve sloupci ${col.name} je delší než ${MAX_TEXT} znaků.`, "invalid");
+      if (s.length > MAX_TEXT) throw new DataError("invalid", "errors.db.textTooLong", { column: col.name, count: MAX_TEXT });
       return s;
     }
     case "integer":
     case "real": {
       const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v.trim().replace(",", ".")) : NaN;
-      if (col.type === "integer" ? !Number.isSafeInteger(n) : !Number.isFinite(n)) throw bad(col.type === "integer" ? "celé číslo" : "číslo");
+      if (col.type === "integer" ? !Number.isSafeInteger(n) : !Number.isFinite(n)) throw bad(col.type === "integer" ? "an integer" : "a number");
       return n;
     }
     case "boolean":
@@ -113,7 +115,7 @@ function encode(col: DbColumn, v: unknown): InValue {
       if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(Date.parse(v))) throw bad("datum RRRR-MM-DD");
       return v;
     case "datetime":
-      if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v) || Number.isNaN(Date.parse(v))) throw bad("datum a čas ISO 8601");
+      if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(v) || Number.isNaN(Date.parse(v))) throw bad("an ISO 8601 date and time");
       return v.replace(" ", "T");
     case "json": {
       if (typeof v === "string") {
@@ -146,13 +148,13 @@ function decode(col: DbColumn, v: unknown): unknown {
 function friendly(err: unknown): never {
   const message = err instanceof Error ? err.message : String(err);
   const unique = /UNIQUE constraint failed: \w+\.(\w+)/.exec(message);
-  if (unique) throw new DataError(`Hodnota ve sloupci ${unique[1]} už v tabulce je (musí být jedinečná).`, "invalid");
+  if (unique) throw new DataError("invalid", "errors.db.unique", { column: unique[1]! });
   if (/FOREIGN KEY constraint failed/.test(message)) {
-    throw new DataError("Odkaz nesedí: odkazovaný záznam neexistuje, nebo na mazaný záznam odkazují jiné.", "invalid");
+    throw new DataError("invalid", "errors.db.reference");
   }
   const notNull = /NOT NULL constraint failed: \w+\.(\w+)/.exec(message);
-  if (notNull) throw new DataError(`Sloupec ${notNull[1]} je povinný.`, "invalid");
-  if (/SQLITE_ERROR|SQLITE_CONSTRAINT/.test(message)) throw new DataError(message.replace(/^SQLITE_\w+: /, ""), "invalid");
+  if (notNull) throw new DataError("invalid", "errors.db.required", { column: notNull[1]! });
+  if (/SQLITE_ERROR|SQLITE_CONSTRAINT/.test(message)) throw new DataError("invalid", "errors.db.sqlite", { detail: message.replace(/^SQLITE_\w+: /, "") });
   throw err;
 }
 
@@ -203,23 +205,23 @@ export class DataStore {
 
   async table(name: string): Promise<DbTable> {
     await this.init();
-    if (!(await this.names()).includes(name)) throw new DataError(`Tabulka ${name} neexistuje.`, "not_found");
+    if (!(await this.names()).includes(name)) throw new DataError("not_found", "errors.db.noTable", { table: name });
     return this.describe(name);
   }
 
   async createTable(name: string, description: string, columns: ColumnInput[]): Promise<DbTable> {
     await this.init();
-    checkName(name, "tabulky");
+    checkName(name, "table");
     const names = await this.names();
-    if (names.includes(name)) throw new DataError(`Tabulka ${name} už existuje.`, "exists");
+    if (names.includes(name)) throw new DataError("exists", "errors.db.tableExists", { table: name });
     const { tables } = await this.limits();
-    if (tables !== null && names.length >= tables) throw new DataError(`Firma může mít nejvýš ${tables} tabulek.`, "quota");
+    if (tables !== null && names.length >= tables) throw new DataError("quota", "errors.db.tableQuota", { count: tables });
     await this.checkRoom();
-    if (!columns.length || columns.length > MAX_COLUMNS) throw new DataError(`Tabulka potřebuje 1 až ${MAX_COLUMNS} sloupců.`, "invalid");
+    if (!columns.length || columns.length > MAX_COLUMNS) throw new DataError("invalid", "errors.db.columnCount", { count: MAX_COLUMNS });
     const seen = new Set<string>();
     for (const c of columns) {
       this.checkColumn(c, [...names, name]);
-      if (seen.has(c.name)) throw new DataError(`Sloupec ${c.name} je tam dvakrát.`, "invalid");
+      if (seen.has(c.name)) throw new DataError("invalid", "errors.db.duplicateColumn", { column: c.name });
       seen.add(c.name);
     }
     const defs = columns.map((c) => `${q(c.name)} ${DECLARED[c.type]}${c.required ? " NOT NULL" : ""}${this.reference(c)}`);
@@ -235,8 +237,8 @@ export class DataStore {
     let table = await this.table(name);
     const has = (c: string) => table.columns.some((x) => x.name === c);
     const user = (c: string) => {
-      if (SYSTEM_COLUMNS.includes(c)) throw new DataError(`Sloupec ${c} patří každé tabulce, ten měnit nejde.`, "invalid");
-      if (!has(c)) throw new DataError(`Sloupec ${c} v tabulce ${name} není.`, "not_found");
+      if (SYSTEM_COLUMNS.includes(c)) throw new DataError("invalid", "errors.db.systemColumnChange", { column: c });
+      if (!has(c)) throw new DataError("not_found", "errors.db.noColumn", { column: c, table: name });
     };
     for (const c of change.dropColumns ?? []) {
       user(c);
@@ -245,30 +247,30 @@ export class DataStore {
     }
     for (const { from, to } of change.renameColumns ?? []) {
       user(from);
-      checkName(to, "sloupce");
-      if (SYSTEM_COLUMNS.includes(to) || has(to)) throw new DataError(`Sloupec ${to} už v tabulce je.`, "exists");
+      checkName(to, "column");
+      if (SYSTEM_COLUMNS.includes(to) || has(to)) throw new DataError("exists", "errors.db.columnExists", { column: to });
       await this.db.execute(`ALTER TABLE ${q(name)} RENAME COLUMN ${q(from)} TO ${q(to)}`).catch(friendly);
       table = await this.describe(name);
     }
     if (change.addColumns?.length) {
       await this.checkRoom();
       if (table.columns.length + change.addColumns.length > MAX_COLUMNS + SYSTEM_COLUMNS.length) {
-        throw new DataError(`Tabulka může mít nejvýš ${MAX_COLUMNS} sloupců.`, "invalid");
+        throw new DataError("invalid", "errors.db.columnLimit", { count: MAX_COLUMNS });
       }
       const names = await this.names();
       for (const c of change.addColumns) {
         this.checkColumn(c, names);
-        if (has(c.name)) throw new DataError(`Sloupec ${c.name} už v tabulce je.`, "exists");
+        if (has(c.name)) throw new DataError("exists", "errors.db.columnExists", { column: c.name });
         // SQLite adds a NOT NULL column only with a default, which a new column of existing rows has none of.
-        if (c.required) throw new DataError(`Nový sloupec ${c.name} nemůže být povinný (stávající řádky ho nemají).`, "invalid");
+        if (c.required) throw new DataError("invalid", "errors.db.newRequired", { column: c.name });
         await this.db.execute(`ALTER TABLE ${q(name)} ADD COLUMN ${q(c.name)} ${DECLARED[c.type]}${this.reference(c)}`).catch(friendly);
         if (c.unique) await this.addUnique(name, c.name);
         table = await this.describe(name);
       }
     }
     if (change.rename && change.rename !== name) {
-      checkName(change.rename, "tabulky");
-      if ((await this.names()).includes(change.rename)) throw new DataError(`Tabulka ${change.rename} už existuje.`, "exists");
+      checkName(change.rename, "table");
+      if ((await this.names()).includes(change.rename)) throw new DataError("exists", "errors.db.tableExists", { table: change.rename });
       await this.db.execute(`ALTER TABLE ${q(name)} RENAME TO ${q(change.rename)}`).catch(friendly);
       await this.db.execute({ sql: `UPDATE ${META} SET name = ? WHERE name = ?`, args: [change.rename, name] });
       name = change.rename;
@@ -286,7 +288,7 @@ export class DataStore {
   /** Adds rows in one statement (all or none); answers their ids. */
   async insert(name: string, rows: Record<string, unknown>[]): Promise<number[]> {
     const table = await this.table(name);
-    if (!rows.length || rows.length > MAX_ROWS_PER_WRITE) throw new DataError(`Najednou jde vložit 1 až ${MAX_ROWS_PER_WRITE} řádků.`, "invalid");
+    if (!rows.length || rows.length > MAX_ROWS_PER_WRITE) throw new DataError("invalid", "errors.db.rowCount", { count: MAX_ROWS_PER_WRITE });
     await this.checkRoom();
     const columns = table.columns.filter((c) => !c.system);
     for (const row of rows) this.checkKeys(table, row);
@@ -307,7 +309,7 @@ export class DataStore {
     const table = await this.table(name);
     this.checkKeys(table, values);
     const set = Object.keys(values);
-    if (!set.length) throw new DataError("Není co měnit.", "invalid");
+    if (!set.length) throw new DataError("invalid", "errors.db.nothingToChange");
     await this.checkRoom();
     const col = (n: string) => table.columns.find((c) => c.name === n)!;
     const filter = this.where(table, where);
@@ -358,19 +360,21 @@ export class DataStore {
     const stmt = readOnlySql(sql);
     await this.init();
     // ponytail: a process per query (~100 ms), no pool or concurrency cap; add one if the console gets busy.
-    const result = await new Promise<{ columns: string[]; rows: unknown[][] } | { error: string }>((resolve) => {
+    const result = await new Promise<{ columns: string[]; rows: unknown[][] } | { error: string } | { failure: DataError }>((resolve) => {
       const child = fork(QUERY_PROCESS, [], { execArgv: [], env: { OSIRIS_LIBSQL: LIBSQL }, serialization: "advanced", stdio: ["ignore", "ignore", "pipe", "ipc"] });
       let stderr = "";
       child.stderr?.on("data", (d: Buffer) => (stderr = (stderr + d.toString()).slice(-500)));
       const timer = setTimeout(() => {
         child.kill("SIGKILL");
-        resolve({ error: `Dotaz trval déle než ${QUERY_TIMEOUT_MS / 1000} s. Zjednoduš ho nebo omez počet řádků.` });
+        resolve({ failure: new DataError("invalid", "errors.db.timeout", { seconds: QUERY_TIMEOUT_MS / 1000 }) });
       }, QUERY_TIMEOUT_MS);
       child.once("message", (m) => (clearTimeout(timer), child.kill("SIGKILL"), resolve(m as { columns: string[]; rows: unknown[][] })));
-      child.once("exit", () => (clearTimeout(timer), resolve({ error: stderr.trim() || "Dotaz se nepodařilo spustit." })));
+      child.once("exit", () => (clearTimeout(timer), resolve(stderr.trim() ? { error: stderr.trim() } : { failure: new DataError("invalid", "errors.db.queryFailed") })));
       child.send({ url: `file:${this.path}`, sql: `SELECT * FROM (\n${stmt}\n) LIMIT ${limit + 1}` });
     });
-    if ("error" in result) throw new DataError(result.error.replace(/^SQLITE_\w+: /, ""), "invalid");
+    if ("failure" in result) throw result.failure;
+    // SQLite's own message (English) names the table or column it stumbled on.
+    if ("error" in result) throw new DataError("invalid", "errors.db.sqlite", { detail: result.error.replace(/^SQLITE_\w+: /, "") });
     return { columns: result.columns, rows: result.rows.slice(0, limit), truncated: result.rows.length > limit };
   }
 
@@ -425,7 +429,7 @@ export class DataStore {
   private async addUnique(table: string, column: string) {
     const index = `${table}__${column}__unique`.slice(0, 120);
     await this.db.execute(`CREATE UNIQUE INDEX ${q(index)} ON ${q(table)} (${q(column)})`).catch((err: unknown) => {
-      if (/UNIQUE constraint failed/.test(String(err))) throw new DataError(`Sloupec ${column} nejde nastavit jako jedinečný, hodnoty se opakují.`, "invalid");
+      if (/UNIQUE constraint failed/.test(String(err))) throw new DataError("invalid", "errors.db.notUnique", { column });
       friendly(err);
     });
   }
@@ -435,37 +439,37 @@ export class DataStore {
   }
 
   private checkColumn(c: ColumnInput, tables: string[]) {
-    checkName(c.name, "sloupce");
-    if (SYSTEM_COLUMNS.includes(c.name)) throw new DataError(`Sloupec ${c.name} má každá tabulka sama, nepřidávej ho.`, "invalid");
-    if (!DB_COLUMN_TYPES.includes(c.type)) throw new DataError(`Neznámý typ ${c.type}; povolené: ${DB_COLUMN_TYPES.join(", ")}.`, "invalid");
+    checkName(c.name, "column");
+    if (SYSTEM_COLUMNS.includes(c.name)) throw new DataError("invalid", "errors.db.systemColumnAdd", { column: c.name });
+    if (!DB_COLUMN_TYPES.includes(c.type)) throw new DataError("invalid", "errors.db.unknownType", { type: c.type, types: DB_COLUMN_TYPES.join(", ") });
     if (c.references) {
-      if (!tables.includes(c.references)) throw new DataError(`Odkazovaná tabulka ${c.references} neexistuje.`, "not_found");
-      if (c.type !== "integer") throw new DataError(`Sloupec ${c.name} odkazuje na tabulku, musí být typu integer.`, "invalid");
+      if (!tables.includes(c.references)) throw new DataError("not_found", "errors.db.noReferencedTable", { table: c.references });
+      if (c.type !== "integer") throw new DataError("invalid", "errors.db.referenceType", { column: c.name });
     }
   }
 
   private checkKeys(table: DbTable, row: Record<string, unknown>) {
-    if (typeof row !== "object" || row === null || Array.isArray(row)) throw new DataError("Řádek musí být objekt sloupec → hodnota.", "invalid");
+    if (typeof row !== "object" || row === null || Array.isArray(row)) throw new DataError("invalid", "errors.db.rowShape");
     for (const key of Object.keys(row)) {
       const col = table.columns.find((c) => c.name === key);
-      if (!col) throw new DataError(`Sloupec ${key} v tabulce ${table.name} není (sloupce: ${table.columns.map((c) => c.name).join(", ")}).`, "invalid");
-      if (col.system) throw new DataError(`Sloupec ${key} se vyplňuje sám.`, "invalid");
+      if (!col) throw new DataError("invalid", "errors.db.noColumnList", { column: key, table: table.name, columns: table.columns.map((c) => c.name).join(", ") });
+      if (col.system) throw new DataError("invalid", "errors.db.automatic", { column: key });
     }
   }
 
   private where(table: DbTable, where: Where): { sql: string; args: InValue[] } {
     const keys = Object.keys(where ?? {});
-    if (!keys.length) throw new DataError("Chybí podmínka where (aspoň jeden sloupec, např. id).", "invalid");
+    if (!keys.length) throw new DataError("invalid", "errors.db.whereMissing");
     const parts: string[] = [];
     const args: InValue[] = [];
     for (const key of keys) {
       const col = table.columns.find((c) => c.name === key);
-      if (!col) throw new DataError(`Sloupec ${key} v tabulce ${table.name} není.`, "invalid");
+      if (!col) throw new DataError("invalid", "errors.db.noColumn", { column: key, table: table.name });
       const v = where[key];
       const value = (x: unknown) => encode({ ...col, required: true }, x);
       if (v === null) parts.push(`${q(key)} IS NULL`);
       else if (Array.isArray(v)) {
-        if (!v.length || v.length > 1000) throw new DataError(`Seznam hodnot pro ${key} musí mít 1 až 1000 položek.`, "invalid");
+        if (!v.length || v.length > 1000) throw new DataError("invalid", "errors.db.listSize", { column: key, count: 1000 });
         parts.push(`${q(key)} IN (${v.map(() => "?").join(", ")})`);
         args.push(...v.map(value));
       } else {
@@ -485,6 +489,6 @@ export class DataStore {
 
   private async checkRoom() {
     const { bytes } = await this.limits();
-    if (bytes !== null && (await this.size()) >= bytes) throw new DataError("Databáze firmy je plná. Smaž nepotřebné záznamy nebo tabulky.", "quota");
+    if (bytes !== null && (await this.size()) >= bytes) throw new DataError("quota", "errors.db.quota");
   }
 }

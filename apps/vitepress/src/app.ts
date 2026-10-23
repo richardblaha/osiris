@@ -19,7 +19,7 @@ export function createVitepressApp(run: (files: BuildFile[]) => Promise<BuildRes
 
   return new Hono()
     .get("/health", (c) => c.json({ ok: true }))
-    .post("/build", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "Zdroj webu je příliš velký" }, 413) }), async (c) => {
+    .post("/build", bodyLimit({ maxSize: MAX_BODY_BYTES, onError: (c) => c.json({ error: "The site source is too large" }, 413) }), async (c) => {
       const form = await c.req.formData();
       const files: BuildFile[] = [];
       for (const [path, value] of form.entries()) {

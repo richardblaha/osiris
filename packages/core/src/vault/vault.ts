@@ -40,7 +40,7 @@ export class SecretVault {
         sql: "UPDATE secrets SET allowed_hosts = ?, description = ?, updated_at = datetime('now') WHERE owner = ? AND name = ?",
         args: [hosts, description, owner, name],
       });
-      if (!r.rowsAffected) throw new SecretUseError("Nový secret musí mít hodnotu");
+      if (!r.rowsAffected) throw new SecretUseError("errors.secret.valueRequired");
       return;
     }
     await this.db.execute({
@@ -70,9 +70,9 @@ export class SecretVault {
         args: [name, userId],
       });
       const r = rows[0];
-      if (!r) throw new SecretUseError(`Secret ${name} neexistuje`);
+      if (!r) throw new SecretUseError("errors.secret.notFound", { name });
       if (!hostAllowed(host, JSON.parse(String(r.allowed_hosts)) as string[])) {
-        throw new SecretUseError(`Secret ${name} není povolen pro ${host}`);
+        throw new SecretUseError("errors.secret.hostNotAllowed", { name, host });
       }
       values.set(name, this.box.open(String(r.value_enc)));
     }

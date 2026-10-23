@@ -1,0 +1,48 @@
+{
+  "tools": {
+    "estimate_price": {
+      "label": "Odhad ceny zakázky",
+      "hint": "spočítá orientační cenu z ceníku v jeho znalostech"
+    },
+    "create_inquiry": {
+      "label": "Poptávka",
+      "hint": "převezme jméno, kontakt a popis zakázky a pošle vám e-mail"
+    }
+  },
+  "defaultGreeting": "Dobrý den, s čím vám můžu pomoct?",
+  "intro": "Asistenti pro zákazníky na webu, bez přihlášení. Každý ví jen to, co mu vyberete.",
+  "inquiries": "Poptávky",
+  "on": "zapnutý",
+  "off": "vypnutý",
+  "add": "Přidat asistenta",
+  "confirmDelete": "Smazat asistenta {{name}}? Odkazy a widgety na webu přestanou fungovat.",
+  "new": "Nový asistent",
+  "enabled": "Zapnuto (zákazníci mohou psát)",
+  "name": "Název v odkazu (malá písmena, číslice, pomlčky)",
+  "namePlaceholder": "např. web nebo eshop",
+  "title": "Název firmy pro zákazníky",
+  "tokens": "Měsíční limit tokenů (prázdné = jen limit firmy)",
+  "greeting": "Uvítání",
+  "knowledgeHint": "Dokumenty a složky, ve kterých asistent hledá. Vybraná složka zahrnuje i vše, co do ní přibude.",
+  "knowledgeEmpty": "Znalostní báze je prázdná.",
+  "memoryHint": "Fakta, která asistent dostane vždy (např. otevírací doba).",
+  "memoryEmpty": "V paměti nic není.",
+  "skillsHint": "Postupy firmy, podle kterých smí asistent pracovat.",
+  "skillsEmpty": "Firma nemá vlastní dovednosti.",
+  "toolsTitle": "Nástroje",
+  "delete": "Smazat asistenta",
+  "where": "Kde ho zákazníci najdou",
+  "link": "Odkaz:",
+  "snippetHint": "Na váš web (např. do www/index.html před </body>) vložte:",
+  "persona": "Persona pro zákazníky",
+  "time": "Termín: {{time}}",
+  "reopen": "Vrátit mezi nové",
+  "done": "Vyřízeno",
+  "hideConversation": "Skrýt konverzaci",
+  "conversation": "Konverzace",
+  "customer": "Zákazník",
+  "httpError": "Chyba {{status}}",
+  "unavailable": "Asistent teď není dostupný.",
+  "footer": "Odpovídá umělá inteligence a může se mýlit. Provozuje <a>Osiris</a>.",
+  "placeholder": "Napište zprávu…"
+}

@@ -1,97 +1,95 @@
-# Nasazení interaktivního chatu
+# Deploying the interactive chat
 
-Nástroj agenta `ask_user` je společný pro PWA po přihlášení, veřejný webový chat a WhatsApp.
-Podporuje text, konečná čísla, kalendářní data, výběr jedné či více možností a potvrzení ano/ne.
-Definice otázek a odpovědi ukládá migrace 019 do databáze tenantu s vazbou na uživatele a vlákno.
-Otázka vyprší za 24 hodin. Odpověď se ověří a přijme jediným podmíněným zápisem; opakované odpovědi,
-nesprávný vlastník a neznámé možnosti se odmítnou. Hodnota `false` zůstává zachována. Zrušení se uloží
-a model dostane pokyn, aby navrženou akci neprovedl. Nástroj zjišťuje záměr uživatele; nepředstavuje
-obecný mechanismus oprávnění pro libovolné nástroje MCP. Volání otázky současně s jiným nástrojem
-se odmítne ještě před spuštěním kteréhokoli z nich.
+The agent's `ask_user` tool is shared by the signed-in PWA, the public website chat and WhatsApp. It supports text,
+finite numbers, calendar dates, single and multiple choice, and yes/no confirmations. Migration 019 stores question
+definitions and answers in the tenant database, bound to the user and the thread. A question expires after 24 hours.
+An answer is validated and accepted with a single conditional write; repeated answers, the wrong owner and unknown
+options are refused. A `false` value is kept as such. A cancellation is stored, and the model is told not to carry out
+the proposed action. The tool asks for the user's intent; it is not a general permission mechanism for arbitrary MCP
+tools. Asking a question together with any other tool call refuses the whole batch before any of it runs.
 
-PWA zobrazuje formuláře přímo ve zprávách asistenta. Každých 5 sekund při zobrazené stránce a také
-při návratu do okna načítá stav ze serveru a přebírá dokončené vzdálené výměny zpráv, včetně zpráv
-z WhatsAppu. Právě probíhající místní výměnu zpráv přitom nepřepisuje. Osobní webový chat podporuje
-nahrávání souborů a záznam z mikrofonu. Soubory se ukládají do dočasného úložiště příslušného vlákna
-uživatele se zachováním kontrol typu, signatury, velikosti a kvót. Jedna výměna zpráv může obsahovat
-nejvýše 5 souborů o celkové velikosti 25 MB; jednotlivý soubor nahraný přes rozhraní může mít nejvýše
-20 MB. Obrázky model obdrží jako obrázky. Text v UTF-8 se vloží přímo, nejvýše 100 000 znaků na soubor.
-U PDF se pomocí Mistral OCR zpracuje nejvýše prvních 30 stran, u zvuku se použije přepis od Mistralu.
-Ostatní podporované kancelářské dokumenty se uloží a zpřístupní souborovým nástrojům agenta;
-aplikace netvrdí, že jejich obsah již přečetla. Nahrávání zvuku se zastaví po 5 minutách a při odebrání
-komponenty se uvolní mikrofon. Dočasné soubory vyprší podle stávajících pravidel za 24 hodin.
+The PWA shows forms directly in the assistant's messages. Every 5 seconds while the page is visible, and when the
+window regains focus, it loads the state from the server and takes over completed remote exchanges, including
+WhatsApp ones, without overwriting an exchange in progress locally. The personal web chat supports file uploads and
+microphone recordings. Files go to the temporary storage of the user's thread, with the usual checks of type,
+signature, size and quotas. One exchange can carry at most 5 files of 25 MB in total; a single file uploaded through
+the interface can have at most 20 MB. Images reach the model as images. UTF-8 text is inlined, at most 100,000
+characters per file. For PDFs, Mistral OCR reads at most the first 30 pages; audio is transcribed by Mistral. Other
+supported office documents are stored and offered to the agent's file tools; the app does not claim to have read
+their content. Recording stops after 5 minutes, and the microphone is released when the component goes away.
+Temporary files expire after 24 hours, as before.
 
-Nastavení runtime v systémovém prostředí, případně přes operátor `RUNTIME_ENV_*` / `RUNTIME_SECRET_*`:
+Runtime settings, in its environment or through the operator's `RUNTIME_ENV_*` / `RUNTIME_SECRET_*`:
 
-- `MISTRAL_API_KEY`: přístupový klíč pro OCR a přepis zvuku, nezávislý na zvoleném poskytovateli chatu.
+- `MISTRAL_API_KEY`: the key for OCR and audio transcription, independent of the chat model's provider.
 - `AUDIO_MODEL=voxtral-mini-latest`, `OCR_MODEL=mistral-ocr-latest`.
-- Chatové modely používané s obrázky musí podporovat obrazový vstup. Tokeny spotřebované přepisem
-  se započítávají, pokud je poskytovatel vykazuje. OCR se účtuje podle stran a nepřevádí se na
-  smyšlený počet tokenů.
+- Chat models used with images must accept image input. Tokens used by transcription are counted when the provider
+  reports them. OCR is billed per page and is not converted into an invented number of tokens.
 
-WhatsApp přijímá obrázky, dokumenty, zvuk, odpovědi pomocí tlačítek a seznamů i dokončené formuláře
-Flow. Soubory se stahují přes autentizované Graph API. Stahování ověřuje vráceného hostitele HTTPS,
-odmítá přesměrování a omezuje velikost na 20 MB. Runtime následně ověřuje i obsah uloženého souboru.
-Nástroj `send_chat_file` může výslovně nabídnout soubor ke stažení v PWA nebo k doručení jako médium
-ve WhatsAppu. Interní koncový bod pro soubory poskytuje vlastníkovi vlákna pouze soubory nabídnuté
-tímto nástrojem v aktuální výměně zpráv.
+WhatsApp accepts images, documents, audio, reply buttons and lists, and completed Flow forms. Files are downloaded
+through the authenticated Graph API; the download checks the returned HTTPS host, refuses redirects and is limited to
+20 MB. The runtime then checks the stored file's content as well. The `send_chat_file` tool explicitly offers a file
+for download in the PWA or for delivery as WhatsApp media. The internal file endpoint gives the thread's owner only
+files offered by that tool in the current exchange.
 
-Jednoduché volby automaticky používají tlačítka odpovědí, nejvýše 3 s popisky do 20 znaků, nebo
-nativní seznam, nejvýše 10 položek s popisky do 24 znaků. Ostatní otázky použijí text a odkaz do PWA,
-kde je nutné přihlášení. Na jedno pole lze odpovědět také textem; příkaz `/zrusit` otázku zruší.
-U více polí lze použít formulář v PWA, což je doporučený postup, nebo objekt JSON. Přepnutí tenantu
-neopravňuje k odpovídání na otázky jiných tenantů. Runtime odmítá nativní odpovědi na otázky,
-které již vypršely nebo byly zodpovězeny.
+Simple choices use reply buttons (at most 3, labels up to 20 characters) or a native list (at most 10 items, labels
+up to 24 characters). Other questions are sent as text with a link to the PWA, which requires signing in. A
+single-field question can also be answered with a text message; `/cancel` (or `/zrusit`) cancels the question. For
+several fields, use the PWA form (recommended) or a JSON object. Switching tenants gives no right to answer another
+tenant's questions. The runtime refuses native answers to questions that have expired or were already answered.
 
-## Nativní formuláře WhatsApp Flows
+WhatsApp commands work under their Czech and English names: `/tenant`, `/nova` or `/new`, `/pomoc` or `/help`,
+`/zrusit` or `/cancel`. Phone numbers are verified by sending `OVERENI <code>` or `VERIFY <code>`. Replies from
+control (help, errors, tenant switching) are in `DEFAULT_LOCALE` (`en` by default, `cs` in the production manifests),
+since a WhatsApp message carries no language preference.
 
-Ve vlastním Meta WhatsApp Manageru zveřejněte odpovídající Flow a poté v komponentě control
-nastavte mapování jeho ID:
+## Native WhatsApp Flows forms
+
+Publish a matching Flow in your Meta WhatsApp Manager, then map its ID in control:
 
 ```dotenv
 WHATSAPP_FLOWS_JSON=[{"id":"123456789012345","screen":"FORM","fields":[{"name":"name","type":"text"},{"name":"date","type":"date"}]}]
 ```
 
-Soubor `appointment-flow.json` obsahuje konkrétní příklad pro toto mapování. Ověřte jej a zveřejněte
-v editoru Flow společnosti Meta. Otázky vytvářené za běhu musí obsahovat přesně uvedené názvy a typy
-polí ve stejném pořadí. Odesílaná data obsahují `title`, `<name>_label` a u výběrových polí také
-`<name>_options` s položkami `{ id, title }`. Flow musí při dokončovací akci vrátit stejné názvy polí.
-UUID otázky se předává jako `flow_token` a po přijetí podepsaného webhooku se ověřuje proti otevřené
-otázce přihlášeného odesílatele. Tyto statické a navigační formuláře nevyžadují koncový bod
-`data_exchange` ani šifrovací klíče. Aplikace sama nemůže zajistit způsobilost účtu Meta ani ID
-zveřejněných formulářů Flow. Pokud se nenajde odpovídající Flow nebo je odeslání odmítnuto,
-zůstává dostupný náhradní formulář v PWA.
+`appointment-flow.json` is a concrete example for this mapping; validate it and publish it in Meta's Flow editor.
+Questions created at run time must have exactly the listed field names and types, in the same order. The data sent
+contains `title`, `<name>_label` and, for choice fields, `<name>_options` with `{ id, title }` items. The Flow's
+completion action must return the same field names. The question's UUID is sent as `flow_token` and, once the signed
+webhook arrives, checked against the signed-in sender's open question. These static, navigation-only forms need no
+`data_exchange` endpoint and no encryption keys. The app cannot itself ensure the Meta account's eligibility or the
+IDs of published Flows. When no matching Flow is found, or sending it is refused, the PWA form remains available.
 
-## Doručování a plánované zprávy
+## Delivery and scheduled messages
 
-Migrace 010 v komponentě control ukládá ID odeslaných zpráv a webhooky se stavy
-sent/delivered/read/failed tak, aby se již dosažený stav nevracel zpět. V části Profil → Aktivita a relace
-se zobrazují stavy doručení pouze pro jednoznačně ověřené telefonní číslo daného uživatele.
-Záznamy se uchovávají 7 dní. Události o stavu nevytvářejí zprávy ani znovu neotevírají 24hodinové okno.
+Control's migration 010 stores the IDs of sent messages and applies sent/delivered/read/failed webhooks so that a
+status already reached never goes back. Profile → Activity and sessions shows delivery statuses only for the user's
+uniquely verified phone number. Records are kept for 7 days. Status events create no messages and do not reopen the
+24-hour window.
 
-Pro doručování výsledků plánovaných úloh mimo 24hodinové okno zahájené uživatelem zveřejněte
-šablonu `osiris_result` v jazyce čeština s následujícím obsahem:
+To deliver results of scheduled tasks outside the 24-hour window the user opened, publish a template
+`osiris_result` in the language set in `WHATSAPP_TEMPLATE_LANGUAGE`. For Czech (`cs`, as in production):
 
-- Text zprávy (BODY): `Plánovaná úloha „{{1}}“ byla dokončena. Podrobnosti najdete v aplikaci.`
-- Parametr `{{1}}` v textu: název úlohy, například `Souhrn zakázek`.
-- První tlačítko: **Zobrazit výsledek**, typ **Navštívit web**, dynamická URL
-  `https://osiris.k6labs.cz/{{1}}`. Pro vlastní nasazení nahraďte doménu adresou aplikace.
-- Ukázková hodnota proměnné tlačítka: `t/acme/chat/ID_VLAKNA` (při schvalování použijte
-  skutečný odkaz na testovací výsledek).
+- Body: `Plánovaná úloha „{{1}}“ byla dokončena. Podrobnosti najdete v aplikaci.`
+- Body parameter `{{1}}`: the task's title, for example `Souhrn zakázek`.
+- First button: **Zobrazit výsledek**, type **Visit website**, dynamic URL `https://osiris.k6labs.cz/{{1}}`.
 
-Parametr tlačítka je oddělený od parametru textu. Aplikace do něj předává cestu
-`t/<tenant>/chat/<vlákno>` ke konkrétnímu výsledku. Celý výsledek zůstává ve webovém chatu;
-do šablony se posílá pouze název úlohy. Odkaz vyžaduje přihlášení a běžná oprávnění k vláknu.
-Otevření v prohlížeči nebo nainstalované PWA závisí na zařízení a jeho nastavení.
+For English (`en`): body `The scheduled task “{{1}}” has finished. You'll find the details in the app.`, button
+**Show result**. For your own deployment, replace the domain with the app's address. The sample value of the button
+variable is `t/acme/chat/THREAD_ID` (use a real link to a test result for the approval).
 
-Po schválení šablony nastavte:
+The button's parameter is separate from the body's. The app passes the path `t/<tenant>/chat/<thread>` of the
+particular result. The whole result stays in the web chat; only the task's title goes into the template. The link
+requires signing in and the usual permissions for the thread. Whether it opens in the browser or the installed PWA
+depends on the device and its settings.
+
+Once the template is approved, set:
 
 ```dotenv
 WHATSAPP_NOTIFICATION_TEMPLATE=osiris_result
 WHATSAPP_TEMPLATE_LANGUAGE=cs
 ```
 
-Šablona se používá pouze pro úlohy naplánované na žádost uživatele a doručované na jeho ověřené
-telefonní číslo. Bez ní výsledek zůstane ve webovém vlákně a plánovač ohlásí stávající upozornění
-na problém s doručením. Šablonu i oprávnění účtu musí schválit Meta. Toto nastavení během sestavení
-ani testů nic neodesílá. Před nasazením do produkce ověřte Flow i šablonu pomocí testovacího čísla v Meta.
+The template is only used for tasks scheduled at the user's request and delivered to their verified phone number.
+Without it, the result stays in the web thread and the scheduler reports the existing delivery warning. Meta must
+approve both the template and the account's permissions. Nothing is sent during builds or tests. Before going to
+production, check the Flow and the template with a Meta test number.

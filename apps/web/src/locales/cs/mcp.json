@@ -1,0 +1,40 @@
+{
+  "headerFormat": "Hlavička „{{line}}“ musí být ve tvaru Název: hodnota",
+  "off": "vypnuto",
+  "untested": "nevyzkoušeno",
+  "toolCount_one": "{{count}} nástroj",
+  "toolCount_few": "{{count}} nástroje",
+  "toolCount_many": "{{count}} nástroje",
+  "toolCount_other": "{{count}} nástrojů",
+  "unavailable": "nedostupný",
+  "presets": {
+    "label": "Předvolby:",
+    "vasHosting": "Hosting webu, domény, DNS, databáze a soubory na VPS. Po uložení se přihlas účtem vas-hosting a schval oprávnění.",
+    "emailit": "Odesílání e-mailů, šablony, kontakty a domény. Nejdřív přidej v Klíčích a heslech klíč EMAILIT_API_KEY pro api.emailit.com."
+  },
+  "new": "Nový MCP server",
+  "intro": "Externí služba, jejíž nástroje může asistent používat (např. CRM, kalendář, účetnictví). Připojuje se přes Model Context Protocol, jen vzdáleně přes https.",
+  "status": {
+    "off": "Server je vypnutý.",
+    "signedOut": "Nepřihlášeno: přihlas se u poskytovatele tlačítkem Přihlásit.",
+    "untested": "Zatím nevyzkoušeno.",
+    "connected": "Připojeno, nástroje: {{tools}}",
+    "noTools": "žádné",
+    "failed": "Nepodařilo se připojit ({{error}})"
+  },
+  "namePlaceholder": "např. crm",
+  "url": "Adresa",
+  "auth": "Přihlášení",
+  "authHeaders": "klíčem v hlavičkách",
+  "authOauth": "přihlášením u poskytovatele (OAuth)",
+  "headers": "Hlavičky",
+  "headersStored": "Uložené hlavičky: {{names}}. Nech prázdné pro zachování, nebo zadej nové.",
+  "headersHint": "Jedna na řádek (nepovinné). Klíče vkládej ze sekce Klíče a hesla:",
+  "enabled": "zapnuto",
+  "clearHeaders": "odebrat uložené hlavičky",
+  "addSignIn": "Přidat a přihlásit",
+  "signInAgain": "Přihlásit znovu",
+  "signIn": "Přihlásit",
+  "test": "Vyzkoušet",
+  "adminOnly": "Adresu a hlavičky vidí jen správce tenanta."
+}

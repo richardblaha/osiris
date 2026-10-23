@@ -1,0 +1,12 @@
+{
+  "overview": "Přehled",
+  "features": "Funkce",
+  "changeLogo": "Změnit logo",
+  "myRole": "Moje role",
+  "permissions": "Oprávnění",
+  "featuresHint": "Funkce zapíná a vypíná správce systému.",
+  "members": "Uživatelé tenanta",
+  "loginLink": "Přihlašovací odkaz",
+  "confirmRemove": "Odebrat {{name}} z tenanta?",
+  "loginLinkFor": "Jednorázový přihlašovací odkaz pro <strong>{{who}}</strong> (platí 3 dny). Pošli ho dotyčnému, po přihlášení si nastaví klíč (passkey), heslo nebo propojí účet Google či Microsoft."
+}

@@ -1,0 +1,28 @@
+{
+  "levels": {
+    "system": "System",
+    "tenant": "Organization",
+    "user": "Mine",
+    "assistant": "Assistant"
+  },
+  "places": {
+    "system": "System (all tenants)",
+    "assistant": "Assistant {{name}}"
+  },
+  "none": "None.",
+  "intro": "Rules the assistant must keep to. Every message and answer is checked against them.",
+  "add": "Add check",
+  "select": "Select a check from the list.",
+  "nowhere": "You have nowhere to add a check.",
+  "confirmDelete": "Delete the check {{name}}?",
+  "new": "New check",
+  "systemAdminOnly": "only a system administrator changes it",
+  "tenantAdminOnly": "only a tenant administrator changes it",
+  "target": "Who it applies to",
+  "name": "Name (lowercase letters, digits, hyphens)",
+  "namePlaceholder": "for example no-politics",
+  "description": "Description",
+  "rule": "Rule",
+  "rulePlaceholder": "for example Don't talk about politics or competitors.",
+  "systemDelay": "It takes effect within half a minute."
+}

@@ -11,6 +11,7 @@ import {
   sha256,
   verifyPassword,
 } from "./secrets.ts";
+import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 export interface Passkey {
   id: string;
@@ -39,7 +40,7 @@ export interface MethodSummary {
   identities: LinkedIdentity[];
 }
 
-export class CredentialError extends Error {}
+export class CredentialError extends LocalizedError {}
 
 const RECOVERY_CODES = 10;
 
@@ -117,7 +118,7 @@ export class Credentials {
   /** Turns on the pending secret if the code matches; returns fresh recovery codes, shown to the user once. */
   async confirmTotp(userId: string, code: string): Promise<string[] | null> {
     const [row] = await this.db.query<{ totp_pending: string | null }>("SELECT totp_pending FROM users WHERE id = ?", [userId], { fresh: true });
-    if (!row?.totp_pending) throw new CredentialError("Nejdřív začni nastavení ověřovací aplikace");
+    if (!row?.totp_pending) throw new CredentialError("errors.totp.notStarted");
     const step = matchTotp(this.box.open(row.totp_pending), code, 0);
     if (step === null) return null;
     const updated = await this.db.execute([
@@ -205,7 +206,7 @@ export class Credentials {
         ),
       ]);
     } catch (err) {
-      if (err instanceof DbError && /UNIQUE/i.test(err.message)) throw new CredentialError("Tento klíč už je přidaný");
+      if (err instanceof DbError && /UNIQUE/i.test(err.message)) throw new CredentialError("errors.passkey.exists");
       throw err;
     }
   }
@@ -217,12 +218,12 @@ export class Credentials {
 
   async renamePasskey(userId: string, id: string, name: string) {
     const [r] = await this.db.execute([run("UPDATE passkeys SET name = ? WHERE id = ? AND user_id = ?", name, id, userId)]);
-    if (!r!.rowsAffected) throw new CredentialError("Klíč nenalezen");
+    if (!r!.rowsAffected) throw new CredentialError("errors.passkey.notFound");
   }
 
   async removePasskey(userId: string, id: string) {
     const [r] = await this.db.execute([run("DELETE FROM passkeys WHERE id = ? AND user_id = ?", id, userId)]);
-    if (!r!.rowsAffected) throw new CredentialError("Klíč nenalezen");
+    if (!r!.rowsAffected) throw new CredentialError("errors.passkey.notFound");
   }
 
   // --- linked accounts (Google, Facebook, Microsoft) --------------------------------------------------------------
@@ -252,7 +253,7 @@ export class Credentials {
       ]);
     } catch (err) {
       if (err instanceof DbError && /UNIQUE/i.test(err.message)) {
-        throw new CredentialError("Tento účet je už propojený, buď s tebou, nebo s jiným uživatelem");
+        throw new CredentialError("errors.identity.taken");
       }
       throw err;
     }
@@ -260,7 +261,7 @@ export class Credentials {
 
   async unlinkIdentity(userId: string, provider: string) {
     const [r] = await this.db.execute([run("DELETE FROM user_identities WHERE user_id = ? AND provider = ?", userId, provider)]);
-    if (!r!.rowsAffected) throw new CredentialError("Účet není propojený");
+    if (!r!.rowsAffected) throw new CredentialError("errors.identity.notLinked");
   }
 
   // --- overview ---------------------------------------------------------------------------------------------------
@@ -285,7 +286,7 @@ export class Credentials {
     const s = await this.summary(userId);
     const count = (s.password ? 1 : 0) + s.passkeys.length + s.identities.length;
     if (count <= 1 && (removing !== "password" || s.password)) {
-      throw new CredentialError("Tohle je tvůj jediný způsob přihlášení. Nejdřív si přidej jiný.");
+      throw new CredentialError("errors.identity.lastMethod");
     }
   }
 

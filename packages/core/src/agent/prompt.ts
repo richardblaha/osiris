@@ -91,8 +91,8 @@ function userSection(name: string | undefined, settings: UserSettings | undefine
   if (name) lines.push(`Jméno uživatele: ${name}`);
   if (settings?.address === "ty") lines.push("Uživateli tykej.");
   if (settings?.address === "vy") lines.push("Uživateli vykej.");
-  if (settings?.language === "cs") lines.push("Odpovídej česky.");
-  if (settings?.language === "sk") lines.push("Odpovídej slovensky.");
+  const language = ({ en: "anglicky", cs: "česky", sk: "slovensky" } as Record<string, string>)[settings?.language ?? "auto"];
+  lines.push(language ? `Odpovídej ${language}.` : "Odpovídej v jazyce, kterým uživatel píše.");
   if (settings?.signature) lines.push(`Podpis pro e-maily, nabídky a jiné texty psané jménem uživatele:\n${settings.signature}`);
   if (settings?.instructions) {
     lines.push(`Vlastní pokyny uživatele (řiď se jimi, pokud nejsou v rozporu s pravidly výše):\n${settings.instructions}`);

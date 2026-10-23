@@ -1,0 +1,38 @@
+{
+  "headerFormat": "The header “{{line}}” must have the form Name: value.",
+  "off": "off",
+  "untested": "untested",
+  "toolCount_one": "{{count}} tool",
+  "toolCount_other": "{{count}} tools",
+  "unavailable": "unavailable",
+  "presets": {
+    "label": "Presets:",
+    "vasHosting": "Website hosting, domains, DNS, databases and files on a VPS. After saving, sign in with your vas-hosting account and approve the permissions.",
+    "emailit": "Sending email, templates, contacts and domains. First add the key EMAILIT_API_KEY for api.emailit.com in Keys and passwords."
+  },
+  "new": "New MCP server",
+  "intro": "An external service whose tools the assistant can use (for example a CRM, calendar or accounting). It connects over the Model Context Protocol, remotely over https only.",
+  "status": {
+    "off": "The server is switched off.",
+    "signedOut": "Not signed in: sign in at the provider with the Sign in button.",
+    "untested": "Not tested yet.",
+    "connected": "Connected, tools: {{tools}}",
+    "noTools": "none",
+    "failed": "Couldn't connect ({{error}})"
+  },
+  "namePlaceholder": "for example crm",
+  "url": "Address",
+  "auth": "Sign-in",
+  "authHeaders": "with a key in headers",
+  "authOauth": "by signing in at the provider (OAuth)",
+  "headers": "Headers",
+  "headersStored": "Stored headers: {{names}}. Leave empty to keep them, or enter new ones.",
+  "headersHint": "One per line (optional). Insert keys from Keys and passwords:",
+  "enabled": "on",
+  "clearHeaders": "remove stored headers",
+  "addSignIn": "Add and sign in",
+  "signInAgain": "Sign in again",
+  "signIn": "Sign in",
+  "test": "Test",
+  "adminOnly": "Only a tenant administrator sees the address and headers."
+}

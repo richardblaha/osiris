@@ -2,6 +2,7 @@ import type { ChatQuestion, Role } from "@osiris/shared";
 import { accessibleTenants, isAuthorized, type Membership } from "@osiris/platform/claims.ts";
 import { isUnreachable, ServiceError } from "@osiris/platform/http.ts";
 import { tenantAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
+import { configuredLocale, translate, type Params } from "@osiris/platform/i18n.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import type { TenantStore } from "../tenants.ts";
@@ -10,20 +11,8 @@ import { WhatsAppApiError, type WhatsAppClient } from "./cloud-api.ts";
 import type { Inbox, InboxMessage } from "./inbox.ts";
 import { userByPhone, VERIFY_MESSAGE, type PhoneVerification } from "./phones.ts";
 
-const NOT_REGISTERED = "Tohle číslo nemá v Osirisu účet. Ověř si ho v profilu (Můj profil → Telefon), nebo požádej správce.";
-const NO_TENANT = "Nejsi přiřazený k žádnému tenantovi. Obrať se na správce.";
-const TEXT_ONLY = "Podporuji text, obrázky, dokumenty a hlasové zprávy.";
-const FAILED = "Omlouvám se, něco se pokazilo. Zkus to prosím znovu.";
-const NEW_THREAD = "Dobře, začínáme novou konverzaci.";
-const VERIFIED = "Číslo je ověřené. Teď mi můžeš psát.";
-const BAD_CODE = "Kód nesedí nebo vypršel. Vyžádej si v profilu nový.";
-const HELP = [
-  "*Příkazy*",
-  "• /tenant – tvoji tenanti a který je aktivní",
-  "• /tenant <zkratka> – přepne na jiného tenanta",
-  "• /nova – začne novou konverzaci",
-  "• /zrusit – zruší otevřenou otázku nebo dotazník",
-].join("\n");
+/** Replies go out in the configured language: a WhatsApp message carries no language preference. */
+const t = (key: string, params?: Params) => translate(configuredLocale(), key, params);
 
 const MAX_ATTEMPTS = 3;
 /** An agent run can take a while (tools, external APIs). */
@@ -63,7 +52,7 @@ export class WhatsAppRouter {
       } else {
         console.error("WhatsApp message failed", { messageId: message.id, err });
         await this.deps.inbox.finish(message.id, "failed", String(err));
-        await this.reply(message, FAILED).catch(() => {});
+        await this.reply(message, t("whatsapp.failed")).catch(() => {});
       }
     }
     return true;
@@ -78,29 +67,30 @@ export class WhatsAppRouter {
     const text = message.text?.trim();
 
     const code = text && VERIFY_MESSAGE.exec(text)?.[1];
-    if (code) return this.reply(message, (await this.deps.phones.confirm(message.from, code)) ? VERIFIED : BAD_CODE);
+    if (code) return this.reply(message, (await this.deps.phones.confirm(message.from, code)) ? t("whatsapp.verified") : t("whatsapp.badCode"));
 
     const user = await userByPhone(this.deps.users, message.from);
-    if (!user || !isAuthorized(user.access)) return this.reply(message, NOT_REGISTERED);
+    if (!user || !isAuthorized(user.access)) return this.reply(message, t("whatsapp.notRegistered"));
     const active = (await this.deps.tenants.list()).map((t) => t.id);
     const memberships = accessibleTenants(user.access, active).filter((m) => active.includes(m.tenantId));
-    if (!memberships.length) return this.reply(message, NO_TENANT);
-    if (!(["text", "interactive", "button"].includes(message.type) && text) && !message.media) return this.reply(message, TEXT_ONLY);
+    if (!memberships.length) return this.reply(message, t("whatsapp.noTenant"));
+    if (!(["text", "interactive", "button"].includes(message.type) && text) && !message.media) return this.reply(message, t("whatsapp.unsupported"));
 
-    const command = /^\/(tenant|nova|pomoc)\b\s*(.*)$/isu.exec(text ?? "");
-    const name = command?.[1]!.toLowerCase();
+    // Commands answer to their Czech and English names.
+    const command = /^\/(tenant|nova|new|pomoc|help)\b\s*(.*)$/isu.exec(text ?? "");
+    const name = ({ new: "nova", help: "pomoc" } as Record<string, string>)[command?.[1]!.toLowerCase() ?? ""] ?? command?.[1]!.toLowerCase();
     if (name === "tenant") return this.reply(message, await this.switchTenant(user, memberships, command![2]!.trim()));
-    if (name === "pomoc") return this.reply(message, HELP);
+    if (name === "pomoc") return this.reply(message, t("whatsapp.help"));
 
     const selected = await this.activeTenant(user.sub, memberships);
-    if (!selected) return this.reply(message, `${tenantList(memberships)}\nNapiš /tenant <zkratka> a vyber, se kterým chceš pracovat.`);
+    if (!selected) return this.reply(message, `${tenantList(memberships)}\n${t("whatsapp.chooseTenant")}`);
     const tenant = await this.deps.tenants.get(selected.tenantId);
-    if (!tenant?.features.whatsapp) return this.reply(message, `WhatsApp není pro tenanta *${selected.tenantId}* povolený.`);
+    if (!tenant?.features.whatsapp) return this.reply(message, t("whatsapp.featureOff", { tenant: selected.tenantId }));
 
     const headers = await this.headers(user, selected);
     if (name === "nova") {
       await this.call(selected.tenantId, "/internal/whatsapp/new-thread", headers, {});
-      return this.reply(message, NEW_THREAD);
+      return this.reply(message, t("whatsapp.newThread"));
     }
     // Best effort: a failed read receipt must not stop the reply.
     await this.deps.client.markRead(message.phoneNumberId, message.id).catch(() => {});
@@ -110,7 +100,7 @@ export class WhatsAppRouter {
       attachment = { name: message.media.filename ?? `whatsapp-${message.id.replace(/[^a-zA-Z0-9]/g, "").slice(-30)}`, mime: media.mime, data: media.data.toString("base64") };
     }
     try {
-      const { reply, question, threadId, files } = await this.call<{ reply: string; question?: ChatQuestion; threadId: string; files?: { scope: string; path: string }[] }>(selected.tenantId, "/internal/whatsapp/message", headers, { messageId: message.id, text: text ?? message.media?.caption ?? "Přikládám soubor.", attachment });
+      const { reply, question, threadId, files } = await this.call<{ reply: string; question?: ChatQuestion; threadId: string; files?: { scope: string; path: string }[] }>(selected.tenantId, "/internal/whatsapp/message", headers, { messageId: message.id, text: text ?? message.media?.caption ?? t("whatsapp.attachmentOnly"), attachment });
       if (reply) await this.reply(message, reply);
       for (const offer of files ?? []) {
         const file = await this.call<{ data: string; mime: string; name: string }>(selected.tenantId, "/internal/whatsapp/file", headers, { threadId, ...offer });
@@ -118,7 +108,7 @@ export class WhatsAppRouter {
       }
       if (question?.state === "open") await this.deps.client.sendQuestion(message.phoneNumberId, message.from, question, `${this.deps.publicUrl ?? "https://osiris.k6labs.cz"}/t/${encodeURIComponent(selected.tenantId)}/chat/${encodeURIComponent(threadId)}`);
     } catch (err) {
-      if (err instanceof ServiceError && err.status === 400) return this.reply(message, "Odpověď není platná nebo otázka vypršela. Vyplň formulář znovu, případně pošli /zrusit.");
+      if (err instanceof ServiceError && err.status === 400) return this.reply(message, t("whatsapp.answerInvalid"));
       throw err;
     }
   }
@@ -152,11 +142,11 @@ export class WhatsAppRouter {
   private async switchTenant(user: InternalUser, memberships: Membership[], slug: string): Promise<string> {
     if (!slug) {
       const active = await this.activeTenant(user.sub, memberships);
-      const current = active ? `Aktivní tenant: *${active.tenantId}*.` : "Zatím nemáš vybraného tenanta.";
-      return `${current}\n${tenantList(memberships)}${memberships.length > 1 ? "\nPřepneš příkazem /tenant <zkratka>." : ""}`;
+      const current = active ? t("whatsapp.activeTenant", { tenant: active.tenantId }) : t("whatsapp.noActiveTenant");
+      return `${current}\n${tenantList(memberships)}${memberships.length > 1 ? `\n${t("whatsapp.switchHint")}` : ""}`;
     }
     const membership = memberships.find((m) => m.tenantId === slug.toLowerCase());
-    if (!membership) return `Tenanta „${slug}“ nemáš.\n${tenantList(memberships)}`;
+    if (!membership) return `${t("whatsapp.unknownTenant", { tenant: slug })}\n${tenantList(memberships)}`;
     await this.deps.db.execute([
       run(
         `INSERT INTO wa_selection (user_id, tenant_id, updated_at) VALUES (?, ?, ?)
@@ -166,8 +156,8 @@ export class WhatsAppRouter {
         Date.now(),
       ),
     ]);
-    return `Přepnuto na tenanta *${membership.tenantId}*.`;
+    return t("whatsapp.switched", { tenant: membership.tenantId });
   }
 }
 
-const tenantList = (memberships: Membership[]) => `Tvoji tenanti: ${memberships.map((m) => m.tenantId).join(", ")}.`;
+const tenantList = (memberships: Membership[]) => t("whatsapp.tenants", { tenants: new Intl.ListFormat(configuredLocale(), { type: "unit" }).format(memberships.map((m) => m.tenantId)) });

@@ -1,0 +1,14 @@
+{
+  "passkeyCancelled": "Signing in with the passkey was cancelled.",
+  "emailRequired": "Enter the email we should send the link to.",
+  "secondFactor": "Enter the code from your authenticator app. If you don't have your phone at hand, use one of your recovery codes.",
+  "verify": "Verify",
+  "linkSent": "If you have an account with the address <strong>{{email}}</strong>, we've sent a sign-in link to it. It is valid for an hour.",
+  "passkey": "Sign in with a passkey",
+  "continueWith": "Continue with {{provider}}",
+  "orEmail": "or with email",
+  "email": "email",
+  "password": "password",
+  "signIn": "Sign in",
+  "forgot": "I forgot my password, send me a link by email"
+}

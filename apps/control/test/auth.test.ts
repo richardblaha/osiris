@@ -200,7 +200,7 @@ describe("sign-in", () => {
     const other = await browser(control);
     await other.request(link.pathname);
     const refused = await other.authorize();
-    expect([refused.pathname, refused.searchParams.get("error")]).toEqual(["/login", expect.stringContaining("neplatný")]);
+    expect([refused.pathname, refused.searchParams.get("error")]).toEqual(["/login", expect.stringContaining("invalid")]);
   });
 
   it("sends a sign-in link by email without telling whether the address exists", async () => {
@@ -291,7 +291,7 @@ describe("sign-in", () => {
     expect((await me("/me/security/password", { method: "PUT", body: JSON.stringify({ current: "dlouhé-heslo-1", password: "nové-heslo-22" }) })).status).toBe(200);
     expect(await control.auth.credentials.checkPassword("alice@firma.cz", "nové-heslo-22")).toBe("alice");
     const removed = await me("/me/security/password", { method: "DELETE" });
-    expect([removed.status, (await removed.json()).error]).toEqual([400, expect.stringContaining("jediný způsob")]);
+    expect([removed.status, (await removed.json()).error]).toEqual([400, expect.stringContaining("only way")]);
   });
 });
 

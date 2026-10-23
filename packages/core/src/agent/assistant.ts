@@ -45,7 +45,8 @@ export const rulesText = (r: GuardRules, userLabel = "Pravidla uživatele") =>
     .map(([title, text]) => `${title}:\n${text!.trim()}`)
     .join("\n\n");
 
-export const GUARD_REFUSAL = "Tohle udělat nemůžu, je to v rozporu s pravidly nastavenými pro tohoto asistenta.";
+/** The answer that replaces a message or reply breaking the rules (catalog key). */
+export const GUARD_REFUSAL = "agent.guardRefusal";
 
 const CHECK_PROMPT = `Jsi kontrolor pravidel. Dostaneš pravidla a text (buď zprávu uživatele asistentovi, nebo odpověď asistenta).
 Posuď, zda text porušuje některé pravidlo, nebo zda zpráva uživatele žádá něco, co pravidla zakazují.
