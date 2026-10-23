@@ -48,6 +48,10 @@
     "integrations": {
       "label": "Mail, contacts and calendars",
       "hint": "the assistant works with the mail, contacts and calendar of users who connect their account"
+    },
+    "workflows": {
+      "label": "Multi-step workflows",
+      "hint": "the assistant plans larger tasks into steps, checks generated models and queries, and asks before steps that change data"
     }
   },
   "new": "New tenant",

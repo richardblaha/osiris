@@ -74,7 +74,11 @@ export function createAgentGraph(deps: AgentDeps) {
   for (const chat of [deps.models?.agent ?? model, deps.models?.tools ?? model]) {
     if (!chat.bindTools) throw new Error("Chat model does not support tool calling");
   }
-  const allTools = async (ctx: RunContext) => (dynamicTools ? [...tools, ...(await dynamicTools(ctx))] : tools);
+  const allTools = async (ctx: RunContext) => {
+    // A workflow's step has nobody to ask: its approvals are the workflow's own.
+    const own = ctx.workflow ? tools.filter((t) => t.name !== "ask_user") : tools;
+    return dynamicTools ? [...own, ...(await dynamicTools(ctx))] : own;
+  };
 
   /** Which quota is used up: the tenant's, or the run's own (the member's, or the public assistant's); null for none. */
   const exhausted = async (ctx?: RunContext): Promise<string | null> => {

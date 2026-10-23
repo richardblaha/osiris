@@ -32,6 +32,8 @@ export type RunEvent =
   | { type: "tool-call"; toolCallId: string; toolName: string; args: Record<string, unknown> }
   | { type: "tool-result"; toolCallId: string; result: string }
   | { type: "image-progress"; id: string; status: string; progress?: { value: number; max: number } }
+  /** A state change of a multi-step workflow (`run_workflow`), for the UI's live diagram. */
+  | { type: "telemetry"; event: AgentTelemetryEvent }
   | { type: "done" }
   | { type: "error"; message: string };
 
@@ -46,7 +48,7 @@ export interface MeResponse {
 }
 
 /** What a system admin can switch on or off per tenant. */
-export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public", "database"] as const;
+export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public", "database", "workflows"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type TenantFeatures = Record<Feature, boolean>;
 
@@ -735,6 +737,9 @@ export interface ChatQuestion {
   state: "open" | "answered" | "cancelled" | "expired";
   expiresAt: number;
 }
+
+/** Tools whose result may be a chat question (`{ question }`), shown as a form even with tool calls hidden. */
+export const QUESTION_TOOLS: readonly string[] = ["ask_user", "run_workflow"];
 
 /** Agent orchestration patterns (`@osiris/core/agent/orchestrator`). `Composite`: a plan mixing several of them. */
 export type AgentPattern = "ReAct" | "PEV" | "JEV" | "MapReduce" | "Reflexion" | "HITL" | "Composite";

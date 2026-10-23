@@ -10,13 +10,27 @@ import type { ReactDelegate } from "@osiris/core/agent/orchestrator/llm.ts";
 import type { PlanStep } from "@osiris/core/agent/orchestrator/state.ts";
 import { planTopology } from "@osiris/core/agent/orchestrator/telemetry.ts";
 import type { AgentTelemetryEvent } from "@osiris/shared";
+import { createAgentGraph } from "@osiris/core/agent/graph.ts";
+import { QuestionStore } from "@osiris/core/agent/questions.ts";
+import { streamRun } from "@osiris/core/agent/run.ts";
+import { workflowTool, WORKFLOW_TOOL } from "@osiris/core/agent/orchestrator/tool.ts";
+import { reactFromAgentGraph } from "@osiris/core/agent/orchestrator/graph.ts";
+import type { RunContext } from "@osiris/core/agent/context.ts";
+import type { RunEvent } from "@osiris/shared";
 import { describe, expect, it } from "vitest";
 import { createTestDb } from "./helpers.ts";
 
-/** Answers in script order: objects for structured calls, strings for text calls. */
+/** Answers in script order: objects for structured calls, strings or messages for text calls. */
 class ScriptModel extends BaseChatModel {
+  bound: string[][] = [];
+
   constructor(private readonly script: (string | object)[]) {
     super({});
+  }
+
+  override bindTools(tools: { name: string }[]) {
+    this.bound.push(tools.map((t) => t.name));
+    return this as never;
   }
 
   _llmType() {
@@ -33,9 +47,10 @@ class ScriptModel extends BaseChatModel {
   }
 
   async _generate(_: BaseMessage[]): Promise<ChatResult> {
-    const text = this.next();
-    if (typeof text !== "string") throw new Error(`expected text, got ${JSON.stringify(text)}`);
-    return { generations: [{ text, message: new AIMessage(text) }] };
+    const next = this.next();
+    const message = typeof next === "string" ? new AIMessage(next) : next;
+    if (!AIMessage.isInstance(message)) throw new Error(`expected text, got ${JSON.stringify(next)}`);
+    return { generations: [{ text: message.text, message }] };
   }
 }
 
@@ -153,5 +168,53 @@ describe("verifiers and topology", () => {
       { from: "b/critic", to: "verify" },
     ]));
     expect(t.edges.some((e) => e.from === "a/judge" && e.to === "verify")).toBe(false);
+  });
+});
+
+describe("run_workflow tool", () => {
+  it("asks for approval in the chat, resumes only on the user's answer, and runs steps without ask_user", async () => {
+    const db = await createTestDb();
+    const checkpointer = new LibSQLSaver(db);
+    await db.execute("INSERT INTO threads (id, user_id, channel) VALUES ('t1', 'bob', 'web')");
+    const questions = new QuestionStore(db);
+    const model = new ScriptModel([
+      new AIMessage({ content: "", tool_calls: [{ id: "c1", name: WORKFLOW_TOOL, args: { request: "Smaž staré zakázky" } }] }),
+      { rationale: "mazání", steps: [step({ id: "smazani", goal: "Smaž staré zakázky", pattern: "ReAct", destructive: true })] },
+      new AIMessage({ content: "", tool_calls: [{ id: "c2", name: WORKFLOW_TOOL, args: { request: "", resume: true } }] }),
+      "Smazáno 3 zakázky.",
+      "Hotovo: smazány 3 zakázky.",
+    ]);
+    let agent!: ReturnType<typeof createAgentGraph>;
+    const orchestrator = createOrchestratorGraph({ model, react: (g, c, k) => reactFromAgentGraph(agent)(g, c, k), checkpointer });
+    const wf = workflowTool(orchestrator, questions);
+    agent = createAgentGraph({ tenantId: "acme", model, tools: [questions.tool()], dynamicTools: async (ctx) => (ctx.workflow ? [] : [wf]), checkpointer, timezone: "Europe/Prague", questions });
+    const ctx: RunContext = { thread_id: "t1", tenant_id: "acme", user_id: "bob", role: "admin", channel: "web", locale: "cs" };
+    const run = async (text: string) => {
+      const events: RunEvent[] = [];
+      for await (const e of streamRun(agent, ctx, text)) events.push(e);
+      return events;
+    };
+
+    const first = await run("Smaž staré zakázky");
+    const telemetry = first.flatMap((e) => (e.type === "telemetry" ? [e.event] : []));
+    expect(telemetry.find((e) => e.activeGraphTopology)?.sessionId).toBe("t1");
+    expect(telemetry.at(-1)).toMatchObject({ nodeId: "smazani/approval", status: "waiting_approval" });
+    const question = (await questions.get("bob", "t1"))!;
+    expect(question).toMatchObject({ state: "open", fields: [{ name: "step_1", label: "Smaž staré zakázky", type: "boolean" }] });
+
+    // The model can't approve on its own: resuming before the user answered changes nothing.
+    expect(await wf.invoke({ request: "", resume: true }, { configurable: ctx })).toMatch(/neodpověděl/);
+
+    const answer = await questions.prepare("bob", "t1", `@osiris-answer:${JSON.stringify({ id: question.id, values: { step_1: true } })}`);
+    const second = await run(answer);
+    expect(second.filter((e) => e.type === "text-delta").map((e) => (e as { delta: string }).delta).join("")).toBe("Hotovo: smazány 3 zakázky.");
+    // agent turn 1, agent turn 2, the step's own run, the final answer: the step had neither ask_user nor run_workflow.
+    expect(model.bound[2]).toEqual([]);
+    expect(model.bound[0]).toEqual(["ask_user", WORKFLOW_TOOL]);
+
+    const derived = async () => Number((await db.execute("SELECT count(*) AS n FROM checkpoints WHERE thread_id LIKE 't1:%'")).rows[0]!.n);
+    expect(await derived()).toBeGreaterThan(0);
+    await checkpointer.deleteDerivedThreads("t1");
+    expect(await derived()).toBe(0);
   });
 });

@@ -516,6 +516,7 @@
       "yes": "Ano",
       "no": "Ne"
     },
-    "attachments": "Přílohy: {{files}}"
+    "attachments": "Přílohy: {{files}}",
+    "workflowApproval": "Schválení kroků postupu, které mění data"
   }
 }

@@ -374,6 +374,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const id = c.req.param("id");
       await requireThread(ctx, id);
       await ctx.tenant.checkpointer.deleteThread(id);
+      await ctx.tenant.checkpointer.deleteDerivedThreads(id);
       await threads.deleteThread(ctx.tenant.db, id);
       await ctx.tenant.files.removeTemp(id);
       return c.body(null, 204);

@@ -30,6 +30,12 @@ export class QuestionStore {
     if (!row) return null;
     return { id: String(row.id), ...JSON.parse(String(row.definition)), state: row.state === "open" && Number(row.expires_at) <= Date.now() ? "expired" : String(row.state), expiresAt: Number(row.expires_at) };
   }
+  /** The validated values of an answered question (`{}` when cancelled), null while it isn't answered. */
+  async answer(user: string, thread: string, id: string): Promise<Record<string, unknown> | null> {
+    const { rows } = await this.db.execute({ sql: "SELECT state, answer FROM chat_questions WHERE id=? AND user_id=? AND thread_id=?", args: [id, user, thread] });
+    const row = rows[0];
+    return row && (row.state === "answered" || row.state === "cancelled") ? JSON.parse(String(row.answer ?? "{}")) as Record<string, unknown> : null;
+  }
   async latest(user: string, thread: string) {
     const { rows } = await this.db.execute({ sql: "SELECT id FROM chat_questions WHERE user_id=? AND thread_id=? ORDER BY rowid DESC LIMIT 1", args: [user, thread] });
     return rows[0] ? this.get(user, thread, String(rows[0].id)) : null;

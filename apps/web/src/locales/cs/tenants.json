@@ -48,6 +48,10 @@
     "integrations": {
       "label": "Pošta, kontakty a kalendáře",
       "hint": "asistent pracuje s poštou, kontakty a kalendářem uživatelů, kteří si účet propojí"
+    },
+    "workflows": {
+      "label": "Vícekrokové postupy",
+      "hint": "asistent rozplánuje větší úkoly do kroků, ověří vytvořené modely a dotazy a před kroky, které mění data, se zeptá"
     }
   },
   "new": "Nový tenant",

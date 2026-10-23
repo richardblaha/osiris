@@ -1,5 +1,5 @@
 import type { ChatModelAdapter, ThreadAssistantMessagePart, ThreadMessageLike } from "@assistant-ui/react";
-import type { RunStatus, ThreadMessage } from "@osiris/shared";
+import { QUESTION_TOOLS, type RunStatus, type ThreadMessage } from "@osiris/shared";
 import { api } from "../api.ts";
 
 type Part = ThreadAssistantMessagePart;
@@ -42,12 +42,12 @@ export function createAdapter(
               status = event.status;
               break;
             case "tool-call-start":
-              if ((!showTools && event.toolName !== "ask_user") || parts.some((p) => p.type === "tool-call" && p.toolCallId === event.toolCallId)) break;
+              if ((!showTools && !QUESTION_TOOLS.includes(event.toolName)) || parts.some((p) => p.type === "tool-call" && p.toolCallId === event.toolCallId)) break;
               // Arguments still being written: shown as a step in progress.
               parts = [...parts, { type: "tool-call", toolCallId: event.toolCallId, toolName: event.toolName, args: {} as never, argsText: "" }];
               break;
             case "tool-call": {
-              if (!showTools && event.toolName !== "ask_user") break;
+              if (!showTools && !QUESTION_TOOLS.includes(event.toolName)) break;
               const part: Part = {
                 type: "tool-call",
                 toolCallId: event.toolCallId,

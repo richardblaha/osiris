@@ -30,6 +30,7 @@ export async function* streamRun(
   for await (const [mode, data] of stream) {
     if (mode === "custom") {
       if (data && typeof data === "object" && data.type === "image-progress" && typeof data.id === "string" && typeof data.status === "string") yield data as RunEvent;
+      if (data && typeof data === "object" && data.type === "telemetry" && data.event && typeof data.event === "object") yield data as RunEvent;
       continue;
     }
     if (mode === "tasks") {

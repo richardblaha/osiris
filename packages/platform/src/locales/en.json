@@ -498,6 +498,7 @@
       "yes": "Yes",
       "no": "No"
     },
-    "attachments": "Attachments: {{files}}"
+    "attachments": "Attachments: {{files}}",
+    "workflowApproval": "Approve the workflow's steps that change data"
   }
 }

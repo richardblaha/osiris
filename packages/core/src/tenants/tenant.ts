@@ -17,6 +17,8 @@ import type { EmbeddingsInterface } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { Client } from "@libsql/client";
 import { createAgentGraph, type AgentGraph } from "../agent/graph.ts";
+import { createOrchestratorGraph, reactFromAgentGraph } from "../agent/orchestrator/graph.ts";
+import { WORKFLOW_TOOL, workflowTool } from "../agent/orchestrator/tool.ts";
 import { MemoryStore } from "../agent/memory.ts";
 import { UserSettingsStore } from "../agent/settings.ts";
 import { SkillStore, type Skill } from "../agent/skills.ts";
@@ -205,6 +207,14 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
       await deps.images?.authorize?.(ctx);
     },
   }, (ctx, tokens) => usage.add(tokens, Date.now(), { user: ctx.user_id })) : undefined;
+  const questions = new QuestionStore(db);
+  // Workflow steps run as the tenant's agent itself, declared below (the graph exists before any tool runs).
+  const orchestrator = createOrchestratorGraph({
+    model: deps.models?.agent ?? deps.model,
+    react: (goal, config, key) => reactFromAgentGraph(graph)(goal, config, key),
+    checkpointer,
+    usage: (config, tokens) => usage.add(tokens, Date.now(), { user: getRunContext(config).user_id }),
+  });
   const builtins: [Feature, StructuredToolInterface][] = [
     ...(images ? imageTools(images, files).map((t): [Feature, StructuredToolInterface] => ["files", t]) : []),
     ["knowledge", searchKnowledgeTool(knowledge)],
@@ -225,8 +235,8 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     ...databaseTools(data).map((t): [Feature, StructuredToolInterface] => ["database", t]),
     ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
     ...(deps.extraTools?.(files) ?? []),
+    ["workflows", workflowTool(orchestrator, questions)],
   ];
-  const questions = new QuestionStore(db);
   const graph = createAgentGraph({
     questions,
     images: async (threadId, paths) => {
@@ -269,7 +279,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
         (name === "standard_accounts" && standard.length > 0) ||
         connected.some((p) => name.startsWith(`${p}_`)) ||
         standard.some((a) => name.startsWith(`${a.kind}_`));
-      const tools = builtins.filter(([f, t]) => on[f] && (!t.name.startsWith("image_") || on.mcp) && !off.includes(t.name) && usable(f, t.name)).map(([, t]) => t);
+      const tools = builtins.filter(([f, t]) => on[f] && !(ctx.workflow && t.name === WORKFLOW_TOOL) && (!t.name.startsWith("image_") || on.mcp) && !off.includes(t.name) && usable(f, t.name)).map(([, t]) => t);
       return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id)).filter(t => !images || !t.name.startsWith(`${deps.images?.server ?? "comfy-cloud"}_`))] : tools;
     },
     features,

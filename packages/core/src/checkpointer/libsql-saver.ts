@@ -159,6 +159,18 @@ export class LibSQLSaver extends BaseCheckpointSaver {
     );
   }
 
+  /** Threads derived from one (a workflow's `<id>:workflow` and its steps' `<id>:workflow:<step>`), removed with it. */
+  async deleteDerivedThreads(threadId: string): Promise<void> {
+    const prefix = `${threadId.replace(/[\\%_]/g, "\\$&")}:%`;
+    await this.db.batch(
+      ["checkpoints", "checkpoint_blobs", "checkpoint_writes"].map((table) => ({
+        sql: `DELETE FROM ${table} WHERE thread_id LIKE ? ESCAPE '\\'`,
+        args: [prefix],
+      })),
+      "write",
+    );
+  }
+
   private async toTuple(row: Row): Promise<CheckpointTuple> {
     const threadId = String(row.thread_id);
     const checkpointNs = String(row.checkpoint_ns);

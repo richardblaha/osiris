@@ -1,8 +1,9 @@
 import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import type { RunnableConfig } from "@langchain/core/runnables";
+import { AsyncLocalStorageProviderSingleton } from "@langchain/core/singletons";
 import { END, START, StateGraph, interrupt, isGraphBubbleUp, type BaseCheckpointSaver } from "@langchain/langgraph";
 import type { AgentTelemetryEvent } from "@osiris/shared";
-import { getRunContext } from "../context.ts";
+import { getRunContext, type RunContext } from "../context.ts";
 import type { AgentGraph } from "../graph.ts";
 import { BUILTIN_VERIFIERS, createJevGraph } from "./jev.ts";
 import { structured, text, type OrchestratorDeps, type ReactDelegate } from "./llm.ts";
@@ -18,6 +19,15 @@ import { emit, nodeId, planTopology, traced } from "./telemetry.ts";
 const MAX_CONTEXT_CHARS = 4000;
 
 /**
+ * Runs a graph as a run of its own, not as a subgraph of the graph whose node or tool calls it: LangGraph otherwise
+ * merges the caller's Pregel internals (kept in async local storage) into its config, files its checkpoints under the
+ * caller's and lets its interrupts end the caller's run.
+ */
+export function isolated<T>(run: () => Promise<T>): Promise<T> {
+  return AsyncLocalStorageProviderSingleton.getInstance().run(undefined, run);
+}
+
+/**
  * The existing ReAct agent as a delegate: a step runs as its own thread (`<thread>:<key>`) with the run's identity,
  * so guards, quotas, tools and history work exactly as in a chat.
  */
@@ -25,8 +35,8 @@ export function reactFromAgentGraph(agent: AgentGraph): ReactDelegate {
   return async (goal, config, key) => {
     const ctx = getRunContext(config);
     // Only the run's identity, not the parent's Pregel internals: the agent is its own graph with its own checkpoints.
-    const configurable = { thread_id: `${ctx.thread_id}:${key}`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, assistant: ctx.assistant, user_name: ctx.user_name, locale: ctx.locale };
-    const state = await agent.invoke({ messages: [new HumanMessage(goal)] }, { configurable, signal: config.signal });
+    const configurable: RunContext = { thread_id: `${ctx.thread_id}:${key}`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, assistant: ctx.assistant, user_name: ctx.user_name, locale: ctx.locale, workflow: true };
+    const state = await isolated(() => agent.invoke({ messages: [new HumanMessage(goal)] }, { configurable, signal: config.signal }));
     return state.messages.at(-1)?.text ?? "";
   };
 }

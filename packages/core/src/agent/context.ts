@@ -17,6 +17,8 @@ export interface RunContext {
   user_name?: string;
   /** The language of texts the run itself writes for people (quota notices, refusals, answer summaries); absent in runs from before it existed. */
   locale?: Locale;
+  /** A step of a workflow (`run_workflow`): runs without asking the user (`ask_user`) or starting another workflow. */
+  workflow?: boolean;
 }
 
 export function getRunContext(config: RunnableConfig | undefined): RunContext {

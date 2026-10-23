@@ -8,7 +8,7 @@ import {
   type ToolCallMessagePartProps,
 } from "@assistant-ui/react";
 import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
-import type { FileScope, RunStatus } from "@osiris/shared";
+import { QUESTION_TOOLS, type FileScope, type RunStatus } from "@osiris/shared";
 import { createContext, useContext, useEffect, useState } from "react";
 import { api, saveBlob } from "../api.ts";
 import { t } from "i18next";
@@ -119,7 +119,7 @@ function pretty(value: unknown): string {
  */
 function ToolCall({ toolName, args, argsText, result }: ToolCallMessagePartProps) {
   const writing = !argsText;
-  if (toolName === "ask_user" && result) {
+  if (QUESTION_TOOLS.includes(toolName) && result) {
     try { const parsed = JSON.parse(String(result)); if (parsed.question) return <Question initial={parsed.question} />; } catch { /* A failed tool uses the normal display. */ }
   }
   // Other names are tools of the tenant's MCP servers (`<server>_<tool>`).
