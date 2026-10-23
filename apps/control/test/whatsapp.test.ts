@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
-import { InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
+import { InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
 import { splitText } from "../src/whatsapp/cloud-api.ts";
 import { userByPhone } from "../src/whatsapp/phones.ts";
 import { WhatsAppRouter } from "../src/whatsapp/router.ts";
@@ -15,19 +15,19 @@ async function setup(users: NonNullable<Parameters<typeof createTestControl>[0]>
     db: control.db,
     inbox: control.inbox,
     users: control.users,
-    tenants: control.store,
+    projects: control.store,
     phones: control.phones,
     client: control.whatsappClient,
     runtimes: control.runtimes,
     signer: control.signer,
   });
   const verifier = new InternalVerifier(keys.publicKey);
-  const runs: { tenant: string; path: string; user?: string; role?: string; text?: string }[] = [];
-  control.setRuntime(async (tenant, path, init) => {
-    const call = await verifier.verifyHeader((init.headers as Record<string, string>).authorization, tenantAudience(tenant));
+  const runs: { project: string; path: string; user?: string; role?: string; text?: string }[] = [];
+  control.setRuntime(async (project, path, init) => {
+    const call = await verifier.verifyHeader((init.headers as Record<string, string>).authorization, projectAudience(project));
     const body = init.body ? JSON.parse(String(init.body)) : {};
-    runs.push({ tenant, path, user: call.user?.sub, role: call.role, text: body.text });
-    return path === "/internal/whatsapp/new-thread" ? new Response(null, { status: 204 }) : Response.json({ reply: `odpověď z ${tenant}` });
+    runs.push({ project, path, user: call.user?.sub, role: call.role, text: body.text });
+    return path === "/internal/whatsapp/new-thread" ? new Response(null, { status: 204 }) : Response.json({ reply: `odpověď z ${project}` });
   });
 
   let seq = 0;
@@ -62,13 +62,13 @@ describe("WhatsApp webhook", () => {
 });
 
 describe("WhatsApp router", () => {
-  const bob = { id: "bob", name: "Bob", claims: { phone_number: "+420 777 123 456", tenant: "acme", role: "osiris-user" } };
+  const bob = { id: "bob", name: "Bob", claims: { phone_number: "+420 777 123 456", project: "acme", role: "osiris-user" } };
 
-  it("runs the agent in the sender's tenant as the sender and replies, once per message", async () => {
+  it("runs the agent in the sender's project as the sender and replies, once per message", async () => {
     const { send, replies, runs } = await setup([bob]);
     await send("420777123456", "Kolik mám zakázek?", "m1");
     await send("420777123456", "Kolik mám zakázek?", "m1");
-    expect(runs).toEqual([{ tenant: "acme", path: "/internal/whatsapp/message", user: "bob", role: "member", text: "Kolik mám zakázek?" }]);
+    expect(runs).toEqual([{ project: "acme", path: "/internal/whatsapp/message", user: "bob", role: "member", text: "Kolik mám zakázek?" }]);
     expect(replies()).toEqual(["odpověď z acme"]);
   });
 
@@ -92,21 +92,21 @@ describe("WhatsApp router", () => {
     expect((await inbox.claim())?.id).toBe("b");
   });
 
-  it("lets a user in several tenants switch with /tenant and start over with /nova", async () => {
-    const { send, replies, runs } = await setup([{ ...bob, claims: { ...bob.claims, tenant: "acme,beta" } }]);
+  it("lets a user in several projects switch with /project and start over with /nova", async () => {
+    const { send, replies, runs } = await setup([{ ...bob, claims: { ...bob.claims, project: "acme,beta" } }]);
     await send("420777123456", "ahoj");
-    expect(replies().at(-1)).toContain("Send /tenant <slug>");
-    await send("420777123456", "/tenant gamma");
-    expect(replies().at(-1)).toContain("You don't have a tenant “gamma”");
-    await send("420777123456", "/tenant beta");
+    expect(replies().at(-1)).toContain("Send /project <slug>");
+    await send("420777123456", "/project gamma");
+    expect(replies().at(-1)).toContain("You don't have a project “gamma”");
+    await send("420777123456", "/project beta");
     await send("420777123456", "ahoj");
-    expect(runs.at(-1)).toMatchObject({ tenant: "beta", text: "ahoj" });
+    expect(runs.at(-1)).toMatchObject({ project: "beta", text: "ahoj" });
     await send("420777123456", "/nova");
-    expect(runs.at(-1)).toMatchObject({ tenant: "beta", path: "/internal/whatsapp/new-thread" });
+    expect(runs.at(-1)).toMatchObject({ project: "beta", path: "/internal/whatsapp/new-thread" });
     expect(replies().at(-1)).toBe("OK, starting a new conversation.");
   });
 
-  it("refuses unknown numbers, users without a tenant and tenants with WhatsApp off", async () => {
+  it("refuses unknown numbers, users without a project and projects with WhatsApp off", async () => {
     const { send, replies, store, runs } = await setup([bob, { id: "eve", claims: { phone_number: "+420600000001", role: "osiris-user" } }]);
     await send("420111111111", "ahoj");
     await send("420600000001", "ahoj");
@@ -115,7 +115,7 @@ describe("WhatsApp router", () => {
     expect(replies()).toEqual([
       expect.stringContaining("has no Osiris account"),
       expect.stringContaining("aren't assigned"),
-      "WhatsApp is not enabled for tenant *acme*.",
+      "WhatsApp is not enabled for project *acme*.",
     ]);
     expect(runs).toEqual([]);
   });
@@ -133,10 +133,10 @@ describe("WhatsApp router", () => {
 
   it("verifies a phone number by a code sent from it and takes the number from anyone else", async () => {
     const { send, replies, phones, users, asUser } = await setup([
-      { id: "alice", claims: { tenant: "acme", role: "osiris-user" } },
+      { id: "alice", claims: { project: "acme", role: "osiris-user" } },
       { id: "old", claims: { phone_number: "+420777999888" } },
     ]);
-    const res = await asUser("alice", [{ tenantId: "acme", role: "member" }])("/me/phone", { method: "POST", body: JSON.stringify({ phone: "+420 777 999 888" }) });
+    const res = await asUser("alice", [{ projectId: "acme", role: "member" }])("/me/phone", { method: "POST", body: JSON.stringify({ phone: "+420 777 999 888" }) });
     const { phoneChallenge } = await res.json();
     expect(phoneChallenge).toMatchObject({ phone: "+420 777 999 888", whatsappNumber: "+420 600 000 000", code: expect.stringMatching(/^\d{6}$/) });
 
@@ -156,7 +156,7 @@ describe("WhatsApp router", () => {
       { id: "u3", claims: { phone_number: "+420600000002" } },
       { id: "u4", claims: { phone_number: "+420600000002" } },
     ]);
-    expect(await userByPhone(users, "420777123456")).toMatchObject({ sub: "bob", access: { roles: ["osiris-user"], tenants: ["acme"] } });
+    expect(await userByPhone(users, "420777123456")).toMatchObject({ sub: "bob", access: { roles: ["osiris-user"], projects: ["acme"] } });
     expect(await userByPhone(users, "420600000001")).toBeNull();
     expect(await userByPhone(users, "420600000002")).toBeNull();
   });

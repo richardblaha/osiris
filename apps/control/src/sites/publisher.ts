@@ -28,10 +28,10 @@ function sitePath(raw: string): string | null {
   return parts.join("/");
 }
 
-export const siteKey = (tenant: string, release: string, path = "") => `sites/${tenant}/${release}${path ? `/${path}` : ""}`;
+export const siteKey = (project: string, release: string, path = "") => `sites/${project}/${release}${path ? `/${path}` : ""}`;
 
 /**
- * Publishes tenant sites: the runtime sends a folder as tar.gz, control checks every entry (regular files only, known
+ * Publishes project sites: the runtime sends a folder as tar.gz, control checks every entry (regular files only, known
  * types, size and count limits), uploads it as a new release to object storage and switches the domain to it in one
  * write. Runtimes never get object storage credentials.
  */
@@ -41,8 +41,8 @@ export class SitePublisher {
     private readonly objects: ObjectStore,
   ) {}
 
-  async publish(tenantId: string, domain: string, archive: Readable, createdBy: string | null, now = Date.now()): Promise<SiteRelease> {
-    const [d] = await this.db.query<{ status: string }>("SELECT status FROM domains WHERE tenant_id = ? AND domain = ?", [tenantId, domain], { fresh: true });
+  async publish(projectId: string, domain: string, archive: Readable, createdBy: string | null, now = Date.now()): Promise<SiteRelease> {
+    const [d] = await this.db.query<{ status: string }>("SELECT status FROM domains WHERE project_id = ? AND domain = ?", [projectId, domain], { fresh: true });
     if (!d) throw new PublishError("errors.publish.foreignDomain");
     if (d.status !== "verified") throw new PublishError("errors.publish.unverified");
 
@@ -59,22 +59,22 @@ export class SitePublisher {
       for (const f of files) {
         const data = await readFile(join(root, ...f.path.split("/")));
         bytes += data.length;
-        await this.objects.put(siteKey(tenantId, release, f.path), data, fileType(f.path)!.mime);
+        await this.objects.put(siteKey(projectId, release, f.path), data, fileType(f.path)!.mime);
       }
       await this.db.execute([
         run(
-          "INSERT INTO site_releases (id, tenant_id, domain, files, bytes, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          "INSERT INTO site_releases (id, project_id, domain, files, bytes, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
           release,
-          tenantId,
+          projectId,
           domain,
           files.length,
           bytes,
           createdBy,
           now,
         ),
-        run("UPDATE domains SET release_id = ? WHERE tenant_id = ? AND domain = ?", release, tenantId, domain),
+        run("UPDATE domains SET release_id = ? WHERE project_id = ? AND domain = ?", release, projectId, domain),
       ]);
-      await this.prune(tenantId, domain);
+      await this.prune(projectId, domain);
       return { id: release, domain, files: files.length, bytes, createdBy, createdAt: new Date(now).toISOString(), current: true };
     } finally {
       await rm(work, { recursive: true, force: true });
@@ -120,11 +120,11 @@ export class SitePublisher {
     return out;
   }
 
-  async releases(tenantId: string, domain?: string): Promise<SiteRelease[]> {
+  async releases(projectId: string, domain?: string): Promise<SiteRelease[]> {
     const rows = await this.db.query<{ id: string; domain: string; files: number; bytes: number; created_by: string | null; created_at: number; current: string | null }>(
       `SELECT r.*, d.release_id AS current FROM site_releases r LEFT JOIN domains d ON d.domain = r.domain
-       WHERE r.tenant_id = ? ${domain ? "AND r.domain = ?" : ""} ORDER BY r.created_at DESC`,
-      domain ? [tenantId, domain] : [tenantId],
+       WHERE r.project_id = ? ${domain ? "AND r.domain = ?" : ""} ORDER BY r.created_at DESC`,
+      domain ? [projectId, domain] : [projectId],
     );
     return rows.map((r) => ({
       id: r.id,
@@ -138,16 +138,16 @@ export class SitePublisher {
   }
 
   /** Switches the domain back to an earlier release. */
-  async activate(tenantId: string, domain: string, release: string) {
+  async activate(projectId: string, domain: string, release: string) {
     const [r] = await this.db.execute([
       run(
-        `UPDATE domains SET release_id = ? WHERE tenant_id = ? AND domain = ?
-           AND EXISTS (SELECT 1 FROM site_releases WHERE id = ? AND tenant_id = ? AND domain = ?)`,
+        `UPDATE domains SET release_id = ? WHERE project_id = ? AND domain = ?
+           AND EXISTS (SELECT 1 FROM site_releases WHERE id = ? AND project_id = ? AND domain = ?)`,
         release,
-        tenantId,
+        projectId,
         domain,
         release,
-        tenantId,
+        projectId,
         domain,
       ),
     ]);
@@ -155,22 +155,22 @@ export class SitePublisher {
   }
 
   /** Deletes releases beyond the newest few (never the current one). */
-  async prune(tenantId: string, domain: string, keep = KEEP_RELEASES) {
-    const all = await this.releases(tenantId, domain);
+  async prune(projectId: string, domain: string, keep = KEEP_RELEASES) {
+    const all = await this.releases(projectId, domain);
     const old = all.slice(keep).filter((r) => !r.current);
-    await this.drop(tenantId, old.map((r) => r.id));
+    await this.drop(projectId, old.map((r) => r.id));
   }
 
   /** Removes every release of a domain (when the domain is removed). */
-  async removeDomain(tenantId: string, domain: string) {
-    await this.drop(tenantId, (await this.releases(tenantId, domain)).map((r) => r.id));
+  async removeDomain(projectId: string, domain: string) {
+    await this.drop(projectId, (await this.releases(projectId, domain)).map((r) => r.id));
   }
 
-  private async drop(tenantId: string, releases: string[]) {
+  private async drop(projectId: string, releases: string[]) {
     for (const id of releases) {
-      const keys = (await this.objects.list(`${siteKey(tenantId, id)}/`)).map((o) => o.key);
+      const keys = (await this.objects.list(`${siteKey(projectId, id)}/`)).map((o) => o.key);
       await this.objects.delete(keys);
-      await this.db.execute([run("DELETE FROM site_releases WHERE id = ? AND tenant_id = ?", id, tenantId)]);
+      await this.db.execute([run("DELETE FROM site_releases WHERE id = ? AND project_id = ?", id, projectId)]);
     }
   }
 }

@@ -2,12 +2,12 @@
   "errors": {
     "access": {
       "noRole": "This account has no access to Osiris yet (the osiris-user role is missing). Ask an administrator.",
-      "noTenant": "This account doesn't belong to any organization yet. Ask an administrator for an invitation.",
-      "notMember": "You are not a member of this tenant.",
+      "noProject": "This account doesn't belong to any organization yet. Ask an administrator for an invitation.",
+      "notMember": "You are not a member of this project.",
       "adminOnly": "This requires the administrator role.",
       "systemAdminOnly": "This requires a system administrator."
     },
-    "tenantRequired": "Choose a tenant (the X-Tenant-Id header is missing).",
+    "projectRequired": "Choose a project (the X-Project-Id header is missing).",
     "tooManyRequests": "Too many requests. Try again in a moment.",
     "tooManyMessages": "Too many messages per minute. Try again in a moment.",
     "requestTooLarge": "The request is too large.",
@@ -28,10 +28,10 @@
       "runAtPast": "The run time is in the past.",
       "userLimit_one": "You can have at most {{count}} scheduled task.",
       "userLimit_other": "You can have at most {{count}} scheduled tasks.",
-      "tenantLimit_one": "A tenant can have at most {{count}} scheduled task.",
-      "tenantLimit_other": "A tenant can have at most {{count}} scheduled tasks.",
+      "projectLimit_one": "A project can have at most {{count}} scheduled task.",
+      "projectLimit_other": "A project can have at most {{count}} scheduled tasks.",
       "notFound": "Task not found.",
-      "featureOff": "Scheduled tasks are not enabled for the tenant."
+      "featureOff": "Scheduled tasks are not enabled for the project."
     },
     "signIn": {
       "expired": "The sign-in has expired. Please start again.",
@@ -101,13 +101,13 @@
     "domain": {
       "invalid": "Invalid domain (for example www.mycompany.com).",
       "reserved": "This domain can't be used.",
-      "limit_one": "A tenant can have at most {{count}} domain.",
-      "limit_other": "A tenant can have at most {{count}} domains.",
-      "taken": "Another tenant already uses this domain.",
+      "limit_one": "A project can have at most {{count}} domain.",
+      "limit_other": "A project can have at most {{count}} domains.",
+      "taken": "Another project already uses this domain.",
       "notFound": "Domain not found."
     },
     "publish": {
-      "foreignDomain": "The domain doesn't belong to the tenant.",
+      "foreignDomain": "The domain doesn't belong to the project.",
       "unverified": "The domain isn't verified yet.",
       "noIndex": "The site needs an index.html file at its root.",
       "releaseNotFound": "Release not found.",
@@ -119,17 +119,17 @@
       "tooLarge": "The site is too large."
     },
     "quota": {
-      "members_one": "A tenant can have at most {{count}} user.",
-      "members_other": "A tenant can have at most {{count}} users.",
-      "dashboards_one": "A tenant can have at most {{count}} own dashboard.",
-      "dashboards_other": "A tenant can have at most {{count}} own dashboards."
+      "members_one": "A project can have at most {{count}} user.",
+      "members_other": "A project can have at most {{count}} users.",
+      "dashboards_one": "A project can have at most {{count}} own dashboard.",
+      "dashboards_other": "A project can have at most {{count}} own dashboards."
     },
     "phone": {
       "invalid": "Invalid phone number."
     },
     "dashboard": {
       "sourceSystem": "Source {{source}} isn't available on a system dashboard.",
-      "sourceTenant": "Source {{source}} isn't available on a tenant dashboard.",
+      "sourceProject": "Source {{source}} isn't available on a project dashboard.",
       "notFound": "Dashboard not found.",
       "adminOnly": "Only an administrator can change dashboards.",
       "unknownView": "Unknown view."
@@ -154,17 +154,17 @@
       "allowedHostsEmpty": "Enter at least one allowed domain."
     },
     "invalidJson": "The request body isn't valid JSON.",
-    "tenant": {
-      "exists": "A tenant with this slug already exists.",
-      "notFound": "Tenant not found.",
-      "removed": "The tenant was removed."
+    "project": {
+      "exists": "A project with this slug already exists.",
+      "notFound": "Project not found.",
+      "removed": "The project was removed."
     },
     "member": {
       "notFound": "Member not found."
     },
-    "featureOff": "This feature is not enabled for the tenant.",
+    "featureOff": "This feature is not enabled for the project.",
     "sites": {
-      "featureOff": "Sites are not enabled for the tenant.",
+      "featureOff": "Sites are not enabled for the project.",
       "name": "Site name: lowercase letters, digits, hyphens and dots (for example mycompany.com).",
       "exists": "Site {{site}} already exists.",
       "invalidName": "Invalid site name.",
@@ -178,7 +178,7 @@
     "guard": {
       "notFound": "The rule doesn't exist.",
       "adminOnly": "Only an administrator can change rules (guards/).",
-      "level": "Level: user, tenant or assistant."
+      "level": "Level: user, project or assistant."
     },
     "files": {
       "pathMissing": "The file path is missing.",
@@ -207,7 +207,7 @@
       "featureOff": "Files are not enabled.",
       "threadRequired": "Temporary files need the conversation (thread).",
       "uploadTooLarge": "The file is too large.",
-      "tenantAdminOnly": "Only the organization's administrators change its files. Save your own copy among your files instead."
+      "projectAdminOnly": "Only the organization's administrators change its files. Save your own copy among your files instead."
     },
     "db": {
       "unterminated": "The query has an unterminated string or comment.",
@@ -341,7 +341,7 @@
       "notFound": "Conversation not found."
     },
     "scope": {
-      "invalid": "The scope must be tenant or personal."
+      "invalid": "The scope must be project or personal."
     },
     "assistant": {
       "notFound": "The assistant doesn't exist.",
@@ -369,9 +369,9 @@
   "schedules": {
     "notes": {
       "missed": "The task didn't run in time (the service was unavailable).",
-      "tenantGone": "The tenant no longer exists.",
-      "featureOff": "Scheduled tasks are switched off for the tenant.",
-      "ownerLeft": "The task's owner is no longer a member of the tenant.",
+      "projectGone": "The project no longer exists.",
+      "featureOff": "Scheduled tasks are switched off for the project.",
+      "ownerLeft": "The task's owner is no longer a member of the project.",
       "whatsappOff": "WhatsApp is not configured; the result is only in the web chat.",
       "noPhone": "The user has no verified phone number; the result is only in the web chat.",
       "whatsappWindow": "WhatsApp only allows messages within 24 hours of the user's last message; the result is only in the web chat."
@@ -379,23 +379,23 @@
   },
   "whatsapp": {
     "notRegistered": "This number has no Osiris account. Verify it in your profile (My profile → Phone), or ask an administrator.",
-    "noTenant": "You aren't assigned to any tenant. Contact an administrator.",
+    "noProject": "You aren't assigned to any project. Contact an administrator.",
     "unsupported": "I support text, images, documents and voice messages.",
     "failed": "Sorry, something went wrong. Please try again.",
     "newThread": "OK, starting a new conversation.",
     "verified": "Your number is verified. You can write to me now.",
     "badCode": "The code doesn't match or has expired. Request a new one in your profile.",
-    "help": "*Commands*\n• /tenant – your tenants and which one is active\n• /tenant <slug> – switch to another tenant\n• /new – start a new conversation\n• /cancel – cancel an open question or form",
-    "chooseTenant": "Send /tenant <slug> to choose the one you want to work with.",
-    "featureOff": "WhatsApp is not enabled for tenant *{{tenant}}*.",
+    "help": "*Commands*\n• /project – your projects and which one is active\n• /project <slug> – switch to another project\n• /new – start a new conversation\n• /cancel – cancel an open question or form",
+    "chooseProject": "Send /project <slug> to choose the one you want to work with.",
+    "featureOff": "WhatsApp is not enabled for project *{{project}}*.",
     "attachmentOnly": "Attaching a file.",
     "answerInvalid": "The answer isn't valid or the question has expired. Fill in the form again, or send /cancel.",
-    "activeTenant": "Active tenant: *{{tenant}}*.",
-    "noActiveTenant": "You haven't chosen a tenant yet.",
-    "switchHint": "Switch with /tenant <slug>.",
-    "unknownTenant": "You don't have a tenant “{{tenant}}”.",
-    "switched": "Switched to tenant *{{tenant}}*.",
-    "tenants": "Your tenants: {{tenants}}.",
+    "activeProject": "Active project: *{{project}}*.",
+    "noActiveProject": "You haven't chosen a project yet.",
+    "switchHint": "Switch with /project <slug>.",
+    "unknownProject": "You don't have a project “{{project}}”.",
+    "switched": "Switched to project *{{project}}*.",
+    "projects": "Your projects: {{projects}}.",
     "scheduledTask": "Scheduled task",
     "question": {
       "yes": "Yes",
@@ -452,7 +452,7 @@
       "failed": "failed",
       "unknown": "unknown"
     },
-    "tenant": {
+    "project": {
       "running": "running",
       "sleeping": "sleeping",
       "suspended": "suspended",
@@ -470,11 +470,11 @@
       "reason": "Reason",
       "message": "Message",
       "count": "Count",
-      "tenants": "Tenants",
+      "projects": "Projects",
       "running": "Running",
       "sleeping": "Sleeping",
       "noBackup": "No backup for {{hours}} h",
-      "tenant": "Tenant",
+      "project": "Project",
       "lastActivity": "Last activity",
       "lastBackup": "Last backup",
       "backupSize": "Backup size",

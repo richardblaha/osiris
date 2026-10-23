@@ -59,50 +59,50 @@ const requireAdmin = (ctx: RequestContext) => {
   if (ctx.role !== "admin") throw new HttpError(403, "errors.db.adminOnly");
 };
 
-/** The tenant's database (Tenant > Databáze): tables, their rows, and read-only SQL. Mounted at /api/database. */
+/** The project's database (Project > Databáze): tables, their rows, and read-only SQL. Mounted at /api/database. */
 export function databaseRoutes() {
   return new Hono<AuthEnv>()
-    .get("/tables", async (c) => c.json<DbTable[]>(await data(() => c.get("ctx").tenant.data.tables())))
+    .get("/tables", async (c) => c.json<DbTable[]>(await data(() => c.get("ctx").project.data.tables())))
     .post("/tables", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
       const { name, description, columns } = parse(createBody, await c.req.json());
-      return c.json<DbTable>(await data(() => ctx.tenant.data.createTable(name, description, columns)), 201);
+      return c.json<DbTable>(await data(() => ctx.project.data.createTable(name, description, columns)), 201);
     })
-    .get("/tables/:table", async (c) => c.json<DbTable>(await data(() => c.get("ctx").tenant.data.table(c.req.param("table")))))
+    .get("/tables/:table", async (c) => c.json<DbTable>(await data(() => c.get("ctx").project.data.table(c.req.param("table")))))
     .patch("/tables/:table", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
       const change = parse(alterBody, await c.req.json());
-      return c.json<DbTable>(await data(() => ctx.tenant.data.alterTable(c.req.param("table"), change)));
+      return c.json<DbTable>(await data(() => ctx.project.data.alterTable(c.req.param("table"), change)));
     })
     .delete("/tables/:table", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
-      await data(() => ctx.tenant.data.dropTable(c.req.param("table")));
+      await data(() => ctx.project.data.dropTable(c.req.param("table")));
       return c.body(null, 204);
     })
     .get("/tables/:table/rows", async (c) => {
       const q = parse(rowsQuery, c.req.query());
-      return c.json<DbRows>(await data(() => c.get("ctx").tenant.data.rows(c.req.param("table"), { ...q, desc: q.desc === "true" })));
+      return c.json<DbRows>(await data(() => c.get("ctx").project.data.rows(c.req.param("table"), { ...q, desc: q.desc === "true" })));
     })
     .post("/tables/:table/rows", async (c) => {
       const { rows } = parse(insertBody, await c.req.json());
-      return c.json({ ids: await data(() => c.get("ctx").tenant.data.insert(c.req.param("table"), rows)) }, 201);
+      return c.json({ ids: await data(() => c.get("ctx").project.data.insert(c.req.param("table"), rows)) }, 201);
     })
     .patch("/tables/:table/rows/:id", async (c) => {
       const values = parse(row, await c.req.json());
-      const n = await data(() => c.get("ctx").tenant.data.update(c.req.param("table"), { id: rowId(c.req.param("id")) }, values));
+      const n = await data(() => c.get("ctx").project.data.update(c.req.param("table"), { id: rowId(c.req.param("id")) }, values));
       if (!n) throw new HttpError(404, "errors.db.rowNotFound");
       return c.body(null, 204);
     })
     .delete("/tables/:table/rows/:id", async (c) => {
-      const n = await data(() => c.get("ctx").tenant.data.delete(c.req.param("table"), { id: rowId(c.req.param("id")) }));
+      const n = await data(() => c.get("ctx").project.data.delete(c.req.param("table"), { id: rowId(c.req.param("id")) }));
       if (!n) throw new HttpError(404, "errors.db.rowNotFound");
       return c.body(null, 204);
     })
     .post("/query", async (c) => {
       const { sql } = parse(queryBody, await c.req.json());
-      return c.json<DbQueryResult>(await data(() => c.get("ctx").tenant.data.query(sql, 1000)));
+      return c.json<DbQueryResult>(await data(() => c.get("ctx").project.data.query(sql, 1000)));
     });
 }

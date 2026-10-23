@@ -11,11 +11,11 @@ import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { devRuntimeVerifier } from "@osiris/platform/runtime-identity.ts";
 import { createControlApp } from "../src/app.ts";
 import { Backups } from "../src/backups.ts";
-import type { Orchestrator, TenantSpec, TenantStatus } from "../src/orchestrator/types.ts";
+import type { Orchestrator, ProjectSpec, ProjectStatus } from "../src/orchestrator/types.ts";
 import { ScheduleStore } from "../src/scheduler.ts";
 import { DomainStore, type DnsLookup } from "../src/sites/domains.ts";
 import { SitePublisher } from "../src/sites/publisher.ts";
-import { TenantDirectory, TenantStore } from "../src/tenants.ts";
+import { ProjectDirectory, ProjectStore } from "../src/projects.ts";
 import { createAuthDeps } from "../src/auth/index.ts";
 import type { Mailer } from "../src/auth/mail.ts";
 import type { SocialClient, SocialProviderId } from "../src/auth/social.ts";
@@ -38,9 +38,9 @@ export async function createTestDb() {
 
 /** Records what control asks of the cluster. */
 export class FakeOrchestrator implements Orchestrator {
-  applied = new Map<string, TenantSpec>();
+  applied = new Map<string, ProjectSpec>();
   woken: string[] = [];
-  async apply(spec: TenantSpec) {
+  async apply(spec: ProjectSpec) {
     this.applied.set(spec.id, spec);
   }
   async wake(id: string) {
@@ -50,7 +50,7 @@ export class FakeOrchestrator implements Orchestrator {
     return `http://runtime-${id}`;
   }
   async statuses() {
-    return new Map([...this.applied.values()].map((s): [string, TenantStatus] => [s.id, { phase: s.suspended ? "Suspended" : this.woken.includes(s.id) ? "Running" : "Sleeping" }]));
+    return new Map([...this.applied.values()].map((s): [string, ProjectStatus] => [s.id, { phase: s.suspended ? "Suspended" : this.woken.includes(s.id) ? "Running" : "Sleeping" }]));
   }
 }
 
@@ -66,7 +66,7 @@ export function fakeDns(zone: Record<string, { txt?: string[]; a?: string[]; cna
   };
 }
 
-export type RuntimeHandler = (tenant: string, path: string, init: RequestInit) => Response | Promise<Response>;
+export type RuntimeHandler = (project: string, path: string, init: RequestInit) => Response | Promise<Response>;
 
 /** All of control over a temp database and folder, with fakes for the cluster, runtimes, DNS and WhatsApp. */
 export async function createTestControl(
@@ -97,20 +97,20 @@ export async function createTestControl(
     fetchFn: options.socialFetch,
     mailer,
   });
-  const store = new TenantStore(db, { objects, publicUrl: PUBLIC_URL });
-  const directory = new TenantDirectory(store, users, orchestrator);
-  const runtimeCalls: { tenant: string; path: string; init: RequestInit }[] = [];
+  const store = new ProjectStore(db, { objects, publicUrl: PUBLIC_URL });
+  const directory = new ProjectDirectory(store, users, orchestrator);
+  const runtimeCalls: { project: string; path: string; init: RequestInit }[] = [];
   let runtime: RuntimeHandler = options.runtime ?? (() => Response.json({}));
   const runtimeFetch = (async (url: string, init: RequestInit = {}) => {
     const u = new URL(url);
-    const tenant = u.hostname.replace(/^runtime-/, "");
+    const project = u.hostname.replace(/^runtime-/, "");
     if (u.pathname === "/health") return Response.json({ ok: true });
-    runtimeCalls.push({ tenant, path: u.pathname + u.search, init });
-    return runtime(tenant, u.pathname + u.search, init);
+    runtimeCalls.push({ project, path: u.pathname + u.search, init });
+    return runtime(project, u.pathname + u.search, init);
   }) as unknown as typeof fetch;
   const runtimes = new RuntimeClient({ endpoint: async (t) => orchestrator.endpoint(t), wake: (t) => orchestrator.wake(t) }, { fetchFn: runtimeFetch, wakeTimeoutMs: 2000 });
   const schedules = new ScheduleStore(db, "Europe/Prague");
-  const domains = new DomainStore(db, options.dns ?? fakeDns({}), { ingressIps: ["203.0.113.10"], maxPerTenant: 3, reserved: ["k6labs.cz"] });
+  const domains = new DomainStore(db, options.dns ?? fakeDns({}), { ingressIps: ["203.0.113.10"], maxPerProject: 3, reserved: ["k6labs.cz"] });
   const sites = new SitePublisher(db, objects);
   const backups = new Backups(db, objects, 30);
   const phones = new PhoneVerification(db, users);
@@ -143,8 +143,8 @@ export async function createTestControl(
   });
 
   const gateway = new InternalSigner(keys.privateKey, "gateway");
-  /** A user call as the gateway sends it: the user, their memberships and the active tenant. */
-  const asUser = (sub: string, memberships: { tenantId: string; role: Role }[] = [], options: { systemAdmin?: boolean; tenant?: string } = {}) =>
+  /** A user call as the gateway sends it: the user, their memberships and the active project. */
+  const asUser = (sub: string, memberships: { projectId: string; role: Role }[] = [], options: { systemAdmin?: boolean; project?: string } = {}) =>
     async (path: string, init: RequestInit = {}) =>
       app.request(`/api${path}`, {
         ...init,
@@ -155,12 +155,12 @@ export async function createTestControl(
             systemAdmin: options.systemAdmin ?? false,
           }),
           "content-type": "application/json",
-          ...(options.tenant ?? memberships[0]?.tenantId ? { "x-tenant-id": options.tenant ?? memberships[0]!.tenantId } : {}),
+          ...(options.project ?? memberships[0]?.projectId ? { "x-project-id": options.project ?? memberships[0]!.projectId } : {}),
           ...(init.headers as Record<string, string>),
         },
       });
-  const asRuntime = (tenant: string) => (path: string, init: RequestInit = {}) =>
-    app.request(`/internal/runtime${path}`, { ...init, headers: { authorization: `Bearer dev-runtime:${tenant}`, "content-type": "application/json", ...(init.headers as Record<string, string>) } });
+  const asRuntime = (project: string) => (path: string, init: RequestInit = {}) =>
+    app.request(`/internal/runtime${path}`, { ...init, headers: { authorization: `Bearer dev-runtime:${project}`, "content-type": "application/json", ...(init.headers as Record<string, string>) } });
 
   return {
     app,

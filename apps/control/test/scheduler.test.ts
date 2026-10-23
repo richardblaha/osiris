@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { tenantAudience, InternalVerifier } from "@osiris/platform/internal-auth.ts";
+import { projectAudience, InternalVerifier } from "@osiris/platform/internal-auth.ts";
 import { checkCron, nextCron, SchedulerWorker } from "../src/scheduler.ts";
 import { createTestControl, keys } from "./helpers.ts";
 
@@ -7,12 +7,12 @@ const T0 = Date.parse("2026-10-19T05:00:00Z"); // Monday 7:00 in Prague
 
 async function setup() {
   const control = await createTestControl({
-    users: [{ id: "bob", name: "Bob", claims: { tenant: "acme", role: "osiris-user", phone_number: "+420777123456" } }],
+    users: [{ id: "bob", name: "Bob", claims: { project: "acme", role: "osiris-user", phone_number: "+420777123456" } }],
   });
   await control.directory.create("acme", "ACME");
   const worker = new SchedulerWorker({
     schedules: control.schedules,
-    tenants: control.store,
+    projects: control.store,
     users: control.users,
     runtimes: control.runtimes,
     signer: control.signer,
@@ -51,7 +51,7 @@ describe("scheduler", () => {
     const verifier = new InternalVerifier(keys.publicKey);
     let call: Awaited<ReturnType<typeof verifier.verify>> | undefined;
     setRuntime(async (_t, _p, init) => {
-      call = await verifier.verifyHeader((init.headers as Record<string, string>).authorization, tenantAudience("acme"));
+      call = await verifier.verifyHeader((init.headers as Record<string, string>).authorization, projectAudience("acme"));
       return Response.json({ threadId: "th1", reply: "3 nové zakázky" });
     });
     // The user wrote to us recently, so WhatsApp may deliver.
@@ -61,7 +61,7 @@ describe("scheduler", () => {
 
     expect(await worker.step(T0 + 1000)).toBe(true);
     expect(JSON.parse(String(runtimeCalls[0]!.init.body))).toEqual({ title: "Souhrn", prompt: "Shrň", idempotencyKey: `${s.id}:${T0}` });
-    expect(call).toMatchObject({ issuer: "control", user: { sub: "bob" }, tenant: "acme", role: "member", channel: "whatsapp" });
+    expect(call).toMatchObject({ issuer: "control", user: { sub: "bob" }, project: "acme", role: "member", channel: "whatsapp" });
     expect(sent).toEqual([{ to: "420777123456", text: "*Souhrn*\n\n3 nové zakázky", from: "BIZ" }]);
     const after = await schedules.get("acme", s.id);
     expect(after).toMatchObject({ lastStatus: "done", lastThreadId: "th1", lastError: null, nextRunAt: "2026-10-20T05:00:00.000Z" });
@@ -83,19 +83,19 @@ describe("scheduler", () => {
     expect(await schedules.get("acme", s.id)).toMatchObject({ lastStatus: "failed", enabled: false });
   });
 
-  it("switches off tasks of owners who left the tenant", async () => {
+  it("switches off tasks of owners who left the project", async () => {
     const { schedules, worker, directory, runtimeCalls } = await setup();
     const s = await schedules.create("acme", { id: "bob", name: "Bob" }, { title: "A", prompt: "p", cron: "0 7 * * *" }, T0 - 60 * 60_000);
     await directory.setRole("acme", "bob", null);
     await worker.step(T0 + 1000);
     expect(runtimeCalls).toEqual([]);
-    expect(await schedules.get("acme", s.id)).toMatchObject({ enabled: false, lastError: "The task's owner is no longer a member of the tenant." });
+    expect(await schedules.get("acme", s.id)).toMatchObject({ enabled: false, lastError: "The task's owner is no longer a member of the project." });
   });
 
   it("serves the schedules API per owner, with admins seeing all", async () => {
     const { asUser, asRuntime, store } = await setup();
-    const bob = asUser("bob", [{ tenantId: "acme", role: "member" }]);
-    const alice = asUser("alice", [{ tenantId: "acme", role: "admin" }]);
+    const bob = asUser("bob", [{ projectId: "acme", role: "member" }]);
+    const alice = asUser("alice", [{ projectId: "acme", role: "admin" }]);
     const create = (who: typeof bob, body: object) => who("/schedules", { method: "POST", body: JSON.stringify(body) });
     expect((await create(bob, { title: "x", prompt: "y", cron: "* * * * *" })).status).toBe(400);
     const mine = await (await create(bob, { title: "Ranní", prompt: "Shrň", cron: "0 7 * * *" })).json();
@@ -103,10 +103,10 @@ describe("scheduler", () => {
     expect((await (await bob("/schedules")).json()).map((s: { title: string }) => s.title)).toEqual(["Ranní"]);
     expect((await bob("/schedules?all=true")).status).toBe(403);
     expect((await (await alice("/schedules?all=true")).json())).toHaveLength(2);
-    expect((await asUser("carol", [{ tenantId: "acme", role: "member" }])(`/schedules/${mine.id}`, { method: "DELETE" })).status).toBe(404);
+    expect((await asUser("carol", [{ projectId: "acme", role: "member" }])(`/schedules/${mine.id}`, { method: "DELETE" })).status).toBe(404);
     expect((await bob(`/schedules/${mine.id}`, { method: "PATCH", body: JSON.stringify({ enabled: false }) })).status).toBe(200);
 
-    // The runtime's tools act for the owner they name, within the runtime's tenant.
+    // The runtime's tools act for the owner they name, within the runtime's project.
     expect((await (await asRuntime("acme")("/schedules?owner=bob")).json())).toHaveLength(1);
     expect((await asRuntime("acme")(`/schedules/${mine.id}?owner=alice`, { method: "DELETE" })).status).toBe(404);
 

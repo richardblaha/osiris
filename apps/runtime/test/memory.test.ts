@@ -1,11 +1,11 @@
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import { MemoryStore } from "@osiris/core/agent/memory.ts";
-import { createTestDb, createTestTenants } from "./helpers.ts";
+import { createTestDb, createTestProjects } from "./helpers.ts";
 
 const ctx = (user: string, role: "admin" | "member") => ({
   thread_id: `t-${user}`,
-  tenant_id: "a",
+  project_id: "a",
   user_id: user,
   role,
   channel: "web" as const,
@@ -16,22 +16,22 @@ describe("MemoryStore", () => {
     const store = new MemoryStore(await createTestDb());
     await store.add("alice", "Alice tyká", "personal");
     await store.add("bob", "Bob vyká", "personal");
-    const shared = await store.add("alice", "Firma není plátce DPH", "tenant");
+    const shared = await store.add("alice", "Firma není plátce DPH", "project");
 
     expect((await store.list("bob")).map((m) => m.content)).toEqual(["Firma není plátce DPH", "Bob vyká"]);
     expect(await store.delete(shared.id, "personal", "bob")).toBe(false);
-    expect(await store.delete(shared.id, "tenant", "bob")).toBe(true);
+    expect(await store.delete(shared.id, "project", "bob")).toBe(true);
   });
 });
 
 describe("memory tools", () => {
   it("remembers across threads and injects memories into the prompt", async () => {
-    const { tenants, model } = createTestTenants([
+    const { projects, model } = createTestProjects([
       new AIMessage({ content: "", tool_calls: [{ id: "m1", name: "remember", args: { content: "Preferuje platbu převodem" } }] }),
       new AIMessage("Zapamatováno."),
       new AIMessage("Převodem."),
     ]);
-    const { graph } = await tenants.get("a");
+    const { graph } = await projects.get("a");
 
     await graph.invoke({ messages: [new HumanMessage("Platím převodem, pamatuj si to")] }, { configurable: ctx("alice", "member") });
     await graph.invoke({ messages: [new HumanMessage("Jak platím?")] }, { configurable: { ...ctx("alice", "member"), thread_id: "t2" } });
@@ -39,26 +39,26 @@ describe("memory tools", () => {
     expect(model.calls[2]?.[0]?.text).toMatch(/# PAMĚŤ[\s\S]*Preferuje platbu převodem/);
   });
 
-  it("remembers for the whole tenant when an admin asks, and for themselves when a member does", async () => {
-    const { tenants } = createTestTenants([
+  it("remembers for the whole project when an admin asks, and for themselves when a member does", async () => {
+    const { projects } = createTestProjects([
       new AIMessage({ content: "", tool_calls: [{ id: "m1", name: "remember", args: { content: "Sleva 5 % pro stálé zákazníky" } }] }),
       new AIMessage("Zapamatováno."),
-      new AIMessage({ content: "", tool_calls: [{ id: "m2", name: "remember", args: { content: "Bob jezdí autem", scope: "tenant" } }] }),
+      new AIMessage({ content: "", tool_calls: [{ id: "m2", name: "remember", args: { content: "Bob jezdí autem", scope: "project" } }] }),
       new AIMessage("Nelze."),
       new AIMessage({ content: "", tool_calls: [{ id: "m3", name: "remember", args: { content: "Bob jezdí autem" } }] }),
       new AIMessage("Zapamatováno."),
     ]);
-    const tenant = await tenants.get("a");
+    const project = await projects.get("a");
 
-    await tenant.graph.invoke({ messages: [new HumanMessage("x")] }, { configurable: ctx("alice", "admin") });
-    const refused = await tenant.graph.invoke({ messages: [new HumanMessage("y")] }, { configurable: ctx("bob", "member") });
+    await project.graph.invoke({ messages: [new HumanMessage("x")] }, { configurable: ctx("alice", "admin") });
+    const refused = await project.graph.invoke({ messages: [new HumanMessage("y")] }, { configurable: ctx("bob", "member") });
     expect(refused.messages.find((m) => m.getType() === "tool")?.text).toMatch(/Firemní paměť mění jen správce/);
-    await tenant.graph.invoke({ messages: [new HumanMessage("z")] }, { configurable: { ...ctx("bob", "member"), thread_id: "t2" } });
+    await project.graph.invoke({ messages: [new HumanMessage("z")] }, { configurable: { ...ctx("bob", "member"), thread_id: "t2" } });
 
-    expect((await tenant.memory.list("carol")).map((m) => m.content)).toEqual(["Sleva 5 % pro stálé zákazníky"]);
-    expect((await tenant.memory.list("bob")).map((m) => [m.content, m.scope])).toEqual([
+    expect((await project.memory.list("carol")).map((m) => m.content)).toEqual(["Sleva 5 % pro stálé zákazníky"]);
+    expect((await project.memory.list("bob")).map((m) => [m.content, m.scope])).toEqual([
       ["Bob jezdí autem", "personal"],
-      ["Sleva 5 % pro stálé zákazníky", "tenant"],
+      ["Sleva 5 % pro stálé zákazníky", "project"],
     ]);
   });
 });

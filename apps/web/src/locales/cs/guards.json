@@ -1,12 +1,12 @@
 {
   "levels": {
     "system": "Systém",
-    "tenant": "Firma",
+    "project": "Firma",
     "user": "Moje",
     "assistant": "Asistent"
   },
   "places": {
-    "system": "Systém (všichni tenanti)",
+    "system": "Systém (všechny projekty)",
     "assistant": "Asistent {{name}}"
   },
   "none": "Žádná.",
@@ -17,7 +17,7 @@
   "confirmDelete": "Smazat kontrolu {{name}}?",
   "new": "Nová kontrola",
   "systemAdminOnly": "mění ho jen správce systému",
-  "tenantAdminOnly": "mění ho jen správce tenanta",
+  "projectAdminOnly": "mění ho jen správce projektu",
   "target": "Pro koho platí",
   "name": "Název (malá písmena, číslice, pomlčky)",
   "namePlaceholder": "např. bez-politiky",

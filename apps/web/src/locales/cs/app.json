@@ -12,7 +12,7 @@
     "context": "Kontext",
     "files": "Soubory",
     "guards": "Kontroly",
-    "tenant": "Tenant",
+    "project": "Projekt",
     "dashboard": "Dashboard",
     "assistants": "Asistenti",
     "database": "Databáze",
@@ -22,7 +22,7 @@
     "analytics": "Návštěvnost",
     "system": "Systém",
     "diagnostics": "Diagnostika",
-    "tenants": "Tenanti",
+    "projects": "Projekty",
     "settings": "Nastavení"
   },
   "add": {
@@ -39,12 +39,12 @@
   "collapse": "Sbalit panel",
   "newChat": "Nový chat",
   "filesIntro": "Dokumenty, šablony a obrázky, se kterými asistent pracuje. Šablony dokumentů patří do složky sablony.",
-  "noTenant": "Žádný tenant",
-  "chooseTenant": "vyber nebo založ tenanta",
+  "noProject": "Žádný projekt",
+  "chooseProject": "vyber nebo založ projekt",
   "users": {
-    "thisTenant": "Tento tenant",
+    "thisProject": "Tento projekt",
     "all": "Všichni uživatelé (systém)",
-    "adminManages": "Uživatele tenanta spravuje jeho správce."
+    "adminManages": "Uživatele projektu spravuje jeho správce."
   },
   "builtinTools": "Interní nástroje",
   "mcpServers": "MCP servery"

@@ -1,4 +1,4 @@
-# Tenant websites on their custom domains: static files of the current release, from object storage.
+# Project websites on their custom domains: static files of the current release, from object storage.
 # Secret osiris-sites: RQLITE_USERNAME/RQLITE_PASSWORD (read-only user), S3_*.
 apiVersion: apps/v1
 kind: Deployment

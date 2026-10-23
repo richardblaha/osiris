@@ -25,12 +25,12 @@ export function saveKnowledgeTool(store: KnowledgeStore) {
   return tool(
     async ({ id, title, content, scope }, config) => {
       const { user_id, role } = getRunContext(config);
-      const target = scope ?? (role === "admin" ? "tenant" : "personal");
-      if (target === "tenant" && role !== "admin") return "Do znalostí firmy zapisuje jen správce. Ulož to jako vlastní dokument (scope personal); se stejným id firemní dokument uživateli nahradí.";
+      const target = scope ?? (role === "admin" ? "project" : "personal");
+      if (target === "project" && role !== "admin") return "Do znalostí firmy zapisuje jen správce. Ulož to jako vlastní dokument (scope personal); se stejným id firemní dokument uživateli nahradí.";
       const doc = id ?? `${slug(title)}.md`;
       if (!DOCUMENT_ID.test(doc)) return "Neplatné id dokumentu (písmena, číslice, tečky, pomlčky, / mezi složkami).";
-      await store.putDocument(doc, content, title, target === "tenant" ? "" : user_id);
-      return `Uloženo do ${target === "tenant" ? "znalostí firmy" : "vlastních znalostí"} jako ${doc}.`;
+      await store.putDocument(doc, content, title, target === "project" ? "" : user_id);
+      return `Uloženo do ${target === "project" ? "znalostí firmy" : "vlastních znalostí"} jako ${doc}.`;
     },
     {
       name: "save_knowledge",
@@ -40,7 +40,7 @@ export function saveKnowledgeTool(store: KnowledgeStore) {
         title: z.string().trim().min(1).max(200),
         content: z.string().min(1).max(200_000).describe("Text dokumentu v Markdownu"),
         id: z.string().max(300).optional().describe("Id existujícího dokumentu k přepsání, např. cenik.md nebo public/cenik.md"),
-        scope: z.enum(["tenant", "personal"]).optional().describe("tenant = znalosti firmy (jen správce), personal = vlastní dokument uživatele"),
+        scope: z.enum(["project", "personal"]).optional().describe("project = znalosti firmy (jen správce), personal = vlastní dokument uživatele"),
       }),
     },
   );

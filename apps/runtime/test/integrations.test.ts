@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { AIMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
-import { createTestApp, createTestTenants } from "./helpers.ts";
+import { createTestApp, createTestProjects } from "./helpers.ts";
 
 type Call = { url: URL; init: RequestInit };
 
@@ -38,16 +38,16 @@ function fakeProviders() {
 
 async function setup(script: AIMessage[] = []) {
   const providers = fakeProviders();
-  const { tenants, model } = createTestTenants(script, [], undefined, {
+  const { projects, model } = createTestProjects(script, [], undefined, {
     integrations: {
       redirectUrl: "https://osiris.test/integration-callback",
       clients: { google: { clientId: "g-id", clientSecret: "g-secret" }, microsoft: { clientId: "m-id", clientSecret: "m-secret" } },
       fetch: providers.fetchFn,
     },
   });
-  const app = await createTestApp(tenants);
+  const app = await createTestApp(projects);
   const as = (user: string) => (path: string, init: RequestInit = {}) =>
-    app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${user}`, "x-tenant-id": "acme", "content-type": "application/json", ...init.headers } });
+    app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${user}`, "x-project-id": "acme", "content-type": "application/json", ...init.headers } });
   const connect = async (who: ReturnType<typeof as>, provider: "google" | "microsoft") => {
     const { authorizationUrl } = await (await who(`/integrations/${provider}/connect`, { method: "POST" })).json();
     const url = new URL(authorizationUrl);
@@ -55,13 +55,13 @@ async function setup(script: AIMessage[] = []) {
     const res = await who("/integrations/callback", { method: "POST", body: JSON.stringify({ state: url.searchParams.get("state"), code: "the-code" }) });
     return { url, res };
   };
-  return { ...providers, tenants, model, as, connect };
+  return { ...providers, projects, model, as, connect };
 }
 
 describe("Google and Microsoft accounts", () => {
   it("connects with PKCE, keeps the tokens sealed and gives the tools only to who connected", async () => {
-    const { as, connect, tenants, model, state } = await setup([new AIMessage("Ahoj."), new AIMessage("Ahoj.")]);
-    const bob = as("bob:tenant=acme");
+    const { as, connect, projects, model, state } = await setup([new AIMessage("Ahoj."), new AIMessage("Ahoj.")]);
+    const bob = as("bob:project=acme");
     const { url, res } = await connect(bob, "google");
     expect(url.origin).toBe("https://accounts.google.com");
     expect(Object.fromEntries(url.searchParams)).toMatchObject({
@@ -78,13 +78,13 @@ describe("Google and Microsoft accounts", () => {
       { provider: "google", account: "bob@gmail.com", connected: true },
       { provider: "microsoft", account: null, connected: false },
     ]);
-    const acme = await tenants.get("acme");
+    const acme = await projects.get("acme");
     expect(String((await acme.db.execute("SELECT data_enc FROM integrations")).rows[0]!.data_enc)).not.toContain("access-1");
 
     // The model sees Google's tools in Bob's runs, not in Eva's.
     const bound: string[][] = [];
     model.bindTools = ((tools: { name: string }[]) => (bound.push(tools.map((t) => t.name)), model)) as never;
-    for (const who of [bob, as("eva:tenant=acme")]) {
+    for (const who of [bob, as("eva:project=acme")]) {
       const { id } = await (await who("/threads", { method: "POST" })).json();
       await (await who(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
     }
@@ -94,7 +94,7 @@ describe("Google and Microsoft accounts", () => {
 
     // A sign-in can't be finished by someone else, and disconnecting forgets the account.
     const { authorizationUrl } = await (await bob("/integrations/microsoft/connect", { method: "POST" })).json();
-    const stolen = await as("eva:tenant=acme")("/integrations/callback", {
+    const stolen = await as("eva:project=acme")("/integrations/callback", {
       method: "POST",
       body: JSON.stringify({ state: new URL(authorizationUrl).searchParams.get("state"), code: "the-code" }),
     });
@@ -104,12 +104,12 @@ describe("Google and Microsoft accounts", () => {
   });
 
   it("replies in a Gmail thread, refreshing an expired token first", async () => {
-    const { as, connect, tenants, calls, state } = await setup();
+    const { as, connect, projects, calls, state } = await setup();
     state.expiresIn = 0;
-    await connect(as("bob:tenant=acme"), "google");
-    const acme = await tenants.get("acme");
+    await connect(as("bob:project=acme"), "google");
+    const acme = await projects.get("acme");
     const send = acme.builtinTools.find(([, t]) => t.name === "google_mail_send")![1];
-    const config = { configurable: { thread_id: "t", tenant_id: "acme", user_id: "dev:bob", role: "member", channel: "web" } };
+    const config = { configurable: { thread_id: "t", project_id: "acme", user_id: "dev:bob", role: "member", channel: "web" } };
     expect(await send.invoke({ to: "jan@firma.cz", subject: "Re: Nabídka – koupelna", body: "Dobrý den, posílám nabídku.", reply_to_id: "m1" }, config)).toBe(
       "Odesláno (id sent-1).",
     );
@@ -126,11 +126,11 @@ describe("Google and Microsoft accounts", () => {
   });
 
   it("finds Outlook contacts by name or number", async () => {
-    const { as, connect, tenants } = await setup();
-    await connect(as("bob:tenant=acme"), "microsoft");
-    const acme = await tenants.get("acme");
+    const { as, connect, projects } = await setup();
+    await connect(as("bob:project=acme"), "microsoft");
+    const acme = await projects.get("acme");
     const search = acme.builtinTools.find(([, t]) => t.name === "microsoft_contacts_search")![1];
-    const config = { configurable: { thread_id: "t", tenant_id: "acme", user_id: "dev:bob", role: "member", channel: "web" } };
+    const config = { configurable: { thread_id: "t", project_id: "acme", user_id: "dev:bob", role: "member", channel: "web" } };
     expect(await search.invoke({ query: "777111" }, config)).toBe("Jan Dvořák · +420 777 111 222 · id c1");
     // Not connected: a sentence for the model, not a failure.
     const eva = { configurable: { ...config.configurable, user_id: "dev:eva" } };

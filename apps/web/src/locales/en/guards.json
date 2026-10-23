@@ -1,12 +1,12 @@
 {
   "levels": {
     "system": "System",
-    "tenant": "Organization",
+    "project": "Organization",
     "user": "Mine",
     "assistant": "Assistant"
   },
   "places": {
-    "system": "System (all tenants)",
+    "system": "System (all projects)",
     "assistant": "Assistant {{name}}"
   },
   "none": "None.",
@@ -17,7 +17,7 @@
   "confirmDelete": "Delete the check {{name}}?",
   "new": "New check",
   "systemAdminOnly": "only a system administrator changes it",
-  "tenantAdminOnly": "only a tenant administrator changes it",
+  "projectAdminOnly": "only a project administrator changes it",
   "target": "Who it applies to",
   "name": "Name (lowercase letters, digits, hyphens)",
   "namePlaceholder": "for example no-politics",

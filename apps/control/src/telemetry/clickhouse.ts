@@ -304,7 +304,7 @@ export async function webSummary(ch: ClickHouse, sites: string[] | null, r: Rang
   const row = (x: { key: string; detail: string; pageviews: string; visitors: string }): WebTopRow => ({ key: x.key, detail: x.detail, pageviews: n(x.pageviews), visitors: n(x.visitors) });
   const t = totals[0];
   return {
-    sites: perSite.map((x) => ({ site: x.site, tenant: owner(x.site), pageviews: n(x.pageviews), visitors: n(x.visitors) })),
+    sites: perSite.map((x) => ({ site: x.site, project: owner(x.site), pageviews: n(x.pageviews), visitors: n(x.visitors) })),
     totals: { pageviews: n(t?.pageviews), visitors: n(t?.visitors), events: n(t?.events) },
     step: hourly ? "hour" : "day",
     series: series.map((x) => ({ t: n(x.t), pageviews: n(x.pageviews), visitors: n(x.visitors) })),
@@ -322,7 +322,7 @@ export async function webSummary(ch: ClickHouse, sites: string[] | null, r: Rang
 export class WebAnalytics {
   constructor(private readonly ch: ClickHouse) {}
 
-  /** One site's stats; `allowed` limits which sites there are to choose from (a tenant's own). */
+  /** One site's stats; `allowed` limits which sites there are to choose from (a project's own). */
   async stats(site: string | undefined, r: Range, allowed?: string[]): Promise<WebStats> {
     const known = (await this.ch.query<{ site: string }>("SELECT DISTINCT site FROM web.stats_daily ORDER BY site")).map((x) => x.site);
     const sites = allowed ? known.filter((s) => allowed.includes(s)) : known;

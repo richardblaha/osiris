@@ -1,39 +1,39 @@
-import { FEATURES, NO_QUOTAS, type ReportedUsage, type AdminUser, type Guard, type SystemDefaults, type DirectoryUser, type TenantQuotas, type Role, type TenantFeatures, type TenantMember, type TenantSummary } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type ReportedUsage, type AdminUser, type Guard, type SystemDefaults, type DirectoryUser, type ProjectQuotas, type Role, type ProjectFeatures, type ProjectMember, type ProjectSummary } from "@osiris/shared";
 import { CLAIMS, claimList, isAuthorized, SYSTEM_ADMIN_ROLE, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
 import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
-import type { Orchestrator, TenantSpec } from "./orchestrator/types.ts";
+import type { Orchestrator, ProjectSpec } from "./orchestrator/types.ts";
 import type { UserDirectory, UserRecord } from "./users.ts";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
 
-export interface TenantRow {
+export interface ProjectRow {
   id: string;
   name: string;
   status: "active" | "archived";
-  features: TenantFeatures;
+  features: ProjectFeatures;
   idleMinutes: number;
   storageGb: number;
   createdAt: number;
-  /** Public URL of the tenant's logo, or null. */
+  /** Public URL of the project's logo, or null. */
   logo: string | null;
-  /** Built-in tools switched off for the tenant, by name. */
+  /** Built-in tools switched off for the project, by name. */
   disabledTools: string[];
-  quotas: TenantQuotas;
-  /** Web analytics sites the tenant sees besides those of its domains (system admins choose). */
+  quotas: ProjectQuotas;
+  /** Web analytics sites the project sees besides those of its domains (system admins choose). */
   webSites: string[];
   /** What its runtime last reported of its use, and when (epoch ms). */
   usage: (ReportedUsage & { at: number }) | null;
 }
 
-export class TenantExistsError extends Error {}
+export class ProjectExistsError extends Error {}
 /** A quota is full; the message can be shown. */
 export class QuotaError extends LocalizedError {}
-export class TenantNotFoundError extends Error {}
+export class ProjectNotFoundError extends Error {}
 
-/** Everything is on until a system admin switches it off, so features added later reach existing tenants. */
-export const withDefaults = (stored: Partial<TenantFeatures>): TenantFeatures =>
-  Object.fromEntries(FEATURES.map((f) => [f, stored[f] ?? true])) as TenantFeatures;
+/** Everything is on until a system admin switches it off, so features added later reach existing projects. */
+export const withDefaults = (stored: Partial<ProjectFeatures>): ProjectFeatures =>
+  Object.fromEntries(FEATURES.map((f) => [f, stored[f] ?? true])) as ProjectFeatures;
 
 interface Row {
   id: string;
@@ -51,54 +51,54 @@ interface Row {
   usage_at: number | null;
 }
 
-const logoKey = (id: string, version: string) => `tenant-logos/${id}/${version}`;
+const logoKey = (id: string, version: string) => `project-logos/${id}/${version}`;
 
-const toTenant = (r: Row, publicUrl = ""): TenantRow => ({
+const toProject = (r: Row, publicUrl = ""): ProjectRow => ({
   id: r.id,
   name: r.name,
   status: r.status === "archived" ? "archived" : "active",
-  features: withDefaults(JSON.parse(r.features) as Partial<TenantFeatures>),
+  features: withDefaults(JSON.parse(r.features) as Partial<ProjectFeatures>),
   idleMinutes: Number(r.idle_minutes),
   storageGb: Number(r.storage_gb),
   createdAt: Number(r.created_at),
-  logo: r.logo ? `${publicUrl}/auth/tenant-logos/${r.id}/${r.logo}` : null,
+  logo: r.logo ? `${publicUrl}/auth/project-logos/${r.id}/${r.logo}` : null,
   disabledTools: JSON.parse(r.disabled_tools ?? "[]") as string[],
-  quotas: { ...NO_QUOTAS, ...(JSON.parse(r.quotas ?? "{}") as Partial<TenantQuotas>) },
+  quotas: { ...NO_QUOTAS, ...(JSON.parse(r.quotas ?? "{}") as Partial<ProjectQuotas>) },
   webSites: JSON.parse(r.web_sites ?? "[]") as string[],
   usage: r.usage ? { ...(JSON.parse(r.usage) as ReportedUsage), at: Number(r.usage_at) } : null,
 });
 
-/** Tenants in the central database. Members are not stored here: they are the users whose claims name the tenant. */
-export class TenantStore {
+/** Projects in the central database. Members are not stored here: they are the users whose claims name the project. */
+export class ProjectStore {
   constructor(
     private readonly db: Db,
     /** Where logos are kept and the browser reaches them; tools without it (the legacy import) don't touch logos. */
     private readonly logos?: { objects: ObjectStore; publicUrl: string },
   ) {}
 
-  private toTenant = (r: Row) => toTenant(r, this.logos?.publicUrl);
+  private toProject = (r: Row) => toProject(r, this.logos?.publicUrl);
 
-  async list({ archived = false } = {}): Promise<TenantRow[]> {
-    const rows = await this.db.query<Row>(`SELECT * FROM tenants ${archived ? "" : "WHERE status = 'active'"} ORDER BY id`);
-    return rows.map(this.toTenant);
+  async list({ archived = false } = {}): Promise<ProjectRow[]> {
+    const rows = await this.db.query<Row>(`SELECT * FROM projects ${archived ? "" : "WHERE status = 'active'"} ORDER BY id`);
+    return rows.map(this.toProject);
   }
 
-  async get(id: string, { fresh = false } = {}): Promise<TenantRow | null> {
-    const [row] = await this.db.query<Row>("SELECT * FROM tenants WHERE id = ?", [id], { fresh });
-    return row ? this.toTenant(row) : null;
+  async get(id: string, { fresh = false } = {}): Promise<ProjectRow | null> {
+    const [row] = await this.db.query<Row>("SELECT * FROM projects WHERE id = ?", [id], { fresh });
+    return row ? this.toProject(row) : null;
   }
 
-  /** What new tenants and users start with; until a system admin sets them, everything on and no limits. */
+  /** What new projects and users start with; until a system admin sets them, everything on and no limits. */
   async defaults(): Promise<SystemDefaults> {
     const [r] = await this.db.query<{ value: string }>("SELECT value FROM system_settings WHERE key = 'defaults'");
     const stored = r ? (JSON.parse(r.value) as Partial<SystemDefaults>) : {};
     return {
-      tenant: {
+      project: {
         idleMinutes: 30,
         storageGb: 5,
-        ...stored.tenant,
-        features: withDefaults(stored.tenant?.features ?? {}),
-        quotas: { ...NO_QUOTAS, ...stored.tenant?.quotas },
+        ...stored.project,
+        features: withDefaults(stored.project?.features ?? {}),
+        quotas: { ...NO_QUOTAS, ...stored.project?.quotas },
       },
       user: { address: "auto", language: "auto", signature: "", instructions: "", persona: null, ...stored.user },
     };
@@ -114,7 +114,7 @@ export class TenantStore {
     ]);
   }
 
-  /** Rules every tenant's assistant keeps to, above the tenant's, the users' and the public assistants' own. */
+  /** Rules every project's assistant keeps to, above the project's, the users' and the public assistants' own. */
   async systemGuards(): Promise<Guard[]> {
     return this.db.query<Guard>("SELECT name, description, rule FROM system_guards ORDER BY name");
   }
@@ -149,43 +149,43 @@ export class TenantStore {
     ]);
   }
 
-  /** Replaces the tenant's logo; a new version gets a new URL, so browsers may cache each one for good. */
+  /** Replaces the project's logo; a new version gets a new URL, so browsers may cache each one for good. */
   async setLogo(id: string, image: Uint8Array, mime: string) {
     if (!this.logos) throw new Error("Logos are not configured");
-    const [current] = await this.db.query<{ logo: string | null }>("SELECT logo FROM tenants WHERE id = ?", [id]);
+    const [current] = await this.db.query<{ logo: string | null }>("SELECT logo FROM projects WHERE id = ?", [id]);
     const version = randomUUID();
     await this.logos.objects.put(logoKey(id, version), image, mime);
-    await this.db.execute([run("UPDATE tenants SET logo = ?, updated_at = ? WHERE id = ?", version, Date.now(), id)]);
+    await this.db.execute([run("UPDATE projects SET logo = ?, updated_at = ? WHERE id = ?", version, Date.now(), id)]);
     if (current?.logo) await this.logos.objects.delete([logoKey(id, current.logo)]).catch(() => {});
   }
 
-  /** The stored logo of a tenant, if `version` is the current one. */
+  /** The stored logo of a project, if `version` is the current one. */
   async logo(id: string, version: string): ReturnType<ObjectStore["get"]> {
-    const [r] = await this.db.query<{ logo: string | null }>("SELECT logo FROM tenants WHERE id = ?", [id]);
+    const [r] = await this.db.query<{ logo: string | null }>("SELECT logo FROM projects WHERE id = ?", [id]);
     if (!this.logos || !r?.logo || r.logo !== version) return null;
     return this.logos.objects.get(logoKey(id, version));
   }
 
-  async active(id: string): Promise<TenantRow> {
-    const tenant = await this.get(id);
-    if (!tenant || tenant.status !== "active") throw new TenantNotFoundError(`Tenant ${id} not found`);
-    return tenant;
+  async active(id: string): Promise<ProjectRow> {
+    const project = await this.get(id);
+    if (!project || project.status !== "active") throw new ProjectNotFoundError(`Project ${id} not found`);
+    return project;
   }
 
-  /** Creates the tenant, or brings back an archived one under the same id. */
+  /** Creates the project, or brings back an archived one under the same id. */
   async create(
     id: string,
     name: string,
-    features: Partial<TenantFeatures> = {},
-    start: { idleMinutes: number; storageGb: number; quotas: TenantQuotas } = { idleMinutes: 30, storageGb: 5, quotas: NO_QUOTAS },
-  ): Promise<TenantRow> {
+    features: Partial<ProjectFeatures> = {},
+    start: { idleMinutes: number; storageGb: number; quotas: ProjectQuotas } = { idleMinutes: 30, storageGb: 5, quotas: NO_QUOTAS },
+  ): Promise<ProjectRow> {
     const now = Date.now();
     const [result] = await this.db.execute([
       run(
-        `INSERT INTO tenants (id, name, status, features, quotas, idle_minutes, storage_gb, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?)
+        `INSERT INTO projects (id, name, status, features, quotas, idle_minutes, storage_gb, created_at, updated_at) VALUES (?, ?, 'active', ?, ?, ?, ?, ?, ?)
          ON CONFLICT (id) DO UPDATE SET name = excluded.name, status = 'active', features = excluded.features, quotas = excluded.quotas,
            idle_minutes = excluded.idle_minutes, updated_at = excluded.updated_at
-         WHERE tenants.status = 'archived'`,
+         WHERE projects.status = 'archived'`,
         id,
         name,
         JSON.stringify(features),
@@ -196,7 +196,7 @@ export class TenantStore {
         now,
       ),
     ]);
-    if (!result?.rowsAffected) throw new TenantExistsError(`Tenant ${id} already exists`);
+    if (!result?.rowsAffected) throw new ProjectExistsError(`Project ${id} already exists`);
     return (await this.get(id, { fresh: true }))!;
   }
 
@@ -204,27 +204,27 @@ export class TenantStore {
     id: string,
     changes: {
       name?: string;
-      features?: Partial<TenantFeatures>;
+      features?: Partial<ProjectFeatures>;
       idleMinutes?: number;
       storageGb?: number;
       disabledTools?: string[];
-      quotas?: Partial<TenantQuotas>;
+      quotas?: Partial<ProjectQuotas>;
       webSites?: string[];
     },
   ) {
-    const tenant = await this.active(id);
-    const features = changes.features ? { ...tenant.features, ...changes.features } : tenant.features;
+    const project = await this.active(id);
+    const features = changes.features ? { ...project.features, ...changes.features } : project.features;
     await this.db.execute([
       run(
-        "UPDATE tenants SET name = ?, features = ?, quotas = ?, disabled_tools = ?, web_sites = ?, idle_minutes = ?, storage_gb = ?, updated_at = ? WHERE id = ?",
-        changes.name ?? tenant.name,
+        "UPDATE projects SET name = ?, features = ?, quotas = ?, disabled_tools = ?, web_sites = ?, idle_minutes = ?, storage_gb = ?, updated_at = ? WHERE id = ?",
+        changes.name ?? project.name,
         JSON.stringify(features),
-        JSON.stringify({ ...tenant.quotas, ...changes.quotas }),
-        JSON.stringify([...new Set(changes.disabledTools ?? tenant.disabledTools)].sort()),
-        JSON.stringify([...new Set(changes.webSites ?? tenant.webSites)].sort()),
-        changes.idleMinutes ?? tenant.idleMinutes,
+        JSON.stringify({ ...project.quotas, ...changes.quotas }),
+        JSON.stringify([...new Set(changes.disabledTools ?? project.disabledTools)].sort()),
+        JSON.stringify([...new Set(changes.webSites ?? project.webSites)].sort()),
+        changes.idleMinutes ?? project.idleMinutes,
         // A volume can grow but not shrink.
-        Math.max(tenant.storageGb, changes.storageGb ?? tenant.storageGb),
+        Math.max(project.storageGb, changes.storageGb ?? project.storageGb),
         Date.now(),
         id,
       ),
@@ -234,47 +234,47 @@ export class TenantStore {
 
   /** What the runtime reports of its use; it reports only changes, so this writes only then. */
   async reportUsage(id: string, usage: ReportedUsage) {
-    await this.db.execute([run("UPDATE tenants SET usage = ?, usage_at = ? WHERE id = ?", JSON.stringify(usage), Date.now(), id)]);
+    await this.db.execute([run("UPDATE projects SET usage = ?, usage_at = ? WHERE id = ?", JSON.stringify(usage), Date.now(), id)]);
   }
 
-  /** Each tenant's analytics sites: the ones a system admin gave it and those of its domains (without www.). */
+  /** Each project's analytics sites: the ones a system admin gave it and those of its domains (without www.). */
   async webSites(): Promise<Map<string, string[]>> {
-    const [tenants, domains] = await Promise.all([this.list(), this.db.query<{ domain: string; tenant_id: string }>("SELECT domain, tenant_id FROM domains")]);
-    const by = new Map(tenants.map((t) => [t.id, new Set(t.webSites)]));
-    for (const d of domains) by.get(d.tenant_id)?.add(d.domain.replace(/^www\./, ""));
+    const [projects, domains] = await Promise.all([this.list(), this.db.query<{ domain: string; project_id: string }>("SELECT domain, project_id FROM domains")]);
+    const by = new Map(projects.map((t) => [t.id, new Set(t.webSites)]));
+    for (const d of domains) by.get(d.project_id)?.add(d.domain.replace(/^www\./, ""));
     return new Map([...by].map(([id, sites]) => [id, [...sites].sort()]));
   }
 
   async archive(id: string) {
-    await this.db.execute([run("UPDATE tenants SET status = 'archived', updated_at = ? WHERE id = ?", Date.now(), id)]);
+    await this.db.execute([run("UPDATE projects SET status = 'archived', updated_at = ? WHERE id = ?", Date.now(), id)]);
   }
 
-  /** What the operator should run for the tenant (the `Tenant` resource spec). */
-  async spec(id: string): Promise<TenantSpec> {
-    const tenant = await this.get(id, { fresh: true });
-    if (!tenant) throw new TenantNotFoundError(`Tenant ${id} not found`);
+  /** What the operator should run for the project (the `Project` resource spec). */
+  async spec(id: string): Promise<ProjectSpec> {
+    const project = await this.get(id, { fresh: true });
+    if (!project) throw new ProjectNotFoundError(`Project ${id} not found`);
     const domains = await this.db.query<{ domain: string }>(
-      "SELECT domain FROM domains WHERE tenant_id = ? AND status = 'verified' ORDER BY domain",
+      "SELECT domain FROM domains WHERE project_id = ? AND status = 'verified' ORDER BY domain",
       [id],
       { fresh: true },
     );
     return {
       id,
-      name: tenant.name,
-      suspended: tenant.status === "archived",
-      idleMinutes: tenant.idleMinutes,
-      storageGb: tenant.storageGb,
+      name: project.name,
+      suspended: project.status === "archived",
+      idleMinutes: project.idleMinutes,
+      storageGb: project.storageGb,
       domains: domains.map((d) => d.domain),
     };
   }
 }
 
-/** The user's role in a tenant from their claims; `tenant-admin` wins over `tenant`. */
+/** The user's role in a project from their claims; `project-admin` wins over `project`. */
 export const roleIn = (user: UserRecord, id: string): Role | null =>
-  claimList(user.claims[CLAIMS.tenantAdmin]).includes(id) ? "admin" : claimList(user.claims[CLAIMS.tenant]).includes(id) ? "member" : null;
+  claimList(user.claims[CLAIMS.projectAdmin]).includes(id) ? "admin" : claimList(user.claims[CLAIMS.project]).includes(id) ? "member" : null;
 
 /** The claim value with `id` added or removed, or null when nothing is left. */
-const withTenant = (value: string | undefined, id: string, present: boolean) => {
+const withProject = (value: string | undefined, id: string, present: boolean) => {
   const ids = claimList(value).filter((t) => t !== id);
   if (present) ids.push(id);
   return ids.length ? ids.join(",") : null;
@@ -282,27 +282,27 @@ const withTenant = (value: string | undefined, id: string, present: boolean) => 
 
 export const userAccess = (user: UserRecord): Access => ({
   roles: claimList(user.claims[CLAIMS.role]),
-  tenants: claimList(user.claims[CLAIMS.tenant]),
-  adminTenants: claimList(user.claims[CLAIMS.tenantAdmin]),
+  projects: claimList(user.claims[CLAIMS.project]),
+  adminProjects: claimList(user.claims[CLAIMS.projectAdmin]),
 });
 
 const byName = (a: { name: string | null; email: string | null }, b: { name: string | null; email: string | null }) =>
   (a.name ?? a.email ?? "").localeCompare(b.name ?? b.email ?? "", "cs");
 
 /**
- * Tenants with their members, kept in step with the cluster: every change is applied to the tenant's `Tenant`
- * resource, from which the operator runs (or suspends) the tenant's runtime.
+ * Projects with their members, kept in step with the cluster: every change is applied to the project's `Project`
+ * resource, from which the operator runs (or suspends) the project's runtime.
  */
-export class TenantDirectory {
+export class ProjectDirectory {
   constructor(
-    readonly store: TenantStore,
+    readonly store: ProjectStore,
     private readonly users: UserDirectory,
     private readonly orchestrator: Orchestrator,
   ) {}
 
   private activeUsers = async () => (await this.users.list()).filter((u) => !u.disabled);
 
-  async list(): Promise<TenantSummary[]> {
+  async list(): Promise<ProjectSummary[]> {
     const all = await this.activeUsers();
     return (await this.store.list()).map((t) => ({ id: t.id, name: t.name, logo: t.logo, members: all.filter((u) => roleIn(u, t.id)).length }));
   }
@@ -311,35 +311,35 @@ export class TenantDirectory {
     await this.orchestrator.apply(await this.store.spec(id));
   }
 
-  /** A new tenant starts with the system's defaults (features, quotas, sleep, volume), the given features over them. */
-  async create(id: string, name: string, features?: Partial<TenantFeatures>) {
-    const { tenant: d } = await this.store.defaults();
-    const tenant = await this.store.create(id, name, { ...d.features, ...features }, d);
+  /** A new project starts with the system's defaults (features, quotas, sleep, volume), the given features over them. */
+  async create(id: string, name: string, features?: Partial<ProjectFeatures>) {
+    const { project: d } = await this.store.defaults();
+    const project = await this.store.create(id, name, { ...d.features, ...features }, d);
     await this.sync(id);
-    return tenant;
+    return project;
   }
 
-  async update(id: string, changes: Parameters<TenantStore["update"]>[1]) {
-    const tenant = await this.store.update(id, changes);
+  async update(id: string, changes: Parameters<ProjectStore["update"]>[1]) {
+    const project = await this.store.update(id, changes);
     await this.sync(id);
-    return tenant;
+    return project;
   }
 
-  /** Removes the tenant from everyone's claims and archives it: the runtime is suspended, its volume and backups kept. */
+  /** Removes the project from everyone's claims and archives it: the runtime is suspended, its volume and backups kept. */
   async remove(id: string) {
     await this.store.active(id);
     for (const user of await this.users.list()) {
       if (!roleIn(user, id)) continue;
       await this.users.setClaims(user.id, {
-        [CLAIMS.tenant]: withTenant(user.claims[CLAIMS.tenant], id, false),
-        [CLAIMS.tenantAdmin]: withTenant(user.claims[CLAIMS.tenantAdmin], id, false),
+        [CLAIMS.project]: withProject(user.claims[CLAIMS.project], id, false),
+        [CLAIMS.projectAdmin]: withProject(user.claims[CLAIMS.projectAdmin], id, false),
       });
     }
     await this.store.archive(id);
     await this.sync(id);
   }
 
-  async members(id: string): Promise<TenantMember[]> {
+  async members(id: string): Promise<ProjectMember[]> {
     await this.store.active(id);
     return (await this.activeUsers())
       .flatMap((u) => {
@@ -349,25 +349,25 @@ export class TenantDirectory {
       .sort(byName);
   }
 
-  /** Makes the user a member or admin of the tenant, or removes them (`null`). */
+  /** Makes the user a member or admin of the project, or removes them (`null`). */
   async setRole(id: string, userId: string, role: Role | null) {
-    const tenant = await this.store.active(id);
+    const project = await this.store.active(id);
     const user = await this.users.get(userId);
     // A new member needs room; changing a member's role or removing them always works.
-    if (role && !roleIn(user, id) && tenant.quotas.members !== null && (await this.memberCount(id)) >= tenant.quotas.members) {
-      throw new QuotaError("errors.quota.members", { count: tenant.quotas.members });
+    if (role && !roleIn(user, id) && project.quotas.members !== null && (await this.memberCount(id)) >= project.quotas.members) {
+      throw new QuotaError("errors.quota.members", { count: project.quotas.members });
     }
     await this.users.setClaims(userId, {
       // A user is in one of the two claims only.
-      [CLAIMS.tenant]: withTenant(user.claims[CLAIMS.tenant], id, role === "member"),
-      [CLAIMS.tenantAdmin]: withTenant(user.claims[CLAIMS.tenantAdmin], id, role === "admin"),
-      // A new member also needs the Osiris role, or the tenant claim alone would get them nowhere.
+      [CLAIMS.project]: withProject(user.claims[CLAIMS.project], id, role === "member"),
+      [CLAIMS.projectAdmin]: withProject(user.claims[CLAIMS.projectAdmin], id, role === "admin"),
+      // A new member also needs the Osiris role, or the project claim alone would get them nowhere.
       ...(role && !isAuthorized(userAccess(user)) ? { [CLAIMS.role]: USER_ROLE } : {}),
     });
   }
 
   /**
-   * Adds a person by email: an existing user joins the tenant, otherwise a new user is created. New users get a
+   * Adds a person by email: an existing user joins the project, otherwise a new user is created. New users get a
    * one-time sign-in link, as they have no way to sign in yet (they set one up in their profile, or use a Google or
    * Facebook account with the same address).
    */
@@ -383,8 +383,8 @@ export class TenantDirectory {
     return { userId: user.id, created: true as const, loginLink: await this.users.loginLink(user.id, 72, "invite") };
   }
 
-  /** Users a system admin can add to a tenant. */
-  /** Active users whose claims name the tenant. */
+  /** Users a system admin can add to a project. */
+  /** Active users whose claims name the project. */
   async memberCount(id: string): Promise<number> {
     return (await this.activeUsers()).filter((u) => roleIn(u, id)).length;
   }
@@ -402,7 +402,7 @@ export class TenantDirectory {
         picture: u.picture,
         disabled: u.disabled,
         systemAdmin: claimList(u.claims[CLAIMS.role]).includes(SYSTEM_ADMIN_ROLE),
-        tenants: active.flatMap((t) => {
+        projects: active.flatMap((t) => {
           const role = roleIn(u, t.id);
           return role ? [{ id: t.id, role }] : [];
         }),

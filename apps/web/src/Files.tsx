@@ -68,16 +68,16 @@ function Icon({ entry }: { entry: Pick<FileEntry, "type" | "name"> }) {
 }
 
 /**
- * Files folder by folder: the tenant's by default, or another `location` (a chat's scratchpad). `root` limits the
+ * Files folder by folder: the project's by default, or another `location` (a chat's scratchpad). `root` limits the
  * view to one folder (a website's template), `hide` leaves out top-level folders that have views of their own.
  */
-export function Files({ root = "", title = t("app:nav.files"), intro, hide = [], location = { scope: "tenant" }, readOnly = false }: {
+export function Files({ root = "", title = t("app:nav.files"), intro, hide = [], location = { scope: "project" }, readOnly = false }: {
   root?: string;
   title?: string;
   intro?: ReactNode;
   hide?: string[];
   location?: { scope: FileScope; thread?: string };
-  /** The tenant's files for a member: read, downloaded and copied to their own, never changed. */
+  /** The project's files for a member: read, downloaded and copied to their own, never changed. */
   readOnly?: boolean;
 }) {
   const loc = location;
@@ -164,7 +164,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
     }
     await load();
   };
-  /** The viewer's own copy at the same path among their files, where it replaces the tenant's for them. */
+  /** The viewer's own copy at the same path among their files, where it replaces the project's for them. */
   const copyOwn = (path: string) =>
     attempt(setBusy, setError, async () => {
       const data = await api.downloadFile({ ...loc, path });
@@ -276,7 +276,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
                 className="field"
               />
               <button disabled={busy} className="btn-primary text-sm">
-                {editing.kind === "rename" ? t("tenants:rename") : t("files:create")}
+                {editing.kind === "rename" ? t("projects:rename") : t("files:create")}
               </button>
               <button type="button" onClick={() => setEditing(undefined)} className="btn-secondary text-sm">
                 {t("cancel")}
@@ -391,7 +391,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
                   ) : (
                     <>
                       <button onClick={() => startEdit({ kind: "rename", entry: e })} className="btn-link">
-                        {t("tenants:rename")}
+                        {t("projects:rename")}
                       </button>
                       <button onClick={() => remove(e)} className="btn-danger">
                         {t("delete")}
@@ -480,15 +480,15 @@ function highlight(snippet: string) {
 }
 
 /**
- * Soubory: the tenant's files and the viewer's own, as two tabs. Members read the tenant's and copy a file to their own,
- * where it replaces the tenant's for them (the assistant reads their copy).
+ * Soubory: the project's files and the viewer's own, as two tabs. Members read the project's and copy a file to their own,
+ * where it replaces the project's for them (the assistant reads their copy).
  */
 export function LayeredFiles({ isAdmin, ...props }: { isAdmin: boolean; hide?: string[]; intro?: ReactNode }) {
-  const [tab, setTab] = useState<"tenant" | "personal">("tenant");
+  const [tab, setTab] = useState<"project" | "personal">("project");
   return (
     <div className="flex h-full flex-col">
       <nav aria-label={t("app:nav.files")} className="flex shrink-0 items-center gap-2 border-b border-line px-6 py-3">
-        {(["tenant", "personal"] as const).map((s) => (
+        {(["project", "personal"] as const).map((s) => (
           <button key={s} type="button" aria-current={tab === s ? "page" : undefined} data-active={tab === s} onClick={() => setTab(s)} className="list-row rounded px-3 py-1.5 text-sm">
             {t(`files:tabs.${s}`)}
           </button>
@@ -500,8 +500,8 @@ export function LayeredFiles({ isAdmin, ...props }: { isAdmin: boolean; hide?: s
           {...props}
           title={t(`files:tabs.${tab}`)}
           location={{ scope: tab }}
-          readOnly={tab === "tenant" && !isAdmin}
-          hide={tab === "tenant" ? props.hide : undefined}
+          readOnly={tab === "project" && !isAdmin}
+          hide={tab === "project" ? props.hide : undefined}
         />
       </div>
     </div>

@@ -1,5 +1,5 @@
 {
-  "adminOnly": "The tenant administrator manages and publishes the organization's websites.",
+  "adminOnly": "The project administrator manages and publishes the organization's websites.",
   "intro": "A website is a VitePress template (pages in Markdown). It is built into www/ and published to hosting over SFTP.",
   "targets": "Publishing targets",
   "addTarget": "Add publishing target",

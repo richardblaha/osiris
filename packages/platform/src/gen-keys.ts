@@ -1,7 +1,7 @@
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { generateInternalKeys } from "./internal-auth.ts";
 
-// Prints new secrets as .env lines: the internal JWT key pair (PEM, newlines as \n), the master key that tenant keys
+// Prints new secrets as .env lines: the internal JWT key pair (PEM, newlines as \n), the master key that project keys
 // are derived from, and control's sign-in keys (ID token signing key, cookie and TOTP secret). Configs turn \n back
 // into newlines.
 const { privateKey, publicKey } = await generateInternalKeys();

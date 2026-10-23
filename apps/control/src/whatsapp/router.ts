@@ -1,11 +1,11 @@
 import type { ChatQuestion, Role } from "@osiris/shared";
-import { accessibleTenants, isAuthorized, type Membership } from "@osiris/platform/claims.ts";
+import { accessibleProjects, isAuthorized, type Membership } from "@osiris/platform/claims.ts";
 import { isUnreachable, ServiceError } from "@osiris/platform/http.ts";
-import { tenantAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
+import { projectAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
 import { configuredLocale, translate, type Params } from "@osiris/platform/i18n.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
-import type { TenantStore } from "../tenants.ts";
+import type { ProjectStore } from "../projects.ts";
 import type { UserDirectory } from "../users.ts";
 import { WhatsAppApiError, type WhatsAppClient } from "./cloud-api.ts";
 import type { Inbox, InboxMessage } from "./inbox.ts";
@@ -19,8 +19,8 @@ const MAX_ATTEMPTS = 3;
 const RUN_TIMEOUT_MS = 5 * 60_000;
 
 /**
- * Handles queued WhatsApp messages: finds the user by number (claim `phone_number`), the tenant from their
- * claims and their `/tenant` choice, and passes the text to that tenant's runtime, which runs the agent in the user's
+ * Handles queued WhatsApp messages: finds the user by number (claim `phone_number`), the project from their
+ * claims and their `/project` choice, and passes the text to that project's runtime, which runs the agent in the user's
  * WhatsApp thread and returns the reply. Runtimes have no WhatsApp token; only control sends.
  */
 export class WhatsAppRouter {
@@ -29,7 +29,7 @@ export class WhatsAppRouter {
       db: Db;
       inbox: Inbox;
       users: UserDirectory;
-      tenants: TenantStore;
+      projects: ProjectStore;
       phones: PhoneVerification;
       client: WhatsAppClient;
       runtimes: RuntimeClient;
@@ -71,25 +71,25 @@ export class WhatsAppRouter {
 
     const user = await userByPhone(this.deps.users, message.from);
     if (!user || !isAuthorized(user.access)) return this.reply(message, t("whatsapp.notRegistered"));
-    const active = (await this.deps.tenants.list()).map((t) => t.id);
-    const memberships = accessibleTenants(user.access, active).filter((m) => active.includes(m.tenantId));
-    if (!memberships.length) return this.reply(message, t("whatsapp.noTenant"));
+    const active = (await this.deps.projects.list()).map((t) => t.id);
+    const memberships = accessibleProjects(user.access, active).filter((m) => active.includes(m.projectId));
+    if (!memberships.length) return this.reply(message, t("whatsapp.noProject"));
     if (!(["text", "interactive", "button"].includes(message.type) && text) && !message.media) return this.reply(message, t("whatsapp.unsupported"));
 
     // Commands answer to their Czech and English names.
-    const command = /^\/(tenant|nova|new|pomoc|help)\b\s*(.*)$/isu.exec(text ?? "");
+    const command = /^\/(project|projekt|nova|new|pomoc|help)\b\s*(.*)$/isu.exec(text ?? "");
     const name = ({ new: "nova", help: "pomoc" } as Record<string, string>)[command?.[1]!.toLowerCase() ?? ""] ?? command?.[1]!.toLowerCase();
-    if (name === "tenant") return this.reply(message, await this.switchTenant(user, memberships, command![2]!.trim()));
+    if (name === "project" || name === "projekt") return this.reply(message, await this.switchProject(user, memberships, command![2]!.trim()));
     if (name === "pomoc") return this.reply(message, t("whatsapp.help"));
 
-    const selected = await this.activeTenant(user.sub, memberships);
-    if (!selected) return this.reply(message, `${tenantList(memberships)}\n${t("whatsapp.chooseTenant")}`);
-    const tenant = await this.deps.tenants.get(selected.tenantId);
-    if (!tenant?.features.whatsapp) return this.reply(message, t("whatsapp.featureOff", { tenant: selected.tenantId }));
+    const selected = await this.activeProject(user.sub, memberships);
+    if (!selected) return this.reply(message, `${projectList(memberships)}\n${t("whatsapp.chooseProject")}`);
+    const project = await this.deps.projects.get(selected.projectId);
+    if (!project?.features.whatsapp) return this.reply(message, t("whatsapp.featureOff", { project: selected.projectId }));
 
     const headers = await this.headers(user, selected);
     if (name === "nova") {
-      await this.call(selected.tenantId, "/internal/whatsapp/new-thread", headers, {});
+      await this.call(selected.projectId, "/internal/whatsapp/new-thread", headers, {});
       return this.reply(message, t("whatsapp.newThread"));
     }
     // Best effort: a failed read receipt must not stop the reply.
@@ -100,13 +100,13 @@ export class WhatsAppRouter {
       attachment = { name: message.media.filename ?? `whatsapp-${message.id.replace(/[^a-zA-Z0-9]/g, "").slice(-30)}`, mime: media.mime, data: media.data.toString("base64") };
     }
     try {
-      const { reply, question, threadId, files } = await this.call<{ reply: string; question?: ChatQuestion; threadId: string; files?: { scope: string; path: string }[] }>(selected.tenantId, "/internal/whatsapp/message", headers, { messageId: message.id, text: text ?? message.media?.caption ?? t("whatsapp.attachmentOnly"), attachment });
+      const { reply, question, threadId, files } = await this.call<{ reply: string; question?: ChatQuestion; threadId: string; files?: { scope: string; path: string }[] }>(selected.projectId, "/internal/whatsapp/message", headers, { messageId: message.id, text: text ?? message.media?.caption ?? t("whatsapp.attachmentOnly"), attachment });
       if (reply) await this.reply(message, reply);
       for (const offer of files ?? []) {
-        const file = await this.call<{ data: string; mime: string; name: string }>(selected.tenantId, "/internal/whatsapp/file", headers, { threadId, ...offer });
+        const file = await this.call<{ data: string; mime: string; name: string }>(selected.projectId, "/internal/whatsapp/file", headers, { threadId, ...offer });
         await this.deps.client.sendFile(message.phoneNumberId, message.from, { ...file, data: Buffer.from(file.data, "base64") });
       }
-      if (question?.state === "open") await this.deps.client.sendQuestion(message.phoneNumberId, message.from, question, `${this.deps.publicUrl ?? "https://osiris.k6labs.cz"}/t/${encodeURIComponent(selected.tenantId)}/chat/${encodeURIComponent(threadId)}`);
+      if (question?.state === "open") await this.deps.client.sendQuestion(message.phoneNumberId, message.from, question, `${this.deps.publicUrl ?? "https://osiris.k6labs.cz"}/p/${encodeURIComponent(selected.projectId)}/chat/${encodeURIComponent(threadId)}`);
     } catch (err) {
       if (err instanceof ServiceError && err.status === 400) return this.reply(message, t("whatsapp.answerInvalid"));
       throw err;
@@ -116,48 +116,48 @@ export class WhatsAppRouter {
   private async headers(user: InternalUser, m: Membership) {
     const { access: _, ...plain } = user as InternalUser & { access?: unknown };
     return {
-      authorization: await this.deps.signer.header(tenantAudience(m.tenantId), { user: plain, tenant: m.tenantId, role: m.role, channel: "whatsapp" }, 600),
+      authorization: await this.deps.signer.header(projectAudience(m.projectId), { user: plain, project: m.projectId, role: m.role, channel: "whatsapp" }, 600),
       "content-type": "application/json",
     };
   }
 
-  private async call<T = unknown>(tenant: string, path: string, headers: Record<string, string>, body: unknown): Promise<T> {
-    const res = await this.deps.runtimes.request(tenant, path, {
+  private async call<T = unknown>(project: string, path: string, headers: Record<string, string>, body: unknown): Promise<T> {
+    const res = await this.deps.runtimes.request(project, path, {
       method: "POST",
       headers,
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(RUN_TIMEOUT_MS),
     });
-    if (!res.ok) throw new ServiceError(`Runtime ${tenant} ${path}: ${res.status} ${await res.text()}`, res.status);
+    if (!res.ok) throw new ServiceError(`Runtime ${project} ${path}: ${res.status} ${await res.text()}`, res.status);
     return (res.status === 204 ? {} : await res.json()) as T;
   }
 
-  /** The only tenant, or the one picked with `/tenant` (if the user is still in it); null otherwise. */
-  private async activeTenant(userId: string, memberships: Membership[]): Promise<{ tenantId: string; role: Role } | null> {
+  /** The only project, or the one picked with `/project` (if the user is still in it); null otherwise. */
+  private async activeProject(userId: string, memberships: Membership[]): Promise<{ projectId: string; role: Role } | null> {
     if (memberships.length === 1) return memberships[0]!;
-    const [row] = await this.deps.db.query<{ tenant_id: string }>("SELECT tenant_id FROM wa_selection WHERE user_id = ?", [userId]);
-    return memberships.find((m) => m.tenantId === row?.tenant_id) ?? null;
+    const [row] = await this.deps.db.query<{ project_id: string }>("SELECT project_id FROM wa_selection WHERE user_id = ?", [userId]);
+    return memberships.find((m) => m.projectId === row?.project_id) ?? null;
   }
 
-  private async switchTenant(user: InternalUser, memberships: Membership[], slug: string): Promise<string> {
+  private async switchProject(user: InternalUser, memberships: Membership[], slug: string): Promise<string> {
     if (!slug) {
-      const active = await this.activeTenant(user.sub, memberships);
-      const current = active ? t("whatsapp.activeTenant", { tenant: active.tenantId }) : t("whatsapp.noActiveTenant");
-      return `${current}\n${tenantList(memberships)}${memberships.length > 1 ? `\n${t("whatsapp.switchHint")}` : ""}`;
+      const active = await this.activeProject(user.sub, memberships);
+      const current = active ? t("whatsapp.activeProject", { project: active.projectId }) : t("whatsapp.noActiveProject");
+      return `${current}\n${projectList(memberships)}${memberships.length > 1 ? `\n${t("whatsapp.switchHint")}` : ""}`;
     }
-    const membership = memberships.find((m) => m.tenantId === slug.toLowerCase());
-    if (!membership) return `${t("whatsapp.unknownTenant", { tenant: slug })}\n${tenantList(memberships)}`;
+    const membership = memberships.find((m) => m.projectId === slug.toLowerCase());
+    if (!membership) return `${t("whatsapp.unknownProject", { project: slug })}\n${projectList(memberships)}`;
     await this.deps.db.execute([
       run(
-        `INSERT INTO wa_selection (user_id, tenant_id, updated_at) VALUES (?, ?, ?)
-         ON CONFLICT (user_id) DO UPDATE SET tenant_id = excluded.tenant_id, updated_at = excluded.updated_at`,
+        `INSERT INTO wa_selection (user_id, project_id, updated_at) VALUES (?, ?, ?)
+         ON CONFLICT (user_id) DO UPDATE SET project_id = excluded.project_id, updated_at = excluded.updated_at`,
         user.sub,
-        membership.tenantId,
+        membership.projectId,
         Date.now(),
       ),
     ]);
-    return t("whatsapp.switched", { tenant: membership.tenantId });
+    return t("whatsapp.switched", { project: membership.projectId });
   }
 }
 
-const tenantList = (memberships: Membership[]) => t("whatsapp.tenants", { tenants: new Intl.ListFormat(configuredLocale(), { type: "unit" }).format(memberships.map((m) => m.tenantId)) });
+const projectList = (memberships: Membership[]) => t("whatsapp.projects", { projects: new Intl.ListFormat(configuredLocale(), { type: "unit" }).format(memberships.map((m) => m.projectId)) });

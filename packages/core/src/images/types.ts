@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const side = z.number().int().min(1).max(8192);
-export const imageFile = z.object({ path: z.string().min(1).max(512), scope: z.enum(["temp", "tenant"]).default("temp") });
+export const imageFile = z.object({ path: z.string().min(1).max(512), scope: z.enum(["temp", "project"]).default("temp") });
 export const imageReference = imageFile.extend({ role: z.enum(["source", "identity", "style", "composition", "color", "structure", "texture", "mask"]) });
 export const rectangle = z.object({ left: z.number().int().min(0), top: z.number().int().min(0), width: side, height: side });
 export const padding = z.object({ top: z.number().int().min(0).max(8192).default(0), bottom: z.number().int().min(0).max(8192).default(0), left: z.number().int().min(0).max(8192).default(0), right: z.number().int().min(0).max(8192).default(0) });

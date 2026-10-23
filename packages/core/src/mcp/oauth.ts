@@ -16,7 +16,7 @@ interface OAuthData {
   verifier?: string;
 }
 
-/** OAuth sign-ins to MCP servers, per server and owner ('' = tenant-wide, or a user's sub); sealed with the SecretBox. */
+/** OAuth sign-ins to MCP servers, per server and owner ('' = project-wide, or a user's sub); sealed with the SecretBox. */
 export class McpOAuthStore {
   constructor(
     private readonly db: Client,

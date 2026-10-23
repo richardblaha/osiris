@@ -36,7 +36,7 @@ const dtdlInterface = z.looseObject({
   contents: z.array(z.looseObject({ "@type": z.union([z.string(), z.array(z.string())]), name: z.string().regex(/^[A-Za-z](?:[A-Za-z0-9_]*[A-Za-z0-9])?$/) })).optional(),
 });
 
-/** Built-in checks; `sql` is a single read-only query as the tenant database runs them (`db_query`). */
+/** Built-in checks; `sql` is a single read-only query as the project database runs them (`db_query`). */
 // ponytail: syntax-level checks only, TS/code compilation or tests come as injected `verifiers`.
 export const BUILTIN_VERIFIERS: Record<string, Verifier> = {
   json: (a) => parseJson(a).errors,

@@ -10,7 +10,7 @@ const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export const skillKey = (s: Pick<SkillSummary, "source" | "name">) => `${s.source}:${s.name}`;
 
-/** Every layer's skills the viewer sees: bundled, the tenant's and their own (the ones replaced marked `overridden`). */
+/** Every layer's skills the viewer sees: bundled, the project's and their own (the ones replaced marked `overridden`). */
 export async function loadSkills(): Promise<SkillSummary[]> {
   return (await api.skills()).sort((a, b) => compareText(a.name, b.name));
 }
@@ -18,8 +18,8 @@ export async function loadSkills(): Promise<SkillSummary[]> {
 const intro = () => t("skills:intro");
 
 /**
- * A skill of one layer. Admins change the tenant's; everyone their own. A skill the viewer may not change can be
- * copied: an admin copies a bundled one to the tenant, anyone else to themselves, and the copy then replaces it.
+ * A skill of one layer. Admins change the project's; everyone their own. A skill the viewer may not change can be
+ * copied: an admin copies a bundled one to the project, anyone else to themselves, and the copy then replaces it.
  */
 export function SkillDetail({ item, scope: initial, isAdmin, onSaved, onDeleted }: DetailProps<SkillSummary>) {
   const [name, setName] = useState(item?.name ?? "");
@@ -27,7 +27,7 @@ export function SkillDetail({ item, scope: initial, isAdmin, onSaved, onDeleted 
   const [instructions, setInstructions] = useState("");
   const [target, setTarget] = useState<Scope>(initial);
   const own = !!item && item.source !== "bundled" && canEdit(item.source, isAdmin);
-  const copyTo: Scope = isAdmin && item?.source === "bundled" ? "tenant" : "personal";
+  const copyTo: Scope = isAdmin && item?.source === "bundled" ? "project" : "personal";
   const [copying, setCopying] = useState(false);
   const editable = !item || own || copying;
   const scope: Scope = !item ? target : own ? (item.source as Scope) : copyTo;

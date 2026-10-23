@@ -1,29 +1,29 @@
-/** What should run for a tenant: the spec of its `Tenant` resource. */
-export interface TenantSpec {
+/** What should run for a project: the spec of its `Project` resource. */
+export interface ProjectSpec {
   id: string;
   name: string;
-  /** Archived tenants: runtime stopped and never woken, data kept. */
+  /** Archived projects: runtime stopped and never woken, data kept. */
   suspended: boolean;
   /** Minutes without activity before the runtime sleeps; 0 = always on. */
   idleMinutes: number;
   storageGb: number;
-  /** Verified custom domains of the tenant's sites (the operator creates their ingresses). */
+  /** Verified custom domains of the project's sites (the operator creates their ingresses). */
   domains: string[];
 }
 
-/** Runs tenant runtimes: the operator through `Tenant` resources in the cluster, child processes locally. */
+/** Runs project runtimes: the operator through `Project` resources in the cluster, child processes locally. */
 export interface Orchestrator {
-  apply(spec: TenantSpec): Promise<void>;
+  apply(spec: ProjectSpec): Promise<void>;
   /** Asks for the runtime to be started; returns at once. */
   wake(id: string): Promise<void>;
-  /** Base URL of the tenant's runtime. */
+  /** Base URL of the project's runtime. */
   endpoint(id: string): string;
   close?(): Promise<void>;
-  /** What runs now, by tenant (the operator's `Tenant` status); tenants missing there are unknown. */
-  statuses(): Promise<Map<string, TenantStatus>>;
+  /** What runs now, by project (the operator's `Project` status); projects missing there are unknown. */
+  statuses(): Promise<Map<string, ProjectStatus>>;
 }
 
-export interface TenantStatus {
+export interface ProjectStatus {
   phase: "Running" | "Sleeping" | "Suspended" | "Unknown";
   /** ISO time. */
   lastActivity?: string;

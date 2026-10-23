@@ -3,24 +3,24 @@
 Optional conversational image generation: [Comfy Cloud integration](images/README.md).
 
 Osiris runs in the `abydos` k3s cluster (Civo) at https://osiris.k6labs.cz. Shared services live in the `osiris`
-namespace; each tenant gets its own namespace `osiris-t-<slug>`, created by the operator.
+namespace; each project gets its own namespace `osiris-p-<slug>`, created by the operator.
 
 ```
 Internet ─ Traefik ─┬─ osiris.k6labs.cz ──▶ gateway ──┬─▶ control ──▶ rqlite (3 nodes) ─▶ S3 (rqlite backups)
                     │                                 │      │  └──▶ WhatsApp, S3, Emailit, Google/Facebook/Microsoft/Seznam (sign-in)
-                    │                                 │      └──▶ Tenant objects ◀── operator ──▶ tenant namespaces
-                    │                                 └─▶ runtime (osiris-t-<slug>, 0–1 pod, own volume) ─▶ gotenberg
-                    └─ tenant domains ──▶ sites ──▶ rqlite (read-only user), S3
+                    │                                 │      └──▶ Project objects ◀── operator ──▶ project namespaces
+                    │                                 └─▶ runtime (osiris-p-<slug>, 0–1 pod, own volume) ─▶ gotenberg
+                    └─ project domains ──▶ sites ──▶ rqlite (read-only user), S3
 ```
 
 - **Images:** GitHub Actions (`.github/workflows/ci.yml`) runs the tests and, on `main`, pushes one image per service:
   `ghcr.io/richardblaha/osiris-{gateway,control,runtime,operator,sites}` with the tags `main` and `sha-<commit>`.
-  Runtimes pull `:main` whenever they wake, so a new runtime version reaches a tenant on its next wake-up.
-- **Tenants sleep:** a runtime idle for `idleMinutes` (30 by default, 0 = always on) is snapshotted to S3 and scaled to
+  Runtimes pull `:main` whenever they wake, so a new runtime version reaches a project on its next wake-up.
+- **Projects sleep:** a runtime idle for `idleMinutes` (30 by default, 0 = always on) is snapshotted to S3 and scaled to
   zero; the next request, WhatsApp message or scheduled task wakes it (the gateway waits for it, usually 10–30 s).
-- **Data:** tenant database and files on the tenant's volume (`civo-volume`), snapshots in S3 (before every sleep and
+- **Data:** project database and files on the project's volume (`civo-volume`), snapshots in S3 (before every sleep and
   daily); the central database in rqlite with automatic backups to S3.
-- **TLS:** cert-manager (`letsencrypt` ClusterIssuer); tenant domains get their certificates through HTTP-01.
+- **TLS:** cert-manager (`letsencrypt` ClusterIssuer); project domains get their certificates through HTTP-01.
 - **Sign-in:** control is the OpenID Connect provider at `https://osiris.k6labs.cz/auth` (the gateway passes `/auth` to
   it). PocketID at auth.k6labs.cz stays for other services; Osiris no longer uses it.
 
@@ -58,11 +58,11 @@ Users, credentials and the provider's sessions and tokens live in rqlite (tables
   My profile → Connected accounts first.
 - **People:** the first system admin comes from the command line:
   `kubectl -n osiris exec deploy/control -- node_modules/.bin/tsx src/auth/users-cli.ts add-admin you@example.com First Last`
-  prints a one-time sign-in link. System admins create tenants and add people in the web app (System → Tenants); tenant admins
-  add people to their own tenant (Tenant → Users). New people get a one-time sign-in link (3 days) and
-  set up a passkey or password in their profile. Membership is stored in the user's claims: `tenant` / `tenant-admin`
+  prints a one-time sign-in link. System admins create projects and add people in the web app (System → Projects); project admins
+  add people to their own project (Project → Users). New people get a one-time sign-in link (3 days) and
+  set up a passkey or password in their profile. Membership is stored in the user's claims: `project` / `project-admin`
   = `<slug>` (comma-separated for several) plus `role` = `osiris-user`.
-- **Lost second factor:** a system admin turns it off in the tenant detail (Turn off 2FA next to the person).
+- **Lost second factor:** a system admin turns it off in the project detail (Turn off 2FA next to the person).
 
 Users verify their phone number for WhatsApp themselves (My profile → Account → Phone for WhatsApp): they send `VERIFY <code>` or `OVERENI <code>` from the phone
 to the business number, which sets the claim `phone_number`.
@@ -70,7 +70,7 @@ to the business number, which sets the claim `phone_number`.
 ### From PocketID (one-off)
 
 1. Roll out the new images with the secrets below (`AUTH_*`, `EMAILIT_API_KEY`, social keys).
-2. Copy the users, keeping their ids (tenant data is keyed by them), names, emails and claims:
+2. Copy the users, keeping their ids (project data is keyed by them), names, emails and claims:
    ```bash
    kubectl -n osiris exec deploy/control -- env POCKETID_URL=http://pocket-id.pocket-id.svc.cluster.local:1411 POCKETID_API_KEY="$POCKETID_API_KEY" \
      node_modules/.bin/tsx src/auth/users-cli.ts import-pocketid --links
@@ -83,7 +83,7 @@ to the business number, which sets the claim `phone_number`.
 ## WhatsApp
 
 The webhook is `https://osiris.k6labs.cz/webhooks/whatsapp` (the gateway passes it to control, which checks Meta's
-signature, stores the message and answers at once; a worker runs it in the sender's tenant).
+signature, stores the message and answers at once; a worker runs it in the sender's project).
 
 1. Meta app → WhatsApp → Configuration → Webhook: callback URL above, verify token `OSIRIS_WHATSAPP_VERIFY_TOKEN`
    (`openssl rand -hex 16`), subscribe to `messages`.
@@ -154,11 +154,11 @@ then adds its `count.js` to the page and the site to the CSP; the app counts eac
 
 Create an object store and a bucket (`osiris`), and credentials for it. Put into `.env`: `OSIRIS_S3_ENDPOINT`
 (e.g. `https://objectstore.fra1.civo.com`), `OSIRIS_S3_REGION`, `OSIRIS_S3_BUCKET`, `OSIRIS_S3_ACCESS_KEY_ID`,
-`OSIRIS_S3_SECRET_ACCESS_KEY`. Prefixes: `sites/` (published sites), `backups/` (tenant snapshots), `rqlite/` (central DB).
+`OSIRIS_S3_SECRET_ACCESS_KEY`. Prefixes: `sites/` (published sites), `backups/` (project snapshots), `rqlite/` (central DB).
 
 ## Secrets
 
-Generate the internal keys once and keep them in `.env` (losing `SECRETS_MASTER_KEY` makes tenants' stored secrets
+Generate the internal keys once and keep them in `.env` (losing `SECRETS_MASTER_KEY` makes projects' stored secrets
 unreadable; changing the JWT keys only needs a restart of all services):
 
 ```bash
@@ -213,7 +213,7 @@ apply rqlite-config \
   --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY"
 # (Nodes join as `node`; rqlite takes its password from users.json.)
 
-# Pull access to the private images (read:packages only); the operator copies it into tenant namespaces.
+# Pull access to the private images (read:packages only); the operator copies it into project namespaces.
 $K create secret docker-registry ghcr-pull --docker-server=ghcr.io --docker-username=richardblaha \
   --docker-password="$GITHUB_API_KEY" --dry-run=client -o yaml | $K apply -f -
 ```
@@ -227,50 +227,37 @@ keys from the operator, which restarts them by itself).
 kubectl apply -k deploy/k8s
 kubectl -n osiris rollout status statefulset/rqlite
 kubectl -n osiris rollout status deploy/control deploy/gateway deploy/operator deploy/sites
-kubectl -n osiris get tenants
+kubectl -n osiris get projects
 ```
 
-### From the monolith (one-off)
+### From tenants to projects (one-off)
 
-1. Push to `main` and wait for CI to publish the five images.
-2. Create the secrets above, plus the import's own:
-   `apply osiris-legacy-import --from-literal=LEGACY_SECRETS_KEY="$OSIRIS_SECRETS_KEY" --from-literal=SECRETS_MASTER_KEY="$OSIRIS_SECRETS_MASTER_KEY"`.
-3. `kubectl apply -k deploy/k8s` (rqlite, control, gateway, operator, sites; the ingress now points at the gateway).
-4. Stop the monolith and import its data:
-   ```bash
-   kubectl -n osiris scale deploy/osiris --replicas=0
-   kubectl -n osiris apply -f deploy/k8s/legacy-import-job.yaml
-   kubectl -n osiris logs -f job/legacy-import
-   ```
-   Every tenant gets its row in rqlite, a `Tenant` object, and an `import` backup that its runtime restores on first
-   wake.
-5. Check a tenant end to end (login, chat, files), then remove the monolith: `kubectl -n osiris delete deploy/osiris svc/osiris`.
+Tenants became projects without moving their data. Before rolling out, delete the old objects by hand (their volumes go with them):
 
-   Done on 2026-10-17; the monolith's volume (`osiris-data`) and its manifests were removed on 2026-10-20, so this
-   section only documents how tenants got here (`legacy-import-job.yaml` is in git history).
+```bash
+kubectl delete tenants.osiris.k6labs.cz --all -A
+kubectl get ns -o name | grep '^namespace/osiris-t-' | xargs -r kubectl delete
+kubectl delete crd tenants.osiris.k6labs.cz
+```
 
-Volumes of sleeping tenants show as detached in the Civo dashboard (named `pvc-…`): they hold the tenants' data.
-Before deleting a volume there, check that no PV points to it
-(`kubectl get pv -o custom-columns=PV:.metadata.name,CIVO_ID:.spec.csi.volumeHandle,NS:.spec.claimRef.namespace`).
-A tenant whose volume is gone comes back from its newest snapshot: delete its PVC `data-runtime-0` (and the PV, once
-the volume no longer exists) and the next start restores it.
+Control's migration `011_projects.sql` renames the tables and rewrites users' claims (`tenant` → `project`, `tenant-admin` → `project-admin`), so accounts and sign-in stay. Recreate the projects in System > Projects.
 
 ## Checks after a rollout
 
-- Network policies are enforced (the cluster runs Cilium). From a tenant runtime,
+- Network policies are enforced (the cluster runs Cilium). From a project runtime,
   everything inside the cluster must fail:
   ```bash
-  kubectl -n osiris-t-<slug> exec statefulset/runtime -- node -e "fetch('http://rqlite.osiris.svc:4001/status').then(r=>console.log('REACHABLE',r.status),e=>console.log('blocked',e.cause?.code))"
+  kubectl -n osiris-p-<slug> exec statefulset/runtime -- node -e "fetch('http://rqlite.osiris.svc:4001/status').then(r=>console.log('REACHABLE',r.status),e=>console.log('blocked',e.cause?.code))"
   ```
-- A sleeping tenant wakes on a request; `kubectl -n osiris get tenants` shows the phase and last activity.
-- Backups: `kubectl -n osiris logs deploy/control | grep -i backup`, and the tenant detail in the web app lists them.
+- A sleeping project wakes on a request; `kubectl -n osiris get projects` shows the phase and last activity.
+- Backups: `kubectl -n osiris logs deploy/control | grep -i backup`, and the project detail in the web app lists them.
 
 ## Operations
 
-- **Restore a tenant from a backup:** scale its runtime down (`kubectl -n osiris-t-<slug> scale statefulset/runtime --replicas=0`),
-  delete its volume (`kubectl -n osiris-t-<slug> delete pvc data-runtime-0`) and wake it: it restores the newest snapshot.
-- **Remove a tenant for good:** archive it in the web app first (claims removed, runtime suspended), then
-  `kubectl -n osiris delete tenant <slug>`: the operator takes a last snapshot and deletes the namespace and volume.
+- **Restore a project from a backup:** scale its runtime down (`kubectl -n osiris-p-<slug> scale statefulset/runtime --replicas=0`),
+  delete its volume (`kubectl -n osiris-p-<slug> delete pvc data-runtime-0`) and wake it: it restores the newest snapshot.
+- **Remove a project for good:** archive it in the web app first (claims removed, runtime suspended), then
+  `kubectl -n osiris delete project <slug>`: the operator takes a last snapshot and deletes the namespace and volume.
   Backups stay in S3 for `BACKUP_RETENTION_DAYS` (30).
 - **rqlite lost entirely:** restore the newest `rqlite/osiris.sqlite3.gz` from S3 (`rqlite` CLI `.restore`, see rqlite docs).
 - **Updating:** CI pushes `:main`; `kubectl -n osiris rollout restart deploy/<service>`. To pin a release, set the
@@ -294,11 +281,11 @@ Chat specs accept `mistralai:…`, `openai:…`, `anthropic:…`; configure thei
 The two agent models must support tool calling. Embeddings support Mistral and OpenAI.
 Locally control passes its environment to runtimes. In Kubernetes configure operator
 `RUNTIME_ENV_LLM_*` / `RUNTIME_ENV_EMBEDDING_MODEL` and `RUNTIME_SECRET_*_API_KEY`,
-then restart runtimes to apply changes. No tenant or user can override these assignments.
+then restart runtimes to apply changes. No project or user can override these assignments.
 
 Users connect their own named SMTP/IMAP/POP3, CalDAV and CardDAV accounts in
 My profile → Connected accounts. The existing `integrations` feature gates their routes and tools.
-Secrets are encrypted with the tenant key and are never returned by the API. SMTP uses
+Secrets are encrypted with the project key and are never returned by the API. SMTP uses
 implicit TLS or mandatory STARTTLS; IMAP and POP3 require implicit TLS. DAV requires
 HTTPS and a canonical URL on one origin (redirects and cross-origin discovery are refused).
 Use an application password where the provider requires it. POP3 reading uses UIDL ids
@@ -334,7 +321,7 @@ for cache settings and the ClickHouse schema upgrade required before the analyti
 ### Interactive PWA and WhatsApp chat
 
 See `deploy/whatsapp/README.md` for durable agent questions/forms, media processing, published Meta Flow
-mappings and approved notification templates. Tenant migration 019 and control migration 010 run at startup.
+mappings and approved notification templates. Project migration 019 and control migration 010 run at startup.
 No live Flow or template is created by deploying these images. Without configured Meta assets, simple choices
 use native buttons/lists, questionnaires link to PWA and out-of-window scheduled replies remain in web chat.
 Runtime OCR/transcription uses `MISTRAL_API_KEY`, `OCR_MODEL` and `AUDIO_MODEL`; configure them at system level.

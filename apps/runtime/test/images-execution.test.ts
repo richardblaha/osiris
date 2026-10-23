@@ -20,7 +20,7 @@ import { streamRun } from "@osiris/core/agent/run.ts";
 import { imageTools } from "@osiris/core/agent/tools/images.ts";
 import { ScriptedChatModel } from "./helpers.ts";
 const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
-const ctx = { thread_id: "thread", tenant_id: "acme", user_id: "alice", role: "member" as const, channel: "web" as const };
+const ctx = { thread_id: "thread", project_id: "acme", user_id: "alice", role: "member" as const, channel: "web" as const };
 const config = { configurable: ctx };
 const resources: { dir: string; db: ReturnType<typeof createDb> }[] = [];
 afterEach(async () => { for (const { dir, db } of resources.splice(0)) { db.close(); await rm(dir, { recursive: true, force: true }); } });
@@ -28,7 +28,7 @@ const plan = (name: string, args: Record<string, unknown>) => new AIMessage({ co
 const run = () => plan("comfy-cloud_run_template", { template_name: "image", overrides: { prompt: "cat" } });
 const preparation = () => [plan("comfy-cloud_search_templates", { query: "cat" }), plan("comfy-cloud_get_template_schema", { template_name: "image" }), run()];
 async function fixture(options: ImageOptions = {}, estimatedCost: number | null = 1, outputCount = 1) {
-  const dir = await mkdtemp(join(tmpdir(), "osiris-image-execution-")), db = createDb(`file:${join(dir, "tenant.db")}`); resources.push({ dir, db }); await migrate(db);
+  const dir = await mkdtemp(join(tmpdir(), "osiris-image-execution-")), db = createDb(`file:${join(dir, "project.db")}`); resources.push({ dir, db }); await migrate(db);
   await db.execute({ sql: "INSERT INTO threads(id,user_id,channel) VALUES (?,?,?)", args: [ctx.thread_id, ctx.user_id, ctx.channel] });
   const files = new FileStore(join(dir, "files")), jobs = new ImageJobStore(db), calls: string[] = [];
   let paid = 0, transientStatusErrors = 0;
@@ -60,7 +60,7 @@ describe("durable bounded image execution", () => {
   it("streams real coarse progress through the existing graph and checkpoints only artifact references", async () => {
     const f = await fixture();
     const outer = new ScriptedChatModel([plan("image_generate", { prompt: "cat" }), new AIMessage("Obrázek se tvoří.")]);
-    const graph = createAgentGraph({ tenantId: ctx.tenant_id, model: outer, tools: imageTools(f.service(preparation()), f.files), checkpointer: new LibSQLSaver(f.db), timezone: "Europe/Prague" });
+    const graph = createAgentGraph({ projectId: ctx.project_id, model: outer, tools: imageTools(f.service(preparation()), f.files), checkpointer: new LibSQLSaver(f.db), timezone: "Europe/Prague" });
     const events = [];
     for await (const event of streamRun(graph, ctx, "Nakresli kočku")) events.push(event);
     expect(events).toContainEqual(expect.objectContaining({ type: "image-progress", status: "queued" }));

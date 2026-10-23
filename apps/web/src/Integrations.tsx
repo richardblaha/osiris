@@ -1,12 +1,12 @@
 import type { Integration } from "@osiris/shared";
 import { useEffect, useState } from "react";
-import { api, getTenant } from "./api.ts";
+import { api, getProject } from "./api.ts";
 import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
 import { t } from "i18next";
 
 const NAMES: Record<Integration["provider"], string> = { google: "Google", microsoft: "Microsoft" };
 
-/** Where the browser goes back to after connecting an account: the tenant it was connected in. */
+/** Where the browser goes back to after connecting an account: the project it was connected in. */
 export const INTEGRATION_RETURN = "osiris.integrationReturn";
 
 /**
@@ -25,9 +25,9 @@ export function Integrations() {
     attempt(setBusy, setError, async () => {
       const { authorizationUrl } = await api.connectIntegration(provider);
       try {
-        sessionStorage.setItem(INTEGRATION_RETURN, JSON.stringify({ tenant: getTenant() }));
+        sessionStorage.setItem(INTEGRATION_RETURN, JSON.stringify({ project: getProject() }));
       } catch {
-        // The callback still works, in the last tenant.
+        // The callback still works, in the last project.
       }
       location.assign(authorizationUrl);
     });

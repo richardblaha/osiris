@@ -27,7 +27,7 @@ export class HostKeyMismatchError extends LocalizedError {}
 
 const fingerprint = (key: Buffer) => `SHA256:${createHash("sha256").update(key).digest("base64").replace(/=+$/, "")}`;
 
-/** Where the tenant's site is published over SFTP; secrets are sealed with the tenant's key and never returned. */
+/** Where the project's site is published over SFTP; secrets are sealed with the project's key and never returned. */
 export class SiteTargetStore {
   constructor(
     private readonly db: Client,
@@ -120,7 +120,7 @@ export async function testTarget(store: SiteTargetStore, name: string): Promise<
 }
 
 /**
- * Publishes a folder of the tenant's files to a target: uploads files that are new or changed since the last publish
+ * Publishes a folder of the project's files to a target: uploads files that are new or changed since the last publish
  * (by content hash, from the manifest kept on the server) and deletes those Osiris published before but that are gone
  * now. Files on the server that Osiris didn't put there are left alone.
  */

@@ -6,17 +6,17 @@ import type { SiteFile, VitepressClient } from "../../files/vitepress.ts";
 import { publishFolder, type SiteTargetStore } from "../../sites/sftp.ts";
 import { getRunContext } from "../context.ts";
 
-/** Publishes the tenant's website (a folder of its files, www/ by default) to a target over SFTP. */
+/** Publishes the project's website (a folder of its files, www/ by default) to a target over SFTP. */
 export function publishSiteTool(files: FileStore, targets: SiteTargetStore) {
   return tool(
     async ({ target, dir }, config) => {
       const ctx = getRunContext(config);
-      if (ctx.role !== "admin") return "Web firmy může publikovat jen správce tenanta.";
+      if (ctx.role !== "admin") return "Web firmy může publikovat jen správce projektu.";
       const all = await targets.list();
       const name = target ?? (all.length === 1 ? all[0]!.name : undefined);
       if (!name) return all.length ? `Uveď cíl: ${all.map((t) => t.name).join(", ")}.` : "Firma nemá nastavený žádný cíl publikování (Web → cíle).";
       try {
-        const r = await publishFolder(files, { scope: "tenant" }, dir, targets, name);
+        const r = await publishFolder(files, { scope: "project" }, dir, targets, name);
         return `Publikováno na ${name}: nahráno ${r.uploaded}, smazáno ${r.deleted}, beze změny ${r.unchanged} souborů.`;
       } catch (err) {
         return `Publikování selhalo: ${(err as Error).message}`;
@@ -46,17 +46,17 @@ export interface SiteBuild {
   skipped: string[];
 }
 
-const tenant = { scope: "tenant" } as const;
+const project = { scope: "project" } as const;
 
 /**
- * Builds a VitePress site from the tenant's `vitepress/<site>/` (`_vitepress/` holds its config and theme, as
+ * Builds a VitePress site from the project's `vitepress/<site>/` (`_vitepress/` holds its config and theme, as
  * `.vitepress/` in VitePress) into `www/<site>/`, replacing what was there. The build runs in the shared builder.
  */
 export async function buildSite(files: FileStore, vitepress: VitepressClient, site: string): Promise<SiteBuild> {
   const src = `${VITEPRESS_DIR}/${site}`;
   const dst = `www/${site}`;
   const input: SiteFile[] = [];
-  for await (const e of files.walk(tenant, src)) input.push({ path: e.path.slice(src.length + 1), data: (await files.read(tenant, e.path)).data });
+  for await (const e of files.walk(project, src)) input.push({ path: e.path.slice(src.length + 1), data: (await files.read(project, e.path)).data });
   if (!input.length) throw new FileError("not_found", "errors.files.folderEmpty", { path: src });
   const built = await vitepress.build(input);
   const written = new Set<string>();
@@ -69,7 +69,7 @@ export async function buildSite(files: FileStore, vitepress: VitepressClient, si
       continue;
     }
     try {
-      await files.write(tenant, path, f.data, { overwrite: true });
+      await files.write(project, path, f.data, { overwrite: true });
     } catch (err) {
       // A file the store can't take (type, name) is left out; anything else (quota) stops the build.
       if (err instanceof FileError && (err.code === "type" || err.code === "invalid")) {
@@ -82,9 +82,9 @@ export async function buildSite(files: FileStore, vitepress: VitepressClient, si
     bytes += f.data.length;
   }
   let deleted = 0;
-  for await (const e of files.walk(tenant, dst)) {
+  for await (const e of files.walk(project, dst)) {
     if (!written.has(e.path)) {
-      await files.delete(tenant, e.path);
+      await files.delete(project, e.path);
       deleted++;
     }
   }
@@ -143,9 +143,9 @@ export default {
   };
 }
 
-/** The tenant's VitePress sites: the folders in vitepress/. */
+/** The project's VitePress sites: the folders in vitepress/. */
 export async function listSites(files: FileStore): Promise<string[]> {
-  const entries = await files.list(tenant, VITEPRESS_DIR).catch((err) => {
+  const entries = await files.list(project, VITEPRESS_DIR).catch((err) => {
     if (err instanceof FileError && err.code === "not_found") return [];
     throw err;
   });
@@ -156,7 +156,7 @@ export async function listSites(files: FileStore): Promise<string[]> {
 export async function createSite(files: FileStore, site: string): Promise<void> {
   if (!SITE_NAME.test(site)) throw new FileError("invalid", "errors.sites.name");
   if ((await listSites(files)).includes(site)) throw new FileError("exists", "errors.sites.exists", { site });
-  for (const [path, text] of Object.entries(defaultTemplate(site))) await files.write(tenant, `${VITEPRESS_DIR}/${site}/${path}`, Buffer.from(text), { overwrite: false });
+  for (const [path, text] of Object.entries(defaultTemplate(site))) await files.write(project, `${VITEPRESS_DIR}/${site}/${path}`, Buffer.from(text), { overwrite: false });
 }
 
 export function buildVitepressTool(files: FileStore, vitepress: VitepressClient) {

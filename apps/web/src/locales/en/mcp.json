@@ -34,5 +34,5 @@
   "signInAgain": "Sign in again",
   "signIn": "Sign in",
   "test": "Test",
-  "adminOnly": "Only a tenant administrator sees the address and headers."
+  "adminOnly": "Only a project administrator sees the address and headers."
 }

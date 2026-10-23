@@ -25,11 +25,11 @@
   "newFolder": "New folder",
   "file": "File",
   "noPreview": "{{type}} · {{size}}. There's no preview here; you can download the file.",
-  "readOnlyHint": "Only the tenant's administrators change these files. Copy one to your files to change it for yourself.",
+  "readOnlyHint": "Only the project's administrators change these files. Copy one to your files to change it for yourself.",
   "copyOwn": "Copy to my files",
-  "copied": "Copied to your files as {{path}}. Your copy now replaces the tenant's for you.",
+  "copied": "Copied to your files as {{path}}. Your copy now replaces the project's for you.",
   "tabs": {
-    "tenant": "Tenant",
+    "project": "Project",
     "personal": "Mine"
   }
 }

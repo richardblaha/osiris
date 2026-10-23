@@ -1,13 +1,13 @@
 import { Readable } from "node:stream";
-import { NO_QUOTAS, type ReportedUsage, type Feature, type Guard, type UserDefaults, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type TenantFeatures, type TenantQuotas } from "@osiris/shared";
-import type { FeatureSource } from "@osiris/core/tenants/features.ts";
+import { NO_QUOTAS, type ReportedUsage, type Feature, type Guard, type UserDefaults, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type ProjectFeatures, type ProjectQuotas } from "@osiris/shared";
+import type { FeatureSource } from "@osiris/core/projects/features.ts";
 import { callJson, ServiceError } from "@osiris/platform/http.ts";
 
 const FEATURES_TTL_MS = 30_000;
 
 /**
- * The runtime's calls to control, authenticated with the runtime's ServiceAccount token: control learns the tenant
- * from the token, so a runtime can only ever act for its own tenant.
+ * The runtime's calls to control, authenticated with the runtime's ServiceAccount token: control learns the project
+ * from the token, so a runtime can only ever act for its own project.
  */
 export class ControlClient {
   constructor(
@@ -28,24 +28,24 @@ export class ControlClient {
     });
   }
 
-  /** Emails the tenant's admins (e.g. a new inquiry from the public assistant). */
+  /** Emails the project's admins (e.g. a new inquiry from the public assistant). */
   async notifyAdmins(subject: string, text: string) {
     await this.json("/notify-admins", { method: "POST", body: JSON.stringify({ subject, text }), headers: { "content-type": "application/json" } });
   }
 
-  tenant() {
+  project() {
     return this.json<{
       id: string;
       name: string;
       status: string;
-      features: TenantFeatures;
+      features: ProjectFeatures;
       disabledTools: string[];
-      quotas: TenantQuotas;
+      quotas: ProjectQuotas;
       counts?: { members: number; schedules: number; dashboards?: number };
       /** A string from a control older than guard files. */
       systemGuards: Guard[] | string;
       userDefaults?: Partial<UserDefaults>;
-    }>("/tenant");
+    }>("/project");
   }
 
   /** Streams a snapshot to object storage through control. */
@@ -60,7 +60,7 @@ export class ControlClient {
     return (await res.json()) as { key: string; bytes: number };
   }
 
-  /** Tells control what the tenant uses (System > Dashboard > Využití). */
+  /** Tells control what the project uses (System > Dashboard > Využití). */
   async reportUsage(usage: ReportedUsage): Promise<void> {
     const res = await this.fetchFn(`${this.baseUrl}/internal/runtime/usage`, {
       method: "PUT",
@@ -70,7 +70,7 @@ export class ControlClient {
     if (!res.ok) throw new ServiceError(`Usage report failed: ${res.status} ${await res.text()}`, res.status);
   }
 
-  /** The newest snapshot of this tenant, or null for a new tenant. */
+  /** The newest snapshot of this project, or null for a new project. */
   async latestBackup(): Promise<{ key: string; body: Readable } | null> {
     const res = await this.fetchFn(`${this.baseUrl}/internal/runtime/backups/latest`, { headers: await this.headers() });
     if (res.status === 404) return null;
@@ -115,15 +115,15 @@ export class ControlClient {
 
 /** Features and switched-off tools from control, cached briefly; if control is unreachable, the last known ones stay in force. */
 export class RemoteFeatures implements FeatureSource {
-  private cached?: TenantPolicy & { at: number };
-  private loading?: Promise<TenantPolicy>;
+  private cached?: ProjectPolicy & { at: number };
+  private loading?: Promise<ProjectPolicy>;
 
   constructor(private readonly control: ControlClient) {}
 
   private async load() {
     if (this.cached && Date.now() - this.cached.at < FEATURES_TTL_MS) return this.cached;
     this.loading ??= this.control
-      .tenant()
+      .project()
       .then(
         (t) =>
           (this.cached = {
@@ -144,7 +144,7 @@ export class RemoteFeatures implements FeatureSource {
     return this.loading;
   }
 
-  async get(): Promise<TenantFeatures> {
+  async get(): Promise<ProjectFeatures> {
     return (await this.load()).features;
   }
 
@@ -174,10 +174,10 @@ export class RemoteFeatures implements FeatureSource {
   }
 }
 
-interface TenantPolicy {
-  features: TenantFeatures;
+interface ProjectPolicy {
+  features: ProjectFeatures;
   disabledTools: string[];
-  quotas: TenantQuotas;
+  quotas: ProjectQuotas;
   counts: { members: number; schedules: number; dashboards: number };
   systemGuards: Guard[];
   userDefaults: Partial<UserDefaults>;

@@ -32,7 +32,7 @@ const values = z.record(z.string(), z.any()).describe("Sloupec → hodnota");
 const ADMIN_ONLY = "Mazat tabulky a sloupce může jen správce firmy. Požádej ho, nebo data jen označ.";
 
 /**
- * The tenant's database: tables the assistant defines and fills (contacts, deals…), shared by the whole tenant.
+ * The project's database: tables the assistant defines and fills (contacts, deals…), shared by the whole project.
  * Writes are structured; reading is one SELECT. Dropping tables or columns (data loss) is the admins'.
  */
 export function databaseTools(data: DataStore) {

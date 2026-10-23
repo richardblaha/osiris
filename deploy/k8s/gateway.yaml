@@ -1,5 +1,5 @@
 # The only way in for osiris.k6labs.cz: sign-in (/auth, to control), API calls with access tokens (identified by
-# control) routed to control or the tenant's runtime, the web app.
+# control) routed to control or the project's runtime, the web app.
 # Secret osiris-gateway: INTERNAL_JWT_PRIVATE_KEY.
 apiVersion: apps/v1
 kind: Deployment

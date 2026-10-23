@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Creates (or refreshes) the `demo` tenant: a made-up plumbing firm that shows every Osiris feature to prospective
+// Creates (or refreshes) the `demo` project: a made-up plumbing firm that shows every Osiris feature to prospective
 // customers. It uses only the public API, as the web app does, with a system admin's access token:
 //
 //   OSIRIS_TOKEN=<access token> node deploy/demo/seed.mjs [https://osiris.k6labs.cz]
@@ -9,17 +9,17 @@
 
 const BASE = (process.argv[2] ?? "https://osiris.k6labs.cz").replace(/\/$/, "");
 const TOKEN = process.env.OSIRIS_TOKEN;
-const TENANT = "demo";
+const PROJECT = "demo";
 if (!TOKEN) throw new Error("Set OSIRIS_TOKEN to a system admin's access token.");
 
 /** A call through the gateway; a sleeping (or brand new) runtime answers 502–504 while it starts, so wait for it. */
-async function api(method, path, body, { tenant = TENANT, ok = [] } = {}) {
+async function api(method, path, body, { project = PROJECT, ok = [] } = {}) {
   for (let attempt = 0; ; attempt++) {
     const res = await fetch(`${BASE}/api${path}`, {
       method,
       headers: {
         authorization: `Bearer ${TOKEN}`,
-        ...(tenant ? { "x-tenant-id": tenant } : {}),
+        ...(project ? { "x-project-id": project } : {}),
         ...(typeof body === "string" ? { "content-type": "text/plain; charset=utf-8" } : body ? { "content-type": "application/json" } : {}),
       },
       body: typeof body === "string" ? body : body ? JSON.stringify(body) : undefined,
@@ -310,7 +310,7 @@ import { onMounted } from "vue";
 onMounted(() => {
   const s = document.createElement("script");
   s.src = "https://osiris.k6labs.cz/widget.js";
-  s.dataset.tenant = "demo";
+  s.dataset.project = "demo";
   s.dataset.assistant = "web";
   s.dataset.label = "Zeptejte se nás";
   document.body.appendChild(s);
@@ -353,8 +353,8 @@ const SCHEDULE = {
 
 // ---------------------------------------------------------------------------------------------------------------
 
-step("tenant");
-const created = await api("POST", "/admin/tenants", { id: TENANT, name: `Demo – ${FIRM}` }, { tenant: undefined, ok: [409] });
+step("project");
+const created = await api("POST", "/admin/projects", { id: PROJECT, name: `Demo – ${FIRM}` }, { project: undefined, ok: [409] });
 console.log(created.status === 409 ? "  už existuje" : "  založen, čekám na jeho runtime…");
 
 step("znalostní báze");
@@ -368,19 +368,19 @@ for (const doc of KNOWLEDGE) {
 
 step("paměť");
 const known = (await api("GET", "/memories")).data;
-for (const content of MEMORIES) if (!known.some((m) => m.content === content)) await api("POST", "/memories", { content, scope: "tenant" });
+for (const content of MEMORIES) if (!known.some((m) => m.content === content)) await api("POST", "/memories", { content, scope: "project" });
 const memories = (await api("GET", "/memories")).data.filter((m) => MEMORIES.includes(m.content));
 
 step("dovednosti");
-for (const [name, skill] of Object.entries(SKILLS)) await api("PUT", `/skills/${name}`, { ...skill, scope: "tenant" });
+for (const [name, skill] of Object.entries(SKILLS)) await api("PUT", `/skills/${name}`, { ...skill, scope: "project" });
 
 step("soubory (šablony, zakázky, kontakty)");
 for (const [path, text] of Object.entries(FILES)) {
-  await api("PUT", `/files/content?scope=tenant&path=${encodeURIComponent(path)}&overwrite=true`, text);
+  await api("PUT", `/files/content?scope=project&path=${encodeURIComponent(path)}&overwrite=true`, text);
 }
 
 step("kontroly");
-for (const [name, guard] of Object.entries(GUARDS)) await api("PUT", `/guards/tenant/${name}`, guard);
+for (const [name, guard] of Object.entries(GUARDS)) await api("PUT", `/guards/project/${name}`, guard);
 
 step("asistent pro zákazníky „web“");
 await api("PUT", "/public-assistants/web", {
@@ -397,13 +397,13 @@ await api("PUT", `/guards/assistant/${PUBLIC_GUARD.name}?assistant=web`, { descr
 
 step(`web ${SITE}`);
 await api("POST", "/vitepress-sites", { name: SITE }, { ok: [400, 409] });
-await api("PUT", `/files/content?scope=tenant&path=${encodeURIComponent(`vitepress/${SITE}/index.md`)}&overwrite=true`, SITE_INDEX);
+await api("PUT", `/files/content?scope=project&path=${encodeURIComponent(`vitepress/${SITE}/index.md`)}&overwrite=true`, SITE_INDEX);
 for (const [page, text] of Object.entries(SITE_PAGES)) {
-  await api("PUT", `/files/content?scope=tenant&path=${encodeURIComponent(`vitepress/${SITE}/${page}`)}&overwrite=true`, text);
+  await api("PUT", `/files/content?scope=project&path=${encodeURIComponent(`vitepress/${SITE}/${page}`)}&overwrite=true`, text);
 }
 
 step("plánovaná úloha");
 const schedules = (await api("GET", "/schedules")).data;
 if (!schedules.some((s) => s.title === SCHEDULE.title)) await api("POST", "/schedules", SCHEDULE);
 
-console.log(`\nHotovo: ${BASE}/t/${TENANT} · veřejný chat ${BASE}/c/${TENANT}/web`);
+console.log(`\nHotovo: ${BASE}/t/${PROJECT} · veřejný chat ${BASE}/c/${PROJECT}/web`);

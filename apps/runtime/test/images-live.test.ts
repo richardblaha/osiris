@@ -30,7 +30,7 @@ it.skipIf(process.env.COMFY_LIVE_GENERATE !== "1")("generates one small image th
   const { ImageService, imageRequest } = await import("@osiris/core/images/service.ts");
   const { createChatModel } = await import("@osiris/core/agent/model.ts");
   const dir = await mkdtemp(join(tmpdir(), "osiris-comfy-live-"));
-  const db = createDb(`file:${join(dir, "tenant.db")}`);
+  const db = createDb(`file:${join(dir, "project.db")}`);
   const connection = await defaultConnector(false)({ name: "comfy-cloud", url: "https://cloud.comfy.org/mcp", auth: "headers", headers: { "X-API-Key": key } });
   let completed = false;
   try {
@@ -42,7 +42,7 @@ it.skipIf(process.env.COMFY_LIVE_GENERATE !== "1")("generates one small image th
       maxAttempts: 1, maxRefinements: 0, maxImages: 1, maxExecutionTimeMs: 600_000,
       downloadHosts: (process.env.IMAGE_DOWNLOAD_HOSTS ?? "cloud.comfy.org,storage.googleapis.com").split(",").map(h => h.trim()),
     });
-    const config = { configurable: { tenant_id: "live", thread_id: "live", user_id: "live", role: "member", channel: "web" } };
+    const config = { configurable: { project_id: "live", thread_id: "live", user_id: "live", role: "member", channel: "web" } };
     let result = await service.generate(imageRequest.parse({ prompt: "A simple flat blue circle on a white background. Use a fast, economical image template. One image only.", quality: "economical", output: { width: 256, height: 256, count: 1 } }), config, "one-authorized-live-generation");
     const deadline = Date.now() + 540_000;
     while (["queued", "running"].includes(result.status) && Date.now() < deadline) { await delay(3000); result = await service.status(result.id, config); }

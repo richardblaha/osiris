@@ -10,7 +10,7 @@ export interface Identity {
   phone: string | null;
   /** Profile picture URL. */
   picture: string | null;
-  /** Claims `role`, `tenant` and `tenant-admin`: whether the user may use Osiris and in which tenants. */
+  /** Claims `role`, `project` and `project-admin`: whether the user may use Osiris and in which projects. */
   access: Access;
   /** Names of the claims the user has, to tell a missing claim from a wrong value when access is refused. */
   claimKeys?: string[];
@@ -34,7 +34,7 @@ export interface TokenOwner {
   expiresAt: number;
 }
 
-/** How long a token's owner is reused, so role and tenant changes apply within this time. */
+/** How long a token's owner is reused, so role and project changes apply within this time. */
 const IDENTITY_TTL_MS = 60_000;
 const IDENTITY_CACHE_MAX = 1000;
 
@@ -72,15 +72,15 @@ export function createControlVerifier(lookup: (token: string) => Promise<TokenOw
 
 /**
  * Development-only verifier, rejected in production by config. The bearer token is `<user>` or `<user>:<claims>`,
- * the claims written like a query string: `alice:tenant=acme,beta&tenant-admin=gamma&role=osiris-admin`.
- * `role` defaults to `osiris-user` (`role=` for none); a bare `<user>` is admin of their own tenant `<user>`.
+ * the claims written like a query string: `alice:project=acme,beta&project-admin=gamma&role=osiris-admin`.
+ * `role` defaults to `osiris-user` (`role=` for none); a bare `<user>` is admin of their own project `<user>`.
  */
 export function createDevVerifier(): TokenVerifier {
   return {
     async identify(token) {
       const [user = "", query] = token.split(":", 2);
       if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(user)) throw new Error("Dev user must be a lowercase slug");
-      const claims = new URLSearchParams(query ?? `tenant-admin=${user}`);
+      const claims = new URLSearchParams(query ?? `project-admin=${user}`);
       if (!claims.has("role")) claims.set("role", "osiris-user");
       return {
         sub: `dev:${user}`,

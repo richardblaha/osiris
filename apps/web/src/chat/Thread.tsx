@@ -16,7 +16,7 @@ import { t } from "i18next";
 /** The open thread's id (null until the first message creates it), for downloading the thread's temp files. */
 export const ThreadIdContext = createContext<() => string | null>(() => null);
 
-const file = (a: Record<string, unknown>, scope = "scope", path = "path") => `${String(a[scope] ?? "tenant")}:${String(a[path] ?? "")}`;
+const file = (a: Record<string, unknown>, scope = "scope", path = "path") => `${String(a[scope] ?? "project")}:${String(a[path] ?? "")}`;
 
 /** What a built-in tool is doing, in words; other tools (MCP servers' `<server>_<tool>`) show their name. */
 const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
@@ -62,7 +62,7 @@ const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
 };
 
 /** File tools report what they created as `<scope>:<path>` after one of these words (the tools' own, model-facing texts). */
-const CREATED = /(?:Uloženo|Vytvořeno|PDF vytvořeno|Přesunuto do):? (personal|tenant|temp):([^\s()]+)/;
+const CREATED = /(?:Uloženo|Vytvořeno|PDF vytvořeno|Přesunuto do):? (personal|project|temp):([^\s()]+)/;
 
 function Download({ scope, path }: { scope: FileScope; path: string }) {
   const threadId = useContext(ThreadIdContext);
@@ -135,7 +135,7 @@ function ToolStep({ toolName, args, argsText, result }: ToolCallMessagePartProps
   if (QUESTION_TOOLS.includes(toolName) && result) {
     try { const parsed = JSON.parse(String(result)); if (parsed.question) return <Question initial={parsed.question} />; } catch { /* A failed tool uses the normal display. */ }
   }
-  // Other names are tools of the tenant's MCP servers (`<server>_<tool>`).
+  // Other names are tools of the project's MCP servers (`<server>_<tool>`).
   const label = writing ? t("chat:preparing", { tool: toolName }) : (TOOL_LABELS[toolName]?.(args as Record<string, unknown>) ?? t("chat:tool", { tool: toolName }));
   const output = result === undefined ? undefined : String(result);
   const state = output === undefined ? "running" : failed(output) ? "failed" : "done";

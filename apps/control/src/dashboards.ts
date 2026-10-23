@@ -7,7 +7,7 @@ import {
   type PanelData,
   type PanelSource,
   type ReportedUsage,
-  type TenantQuotas,
+  type ProjectQuotas,
   type WebStats,
   type WebSummary,
 } from "@osiris/shared";
@@ -20,16 +20,16 @@ import type { Backups } from "./backups.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";
 import type { ScheduleStore } from "./scheduler.ts";
 import { webSummary, type Telemetry } from "./telemetry/clickhouse.ts";
-import { QuotaError, type TenantDirectory, type TenantStore } from "./tenants.ts";
+import { QuotaError, type ProjectDirectory, type ProjectStore } from "./projects.ts";
 
 const HOUR = 3_600_000;
 const name = z.string().max(200).optional();
 const source = z.discriminatedUnion("type", [
   z.object({ type: z.literal("metric"), name: z.string().min(1).max(300), metricType: z.enum(["gauge", "sum", "histogram"]), groupBy: z.string().max(100).regex(/^[A-Za-z0-9_.\-/]*$/).optional(), service: name }),
   z.object({ type: z.literal("logs"), view: z.enum(["by_service", "list"]), severity: z.enum(["warn", "error", "fatal"]).optional(), service: name, namespace: name, q: name }),
-  z.object({ type: z.literal("cluster"), view: z.enum(["summary", "tenants", "pods", "events"]) }),
+  z.object({ type: z.literal("cluster"), view: z.enum(["summary", "projects", "pods", "events"]) }),
   z.object({ type: z.literal("web"), view: z.enum(["totals", "series", "sites", "pages", "referrers", "countries"]) }),
-  z.object({ type: z.literal("usage"), view: z.enum(["quotas", "users", "assistants", "months", "tenants"]) }),
+  z.object({ type: z.literal("usage"), view: z.enum(["quotas", "users", "assistants", "months", "projects"]) }),
   z.object({ type: z.literal("database"), sql: z.string().min(1).max(10_000) }),
 ]);
 const definition = z.object({
@@ -47,14 +47,14 @@ const definition = z.object({
 });
 const dashboardBody = z.object({ name: z.string().trim().min(1).max(60), definition });
 
-/** Which sources a dashboard of the system or of a tenant may show; the data endpoints check their callers anyway. */
+/** Which sources a dashboard of the system or of a project may show; the data endpoints check their callers anyway. */
 const SYSTEM_SOURCES = new Set<PanelSource["type"]>(["metric", "logs", "cluster", "web", "usage"]);
-const TENANT_SOURCES = new Set<PanelSource["type"]>(["web", "usage", "database"]);
+const PROJECT_SOURCES = new Set<PanelSource["type"]>(["web", "usage", "database"]);
 function checkSources(def: DashboardDefinition, system: boolean) {
   for (const p of def.panels) {
     const s = p.source;
-    const ok = system ? SYSTEM_SOURCES.has(s.type) && (s.type !== "usage" || s.view === "tenants") : TENANT_SOURCES.has(s.type) && !(s.type === "usage" && s.view === "tenants");
-    if (!ok) throw new HttpError(400, system ? "errors.dashboard.sourceSystem" : "errors.dashboard.sourceTenant", { source: `${s.type}${"view" in s ? `/${s.view}` : ""}` });
+    const ok = system ? SYSTEM_SOURCES.has(s.type) && (s.type !== "usage" || s.view === "projects") : PROJECT_SOURCES.has(s.type) && !(s.type === "usage" && s.view === "projects");
+    if (!ok) throw new HttpError(400, system ? "errors.dashboard.sourceSystem" : "errors.dashboard.sourceProject", { source: `${s.type}${"view" in s ? `/${s.view}` : ""}` });
   }
 }
 
@@ -71,39 +71,39 @@ interface Row {
   updated_at: number;
 }
 const toDashboard = (r: Row): Dashboard => ({ id: r.id, name: r.name, definition: JSON.parse(r.definition) as DashboardDefinition, updatedAt: new Date(Number(r.updated_at)).toISOString() });
-/** `tenant_id IS ?` matches NULL (the system's) as well as a tenant. */
-const OWNER = "tenant_id IS ?";
+/** `project_id IS ?` matches NULL (the system's) as well as a project. */
+const OWNER = "project_id IS ?";
 
-/** The system's (tenant null) and tenants' own dashboards; the built-in ones are the web app's. */
+/** The system's (project null) and projects' own dashboards; the built-in ones are the web app's. */
 export class DashboardStore {
   constructor(private readonly db: Db) {}
 
-  async list(tenant: string | null): Promise<Dashboard[]> {
-    return (await this.db.query<Row>(`SELECT * FROM dashboards WHERE ${OWNER} ORDER BY created_at`, [tenant])).map(toDashboard);
+  async list(project: string | null): Promise<Dashboard[]> {
+    return (await this.db.query<Row>(`SELECT * FROM dashboards WHERE ${OWNER} ORDER BY created_at`, [project])).map(toDashboard);
   }
 
-  async count(tenant: string): Promise<number> {
-    const [r] = await this.db.query<{ n: number }>("SELECT COUNT(*) AS n FROM dashboards WHERE tenant_id = ?", [tenant]);
+  async count(project: string): Promise<number> {
+    const [r] = await this.db.query<{ n: number }>("SELECT COUNT(*) AS n FROM dashboards WHERE project_id = ?", [project]);
     return Number(r?.n ?? 0);
   }
 
-  /** Adds one; a tenant's only while under its quota, checked in the same write. */
-  async create(tenant: string | null, d: { name: string; definition: DashboardDefinition }, by: string, limit: number | null): Promise<Dashboard> {
+  /** Adds one; a project's only while under its quota, checked in the same write. */
+  async create(project: string | null, d: { name: string; definition: DashboardDefinition }, by: string, limit: number | null): Promise<Dashboard> {
     const id = randomUUID();
     const now = Date.now();
     const [r] = await this.db.execute([
       run(
-        `INSERT INTO dashboards (id, tenant_id, name, definition, created_by, created_at, updated_at)
+        `INSERT INTO dashboards (id, project_id, name, definition, created_by, created_at, updated_at)
          SELECT ?, ?, ?, ?, ?, ?, ? WHERE ? IS NULL OR (SELECT COUNT(*) FROM dashboards WHERE ${OWNER}) < ?`,
         id,
-        tenant,
+        project,
         d.name,
         JSON.stringify(d.definition),
         by,
         now,
         now,
         limit,
-        tenant,
+        project,
         limit,
       ),
     ]);
@@ -111,25 +111,25 @@ export class DashboardStore {
     return { id, name: d.name, definition: d.definition, updatedAt: new Date(now).toISOString() };
   }
 
-  async update(tenant: string | null, id: string, d: { name: string; definition: DashboardDefinition }): Promise<Dashboard> {
+  async update(project: string | null, id: string, d: { name: string; definition: DashboardDefinition }): Promise<Dashboard> {
     const now = Date.now();
     const [r] = await this.db.execute([
-      run(`UPDATE dashboards SET name = ?, definition = ?, updated_at = ? WHERE id = ? AND ${OWNER}`, d.name, JSON.stringify(d.definition), now, id, tenant),
+      run(`UPDATE dashboards SET name = ?, definition = ?, updated_at = ? WHERE id = ? AND ${OWNER}`, d.name, JSON.stringify(d.definition), now, id, project),
     ]);
     if (!r?.rowsAffected) throw new HttpError(404, "errors.dashboard.notFound");
     return { id, ...d, updatedAt: new Date(now).toISOString() };
   }
 
-  async delete(tenant: string | null, id: string) {
-    const [r] = await this.db.execute([run(`DELETE FROM dashboards WHERE id = ? AND ${OWNER}`, id, tenant)]);
+  async delete(project: string | null, id: string) {
+    const [r] = await this.db.execute([run(`DELETE FROM dashboards WHERE id = ? AND ${OWNER}`, id, project)]);
     if (!r?.rowsAffected) throw new HttpError(404, "errors.dashboard.notFound");
   }
 }
 
 export interface DashboardDeps {
   store: DashboardStore;
-  tenants: TenantStore;
-  directory: TenantDirectory;
+  projects: ProjectStore;
+  directory: ProjectDirectory;
   schedules: ScheduleStore;
   backups: Backups;
   orchestrator: Orchestrator;
@@ -142,8 +142,8 @@ const rangeOf = (c: Context) => {
   return { from: Math.max(q.from ?? to - 24 * HOUR, to - 731 * 24 * HOUR), to };
 };
 
-/** CRUD over one owner's dashboards: the system's (`tenant` null) or the caller's tenant's. */
-function crud(deps: DashboardDeps, owner: (c: Context) => { tenant: string | null; canEdit: boolean; limit: number | null; by: string }) {
+/** CRUD over one owner's dashboards: the system's (`project` null) or the caller's project's. */
+function crud(deps: DashboardDeps, owner: (c: Context) => { project: string | null; canEdit: boolean; limit: number | null; by: string }) {
   const edit = (c: Context) => {
     const o = owner(c);
     if (!o.canEdit) throw new HttpError(403, "errors.dashboard.adminOnly");
@@ -155,17 +155,17 @@ function crud(deps: DashboardDeps, owner: (c: Context) => { tenant: string | nul
     return d;
   };
   return new Hono()
-    .get("/", async (c) => c.json<Dashboard[]>(await deps.store.list(owner(c).tenant)))
+    .get("/", async (c) => c.json<Dashboard[]>(await deps.store.list(owner(c).project)))
     .post("/", async (c) => {
       const o = edit(c);
-      return c.json<Dashboard>(await deps.store.create(o.tenant, await body(c, o.tenant === null), o.by, o.limit), 201);
+      return c.json<Dashboard>(await deps.store.create(o.project, await body(c, o.project === null), o.by, o.limit), 201);
     })
     .put("/:id", async (c) => {
       const o = edit(c);
-      return c.json<Dashboard>(await deps.store.update(o.tenant, c.req.param("id"), await body(c, o.tenant === null)));
+      return c.json<Dashboard>(await deps.store.update(o.project, c.req.param("id"), await body(c, o.project === null)));
     })
     .delete("/:id", async (c) => {
-      await deps.store.delete(edit(c).tenant, c.req.param("id"));
+      await deps.store.delete(edit(c).project, c.req.param("id"));
       return c.body(null, 204);
     });
 }
@@ -176,33 +176,33 @@ const ch = (deps: DashboardDeps) => {
 };
 
 /**
- * Tenant > Návštěvnost: one of the tenant's sites at a time (the sites of its domains and those a system admin gave
+ * Project > Návštěvnost: one of the project's sites at a time (the sites of its domains and those a system admin gave
  * it), kept for two years. Mounted at /api/analytics.
  */
-export function tenantAnalyticsRoutes(deps: DashboardDeps, tenant: (c: Context) => string) {
+export function projectAnalyticsRoutes(deps: DashboardDeps, project: (c: Context) => string) {
   return new Hono().get("/", async (c) => {
     const q = parse(z.object({ site: name, from: z.coerce.number().int().optional(), to: z.coerce.number().int().optional() }), c.req.query());
     const to = q.to ?? Date.now();
     const from = Math.max(q.from ?? to - 30 * 24 * HOUR, to - 731 * 24 * HOUR);
-    const allowed = (await deps.tenants.webSites()).get(tenant(c)) ?? [];
+    const allowed = (await deps.projects.webSites()).get(project(c)) ?? [];
     return c.json<WebStats>(await ch(deps).web.stats(q.site, { from, to }, allowed));
   });
 }
 
-/** A tenant's dashboards (its admins edit, members see) and its sites' web analytics. Mounted at /api/dashboards. */
-export function tenantDashboardRoutes(deps: DashboardDeps, ctx: (c: Context) => { tenant: string; role: string; user: string; quotas: TenantQuotas }) {
+/** A project's dashboards (its admins edit, members see) and its sites' web analytics. Mounted at /api/dashboards. */
+export function projectDashboardRoutes(deps: DashboardDeps, ctx: (c: Context) => { project: string; role: string; user: string; quotas: ProjectQuotas }) {
   return new Hono()
     .get("/data/web", async (c) => {
-      const { tenant } = ctx(c);
-      const sites = (await deps.tenants.webSites()).get(tenant) ?? [];
+      const { project } = ctx(c);
+      const sites = (await deps.projects.webSites()).get(project) ?? [];
       if (!sites.length) return c.json<WebSummary>({ sites: [], totals: { pageviews: 0, visitors: 0, events: 0 }, step: "day", series: [], pages: [], referrers: [], countries: [] });
-      return c.json<WebSummary>(await webSummary(ch(deps).ch, sites, rangeOf(c), () => tenant));
+      return c.json<WebSummary>(await webSummary(ch(deps).ch, sites, rangeOf(c), () => project));
     })
     .route(
       "/",
       crud(deps, (c) => {
         const x = ctx(c);
-        return { tenant: x.tenant, canEdit: x.role === "admin", limit: x.quotas.dashboards, by: x.user };
+        return { project: x.project, canEdit: x.role === "admin", limit: x.quotas.dashboards, by: x.user };
       }),
     );
 }
@@ -217,7 +217,7 @@ export function systemDashboardRoutes(deps: DashboardDeps, user: (c: Context) =>
   return new Hono()
     .get("/data/web", async (c) => {
       const owners = new Map<string, string>();
-      for (const [tenant, sites] of await deps.tenants.webSites()) for (const s of sites) owners.set(s, tenant);
+      for (const [project, sites] of await deps.projects.webSites()) for (const s of sites) owners.set(s, project);
       return c.json<WebSummary>(await webSummary(ch(deps).ch, null, rangeOf(c), (s) => owners.get(s) ?? null));
     })
     .get("/data/logs", async (c) => {
@@ -243,21 +243,21 @@ export function systemDashboardRoutes(deps: DashboardDeps, user: (c: Context) =>
           formats: ["time", "text", "text", "text", "text", "number"],
         });
       }
-      const [tenants, statuses, backups] = await Promise.all([deps.tenants.list(), deps.orchestrator.statuses().catch(() => new Map()), deps.backups.newest()]);
-      const label = { Running: t("dashboard.tenant.running"), Sleeping: t("dashboard.tenant.sleeping"), Suspended: t("dashboard.tenant.suspended"), Unknown: t("dashboard.tenant.unknown") } as const;
+      const [projects, statuses, backups] = await Promise.all([deps.projects.list(), deps.orchestrator.statuses().catch(() => new Map()), deps.backups.newest()]);
+      const label = { Running: t("dashboard.project.running"), Sleeping: t("dashboard.project.sleeping"), Suspended: t("dashboard.project.suspended"), Unknown: t("dashboard.project.unknown") } as const;
       if (view === "summary") {
-        const phases = tenants.map((t) => statuses.get(t.id)?.phase ?? "Unknown");
-        const stale = tenants.filter((t) => (backups.get(t.id)?.createdAt ?? 0) < Date.now() - 48 * HOUR).length;
+        const phases = projects.map((t) => statuses.get(t.id)?.phase ?? "Unknown");
+        const stale = projects.filter((t) => (backups.get(t.id)?.createdAt ?? 0) < Date.now() - 48 * HOUR).length;
         return c.json<PanelData>({
-          columns: ["tenants", "running", "sleeping", "noBackup"].map((k) => t(`dashboard.columns.${k}`, { hours: 48 })),
-          rows: [[tenants.length, phases.filter((p) => p === "Running").length, phases.filter((p) => p === "Sleeping").length, stale]],
+          columns: ["projects", "running", "sleeping", "noBackup"].map((k) => t(`dashboard.columns.${k}`, { hours: 48 })),
+          rows: [[projects.length, phases.filter((p) => p === "Running").length, phases.filter((p) => p === "Sleeping").length, stale]],
           formats: ["number", "number", "number", "number"],
         });
       }
-      if (view === "tenants") {
+      if (view === "projects") {
         return c.json<PanelData>({
-          columns: ["tenant", "state", "lastActivity", "lastBackup", "backupSize", "report"].map((k) => t(`dashboard.columns.${k}`)),
-          rows: tenants.map((t) => {
+          columns: ["project", "state", "lastActivity", "lastBackup", "backupSize", "report"].map((k) => t(`dashboard.columns.${k}`)),
+          rows: projects.map((t) => {
             const s = statuses.get(t.id);
             const b = backups.get(t.id);
             return [t.id, label[(s?.phase ?? "Unknown") as keyof typeof label], s?.lastActivity ? Date.parse(s.lastActivity) : null, b?.createdAt ?? null, b?.bytes ?? null, s?.message ?? ""];
@@ -267,13 +267,13 @@ export function systemDashboardRoutes(deps: DashboardDeps, user: (c: Context) =>
       }
       throw new HttpError(404, "errors.dashboard.unknownView");
     })
-    // Every tenant's quotas and how full they are: control's own counts, the runtimes' last reports for the rest.
+    // Every project's quotas and how full they are: control's own counts, the runtimes' last reports for the rest.
     .get("/data/usage", async (c) => {
       const t = say(c);
-      const tenants = await deps.tenants.list();
+      const projects = await deps.projects.list();
       const month = new Date().toISOString().slice(0, 7);
       const rows = await Promise.all(
-        tenants.map(async (t) => {
+        projects.map(async (t) => {
           const u: Partial<ReportedUsage> = t.usage ?? {};
           const q = t.quotas;
           const [members, schedules, dashboards] = await Promise.all([deps.directory.memberCount(t.id), deps.schedules.list(t.id), deps.store.count(t.id)]);
@@ -291,10 +291,10 @@ export function systemDashboardRoutes(deps: DashboardDeps, user: (c: Context) =>
         }),
       );
       return c.json<PanelData>({
-        columns: ["tenant", "tokensMonth", "files", "users", "tasks", "tables", "database", "dashboards", "reported"].map((k) => t(`dashboard.columns.${k}`)),
+        columns: ["project", "tokensMonth", "files", "users", "tasks", "tables", "database", "dashboards", "reported"].map((k) => t(`dashboard.columns.${k}`)),
         rows,
         formats: ["text", "meter", "meterBytes", "meter", "meter", "meter", "meterBytes", "meter", "time"],
       });
     })
-    .route("/", crud(deps, (c) => ({ tenant: null, canEdit: true, limit: null, by: user(c) })));
+    .route("/", crud(deps, (c) => ({ project: null, canEdit: true, limit: null, by: user(c) })));
 }

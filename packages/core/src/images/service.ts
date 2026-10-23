@@ -24,7 +24,7 @@ export interface ImageOptions {
   maxAttempts?: number; maxRefinements?: number; maxEstimatedCost?: number; maxReadAttempts?: number; maxImages?: number;
   visualEvaluation?: boolean; retentionDays?: number;
   uploadApi?: ComfyUploadApi; apiUploadFallback?: boolean; uploadApiKeySecret?: string;
-  /** Existing tenant feature/token-quota checks, applied before each model and paid call. */
+  /** Existing project feature/token-quota checks, applied before each model and paid call. */
   authorize?: (ctx: RunContext) => Promise<void>;
 }
 interface ImageContext {
@@ -40,7 +40,7 @@ const evaluateTool = tool(async () => "", { name: "image_evaluation", descriptio
 const safeContext = (v: unknown) => JSON.stringify(v, (key, value) => ["data", "base64"].includes(key) && typeof value === "string" && value.length > 1000 ? "[binary omitted]" : value).slice(0, 90_000);
 const terminal = (s: string) => ["completed", "failed", "cancelled"].includes(s);
 
-/** Fixed, bounded stages inside the existing agent; the MCP transport, tenant DB and artifacts remain shared. */
+/** Fixed, bounded stages inside the existing agent; the MCP transport, project DB and artifacts remain shared. */
 export class ImageService {
   private server: string;
   constructor(private jobs: ImageJobStore, private files: FileStore, private mcp: McpToolset, private model: BaseChatModel, private options: ImageOptions = {}, private count: (ctx: RunContext, tokens: number) => Promise<unknown> = async () => {}) { this.server = options.server ?? "comfy-cloud"; }
@@ -99,7 +99,7 @@ export class ImageService {
     if (!values.includes(providerId)) throw new ImageError("PROVIDER_ID_MISMATCH");
     return name === "cancel_job" ? providerData(await target.invoke(args, config)) : this.read(target, args, config);
   }
-  private loc(ctx: RunContext, ref: { scope: "tenant" | "temp" }) { return ref.scope === "temp" ? { scope: "temp" as const, threadId: scratchThread(ctx) } : { scope: "tenant" as const }; }
+  private loc(ctx: RunContext, ref: { scope: "project" | "temp" }) { return ref.scope === "temp" ? { scope: "temp" as const, threadId: scratchThread(ctx) } : { scope: "project" as const }; }
   private async sourceContext(id: string, request: ImageRequest, ctx: RunContext): Promise<ImageContext> {
     const references = [...request.references];
     const selection = await this.jobs.selection(ctx);
@@ -533,7 +533,7 @@ export class ImageService {
     await this.jobs.select(ctx, id, index);
     return { revision: id, selectedIndex: index, artifact };
   }
-  async analyzeVisual(file: { path: string; scope: "temp" | "tenant" }, question: string, original: RunnableConfig) {
+  async analyzeVisual(file: { path: string; scope: "temp" | "project" }, question: string, original: RunnableConfig) {
     const ctx = getRunContext(original), config = this.config(original);
     await this.options.authorize?.(ctx);
     const { data } = await this.files.read(this.loc(ctx, file), file.path), metadata = await inspectImage(data);

@@ -33,7 +33,7 @@ const flag = (code: string) => (/^[A-Z]{2}$/.test(code) ? String.fromCodePoint(.
 const n = (v: number) => formatNumber(v);
 
 /**
- * Tenant > Návštěvnost: the tenant's sites' web analytics (web-events → ClickHouse), without cookies. Visitors are counted once
+ * Project > Návštěvnost: the project's sites' web analytics (web-events → ClickHouse), without cookies. Visitors are counted once
  * per day (the hash changes daily), so over a longer range they're visits by day rather than people.
  */
 export function WebAnalytics() {

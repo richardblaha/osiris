@@ -19,14 +19,14 @@ export interface InternalClaims {
   sessionUid?: string;
   /** The user the call is made for; absent for system calls (operator, control housekeeping). */
   user?: InternalUser;
-  /** The tenant the call is about, with the user's role in it. */
-  tenant?: string;
+  /** The project the call is about, with the user's role in it. */
+  project?: string;
   role?: Role;
   channel?: Channel;
-  /** A customer on the tenant's public chat (no user, no role): the visitor's random id from their browser. */
+  /** A customer on the project's public chat (no user, no role): the visitor's random id from their browser. */
   visitor?: string;
-  /** Gateway → control: every tenant the user may open, and whether they are a system admin. */
-  memberships?: { tenantId: string; role: Role }[];
+  /** Gateway → control: every project the user may open, and whether they are a system admin. */
+  memberships?: { projectId: string; role: Role }[];
   systemAdmin?: boolean;
   /** The user's claim names, to explain a refused account. */
   claimKeys?: string[];
@@ -41,7 +41,7 @@ const ALG = "ES256";
 const DEFAULT_TTL_S = 60;
 const CLAIM = "osiris";
 
-export const tenantAudience = (tenant: string) => `tenant:${tenant}`;
+export const projectAudience = (project: string) => `project:${project}`;
 export const CONTROL_AUDIENCE = "control";
 
 export class InternalSigner {

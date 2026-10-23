@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CONTROL_AUDIENCE, generateInternalKeys, InternalSigner, InternalVerifier } from "@osiris/platform/internal-auth.ts";
 import { RqliteDb, run } from "@osiris/platform/rqlite.ts";
-import { deriveTenantKey } from "@osiris/platform/tenant-keys.ts";
+import { deriveProjectKey } from "@osiris/platform/project-keys.ts";
 
 describe("rqlite client", () => {
   it("sends parameterised statements in one transaction and reads rows as objects", async () => {
@@ -37,7 +37,7 @@ describe("internal tokens", () => {
     const signer = new InternalSigner(keys.privateKey, "gateway");
     const token = await signer.sign(CONTROL_AUDIENCE, { user: { sub: "u1", name: "A", email: null, phone: null, picture: null }, systemAdmin: true });
     expect(await new InternalVerifier(keys.publicKey).verify(token, CONTROL_AUDIENCE)).toMatchObject({ issuer: "gateway", user: { sub: "u1" }, systemAdmin: true });
-    await expect(new InternalVerifier(keys.publicKey).verify(token, "tenant:acme")).rejects.toThrow("Invalid internal token");
+    await expect(new InternalVerifier(keys.publicKey).verify(token, "project:acme")).rejects.toThrow("Invalid internal token");
     await expect(new InternalVerifier(keys.publicKey, ["control"]).verify(token, CONTROL_AUDIENCE)).rejects.toThrow("Invalid internal token");
     const other = await generateInternalKeys();
     await expect(new InternalVerifier(other.publicKey).verify(token, CONTROL_AUDIENCE)).rejects.toThrow("Invalid internal token");
@@ -46,12 +46,12 @@ describe("internal tokens", () => {
   });
 });
 
-describe("tenant keys", () => {
-  it("derives a different stable key per tenant", () => {
+describe("project keys", () => {
+  it("derives a different stable key per project", () => {
     const master = Buffer.alloc(32, 7).toString("base64");
-    expect(deriveTenantKey(master, "acme")).toBe(deriveTenantKey(master, "acme"));
-    expect(deriveTenantKey(master, "acme")).not.toBe(deriveTenantKey(master, "beta"));
-    expect(Buffer.from(deriveTenantKey(master, "acme"), "base64")).toHaveLength(32);
-    expect(() => deriveTenantKey("short", "acme")).toThrow("32 bytes");
+    expect(deriveProjectKey(master, "acme")).toBe(deriveProjectKey(master, "acme"));
+    expect(deriveProjectKey(master, "acme")).not.toBe(deriveProjectKey(master, "beta"));
+    expect(Buffer.from(deriveProjectKey(master, "acme"), "base64")).toHaveLength(32);
+    expect(() => deriveProjectKey("short", "acme")).toThrow("32 bytes");
   });
 });

@@ -9,7 +9,7 @@
     "personalization": "Personalization",
     "activity": "Activity and sessions"
   },
-  "personalizationIntro": "How the assistant should treat you. Applies to you only, separately in each of your tenants. The language also sets the app's language.",
+  "personalizationIntro": "How the assistant should treat you. Applies to you only, separately in each of your projects. The language also sets the app's language.",
   "address": "Form of address",
   "auto": "follow my lead",
   "informal": "informal",

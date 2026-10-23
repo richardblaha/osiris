@@ -1,10 +1,10 @@
 import { createServer } from "node:http";
 import { z } from "zod";
 import { InternalSigner } from "@osiris/platform/internal-auth.ts";
-import { deriveTenantKey } from "@osiris/platform/tenant-keys.ts";
+import { deriveProjectKey } from "@osiris/platform/project-keys.ts";
 import { Kube } from "./kube.ts";
 import { httpRuntimeProbe, Reconciler, runtimeUrl } from "./reconciler.ts";
-import type { TenantResource } from "./resources.ts";
+import type { ProjectResource } from "./resources.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 
 startTelemetry("osiris-operator");
@@ -59,13 +59,13 @@ const reconciler = new Reconciler(
     internalPublicKey: env.INTERNAL_JWT_PUBLIC_KEY,
     runtimeEnv,
     runtimeSecrets,
-    tenantSecretsKey: (tenant) => deriveTenantKey(env.SECRETS_MASTER_KEY, tenant),
+    projectSecretsKey: (project) => deriveProjectKey(env.SECRETS_MASTER_KEY, project),
     sites: { service: env.SITES_SERVICE, port: env.SITES_PORT, clusterIssuer: env.CLUSTER_ISSUER, ingressClass: env.INGRESS_CLASS, middleware: env.SITES_MIDDLEWARE },
   },
   httpRuntimeProbe(signer, runtimeUrl),
 );
 
-// One reconcile at a time; a tenant changed while it's being reconciled is queued again.
+// One reconcile at a time; a project changed while it's being reconciled is queued again.
 const queue = new Set<string>();
 let busy = false;
 let lastSuccess = Date.now();
@@ -76,8 +76,8 @@ const drain = async () => {
     while (queue.size) {
       const name = queue.values().next().value!;
       queue.delete(name);
-      const t = await kube.get<TenantResource>("Tenant", env.NAMESPACE, name).catch(() => null);
-      if (t) await reconciler.reconcile(t).catch((err) => console.error(`Tenant ${name}: reconcile failed`, err));
+      const t = await kube.get<ProjectResource>("Project", env.NAMESPACE, name).catch(() => null);
+      if (t) await reconciler.reconcile(t).catch((err) => console.error(`Project ${name}: reconcile failed`, err));
     }
     lastSuccess = Date.now();
   } finally {
@@ -94,16 +94,16 @@ const abort = new AbortController();
 (async () => {
   while (!abort.signal.aborted) {
     try {
-      await kube.watch("Tenant", env.NAMESPACE, (_type, obj) => enqueue(obj.metadata.name), abort.signal);
+      await kube.watch("Project", env.NAMESPACE, (_type, obj) => enqueue(obj.metadata.name), abort.signal);
     } catch (err) {
-      if (!abort.signal.aborted) console.error("Tenant watch failed, reconnecting", (err as Error).message);
+      if (!abort.signal.aborted) console.error("Project watch failed, reconnecting", (err as Error).message);
       await new Promise((r) => setTimeout(r, 2000));
     }
   }
 })();
 const resync = async () => {
   try {
-    for (const t of await kube.list<TenantResource>("Tenant", env.NAMESPACE)) queue.add(t.metadata.name);
+    for (const t of await kube.list<ProjectResource>("Project", env.NAMESPACE)) queue.add(t.metadata.name);
     void drain();
   } catch (err) {
     console.error("Resync failed", err);
@@ -117,7 +117,7 @@ const health = createServer((req, res) => {
   const ok = Date.now() - lastSuccess < 10 * env.RESYNC_SECONDS * 1000;
   res.writeHead(ok ? 200 : 503, { "content-type": "application/json" }).end(JSON.stringify({ ok }));
 }).listen(env.HEALTH_PORT);
-console.log(`Operator watching Tenants in ${env.NAMESPACE}`);
+console.log(`Operator watching Projects in ${env.NAMESPACE}`);
 
 const shutdown = () => {
   abort.abort();

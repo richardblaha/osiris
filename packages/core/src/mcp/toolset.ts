@@ -61,7 +61,7 @@ const closeLater = (connections: McpConnection[], ms: number) => {
   if (connections.length) setTimeout(() => connections.forEach((c) => void c.close().catch(() => {})), ms).unref();
 };
 
-/** The connected servers of one owner ('' = tenant-wide, or a user's sub). */
+/** The connected servers of one owner ('' = project-wide, or a user's sub). */
 class OwnerTools {
   loading?: Promise<StructuredToolInterface[]>;
   loadedAt = 0;
@@ -71,7 +71,7 @@ class OwnerTools {
 }
 
 /**
- * MCP tools of one tenant: its tenant-wide servers plus each user's personal servers. Connections open lazily,
+ * MCP tools of one project: its project-wide servers plus each user's personal servers. Connections open lazily,
  * are cached per owner and rebuilt after `invalidate(owner)` (config change) or the TTL. A server that fails is
  * skipped and reported in `status()`.
  */
@@ -138,8 +138,8 @@ export class McpToolset {
   }
 
   /**
-   * Fills `{{secret:NAME}}` in the URL and headers. Tenant servers ('' owner) get tenant secrets only;
-   * personal servers get the owner's secrets, then the tenant's. Every secret must allow the URL's host.
+   * Fills `{{secret:NAME}}` in the URL and headers. Project servers ('' owner) get project secrets only;
+   * personal servers get the owner's secrets, then the project's. Every secret must allow the URL's host.
    */
   private async resolve(server: McpServerConfig, owner: string): Promise<McpServerConfig> {
     const texts: Record<string, string> = { url: server.url };
@@ -162,14 +162,14 @@ export class McpToolset {
   }
 
   /**
-   * Tools for a user's run: the tenant's servers and the user's own. A server of theirs replaces the tenant's of the
+   * Tools for a user's run: the project's servers and the user's own. A server of theirs replaces the project's of the
    * same name (enabled or not), so its tools never come twice.
    */
   async tools(userId = ""): Promise<StructuredToolInterface[]> {
     this.evictIdle();
     if (!userId) return this.ownerTools("");
-    const [own, tenant, mine] = await Promise.all([this.store.names(userId), this.ownerTools(""), this.ownerTools(userId)]);
-    return [...tenant.filter((t) => !own.some((name) => t.name.startsWith(`${name}_`))), ...mine];
+    const [own, project, mine] = await Promise.all([this.store.names(userId), this.ownerTools(""), this.ownerTools(userId)]);
+    return [...project.filter((t) => !own.some((name) => t.name.startsWith(`${name}_`))), ...mine];
   }
 
   invalidate(owner: string): void {

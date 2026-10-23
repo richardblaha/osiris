@@ -6,10 +6,10 @@ const MAX_BODY_BYTES = 100 * 1024 * 1024;
 
 /**
  * POST /build: the site's source files as multipart form fields named by their paths; answers the built files the
- * same way, or 422 with the build's log. Reachable only from tenant runtimes, with no network of its own.
+ * same way, or 422 with the build's log. Reachable only from project runtimes, with no network of its own.
  */
 export function createVitepressApp(run: (files: BuildFile[]) => Promise<BuildResult> = build) {
-  // One build at a time: a build may leave nothing behind for the next tenant's.
+  // One build at a time: a build may leave nothing behind for the next project's.
   let queue: Promise<unknown> = Promise.resolve();
   const serial = <T>(task: () => Promise<T>): Promise<T> => {
     const next = queue.then(task, task);

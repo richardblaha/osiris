@@ -1,11 +1,11 @@
 {
   "scope": {
     "personal": "Platí jen pro tebe.",
-    "tenant": "Platí pro všechny v tenantovi.",
-    "tenantAdminOnly": "Platí pro všechny v tenantovi. Měnit ho může jen správce tenanta.",
+    "project": "Platí pro všechny v projektu.",
+    "projectAdminOnly": "Platí pro všechny v projektu. Měnit ho může jen správce projektu.",
     "overridden": "Pro tebe ji nahrazuje tvoje vlastní kopie; asistent používá tu tvoji.",
     "choose": "Pro koho",
-    "forTenant": "Celá firma",
+    "forProject": "Celá firma",
     "forMe": "Jen já",
     "makeCopy": "Vytvořit vlastní kopii",
     "copyHint": "Tvoje kopie nahradí tuto jen tobě; firemní zůstane, jak je.",
@@ -13,7 +13,7 @@
   },
   "badge": {
     "bundled": "výchozí",
-    "tenant": "tenant",
+    "project": "projekt",
     "personal": "osobní",
     "overridden": "nahrazeno"
   },

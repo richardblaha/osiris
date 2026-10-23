@@ -55,7 +55,7 @@ class ScriptModel extends BaseChatModel {
 }
 
 const step = (s: Partial<PlanStep> & Pick<PlanStep, "id" | "pattern">): PlanStep => ({ goal: s.id, dependsOn: [], destructive: false, ...s });
-const config = (thread = "t1") => ({ configurable: { thread_id: thread, tenant_id: "acme", user_id: "bob", role: "admin", channel: "web" } });
+const config = (thread = "t1") => ({ configurable: { thread_id: thread, project_id: "acme", user_id: "bob", role: "admin", channel: "web" } });
 const input = (text: string) => ({ messages: [new HumanMessage(text)] });
 
 async function collect(stream: AsyncGenerator<AgentTelemetryEvent>) {
@@ -204,8 +204,8 @@ describe("run_workflow tool", () => {
     let agent!: ReturnType<typeof createAgentGraph>;
     const orchestrator = createOrchestratorGraph({ model, react: (g, c, k) => reactFromAgentGraph(agent)(g, c, k), checkpointer });
     const wf = workflowTool(orchestrator, questions);
-    agent = createAgentGraph({ tenantId: "acme", model, tools: [questions.tool()], dynamicTools: async (ctx) => (ctx.workflow ? [] : [wf]), checkpointer, timezone: "Europe/Prague", questions });
-    const ctx: RunContext = { thread_id: "t1", tenant_id: "acme", user_id: "bob", role: "admin", channel: "web", locale: "cs" };
+    agent = createAgentGraph({ projectId: "acme", model, tools: [questions.tool()], dynamicTools: async (ctx) => (ctx.workflow ? [] : [wf]), checkpointer, timezone: "Europe/Prague", questions });
+    const ctx: RunContext = { thread_id: "t1", project_id: "acme", user_id: "bob", role: "admin", channel: "web", locale: "cs" };
     const run = async (text: string) => {
       const events: RunEvent[] = [];
       for await (const e of streamRun(agent, ctx, text)) events.push(e);
@@ -259,10 +259,10 @@ describe("run_workflow tool", () => {
     const orchestrator = createOrchestratorGraph({ model, react: (g, c, k) => reactFromAgentGraph(agent)(g, c, k), checkpointer });
     const wf = workflowTool(orchestrator, questions);
     agent = createAgentGraph({
-      tenantId: "acme", model, models: { agent: model, tools: model, guard, persona: model }, tools: [questions.tool()], dynamicTools: async () => [wf], checkpointer,
-      timezone: "Europe/Prague", questions, rules: async () => ({ system: "Nemaž zákazníky.", tenant: "", user: "" }),
+      projectId: "acme", model, models: { agent: model, tools: model, guard, persona: model }, tools: [questions.tool()], dynamicTools: async () => [wf], checkpointer,
+      timezone: "Europe/Prague", questions, rules: async () => ({ system: "Nemaž zákazníky.", project: "", user: "" }),
     });
-    const ctx: RunContext = { thread_id: "t1", tenant_id: "acme", user_id: "bob", role: "admin", channel: "web" };
+    const ctx: RunContext = { thread_id: "t1", project_id: "acme", user_id: "bob", role: "admin", channel: "web" };
     const events: RunEvent[] = [];
     for await (const e of streamRun(agent, ctx, "Smaž zákazníka Nováka", undefined, { guarded: true })) events.push(e);
     expect(events.find((e) => e.type === "tool-result")).toMatchObject({ result: expect.stringMatching(/porušuje pravidla/) });

@@ -12,7 +12,7 @@ import { KNOWLEDGE_DIR, type KnowledgeStore } from "../rag/store.ts";
 const LEGACY_KNOWLEDGE = "public";
 /** The owner of a public assistant's persona and rules in assistant_profiles. */
 export const publicProfile = (name: string) => `@public:${name}`;
-/** In public links and routes: the tenant's first assistant (links from before there were several). */
+/** In public links and routes: the project's first assistant (links from before there were several). */
 export const FIRST_ASSISTANT = "_";
 
 export const DEFAULT_PUBLIC_SETTINGS: Omit<PublicAssistantSettings, "name"> = {
@@ -26,7 +26,7 @@ export const DEFAULT_PUBLIC_SETTINGS: Omit<PublicAssistantSettings, "name"> = {
   tokensPerMonth: null,
 };
 
-/** The tenant's public assistants, a row each in `public_assistants`, oldest first. */
+/** The project's public assistants, a row each in `public_assistants`, oldest first. */
 export class PublicAssistantStore {
   constructor(private readonly db: Client) {}
 
@@ -71,11 +71,11 @@ export class PublicAssistantStore {
   }
 
   /**
-   * Moves the old single public assistant (tenant_settings `public_assistant`, persona `@public`, skills marked
+   * Moves the old single public assistant (project_settings `public_assistant`, persona `@public`, skills marked
    * `public: true`, its usage row) to an assistant named `web`, once.
    */
   async migrateLegacy(skills: SkillStore) {
-    const { rows } = await this.db.execute("SELECT value FROM tenant_settings WHERE key = 'public_assistant'");
+    const { rows } = await this.db.execute("SELECT value FROM project_settings WHERE key = 'public_assistant'");
     if (!rows[0]) return;
     const old = JSON.parse(String(rows[0].value)) as Partial<PublicAssistantSettings> & { tools?: string[] };
     const config = {
@@ -84,7 +84,7 @@ export class PublicAssistantStore {
       title: old.title ?? "",
       greeting: old.greeting ?? DEFAULT_PUBLIC_SETTINGS.greeting,
       knowledge: [LEGACY_KNOWLEDGE],
-      skills: old.tools?.includes("load_skill") ? (await skills.tenantSkills()).filter((s) => s.public).map((s) => s.name) : [],
+      skills: old.tools?.includes("load_skill") ? (await skills.projectSkills()).filter((s) => s.public).map((s) => s.name) : [],
       tools: (old.tools ?? []).filter((t): t is PublicTool => (PUBLIC_TOOLS as readonly string[]).includes(t)),
       tokensPerMonth: old.tokensPerMonth ?? null,
     };
@@ -94,7 +94,7 @@ export class PublicAssistantStore {
         "UPDATE assistant_profiles SET owner = '@public:web' WHERE owner = '@public'",
         "UPDATE inquiries SET assistant = 'web' WHERE assistant IS NULL",
         "UPDATE usage_months SET month = 'public:web:' || substr(month, 8) WHERE month LIKE 'public:____-__'",
-        "DELETE FROM tenant_settings WHERE key = 'public_assistant'",
+        "DELETE FROM project_settings WHERE key = 'public_assistant'",
       ],
       "write",
     );
@@ -166,7 +166,7 @@ export interface PublicToolDeps {
   knowledge: KnowledgeStore;
   inquiries: InquiryStore;
   skills: SkillStore;
-  /** Tells the tenant's admins about a new inquiry (email through control). */
+  /** Tells the project's admins about a new inquiry (email through control). */
   notify?: (inquiry: Inquiry) => Promise<void>;
 }
 
@@ -242,7 +242,7 @@ export function publicTools(deps: PublicToolDeps, assistant: Pick<PublicAssistan
     tools.push(
       tool(
         async ({ name }) =>
-          (assistant.skills.includes(name) ? (await deps.skills.tenantSkills()).find((s) => s.name === name)?.instructions : undefined) ?? `Postup „${name}“ neexistuje.`,
+          (assistant.skills.includes(name) ? (await deps.skills.projectSkills()).find((s) => s.name === name)?.instructions : undefined) ?? `Postup „${name}“ neexistuje.`,
         {
           name: "load_skill",
           description: "Načte postup ze seznamu POSTUPY dřív, než se do takového úkolu pustíš.",

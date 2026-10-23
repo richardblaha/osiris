@@ -1,5 +1,5 @@
-# Gotenberg converts the tenants' HTML and office documents to PDF (tool convert_to_pdf). It renders untrusted
-# content, so it is stateless, unprivileged, reachable only from tenant runtimes and cut off from the network: Chromium may
+# Gotenberg converts the projects' HTML and office documents to PDF (tool convert_to_pdf). It renders untrusted
+# content, so it is stateless, unprivileged, reachable only from project runtimes and cut off from the network: Chromium may
 # load only the files Gotenberg itself wrote to /tmp, and the NetworkPolicy denies all egress.
 apiVersion: apps/v1
 kind: Deployment
@@ -100,8 +100,8 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
-        # Tenant runtimes (convert_to_pdf).
-        - namespaceSelector: { matchExpressions: [{ key: osiris.k6labs.cz/tenant, operator: Exists }] }
+        # Project runtimes (convert_to_pdf).
+        - namespaceSelector: { matchExpressions: [{ key: osiris.k6labs.cz/project, operator: Exists }] }
           podSelector: { matchLabels: { app: runtime } }
       ports:
         - port: 3000

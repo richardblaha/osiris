@@ -3,7 +3,7 @@ import type { UserSettings } from "@osiris/shared";
 
 export const DEFAULT_SETTINGS: UserSettings = { address: "auto", language: "auto", signature: "", instructions: "" };
 
-/** "Můj profil" of users in one tenant: how the agent should treat each of them. */
+/** "Můj profil" of users in one project: how the agent should treat each of them. */
 export class UserSettingsStore {
   constructor(
     private readonly db: Client,

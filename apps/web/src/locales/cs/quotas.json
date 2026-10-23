@@ -21,7 +21,7 @@
     "database": "Databáze",
     "dashboards": "Dashboardy"
   },
-  "noTenant": "bez tenanta",
+  "noProject": "bez projektu",
   "exhausted": "vyčerpáno",
   "runningOut": "dochází"
 }

@@ -1,4 +1,4 @@
--- Where the tenant's website is published over SFTP (e.g. its VPS at vas-hosting.cz): the server, the folder, the
+-- Where the project's website is published over SFTP (e.g. its VPS at vas-hosting.cz): the server, the folder, the
 -- password or private key (sealed), the server's host key pinned on the first connection, and the last publish
 CREATE TABLE site_targets (
   name TEXT PRIMARY KEY,

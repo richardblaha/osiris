@@ -1,6 +1,6 @@
 export * from "./i18n.ts";
 
-/** `public`: the tenant's customers, anonymous, on its public chat page or website widget. */
+/** `public`: the project's customers, anonymous, on its public chat page or website widget. */
 export type Channel = "web" | "whatsapp" | "public";
 
 export interface ThreadSummary {
@@ -40,26 +40,26 @@ export type RunEvent =
 
 export type Role = "admin" | "member";
 
-/** Identity and memberships from the user's claims (`role`, `tenant`, `tenant-admin`); see `@osiris/platform/claims.ts`. */
+/** Identity and memberships from the user's claims (`role`, `project`, `project-admin`); see `@osiris/platform/claims.ts`. */
 export interface MeResponse {
   user: { id: string; email: string | null; name: string | null; phone: string | null; picture: string | null };
-  /** Claim `role=osiris-admin`: admin of every tenant, manages tenants. */
+  /** Claim `role=osiris-admin`: admin of every project, manages projects. */
   systemAdmin: boolean;
-  tenants: { id: string; name: string; role: Role; logo: string | null }[];
+  projects: { id: string; name: string; role: Role; logo: string | null }[];
 }
 
-/** What a system admin can switch on or off per tenant. */
+/** What a system admin can switch on or off per project. */
 export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public", "database", "workflows"] as const;
 export type Feature = (typeof FEATURES)[number];
-export type TenantFeatures = Record<Feature, boolean>;
+export type ProjectFeatures = Record<Feature, boolean>;
 
-/** The active tenant (`GET /api/tenant`). */
-export interface TenantInfo {
+/** The active project (`GET /api/project`). */
+export interface ProjectInfo {
   id: string;
   name: string;
   role: Role;
-  features: TenantFeatures;
-  /** Public URL of the tenant's logo, or null. */
+  features: ProjectFeatures;
+  /** Public URL of the project's logo, or null. */
   logo: string | null;
 }
 
@@ -70,7 +70,7 @@ export interface Persona {
   description: string;
 }
 
-/** The assistant's persona: a user's own or a public assistant's (personalization is the user's, not the tenant's). */
+/** The assistant's persona: a user's own or a public assistant's (personalization is the user's, not the project's). */
 export interface AssistantProfile {
   persona: Persona | null;
 }
@@ -85,7 +85,7 @@ export interface AssistantProfiles {
 /**
  * A rule the assistant keeps to: in the prompt, and every message and answer is checked against it. Stored as a
  * Markdown file per guard (frontmatter name and description, the rule as the body): the system's in control, the
- * tenant's in its files under `guards/`, a user's under `guards/users/<id>/`, a public assistant's under
+ * project's in its files under `guards/`, a user's under `guards/users/<id>/`, a public assistant's under
  * `guards/assistants/<name>/`.
  */
 export interface Guard {
@@ -97,15 +97,15 @@ export interface Guard {
 /** Guards by level (`/api/guards`): the system's read-only here; the assistants' for admins. */
 export interface Guards {
   system: Guard[];
-  tenant: Guard[];
+  project: Guard[];
   /** The caller's own. */
   user: Guard[];
   assistants?: Record<string, Guard[]>;
 }
 
-/** What new tenants and users start with (system admins, System > Nastavení, `/api/admin/defaults`). */
+/** What new projects and users start with (system admins, System > Nastavení, `/api/admin/defaults`). */
 export interface SystemDefaults {
-  tenant: { features: TenantFeatures; quotas: TenantQuotas; idleMinutes: number; storageGb: number };
+  project: { features: ProjectFeatures; quotas: ProjectQuotas; idleMinutes: number; storageGb: number };
   /** A user's personalization until they save their own (the persona until they set one). */
   user: UserDefaults;
 }
@@ -204,26 +204,26 @@ export interface MetricSeries {
 /** Guard names, also their file names: kebab-case. */
 export const GUARD_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-/** Limits a system admin sets per tenant; null = no limit (storage: 80 % of the tenant's volume). */
-export interface TenantQuotas {
+/** Limits a system admin sets per project; null = no limit (storage: 80 % of the project's volume). */
+export interface ProjectQuotas {
   /** Files, in MB. */
   storageMb: number | null;
   /** Tokens of the language model per calendar month. */
   tokensPerMonth: number | null;
   members: number | null;
-  /** Scheduled tasks in the tenant. */
+  /** Scheduled tasks in the project. */
   schedules: number | null;
   /** Tokens of the language model per calendar month for each member (their runs, scheduled ones too). */
   tokensPerUserMonth: number | null;
-  /** Tables in the tenant's database. */
+  /** Tables in the project's database. */
   tables: number | null;
-  /** The tenant's database, in MB. */
+  /** The project's database, in MB. */
   databaseMb: number | null;
-  /** The tenant's own dashboards (the built-in ones don't count). */
+  /** The project's own dashboards (the built-in ones don't count). */
   dashboards: number | null;
 }
 
-export const NO_QUOTAS: TenantQuotas = {
+export const NO_QUOTAS: ProjectQuotas = {
   storageMb: null,
   tokensPerMonth: null,
   members: null,
@@ -240,8 +240,8 @@ export interface Meter {
   limit: number | null;
 }
 
-/** How much of its quotas the tenant uses (`/api/usage`); storage in bytes, tokens this calendar month. */
-export interface TenantUsage {
+/** How much of its quotas the project uses (`/api/usage`); storage in bytes, tokens this calendar month. */
+export interface ProjectUsage {
   storage: Meter;
   tokens: Meter;
   members: Meter;
@@ -254,49 +254,49 @@ export interface TenantUsage {
   dashboards: Meter;
 }
 
-/** A built-in tool of the assistant (`/api/tools`); a system admin can switch each one off per tenant. */
+/** A built-in tool of the assistant (`/api/tools`); a system admin can switch each one off per project. */
 export interface BuiltinTool {
   name: string;
   description: string;
   feature: Feature;
-  /** Its feature is on for the tenant. */
+  /** Its feature is on for the project. */
   featureOn: boolean;
   /** Switched off by a system admin. */
   disabled: boolean;
 }
 
-/** A tenant as system admins see it (`/api/admin/tenants`). */
-export interface TenantSummary {
+/** A project as system admins see it (`/api/admin/projects`). */
+export interface ProjectSummary {
   id: string;
   name: string;
   logo: string | null;
-  /** Users whose claim `tenant` or `tenant-admin` names the tenant. */
+  /** Users whose claim `project` or `project-admin` names the project. */
   members: number;
 }
 
-export interface TenantMember {
+export interface ProjectMember {
   userId: string;
   name: string | null;
   email: string | null;
   role: Role;
 }
 
-export interface TenantDetail extends TenantSummary {
-  features: TenantFeatures;
-  memberList: TenantMember[];
-  /** Minutes without activity before the tenant's runtime sleeps; 0 = always on. */
+export interface ProjectDetail extends ProjectSummary {
+  features: ProjectFeatures;
+  memberList: ProjectMember[];
+  /** Minutes without activity before the project's runtime sleeps; 0 = always on. */
   idleMinutes: number;
-  /** Size of the tenant's volume (database and files). */
+  /** Size of the project's volume (database and files). */
   storageGb: number;
-  /** Built-in tools switched off for the tenant, by name. */
+  /** Built-in tools switched off for the project, by name. */
   disabledTools: string[];
-  quotas: TenantQuotas;
+  quotas: ProjectQuotas;
   /** Web analytics sites it sees besides those of its domains. */
   webSites: string[];
   backups: { key: string; bytes: number; reason: string; createdAt: string }[];
 }
 
-/** A user of Osiris, for adding members to a tenant. */
+/** A user of Osiris, for adding members to a project. */
 export interface DirectoryUser {
   id: string;
   name: string | null;
@@ -312,16 +312,16 @@ export interface AdminUser extends DirectoryUser {
   disabled: boolean;
   /** Claim `role=osiris-admin`. */
   systemAdmin: boolean;
-  /** Active tenants their claims name. */
-  tenants: { id: string; role: Role }[];
+  /** Active projects their claims name. */
+  projects: { id: string; role: Role }[];
 }
 
-/** Who a setting applies to: the whole tenant (managed by admins) or only the current user. */
-export type Scope = "tenant" | "personal";
+/** Who a setting applies to: the whole project (managed by admins) or only the current user. */
+export type Scope = "project" | "personal";
 
 /**
- * A user's own layer over the tenant's settings: each list holds the tenant's records and the viewer's own, and a
- * tenant record the viewer replaced with their own copy (same name, id or path) is `overridden` for them.
+ * A user's own layer over the project's settings: each list holds the project's records and the viewer's own, and a
+ * project record the viewer replaced with their own copy (same name, id or path) is `overridden` for them.
  */
 export interface Layered {
   overridden?: boolean;
@@ -330,9 +330,9 @@ export interface Layered {
 export interface SkillSummary extends Layered {
   name: string;
   description: string;
-  /** Precedence for one name: `personal` (this user) > `tenant` (admin) > `bundled` (ships with the app). */
+  /** Precedence for one name: `personal` (this user) > `project` (admin) > `bundled` (ships with the app). */
   source: "bundled" | Scope;
-  /** Frontmatter `requires`: offered only while the tenant has that feature (its tools). */
+  /** Frontmatter `requires`: offered only while the project has that feature (its tools). */
   requires?: Feature;
 }
 
@@ -343,18 +343,18 @@ export interface Skill extends SkillSummary {
 export interface Memory extends Layered {
   id: string;
   content: string;
-  /** `tenant`: shared with everyone in the tenant (admins manage it); `personal`: only this user. */
+  /** `project`: shared with everyone in the project (admins manage it); `personal`: only this user. */
   scope: Scope;
-  /** A personal memory that replaces this tenant memory for its owner. */
+  /** A personal memory that replaces this project memory for its owner. */
   overrides?: string;
   createdAt: string;
 }
 
-/** A remote MCP server, tenant-wide or personal. Header values are write-only: the API returns only their names. */
+/** A remote MCP server, project-wide or personal. Header values are write-only: the API returns only their names. */
 export interface McpServer extends Layered {
   name: string;
   scope: Scope;
-  /** Empty for tenant servers when the viewer isn't an admin (the URL may carry an API key). */
+  /** Empty for project servers when the viewer isn't an admin (the URL may carry an API key). */
   url: string;
   enabled: boolean;
   /** `oauth`: signed in at the provider (vas-hosting.cz…), not with static headers. */
@@ -438,7 +438,7 @@ export interface ScheduleInput {
   enabled?: boolean;
 }
 
-/** A custom domain for the tenant's site (`/api/domains`); served once DNS proves it's the tenant's. */
+/** A custom domain for the project's site (`/api/domains`); served once DNS proves it's the project's. */
 export interface SiteDomain {
   domain: string;
   status: "pending" | "verified" | "failed";
@@ -492,7 +492,7 @@ export interface SignInState {
   methods: { passkey: boolean; emailLink: boolean; social: SocialProvider[] };
 }
 
-/** Result of adding someone to a tenant by email (`POST /api/members`). */
+/** Result of adding someone to a project by email (`POST /api/members`). */
 export interface InviteResult {
   userId: string;
   created: boolean;
@@ -500,17 +500,17 @@ export interface InviteResult {
   loginLink?: string;
 }
 
-/** Tenant files (`/api/files`): shared by the tenant (admins write), the user's own, or one thread's temporary files. */
-export type FileScope = "tenant" | "personal" | "temp";
+/** Project files (`/api/files`): shared by the project (admins write), the user's own, or one thread's temporary files. */
+export type FileScope = "project" | "personal" | "temp";
 
-/** Tools a public assistant may get besides searching its knowledge and loading its skills; the tenant admin picks them. */
+/** Tools a public assistant may get besides searching its knowledge and loading its skills; the project admin picks them. */
 export const PUBLIC_TOOLS = ["estimate_price", "create_inquiry"] as const;
 export type PublicTool = (typeof PUBLIC_TOOLS)[number];
 
-/** Public assistant names: in its link (`/c/<tenant>/<name>`), kebab-case. */
+/** Public assistant names: in its link (`/c/<project>/<name>`), kebab-case. */
 export const PUBLIC_ASSISTANT_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
-/** One of the tenant's assistants for its customers (`/api/public-assistants`); it knows only what the admin picked. */
+/** One of the project's assistants for its customers (`/api/public-assistants`); it knows only what the admin picked. */
 export interface PublicAssistantSettings {
   name: string;
   enabled: boolean;
@@ -519,16 +519,16 @@ export interface PublicAssistantSettings {
   greeting: string;
   /** Knowledge base documents and folders it searches, relative to knowledge/ (e.g. `public` or `cenik.md`). */
   knowledge: string[];
-  /** Ids of the tenant's memories it is told. */
+  /** Ids of the project's memories it is told. */
   memories: string[];
-  /** Tenant skills it may load. */
+  /** Project skills it may load. */
   skills: string[];
   tools: PublicTool[];
-  /** Model tokens per calendar month for its chats (null = only the tenant's quota). */
+  /** Model tokens per calendar month for its chats (null = only the project's quota). */
   tokensPerMonth: number | null;
 }
 
-/** What the public chat page shows before the first message (`/public/<tenant>/<assistant>/info`). */
+/** What the public chat page shows before the first message (`/public/<project>/<assistant>/info`). */
 export interface PublicInfo {
   enabled: boolean;
   title: string;
@@ -557,7 +557,7 @@ export interface Integration {
   connected: boolean;
 }
 
-/** Where the tenant's site is published over SFTP (`/api/site-targets`); the password or key is never returned. */
+/** Where the project's site is published over SFTP (`/api/site-targets`); the password or key is never returned. */
 export interface SiteTarget {
   name: string;
   host: string;
@@ -580,9 +580,9 @@ export interface PublishResult {
   error?: string;
 }
 
-/** A full-text match in the tenant's or the user's files (`/api/files/search`). */
+/** A full-text match in the project's or the user's files (`/api/files/search`). */
 export interface FileSearchHit {
-  scope: "tenant" | "personal";
+  scope: "project" | "personal";
   path: string;
   /** The matching passage, matches marked with « and ». */
   snippet: string;
@@ -600,11 +600,11 @@ export interface FileEntry {
 }
 export * from "./files.ts";
 
-/** Column types of the tenant's database; `date` is `YYYY-MM-DD`, `datetime` ISO 8601, `json` any JSON value. */
+/** Column types of the project's database; `date` is `YYYY-MM-DD`, `datetime` ISO 8601, `json` any JSON value. */
 export const DB_COLUMN_TYPES = ["text", "integer", "real", "boolean", "date", "datetime", "json"] as const;
 export type DbColumnType = (typeof DB_COLUMN_TYPES)[number];
 
-/** A column of a table in the tenant's database; `id`, `created_at` and `updated_at` are every table's own (`system`). */
+/** A column of a table in the project's database; `id`, `created_at` and `updated_at` are every table's own (`system`). */
 export interface DbColumn {
   name: string;
   type: DbColumnType;
@@ -615,7 +615,7 @@ export interface DbColumn {
   system?: boolean;
 }
 
-/** A table of the tenant's database (`/api/database/tables`). */
+/** A table of the project's database (`/api/database/tables`). */
 export interface DbTable {
   name: string;
   description: string;
@@ -647,15 +647,15 @@ export const PANEL_KINDS = ["stat", "line", "bar", "table", "meters"] as const;
 export type PanelKind = (typeof PANEL_KINDS)[number];
 
 /**
- * Where a panel's data comes from. System dashboards: metric, logs, cluster, web (all sites), usage `tenants`.
- * Tenant dashboards: web (the tenant's sites), usage (`quotas`, `users`, `assistants`, `months`), database (one SELECT).
+ * Where a panel's data comes from. System dashboards: metric, logs, cluster, web (all sites), usage `projects`.
+ * Project dashboards: web (the project's sites), usage (`quotas`, `users`, `assistants`, `months`), database (one SELECT).
  */
 export type PanelSource =
   | { type: "metric"; name: string; metricType: "gauge" | "sum" | "histogram"; groupBy?: string; service?: string }
   | { type: "logs"; view: "by_service" | "list"; severity?: "warn" | "error" | "fatal"; service?: string; namespace?: string; q?: string }
-  | { type: "cluster"; view: "summary" | "tenants" | "pods" | "events" | "backups" }
+  | { type: "cluster"; view: "summary" | "projects" | "pods" | "events" | "backups" }
   | { type: "web"; view: "totals" | "series" | "sites" | "pages" | "referrers" | "countries" }
-  | { type: "usage"; view: "quotas" | "users" | "assistants" | "months" | "tenants" }
+  | { type: "usage"; view: "quotas" | "users" | "assistants" | "months" | "projects" }
   | { type: "database"; sql: string };
 
 export interface DashboardPanel {
@@ -671,7 +671,7 @@ export interface DashboardDefinition {
   panels: DashboardPanel[];
 }
 
-/** A dashboard of the system (system admins) or of a tenant (its admins edit, members see). */
+/** A dashboard of the system (system admins) or of a project (its admins edit, members see). */
 export interface Dashboard {
   id: string;
   name: string;
@@ -692,7 +692,7 @@ export type PanelFormat = "bytes" | "number" | "time" | "date" | "percent" | "te
 
 /** The web analytics of several sites together (Weby dashboards); visitors are unique per day. */
 export interface WebSummary {
-  sites: { site: string; tenant: string | null; pageviews: number; visitors: number }[];
+  sites: { site: string; project: string | null; pageviews: number; visitors: number }[];
   totals: { pageviews: number; visitors: number; events: number };
   step: "hour" | "day";
   series: { t: number; pageviews: number; visitors: number }[];
@@ -701,7 +701,7 @@ export interface WebSummary {
   countries: WebTopRow[];
 }
 
-/** Tokens this month by member, by public assistant, and the tenant's per month (`/api/usage/breakdown`). */
+/** Tokens this month by member, by public assistant, and the project's per month (`/api/usage/breakdown`). */
 export interface UsageBreakdown {
   /** By user id; a member sees only themselves. */
   users: { userId: string; tokens: number }[];

@@ -12,9 +12,9 @@ async function setup() {
   await migrate(db, join(import.meta.dirname, "../../control/src/db/migrations"));
   const objects = new FsObjectStore(join(dir, "objects"));
   await db.execute([
-    run("INSERT INTO tenants (id, name, created_at, updated_at) VALUES ('acme', 'ACME', 0, 0)"),
-    run("INSERT INTO domains (domain, tenant_id, status, token, release_id, created_at) VALUES ('www.acme.cz', 'acme', 'verified', 't', 'r1', 0)"),
-    run("INSERT INTO domains (domain, tenant_id, status, token, release_id, created_at) VALUES ('pending.acme.cz', 'acme', 'pending', 't', 'r1', 0)"),
+    run("INSERT INTO projects (id, name, created_at, updated_at) VALUES ('acme', 'ACME', 0, 0)"),
+    run("INSERT INTO domains (domain, project_id, status, token, release_id, created_at) VALUES ('www.acme.cz', 'acme', 'verified', 't', 'r1', 0)"),
+    run("INSERT INTO domains (domain, project_id, status, token, release_id, created_at) VALUES ('pending.acme.cz', 'acme', 'pending', 't', 'r1', 0)"),
   ]);
   for (const [path, body] of Object.entries({ "index.html": "<h1>ACME</h1>", "about/index.html": "o nás", "css/a.css": "h1{}", "404.html": "nic" })) {
     await objects.put(`sites/acme/r1/${path}`, Buffer.from(body));
@@ -52,9 +52,9 @@ describe("sites", () => {
     expect(await (await get("www.acme.cz", "/", "HEAD")).text()).toBe("");
   });
 
-  it("stops serving the sites of archived tenants", async () => {
+  it("stops serving the sites of archived projects", async () => {
     const { db } = await setup();
-    await db.execute([run("UPDATE tenants SET status = 'archived'")]);
+    await db.execute([run("UPDATE projects SET status = 'archived'")]);
     // A fresh process (hosts are cached for a minute per process) sees the change.
     const app = createSitesApp({ db, objects: new FsObjectStore(mkdtempSync(join(tmpdir(), "osiris-empty-"))) });
     expect((await app.request("/", { headers: { host: "www.acme.cz" } })).status).toBe(404);

@@ -6,7 +6,6 @@ import * as tar from "tar";
 import { describe, expect, it } from "vitest";
 import { readAll } from "@osiris/platform/objects.ts";
 import { SecretBox } from "@osiris/platform/secrets.ts";
-import { importLegacyTenant } from "../src/legacy/import.ts";
 import { siteKey } from "../src/sites/publisher.ts";
 import { createTestControl, fakeDns, tempDir } from "./helpers.ts";
 
@@ -34,13 +33,13 @@ async function setup() {
 }
 
 describe("domains", () => {
-  it("validates, keeps one tenant per domain, refuses our own domains and limits the count", async () => {
+  it("validates, keeps one project per domain, refuses our own domains and limits the count", async () => {
     const { domains } = await setup();
     await expect(domains.add("acme", "not a domain")).rejects.toThrow("Invalid domain");
     await expect(domains.add("acme", "osiris.k6labs.cz")).rejects.toThrow("can't be used");
     const d = await domains.add("acme", "WWW.acme.cz.");
     expect(d).toMatchObject({ domain: "www.acme.cz", status: "pending", token: expect.stringMatching(/^osiris-/) });
-    await expect(domains.add("beta", "www.acme.cz")).rejects.toThrow("Another tenant");
+    await expect(domains.add("beta", "www.acme.cz")).rejects.toThrow("Another project");
     await domains.add("acme", "b.acme.cz");
     await domains.add("acme", "c.acme.cz");
     await expect(domains.add("acme", "d.acme.cz")).rejects.toThrow("at most 3");
@@ -49,8 +48,8 @@ describe("domains", () => {
   it("verifies by TXT record and where the domain points, and takes a moved domain offline", async () => {
     const control = await setup();
     const { domains, asUser, orchestrator } = control;
-    const alice = asUser("alice", [{ tenantId: "acme", role: "admin" }]);
-    const bob = asUser("bob", [{ tenantId: "acme", role: "member" }]);
+    const alice = asUser("alice", [{ projectId: "acme", role: "admin" }]);
+    const bob = asUser("bob", [{ projectId: "acme", role: "member" }]);
     expect((await bob("/domains", { method: "POST", body: JSON.stringify({ domain: "www.acme.cz" }) })).status).toBe(403);
     const { token } = await (await alice("/domains", { method: "POST", body: JSON.stringify({ domain: "www.acme.cz" }) })).json();
 
@@ -95,7 +94,7 @@ describe("site publishing", () => {
     expect((await readAll((await objects.get(siteKey("acme", release.id, "css/a.css")))!.body)).toString()).toBe("h1{}");
     expect((await domains.get("acme", "www.acme.cz"))!.releaseId).toBe(release.id);
 
-    // Another tenant's runtime can't publish to this domain.
+    // Another project's runtime can't publish to this domain.
     expect((await asRuntime("beta")("/sites/publish?domain=www.acme.cz", { method: "POST", body: new Uint8Array(await readAll(site({ "index.html": "x" }))) })).status).toBe(400);
 
     for (let i = 0; i < 6; i++) await sites.publish("acme", "www.acme.cz", site({ "index.html": `v${i}` }), null, Date.now() + i * 1000);
@@ -117,7 +116,7 @@ describe("site publishing", () => {
   });
 });
 
-describe("backups and the legacy import", () => {
+describe("backups", () => {
   it("keeps the newest backups and prunes old ones beyond the minimum", async () => {
     const { backups } = await setup();
     const day = 24 * 60 * 60_000;
@@ -126,38 +125,5 @@ describe("backups and the legacy import", () => {
     await backups.prune();
     expect((await backups.list("acme")).map((b) => b.bytes)).toHaveLength(3);
     await expect(backups.store("acme", Readable.from([]), "../x")).rejects.toThrow("Invalid backup reason");
-  });
-
-  it("imports a monolith tenant: settings, re-sealed secrets, and a backup of database and files", async () => {
-    const { db, backups, store } = await setup();
-    const dir = tempDir("osiris-legacy-");
-    const legacy = createClient({ url: `file:${join(dir, "novak.db")}` });
-    const oldKey = Buffer.alloc(32, 1).toString("base64");
-    const newKey = Buffer.alloc(32, 2).toString("base64");
-    await legacy.batch([
-      "CREATE TABLE tenant_settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)",
-      "CREATE TABLE secrets (owner TEXT, name TEXT, value_enc TEXT)",
-      "CREATE TABLE mcp_servers (owner TEXT, name TEXT, headers_enc TEXT)",
-      { sql: "INSERT INTO tenant_settings VALUES ('name', ?), ('features', ?)", args: [JSON.stringify("Novák stavby"), JSON.stringify({ mcp: false })] },
-      { sql: "INSERT INTO secrets VALUES ('', 'CRM', ?)", args: [new SecretBox(oldKey).seal("tajne")] },
-      { sql: "INSERT INTO mcp_servers VALUES ('u1', 'crm', ?)", args: [new SecretBox(oldKey).seal('{"Authorization":"x"}')] },
-    ]);
-    legacy.close();
-    mkdirSync(join(dir, "files", "novak", "tenant"), { recursive: true });
-    writeFileSync(join(dir, "files", "novak", "tenant", "logo.txt"), "logo");
-
-    const result = await importLegacyTenant({ id: "novak", dbFile: join(dir, "novak.db"), filesDir: join(dir, "files", "novak") }, { db, backups, oldKey, newKey });
-    expect(result).toEqual({ name: "Novák stavby", archived: false, resealed: 2 });
-    expect(await store.get("novak")).toMatchObject({ name: "Novák stavby", status: "active", features: { mcp: false, knowledge: true } });
-
-    const out = tempDir("osiris-legacy-out-");
-    const latest = (await backups.latest("novak"))!;
-    await new Promise<void>((resolve, reject) => latest.body.pipe(tar.x({ cwd: out })).on("finish", resolve).on("error", reject));
-    const copy = createClient({ url: `file:${join(out, "db", "tenant.db")}` });
-    const sealed = String((await copy.execute("SELECT value_enc FROM secrets")).rows[0]!.value_enc);
-    expect(new SecretBox(newKey).open(sealed)).toBe("tajne");
-    expect(() => new SecretBox(oldKey).open(sealed)).toThrow();
-    const { readFileSync } = await import("node:fs");
-    expect(readFileSync(join(out, "files", "tenant", "logo.txt"), "utf8")).toBe("logo");
   });
 });

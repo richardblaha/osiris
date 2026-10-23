@@ -67,7 +67,7 @@ const schema = z
     CLICKHOUSE_PASSWORD: z.string().optional(),
     POCKETID_API_KEY: headerToken,
 
-    // How tenant runtimes run: Kubernetes (Tenant custom resources, operator) or local child processes (development).
+    // How project runtimes run: Kubernetes (Project custom resources, operator) or local child processes (development).
     ORCHESTRATOR: z.enum(["kubernetes", "local"]).default("local"),
     K8S_NAMESPACE: z.string().default("osiris"),
     RUNTIME_PORT: z.coerce.number().int().default(8080),
@@ -77,7 +77,7 @@ const schema = z
     LOCAL_RUNTIME_BASE_PORT: z.coerce.number().int().default(4100),
     // Where runtimes reach control (local orchestrator passes it on).
     PUBLIC_CONTROL_URL: z.url().default("http://127.0.0.1:3002"),
-    // Development only: runtimes authenticate with `dev-runtime:<tenant>` instead of ServiceAccount tokens.
+    // Development only: runtimes authenticate with `dev-runtime:<project>` instead of ServiceAccount tokens.
     DEV_RUNTIME_AUTH: bool,
 
     // Object storage (sites, backups). Without S3 settings, a local folder.
@@ -96,13 +96,13 @@ const schema = z
     // Shown to users who verify their number ("send the code to …").
     WHATSAPP_DISPLAY_NUMBER: z.string().optional(),
 
-    // Tenant sites: custom domains must resolve to these addresses (A/AAAA) or CNAME to SITES_CNAME_TARGET.
+    // Project sites: custom domains must resolve to these addresses (A/AAAA) or CNAME to SITES_CNAME_TARGET.
     SITES_INGRESS_IPS: z
       .string()
       .default("")
       .transform((v) => v.split(",").map((s) => s.trim()).filter(Boolean)),
     SITES_CNAME_TARGET: z.string().optional(),
-    MAX_DOMAINS_PER_TENANT: z.coerce.number().int().positive().default(5),
+    MAX_DOMAINS_PER_PROJECT: z.coerce.number().int().positive().default(5),
   })
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";

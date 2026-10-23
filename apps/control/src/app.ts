@@ -12,11 +12,11 @@ import {
   type Schedule,
   type SiteDomain,
   type SiteRelease,
-  type TenantDetail,
-  type TenantFeatures,
-  type TenantInfo,
-  type TenantMember,
-  type TenantSummary,
+  type ProjectDetail,
+  type ProjectFeatures,
+  type ProjectInfo,
+  type ProjectMember,
+  type ProjectSummary,
   type UserProfile,
 } from "@osiris/shared";
 import { Hono, type Context } from "hono";
@@ -24,10 +24,10 @@ import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import type { Telemetry } from "./telemetry/clickhouse.ts";
-import { DashboardStore, systemDashboardRoutes, tenantAnalyticsRoutes, tenantDashboardRoutes } from "./dashboards.ts";
+import { DashboardStore, systemDashboardRoutes, projectAnalyticsRoutes, projectDashboardRoutes } from "./dashboards.ts";
 import { telemetryRoutes } from "./telemetry/routes.ts";
 import { z } from "zod";
-import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, TENANT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
+import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, PROJECT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, InternalAuthError, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
 import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
 import { WEB_CLIENT_ID } from "./auth/oidc.ts";
@@ -37,7 +37,7 @@ import type { Orchestrator } from "./orchestrator/types.ts";
 import { ScheduleNotFoundError, type ScheduleStore } from "./scheduler.ts";
 import type { DomainStore } from "./sites/domains.ts";
 import { SITE_LIMITS, type SitePublisher } from "./sites/publisher.ts";
-import { TenantExistsError, TenantNotFoundError, type TenantDirectory, type TenantRow } from "./tenants.ts";
+import { ProjectExistsError, ProjectNotFoundError, type ProjectDirectory, type ProjectRow } from "./projects.ts";
 import { UserNotFoundError, type UserDirectory } from "./users.ts";
 import { PHONE_CLAIM, type PhoneVerification } from "./whatsapp/phones.ts";
 import { whatsappWebhook, type WhatsAppWebhookOptions } from "./whatsapp/webhook.ts";
@@ -47,7 +47,7 @@ import { errorResponse, HttpError, requestLocale, translate, ValidationError, ty
 export interface ControlDeps {
   verifier: InternalVerifier;
   runtimeIdentity: RuntimeIdentityVerifier;
-  directory: TenantDirectory;
+  directory: ProjectDirectory;
   users: UserDirectory;
   orchestrator: Orchestrator;
   schedules: ScheduleStore;
@@ -56,8 +56,8 @@ export interface ControlDeps {
   backups: Backups;
   phones: PhoneVerification;
   whatsapp?: WhatsAppWebhookOptions & { displayNumber?: string };
-  /** Asks a tenant's runtime for a snapshot now (admin "back up now"). */
-  snapshot: (tenant: string) => Promise<void>;
+  /** Asks a project's runtime for a snapshot now (admin "back up now"). */
+  snapshot: (project: string) => Promise<void>;
   /** Sign-in: the OIDC provider's state, credentials and the sign-in screens' API. */
   auth: AuthDeps;
   /** The cluster's telemetry in ClickHouse, for system admins; without it those pages say it isn't set up. */
@@ -65,17 +65,17 @@ export interface ControlDeps {
   dashboards: DashboardStore;
 }
 
-type Env = { Variables: { call: VerifiedCall & { user: NonNullable<VerifiedCall["user"]> }; tenant: TenantRow; role: Role; runtimeTenant: string } };
+type Env = { Variables: { call: VerifiedCall & { user: NonNullable<VerifiedCall["user"]> }; project: ProjectRow; role: Role; runtimeProject: string } };
 
-const featuresBody = z.object(Object.fromEntries(FEATURES.map((f) => [f, z.boolean().optional()]))) as z.ZodType<Partial<TenantFeatures>>;
-const tenantName = z.string().trim().min(1).max(100);
-const createTenantBody = z.object({
-  id: z.string().trim().max(40).regex(TENANT_SLUG, "errors.validation.slug"),
-  name: tenantName,
+const featuresBody = z.object(Object.fromEntries(FEATURES.map((f) => [f, z.boolean().optional()]))) as z.ZodType<Partial<ProjectFeatures>>;
+const projectName = z.string().trim().min(1).max(100);
+const createProjectBody = z.object({
+  id: z.string().trim().max(40).regex(PROJECT_SLUG, "errors.validation.slug"),
+  name: projectName,
   features: featuresBody.optional(),
 });
-const updateTenantBody = z.object({
-  name: tenantName.optional(),
+const updateProjectBody = z.object({
+  name: projectName.optional(),
   features: featuresBody.optional(),
   idleMinutes: z.number().int().min(0).max(24 * 60).optional(),
   storageGb: z.number().int().min(1).max(500).optional(),
@@ -96,9 +96,9 @@ const updateTenantBody = z.object({
     .optional(),
 });
 const defaultsBody = z.object({
-  tenant: z.object({
+  project: z.object({
     features: z.object(Object.fromEntries(FEATURES.map((f) => [f, z.boolean()])) as Record<(typeof FEATURES)[number], z.ZodBoolean>),
-    quotas: updateTenantBody.shape.quotas.unwrap().required(),
+    quotas: updateProjectBody.shape.quotas.unwrap().required(),
     idleMinutes: z.number().int().min(0).max(24 * 60),
     storageGb: z.number().int().min(1).max(500),
   }),
@@ -154,8 +154,8 @@ const json = async (c: Context) => c.req.json().catch(() => {
  */
 function errors(err: unknown): Error | null {
   if (err instanceof HTTPException || err instanceof HttpError) return err;
-  if (err instanceof TenantExistsError) return new HttpError(409, "errors.tenant.exists");
-  if (err instanceof TenantNotFoundError) return new HttpError(404, "errors.tenant.notFound");
+  if (err instanceof ProjectExistsError) return new HttpError(409, "errors.project.exists");
+  if (err instanceof ProjectNotFoundError) return new HttpError(404, "errors.project.notFound");
   if (err instanceof UserNotFoundError) return new HttpError(404, "errors.user.notFound");
   if (err instanceof ScheduleNotFoundError) return new HttpError(404, err.key, err.params);
   if (err instanceof InternalAuthError || err instanceof RuntimeIdentityError) return new HTTPException(401, { message: "Unauthorized" });
@@ -168,14 +168,14 @@ const tooLarge = (key: string, params?: Params) => (c: Context) => c.json({ erro
 
 /**
  * Control: sign-in (the OIDC provider's screens; the provider itself is mounted next to this app, see server.ts),
- * tenants, users and their access, schedules, domains and sites, backups, WhatsApp. User calls come from the gateway
- * with an internal token naming the user and their memberships, runtimes prove their tenant with their ServiceAccount
+ * projects, users and their access, schedules, domains and sites, backups, WhatsApp. User calls come from the gateway
+ * with an internal token naming the user and their memberships, runtimes prove their project with their ServiceAccount
  * token, and Meta signs the WhatsApp webhook.
  */
 export function createControlApp(deps: ControlDeps) {
   const { verifier, runtimeIdentity, directory, users, orchestrator, schedules, domains, sites, backups, phones } = deps;
-  const tenants = directory.store;
-  const dashboardDeps = { store: deps.dashboards, tenants, directory, schedules, backups, orchestrator, telemetry: deps.telemetry };
+  const projects = directory.store;
+  const dashboardDeps = { store: deps.dashboards, projects, directory, schedules, backups, orchestrator, telemetry: deps.telemetry };
 
   /** A user call relayed by the gateway. */
   const fromGateway = createMiddleware<Env>(async (c, next) => {
@@ -185,24 +185,24 @@ export function createControlApp(deps: ControlDeps) {
     await next();
   });
 
-  /** The tenant of `X-Tenant-Id`, which must be one of the user's memberships and still active. */
-  const inTenant = createMiddleware<Env>(async (c, next) => {
+  /** The project of `X-Project-Id`, which must be one of the user's memberships and still active. */
+  const inProject = createMiddleware<Env>(async (c, next) => {
     const call = c.get("call");
-    const id = c.req.header("x-tenant-id");
-    const membership = call.memberships?.find((m) => m.tenantId === id);
-    if (!membership) throw id ? new HttpError(403, "errors.access.notMember") : new HttpError(400, "errors.tenantRequired");
-    const tenant = await tenants.get(membership.tenantId);
-    if (!tenant || tenant.status !== "active") throw new HttpError(403, "errors.tenant.removed");
-    c.set("tenant", tenant);
+    const id = c.req.header("x-project-id");
+    const membership = call.memberships?.find((m) => m.projectId === id);
+    if (!membership) throw id ? new HttpError(403, "errors.access.notMember") : new HttpError(400, "errors.projectRequired");
+    const project = await projects.get(membership.projectId);
+    if (!project || project.status !== "active") throw new HttpError(403, "errors.project.removed");
+    c.set("project", project);
     c.set("role", membership.role);
     await next();
   });
-  const requireTenantAdmin = (c: Context<Env>) => {
+  const requireProjectAdmin = (c: Context<Env>) => {
     if (c.get("role") !== "admin") throw new HttpError(403, "errors.access.adminOnly");
   };
-  const requireFeature = (feature: keyof TenantFeatures) =>
+  const requireFeature = (feature: keyof ProjectFeatures) =>
     createMiddleware<Env>(async (c, next) => {
-      if (!c.get("tenant").features[feature]) throw new HttpError(403, "errors.featureOff");
+      if (!c.get("project").features[feature]) throw new HttpError(403, "errors.featureOff");
       await next();
     });
 
@@ -211,7 +211,7 @@ export function createControlApp(deps: ControlDeps) {
     return { firstName: user.firstName, lastName: user.lastName, email: user.email, phone: user.claims[PHONE_CLAIM] ?? null };
   };
 
-  const tenantDetail = async (t: TenantRow): Promise<TenantDetail> => {
+  const projectDetail = async (t: ProjectRow): Promise<ProjectDetail> => {
     const memberList = await directory.members(t.id);
     return {
       id: t.id,
@@ -233,12 +233,12 @@ export function createControlApp(deps: ControlDeps) {
   const me = new Hono<Env>()
     .get("/", async (c) => {
       const { user, memberships = [], systemAdmin = false } = c.get("call");
-      const active = new Map((await tenants.list()).map((t) => [t.id, t]));
+      const active = new Map((await projects.list()).map((t) => [t.id, t]));
       return c.json<MeResponse>({
         user: { id: user.sub, email: user.email, name: user.name, phone: user.phone, picture: user.picture },
         systemAdmin,
-        tenants: memberships.flatMap((m) => {
-          const t = active.get(m.tenantId);
+        projects: memberships.flatMap((m) => {
+          const t = active.get(m.projectId);
           return t ? [{ id: t.id, name: t.name, role: m.role, logo: t.logo }] : [];
         }),
       });
@@ -270,55 +270,55 @@ export function createControlApp(deps: ControlDeps) {
     })
     .route("/security", securityRoutes(deps.auth, (c) => (c as Context<Env>).get("call").user.sub, (c) => (c as Context<Env>).get("call").sessionUid));
 
-  // --- the active tenant --------------------------------------------------------------------------------------------
-  const tenant = new Hono<Env>()
-    .use(inTenant)
+  // --- the active project --------------------------------------------------------------------------------------------
+  const project = new Hono<Env>()
+    .use(inProject)
     .use("/analytics", requireFeature("sites"))
     .route(
       "/analytics",
-      tenantAnalyticsRoutes(dashboardDeps, (c) => (c as Context<Env>).get("tenant").id),
+      projectAnalyticsRoutes(dashboardDeps, (c) => (c as Context<Env>).get("project").id),
     )
     .route(
       "/dashboards",
-      tenantDashboardRoutes(dashboardDeps, (c) => {
+      projectDashboardRoutes(dashboardDeps, (c) => {
         const x = c as Context<Env>;
-        return { tenant: x.get("tenant").id, role: x.get("role"), user: x.get("call").user.sub, quotas: x.get("tenant").quotas };
+        return { project: x.get("project").id, role: x.get("role"), user: x.get("call").user.sub, quotas: x.get("project").quotas };
       }),
     )
-    .get("/tenant", (c) => {
-      const t = c.get("tenant");
-      return c.json<TenantInfo>({ id: t.id, name: t.name, role: c.get("role"), features: t.features, logo: t.logo });
+    .get("/project", (c) => {
+      const t = c.get("project");
+      return c.json<ProjectInfo>({ id: t.id, name: t.name, role: c.get("role"), features: t.features, logo: t.logo });
     })
-    .put("/tenant/logo", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooLarge("errors.image.tooLarge", { mb: 2 }) }), async (c) => {
-      requireTenantAdmin(c);
+    .put("/project/logo", bodyLimit({ maxSize: 2 * 1024 * 1024, onError: tooLarge("errors.image.tooLarge", { mb: 2 }) }), async (c) => {
+      requireProjectAdmin(c);
       const data = new Uint8Array(await c.req.arrayBuffer());
       const mime = Object.entries(PICTURE_TYPES).find(([, sig]) => sig.every((b, i) => data[i] === b))?.[0];
       if (!mime) throw new HttpError(415, "errors.image.logoType");
-      await tenants.setLogo(c.get("tenant").id, data, mime);
+      await projects.setLogo(c.get("project").id, data, mime);
       return c.body(null, 204);
     })
 
-    // Tenant admins manage their tenant's members; they invite by email and never see other tenants' users.
+    // Project admins manage their project's members; they invite by email and never see other projects' users.
     .get("/members", async (c) => {
-      requireTenantAdmin(c);
-      return c.json<TenantMember[]>(await directory.members(c.get("tenant").id));
+      requireProjectAdmin(c);
+      return c.json<ProjectMember[]>(await directory.members(c.get("project").id));
     })
     .post("/members", async (c) => {
-      requireTenantAdmin(c);
+      requireProjectAdmin(c);
       const { role, ...person } = parse(inviteBody, await json(c));
-      return c.json<InviteResult>(await directory.invite(c.get("tenant").id, person, role), 201);
+      return c.json<InviteResult>(await directory.invite(c.get("project").id, person, role), 201);
     })
     .put("/members/:userId", async (c) => {
-      requireTenantAdmin(c);
+      requireProjectAdmin(c);
       const { role } = parse(roleBody, await json(c));
-      const id = c.get("tenant").id;
+      const id = c.get("project").id;
       if (!(await directory.members(id)).some((m) => m.userId === c.req.param("userId"))) throw new HttpError(404, "errors.member.notFound");
       await directory.setRole(id, c.req.param("userId"), role);
       return c.body(null, 204);
     })
     .delete("/members/:userId", async (c) => {
-      requireTenantAdmin(c);
-      const id = c.get("tenant").id;
+      requireProjectAdmin(c);
+      const id = c.get("project").id;
       const userId = c.req.param("userId");
       if (!(await directory.members(id)).some((m) => m.userId === userId)) throw new HttpError(404, "errors.member.notFound");
       await directory.setRole(id, userId, null);
@@ -326,36 +326,36 @@ export function createControlApp(deps: ControlDeps) {
       return c.body(null, 204);
     })
     .post("/members/:userId/login-link", async (c) => {
-      requireTenantAdmin(c);
+      requireProjectAdmin(c);
       const userId = c.req.param("userId");
-      if (!(await directory.members(c.get("tenant").id)).some((m) => m.userId === userId)) throw new HttpError(404, "errors.member.notFound");
+      if (!(await directory.members(c.get("project").id)).some((m) => m.userId === userId)) throw new HttpError(404, "errors.member.notFound");
       return c.json({ loginLink: await users.loginLink(userId, 72) });
     })
 
-    // Scheduled tasks: everyone manages their own; admins also see and stop everyone's in the tenant.
+    // Scheduled tasks: everyone manages their own; admins also see and stop everyone's in the project.
     .use("/schedules/*", requireFeature("scheduler"))
     .use("/schedules", requireFeature("scheduler"))
     .get("/schedules", async (c) => {
       const all = c.req.query("all") === "true";
-      if (all) requireTenantAdmin(c);
-      return c.json<Schedule[]>(await schedules.list(c.get("tenant").id, all ? undefined : c.get("call").user.sub));
+      if (all) requireProjectAdmin(c);
+      return c.json<Schedule[]>(await schedules.list(c.get("project").id, all ? undefined : c.get("call").user.sub));
     })
     .post("/schedules", async (c) => {
       const { user } = c.get("call");
       const body = parse(scheduleBody, await json(c));
-      return c.json<Schedule>(await schedules.create(c.get("tenant").id, { id: user.sub, name: user.name }, body), 201);
+      return c.json<Schedule>(await schedules.create(c.get("project").id, { id: user.sub, name: user.name }, body), 201);
     })
     .patch("/schedules/:id", async (c) => {
       const s = await ownSchedule(c);
-      return c.json<Schedule>(await schedules.update(c.get("tenant").id, s.id, parse(scheduleBody.partial(), await json(c))));
+      return c.json<Schedule>(await schedules.update(c.get("project").id, s.id, parse(scheduleBody.partial(), await json(c))));
     })
     .post("/schedules/:id/run", async (c) => {
       const s = await ownSchedule(c);
-      return c.json<Schedule>(await schedules.update(c.get("tenant").id, s.id, { enabled: true, runAt: new Date().toISOString(), cron: s.cron }));
+      return c.json<Schedule>(await schedules.update(c.get("project").id, s.id, { enabled: true, runAt: new Date().toISOString(), cron: s.cron }));
     })
     .delete("/schedules/:id", async (c) => {
       const s = await ownSchedule(c);
-      await schedules.delete(c.get("tenant").id, s.id);
+      await schedules.delete(c.get("project").id, s.id);
       return c.body(null, 204);
     })
 
@@ -363,40 +363,40 @@ export function createControlApp(deps: ControlDeps) {
     .use("/domains/*", requireFeature("sites"))
     .use("/domains", requireFeature("sites"))
     .use("/sites/*", requireFeature("sites"))
-    .get("/domains", async (c) => c.json<SiteDomain[]>(await domains.list(c.get("tenant").id)))
+    .get("/domains", async (c) => c.json<SiteDomain[]>(await domains.list(c.get("project").id)))
     .post("/domains", async (c) => {
-      requireTenantAdmin(c);
+      requireProjectAdmin(c);
       const { domain } = parse(domainBody, await json(c));
-      return c.json<SiteDomain>(await domains.add(c.get("tenant").id, domain), 201);
+      return c.json<SiteDomain>(await domains.add(c.get("project").id, domain), 201);
     })
     .post("/domains/:domain/verify", async (c) => {
-      requireTenantAdmin(c);
-      const id = c.get("tenant").id;
+      requireProjectAdmin(c);
+      const id = c.get("project").id;
       const result = await domains.verify(id, c.req.param("domain"));
       // The ingress and certificate follow the verified set.
       await directory.sync(id);
       return c.json<SiteDomain>(result);
     })
     .delete("/domains/:domain", async (c) => {
-      requireTenantAdmin(c);
-      const id = c.get("tenant").id;
+      requireProjectAdmin(c);
+      const id = c.get("project").id;
       const domain = c.req.param("domain");
       await domains.remove(id, domain);
       await directory.sync(id);
       await sites.removeDomain(id, domain);
       return c.body(null, 204);
     })
-    .get("/sites/releases", async (c) => c.json<SiteRelease[]>(await sites.releases(c.get("tenant").id, c.req.query("domain"))))
+    .get("/sites/releases", async (c) => c.json<SiteRelease[]>(await sites.releases(c.get("project").id, c.req.query("domain"))))
     .post("/sites/releases/:id/activate", async (c) => {
-      requireTenantAdmin(c);
+      requireProjectAdmin(c);
       const { domain } = parse(domainBody, await json(c));
-      await sites.activate(c.get("tenant").id, domain, c.req.param("id"));
+      await sites.activate(c.get("project").id, domain, c.req.param("id"));
       return c.body(null, 204);
     });
 
-  /** A schedule the caller may change: their own, or any in the tenant for an admin. */
+  /** A schedule the caller may change: their own, or any in the project for an admin. */
   async function ownSchedule(c: Context<Env>) {
-    const s = await schedules.get(c.get("tenant").id, c.req.param("id")!);
+    const s = await schedules.get(c.get("project").id, c.req.param("id")!);
     if (s.ownerId !== c.get("call").user.sub && c.get("role") !== "admin") throw new HttpError(404, "errors.schedule.notFound");
     return s;
   }
@@ -407,63 +407,63 @@ export function createControlApp(deps: ControlDeps) {
       if (!c.get("call").systemAdmin) throw new HttpError(403, "errors.access.systemAdminOnly");
       await next();
     })
-    .get("/tenants", async (c) => c.json<TenantSummary[]>(await directory.list()))
-    .post("/tenants", async (c) => {
-      const { id, name, features } = parse(createTenantBody, await json(c));
+    .get("/projects", async (c) => c.json<ProjectSummary[]>(await directory.list()))
+    .post("/projects", async (c) => {
+      const { id, name, features } = parse(createProjectBody, await json(c));
       const t = await directory.create(id, name, features);
-      return c.json<TenantSummary>({ id: t.id, name: t.name, logo: t.logo, members: 0 }, 201);
+      return c.json<ProjectSummary>({ id: t.id, name: t.name, logo: t.logo, members: 0 }, 201);
     })
-    .get("/tenants/:id", async (c) => c.json<TenantDetail>(await tenantDetail(await tenants.active(c.req.param("id")))))
-    .patch("/tenants/:id", async (c) => {
-      const changes = parse(updateTenantBody, await json(c));
+    .get("/projects/:id", async (c) => c.json<ProjectDetail>(await projectDetail(await projects.active(c.req.param("id")))))
+    .patch("/projects/:id", async (c) => {
+      const changes = parse(updateProjectBody, await json(c));
       await directory.update(c.req.param("id"), changes);
       return c.body(null, 204);
     })
-    .delete("/tenants/:id", async (c) => {
+    .delete("/projects/:id", async (c) => {
       await directory.remove(c.req.param("id"));
       return c.body(null, 204);
     })
-    .put("/tenants/:id/members/:userId", async (c) => {
+    .put("/projects/:id/members/:userId", async (c) => {
       const { role } = parse(roleBody, await json(c));
       await directory.setRole(c.req.param("id"), c.req.param("userId"), role);
       return c.body(null, 204);
     })
-    .delete("/tenants/:id/members/:userId", async (c) => {
+    .delete("/projects/:id/members/:userId", async (c) => {
       await directory.setRole(c.req.param("id"), c.req.param("userId"), null);
       await schedules.deleteOwner(c.req.param("id"), c.req.param("userId"));
       return c.body(null, 204);
     })
-    .post("/tenants/:id/members", async (c) => {
+    .post("/projects/:id/members", async (c) => {
       const { role, ...person } = parse(inviteBody, await json(c));
       return c.json<InviteResult>(await directory.invite(c.req.param("id"), person, role), 201);
     })
-    .post("/tenants/:id/backups", async (c) => {
-      await tenants.active(c.req.param("id"));
+    .post("/projects/:id/backups", async (c) => {
+      await projects.active(c.req.param("id"));
       await deps.snapshot(c.req.param("id"));
       return c.body(null, 202);
     })
     .route("/telemetry", telemetryRoutes(deps.telemetry))
     .route("/dashboards", systemDashboardRoutes(dashboardDeps, (c) => (c as Context<Env>).get("call").user.sub))
-    .get("/defaults", async (c) => c.json<SystemDefaults>(await tenants.defaults()))
+    .get("/defaults", async (c) => c.json<SystemDefaults>(await projects.defaults()))
     .put("/defaults", async (c) => {
       const d = parse(defaultsBody, await json(c));
-      await tenants.setDefaults(d);
+      await projects.setDefaults(d);
       return c.json<SystemDefaults>(d);
     })
-    .get("/guards", async (c) => c.json<Guard[]>(await tenants.systemGuards()))
+    .get("/guards", async (c) => c.json<Guard[]>(await projects.systemGuards()))
     .put("/guards/:name", async (c) => {
       const name = c.req.param("name");
       if (!GUARD_NAME.test(name) || name.length > 60) throw new HttpError(400, "errors.validation.name");
       const guard = { name, ...parse(guardBody, await json(c)) };
-      await tenants.putSystemGuard(guard);
+      await projects.putSystemGuard(guard);
       return c.json<Guard>(guard);
     })
     .delete("/guards/:name", async (c) => {
-      if (!(await tenants.deleteSystemGuard(c.req.param("name")))) throw new HttpError(404, "errors.guard.notFound");
+      if (!(await projects.deleteSystemGuard(c.req.param("name")))) throw new HttpError(404, "errors.guard.notFound");
       return c.body(null, 204);
     })
     .get("/users", async (c) => c.json<AdminUser[]>(await directory.adminUsers()))
-    // A new user gets in with a one-time link; access comes from tenants and the system admin switch afterwards.
+    // A new user gets in with a one-time link; access comes from projects and the system admin switch afterwards.
     .post("/users", async (c) => {
       const person = parse(newUserBody, await json(c));
       if (await users.findByEmail(person.email)) throw new HttpError(409, "errors.user.emailTaken");
@@ -505,7 +505,7 @@ export function createControlApp(deps: ControlDeps) {
       if (call.issuer !== "gateway") throw new HTTPException(401, { message: "Unauthorized" });
       await next();
     })
-    .get("/tenants", async (c) => c.json((await tenants.list()).map((t) => ({ id: t.id, name: t.name }))))
+    .get("/projects", async (c) => c.json((await projects.list()).map((t) => ({ id: t.id, name: t.name }))))
     // Who an access token belongs to: the gateway asks for every token it hasn't seen in the last minute.
     .post("/identify", async (c) => {
       const { token } = parse(z.object({ token: z.string().min(1).max(4096) }), await json(c));
@@ -520,44 +520,44 @@ export function createControlApp(deps: ControlDeps) {
         name: user.name,
         phone: user.claims[PHONE_CLAIM] ?? null,
         picture: user.picture,
-        claims: { [CLAIMS.role]: user.claims[CLAIMS.role], [CLAIMS.tenant]: user.claims[CLAIMS.tenant], [CLAIMS.tenantAdmin]: user.claims[CLAIMS.tenantAdmin] },
+        claims: { [CLAIMS.role]: user.claims[CLAIMS.role], [CLAIMS.project]: user.claims[CLAIMS.project], [CLAIMS.projectAdmin]: user.claims[CLAIMS.projectAdmin] },
         expiresAt: (access.exp ?? 0) * 1000,
         sessionUid: access.sessionUid,
       });
     })
-    .get("/tenants/:id/endpoint", async (c) => {
-      await tenants.active(c.req.param("id"));
+    .get("/projects/:id/endpoint", async (c) => {
+      await projects.active(c.req.param("id"));
       return c.json({ url: orchestrator.endpoint(c.req.param("id")) });
     })
-    .post("/tenants/:id/wake", async (c) => {
-      await tenants.active(c.req.param("id"));
+    .post("/projects/:id/wake", async (c) => {
+      await projects.active(c.req.param("id"));
       await orchestrator.wake(c.req.param("id"));
       return c.body(null, 204);
     });
 
-  // --- tenant runtimes (ServiceAccount token; the tenant comes from it, never from the request) ---------------------
+  // --- project runtimes (ServiceAccount token; the project comes from it, never from the request) ---------------------
   const forRuntime = new Hono<Env>()
     .use(async (c, next) => {
       const token = c.req.header("authorization")?.match(/^Bearer (.+)$/i)?.[1];
       if (!token) throw new HTTPException(401, { message: "Unauthorized" });
-      const { tenant } = await runtimeIdentity.verify(token);
-      const row = await tenants.get(tenant);
-      if (!row) throw new HTTPException(404, { message: "Tenant not found" });
-      c.set("runtimeTenant", tenant);
-      c.set("tenant", row);
+      const { project } = await runtimeIdentity.verify(token);
+      const row = await projects.get(project);
+      if (!row) throw new HTTPException(404, { message: "Project not found" });
+      c.set("runtimeProject", project);
+      c.set("project", row);
       await next();
     })
-    // A runtime telling its tenant's admins something (a new inquiry from the public assistant), by email.
+    // A runtime telling its project's admins something (a new inquiry from the public assistant), by email.
     .post("/notify-admins", async (c) => {
       const { subject, text } = parse(z.object({ subject: z.string().trim().min(1).max(200), text: z.string().max(10_000) }), await json(c));
       const mailer = deps.auth.mailer;
       if (!mailer) return c.json({ sent: 0 });
-      const admins = (await directory.members(c.get("runtimeTenant"))).filter((m) => m.role === "admin" && m.email);
+      const admins = (await directory.members(c.get("runtimeProject"))).filter((m) => m.role === "admin" && m.email);
       await Promise.all(admins.map((m) => mailer.send({ to: m.email!, subject: `Osiris: ${subject}`, text })));
       return c.json({ sent: admins.length });
     })
-    .get("/tenant", async (c) => {
-      const t = c.get("tenant");
+    .get("/project", async (c) => {
+      const t = c.get("project");
       return c.json({
         id: t.id,
         name: t.name,
@@ -567,8 +567,8 @@ export function createControlApp(deps: ControlDeps) {
         quotas: t.quotas,
         // What the runtime shows next to the quotas it doesn't count itself.
         counts: { members: await directory.memberCount(t.id), schedules: (await schedules.list(t.id)).length, dashboards: await deps.dashboards.count(t.id) },
-        systemGuards: await tenants.systemGuards(),
-        userDefaults: (await tenants.defaults()).user,
+        systemGuards: await projects.systemGuards(),
+        userDefaults: (await projects.defaults()).user,
       });
     })
     // The runtime's use (files, tokens this month, tables, database), sent when it changes; for System > Dashboard.
@@ -577,45 +577,45 @@ export function createControlApp(deps: ControlDeps) {
         z.object({ storage: z.number().min(0), tokens: z.number().min(0), month: z.string().regex(/^\d{4}-\d{2}$/), tables: z.number().int().min(0), database: z.number().min(0) }),
         await json(c),
       );
-      await tenants.reportUsage(c.get("runtimeTenant"), usage);
+      await projects.reportUsage(c.get("runtimeProject"), usage);
       return c.body(null, 204);
     })
     .put("/backups", async (c) => {
       const body = c.req.raw.body;
       if (!body) throw new HTTPException(400, { message: "Missing body" });
-      const info = await backups.store(c.get("runtimeTenant"), Readable.fromWeb(body as never), c.req.query("reason") ?? "manual");
+      const info = await backups.store(c.get("runtimeProject"), Readable.fromWeb(body as never), c.req.query("reason") ?? "manual");
       return c.json(info, 201);
     })
     .get("/backups/latest", async (c) => {
-      const latest = await backups.latest(c.get("runtimeTenant"));
+      const latest = await backups.latest(c.get("runtimeProject"));
       if (!latest) return c.json({ error: "No backup" }, 404);
       return new Response(Readable.toWeb(latest.body) as ReadableStream, {
         headers: { "content-type": "application/gzip", "x-backup-key": latest.info.key },
       });
     })
-    .get("/schedules", async (c) => c.json<Schedule[]>(await schedules.list(c.get("runtimeTenant"), c.req.query("owner") || undefined)))
+    .get("/schedules", async (c) => c.json<Schedule[]>(await schedules.list(c.get("runtimeProject"), c.req.query("owner") || undefined)))
     .post("/schedules", async (c) => {
-      if (!c.get("tenant").features.scheduler) throw new HttpError(403, "errors.schedule.featureOff");
+      if (!c.get("project").features.scheduler) throw new HttpError(403, "errors.schedule.featureOff");
       const { owner, ...body } = parse(runtimeScheduleBody, await json(c));
-      return c.json<Schedule>(await schedules.create(c.get("runtimeTenant"), owner, body), 201);
+      return c.json<Schedule>(await schedules.create(c.get("runtimeProject"), owner, body), 201);
     })
     .delete("/schedules/:id", async (c) => {
-      const s = await schedules.get(c.get("runtimeTenant"), c.req.param("id"));
+      const s = await schedules.get(c.get("runtimeProject"), c.req.param("id"));
       const owner = c.req.query("owner");
       if (owner && s.ownerId !== owner) throw new HttpError(404, "errors.schedule.notFound");
-      await schedules.delete(c.get("runtimeTenant"), s.id);
+      await schedules.delete(c.get("runtimeProject"), s.id);
       return c.body(null, 204);
     })
-    .get("/domains", async (c) => c.json<SiteDomain[]>(await domains.list(c.get("runtimeTenant"))))
+    .get("/domains", async (c) => c.json<SiteDomain[]>(await domains.list(c.get("runtimeProject"))))
     .post(
       "/sites/publish",
       bodyLimit({ maxSize: SITE_LIMITS.uploadBytes, onError: tooLarge("errors.publish.tooLarge") }),
       async (c) => {
-        if (!c.get("tenant").features.sites) throw new HttpError(403, "errors.sites.featureOff");
+        if (!c.get("project").features.sites) throw new HttpError(403, "errors.sites.featureOff");
         const domain = c.req.query("domain") ?? "";
         const body = c.req.raw.body;
         if (!body) throw new HTTPException(400, { message: "Missing body" });
-        const release = await sites.publish(c.get("runtimeTenant"), domain, Readable.fromWeb(body as never), c.req.query("user") ?? null);
+        const release = await sites.publish(c.get("runtimeProject"), domain, Readable.fromWeb(body as never), c.req.query("user") ?? null);
         return c.json<SiteRelease>(release, 201);
       },
     );
@@ -623,9 +623,9 @@ export function createControlApp(deps: ControlDeps) {
   const app = new Hono()
     .use(telemetryMiddleware())
     .get("/health", (c) => c.json({ ok: true }))
-    // Tenant logos, public like profile pictures (an <img> sends no token); the version in the URL is unguessable.
-    .get("/auth/tenant-logos/:id/:version", async (c) => {
-      const logo = await tenants.logo(c.req.param("id"), c.req.param("version"));
+    // Project logos, public like profile pictures (an <img> sends no token); the version in the URL is unguessable.
+    .get("/auth/project-logos/:id/:version", async (c) => {
+      const logo = await projects.logo(c.req.param("id"), c.req.param("version"));
       if (!logo) return c.body(null, 404);
       const data = await readAll(logo.body);
       return c.body(new Uint8Array(data), 200, {
@@ -640,7 +640,7 @@ export function createControlApp(deps: ControlDeps) {
     .route("/webhooks/whatsapp", deps.whatsapp ? whatsappWebhook(deps.whatsapp) : new Hono().all("/", (c) => c.text("WhatsApp is not configured", 404)))
     .route(
       "/api",
-      new Hono<Env>().use(fromGateway).route("/me", me).route("/admin", admin).route("/", tenant),
+      new Hono<Env>().use(fromGateway).route("/me", me).route("/admin", admin).route("/", project),
     );
 
   return app.onError((err, c) => {

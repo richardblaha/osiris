@@ -10,18 +10,18 @@ import { createDb } from "@osiris/core/db/client.ts";
 import { migrate } from "@osiris/core/db/migrate.ts";
 import type { Skill } from "@osiris/core/agent/skills.ts";
 import type { McpConnector } from "@osiris/core/mcp/toolset.ts";
-import { openTenant, type Tenant, type TenantDeps } from "@osiris/core/tenants/tenant.ts";
-import type { FeatureSource } from "@osiris/core/tenants/features.ts";
+import { openProject, type Project, type ProjectDeps } from "@osiris/core/projects/project.ts";
+import type { FeatureSource } from "@osiris/core/projects/features.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
-import { FEATURES, NO_QUOTAS, type Feature, type Guard, type TenantFeatures, type TenantQuotas, type UserDefaults } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type Feature, type Guard, type ProjectFeatures, type ProjectQuotas, type UserDefaults } from "@osiris/shared";
 import { accessFromClaims, membershipsFromClaims, isAuthorized } from "@osiris/platform/claims.ts";
-import { generateInternalKeys, InternalSigner, InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
+import { generateInternalKeys, InternalSigner, InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
 import { Activity } from "../src/activity.ts";
 import { createRuntimeApp } from "../src/app.ts";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "osiris-test-"));
 
-/** Fresh migrated tenant database in a temp file (libSQL `:memory:` loses data across transactions). */
+/** Fresh migrated project database in a temp file (libSQL `:memory:` loses data across transactions). */
 export async function createTestDb(): Promise<Client> {
   const db = createDb(`file:${join(tempDir(), "test.db")}`);
   await migrate(db);
@@ -30,7 +30,7 @@ export async function createTestDb(): Promise<Client> {
 
 /** Features a test can switch, standing in for control. */
 export class StaticFeatures implements FeatureSource {
-  features = Object.fromEntries(FEATURES.map((f) => [f, true])) as TenantFeatures;
+  features = Object.fromEntries(FEATURES.map((f) => [f, true])) as ProjectFeatures;
 
   async get() {
     return this.features;
@@ -41,7 +41,7 @@ export class StaticFeatures implements FeatureSource {
   }
 
   disabled: string[] = [];
-  limits: TenantQuotas = { ...NO_QUOTAS };
+  limits: ProjectQuotas = { ...NO_QUOTAS };
 
   async disabledTools() {
     return this.disabled;
@@ -63,33 +63,33 @@ export class StaticFeatures implements FeatureSource {
     return this.defaults;
   }
 
-  async set(changes: Partial<TenantFeatures>) {
+  async set(changes: Partial<ProjectFeatures>) {
     this.features = { ...this.features, ...changes };
     return this.features;
   }
 }
 
-export type TestTenant = Tenant & { features: StaticFeatures };
+export type TestProject = Project & { features: StaticFeatures };
 
-/** Tenants opened on demand, each on its own database and files in a temp dir, like one runtime per tenant. */
-export class TestTenants {
-  private readonly open = new Map<string, Promise<TestTenant>>();
+/** Projects opened on demand, each on its own database and files in a temp dir, like one runtime per project. */
+export class TestProjects {
+  private readonly open = new Map<string, Promise<TestProject>>();
 
   constructor(
     private readonly dir: string,
-    private readonly deps: Omit<TenantDeps, "features" | "files" | "database">,
+    private readonly deps: Omit<ProjectDeps, "features" | "files" | "database">,
   ) {}
 
-  get(id: string): Promise<TestTenant> {
+  get(id: string): Promise<TestProject> {
     let t = this.open.get(id);
     if (!t) {
       t = (async () => {
         const db = createDb(`file:${join(this.dir, `${id}.db`)}`);
         await migrate(db);
         const features = new StaticFeatures();
-        const tenant = openTenant(id, db, { ...this.deps, features, files: { dir: join(this.dir, "files", id) }, database: { path: join(this.dir, `${id}.data.db`) } }) as TestTenant;
-        await tenant.init();
-        return tenant;
+        const project = openProject(id, db, { ...this.deps, features, files: { dir: join(this.dir, "files", id) }, database: { path: join(this.dir, `${id}.data.db`) } }) as TestProject;
+        await project.init();
+        return project;
       })();
       this.open.set(id, t);
     }
@@ -97,16 +97,16 @@ export class TestTenants {
   }
 }
 
-/** Tenants over temp files, with one scripted model shared by all tenants. */
-export function createTestTenants(
+/** Projects over temp files, with one scripted model shared by all projects. */
+export function createTestProjects(
   script: AIMessage[] = [],
   bundledSkills: Skill[] = [],
   mcpConnect?: McpConnector,
-  extra: Partial<Omit<TenantDeps, "features" | "files">> = {},
+  extra: Partial<Omit<ProjectDeps, "features" | "files">> = {},
 ) {
   const model = new ScriptedChatModel(script);
   const dir = tempDir();
-  const tenants = new TestTenants(dir, {
+  const projects = new TestProjects(dir, {
     model,
     embeddings: new WordEmbeddings(),
     embeddingModel: "test:words",
@@ -116,17 +116,17 @@ export function createTestTenants(
     mcp: { connect: mcpConnect },
     ...extra,
   });
-  return { tenants, model, dir };
+  return { projects, model, dir };
 }
 
 const keys = generateInternalKeys();
 
 /**
- * The runtimes of all test tenants behind a stand-in for the gateway: a request carries a development bearer token
- * (`<user>` = admin of tenant `<user>`, or `<user>:<claims>`, e.g. `bob:tenant=acme`) and `X-Tenant-Id`; the
+ * The runtimes of all test projects behind a stand-in for the gateway: a request carries a development bearer token
+ * (`<user>` = admin of project `<user>`, or `<user>:<claims>`, e.g. `bob:project=acme`) and `X-Project-Id`; the
  * stand-in checks the membership like the gateway does and passes the request on with an internal token.
  */
-export async function createTestApp(tenants: TestTenants) {
+export async function createTestApp(projects: TestProjects) {
   const { privateKey, publicKey } = await keys;
   const signer = new InternalSigner(privateKey, "gateway");
   const verifier = new InternalVerifier(publicKey);
@@ -134,7 +134,7 @@ export async function createTestApp(tenants: TestTenants) {
   const runtime = async (id: string) => {
     let app = apps.get(id);
     if (!app) {
-      app = createRuntimeApp({ tenant: await tenants.get(id), verifier, activity: new Activity(), snapshot: async () => ({ key: "test", bytes: 0 }) });
+      app = createRuntimeApp({ project: await projects.get(id), verifier, activity: new Activity(), snapshot: async () => ({ key: "test", bytes: 0 }) });
       apps.set(id, app);
     }
     return app;
@@ -144,24 +144,24 @@ export async function createTestApp(tenants: TestTenants) {
     const token = headers.get("authorization")?.match(/^Bearer (.+)$/)?.[1];
     if (!token) return Response.json({ error: "Missing bearer token" }, { status: 401 });
     const [user = "", query] = token.split(":", 2);
-    const claims = new URLSearchParams(query ?? `tenant-admin=${user}`);
+    const claims = new URLSearchParams(query ?? `project-admin=${user}`);
     if (!claims.has("role")) claims.set("role", "osiris-user");
     const access = accessFromClaims((k) => claims.get(k) ?? undefined);
     if (!isAuthorized(access)) return Response.json({ error: "No Osiris role" }, { status: 403 });
     const memberships = membershipsFromClaims(access);
-    const requested = headers.get("x-tenant-id");
-    const m = requested ? memberships.find((x) => x.tenantId === requested) : memberships.length === 1 ? memberships[0] : undefined;
-    if (!m) return Response.json({ error: "Not a member of this tenant" }, { status: requested ? 403 : 400 });
+    const requested = headers.get("x-project-id");
+    const m = requested ? memberships.find((x) => x.projectId === requested) : memberships.length === 1 ? memberships[0] : undefined;
+    if (!m) return Response.json({ error: "Not a member of this project" }, { status: requested ? 403 : 400 });
     headers.set(
       "authorization",
-      await signer.header(tenantAudience(m.tenantId), {
+      await signer.header(projectAudience(m.projectId), {
         user: { sub: `dev:${user}`, name: user, email: `${user}@dev.local`, phone: null, picture: null },
-        tenant: m.tenantId,
+        project: m.projectId,
         role: m.role,
         channel: "web",
       }),
     );
-    return (await runtime(m.tenantId)).request(path, { ...init, headers });
+    return (await runtime(m.projectId)).request(path, { ...init, headers });
   };
   return { request, signer, runtime };
 }

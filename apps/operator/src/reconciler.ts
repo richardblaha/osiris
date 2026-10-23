@@ -1,6 +1,6 @@
-import { tenantAudience, type InternalSigner } from "@osiris/platform/internal-auth.ts";
+import { projectAudience, type InternalSigner } from "@osiris/platform/internal-auth.ts";
 import { KubeError, type Kube, type KubeObject } from "./kube.ts";
-import { namespaceOf, RUNTIME_PORT, SITE_LABEL, siteIngresses, TENANT_LABEL, tenantResources, type OperatorSettings, type TenantResource } from "./resources.ts";
+import { namespaceOf, RUNTIME_PORT, SITE_LABEL, siteIngresses, PROJECT_LABEL, projectResources, type OperatorSettings, type ProjectResource } from "./resources.ts";
 
 export const FINALIZER = "osiris.k6labs.cz/cleanup";
 
@@ -11,39 +11,39 @@ interface StatefulSetStatus {
 
 const ms = (iso?: string) => (iso ? Date.parse(iso) || 0 : 0);
 
-/** Calls a tenant's runtime as the operator (activity, snapshot before sleep). */
+/** Calls a project's runtime as the operator (activity, snapshot before sleep). */
 export interface RuntimeProbe {
-  activity(tenant: string): Promise<{ lastActivity: number; activeRuns: number }>;
+  activity(project: string): Promise<{ lastActivity: number; activeRuns: number }>;
   /** Snapshot and stop taking requests; false if runs are in progress. */
-  prepareSleep(tenant: string): Promise<boolean>;
+  prepareSleep(project: string): Promise<boolean>;
 }
 
-export function httpRuntimeProbe(signer: InternalSigner, url: (tenant: string) => string, fetchFn: typeof fetch = fetch): RuntimeProbe {
-  const call = async (tenant: string, path: string, method: string, timeoutMs: number) =>
-    fetchFn(`${url(tenant)}${path}`, {
+export function httpRuntimeProbe(signer: InternalSigner, url: (project: string) => string, fetchFn: typeof fetch = fetch): RuntimeProbe {
+  const call = async (project: string, path: string, method: string, timeoutMs: number) =>
+    fetchFn(`${url(project)}${path}`, {
       method,
-      headers: { authorization: await signer.header(tenantAudience(tenant)) },
+      headers: { authorization: await signer.header(projectAudience(project)) },
       signal: AbortSignal.timeout(timeoutMs),
     });
   return {
-    async activity(tenant) {
-      const res = await call(tenant, "/internal/activity", "GET", 10_000);
-      if (!res.ok) throw new Error(`activity ${tenant}: ${res.status}`);
+    async activity(project) {
+      const res = await call(project, "/internal/activity", "GET", 10_000);
+      if (!res.ok) throw new Error(`activity ${project}: ${res.status}`);
       return (await res.json()) as { lastActivity: number; activeRuns: number };
     },
-    async prepareSleep(tenant) {
-      const res = await call(tenant, "/internal/snapshot?reason=sleep", "POST", 10 * 60_000);
+    async prepareSleep(project) {
+      const res = await call(project, "/internal/snapshot?reason=sleep", "POST", 10 * 60_000);
       if (res.status === 409) return false;
-      if (!res.ok) throw new Error(`snapshot ${tenant}: ${res.status} ${await res.text()}`);
+      if (!res.ok) throw new Error(`snapshot ${project}: ${res.status} ${await res.text()}`);
       return true;
     },
   };
 }
 
-export const runtimeUrl = (tenant: string) => `http://runtime.${namespaceOf(tenant)}.svc.cluster.local:${RUNTIME_PORT}`;
+export const runtimeUrl = (project: string) => `http://runtime.${namespaceOf(project)}.svc.cluster.local:${RUNTIME_PORT}`;
 
 /**
- * Keeps each tenant's namespace as its `Tenant` resource says, and runs it only when needed: a wake request (newer
+ * Keeps each project's namespace as its `Project` resource says, and runs it only when needed: a wake request (newer
  * than the last sleep) starts the runtime; after `idleMinutes` without activity and without running work it takes a
  * snapshot (the runtime stops taking requests) and scales to zero. The volume stays, so waking is quick.
  */
@@ -55,12 +55,12 @@ export class Reconciler {
     private readonly log: (msg: string, extra?: unknown) => void = (m, e) => console.log(m, e ?? ""),
   ) {}
 
-  async reconcile(t: TenantResource, now = Date.now()): Promise<void> {
+  async reconcile(t: ProjectResource, now = Date.now()): Promise<void> {
     const id = t.metadata.name;
     const ns = this.settings.namespace;
     if (t.metadata.deletionTimestamp) return this.finalize(t);
     if (!t.metadata.finalizers?.includes(FINALIZER)) {
-      await this.kube.mergePatch("Tenant", ns, id, { metadata: { finalizers: [...(t.metadata.finalizers ?? []), FINALIZER] } });
+      await this.kube.mergePatch("Project", ns, id, { metadata: { finalizers: [...(t.metadata.finalizers ?? []), FINALIZER] } });
     }
 
     const sts = await this.kube.get<StatefulSetStatus>("StatefulSet", namespaceOf(id), "runtime");
@@ -72,7 +72,7 @@ export class Reconciler {
       !t.spec.suspended && (t.spec.idleMinutes === 0 || ms(t.spec.wakeRequestedAt) > sleptAt || (running && t.status?.phase === "Running"));
 
     let replicas: 0 | 1 = wanted ? 1 : 0;
-    let status: TenantResource["status"] = { ...t.status, phase: t.spec.suspended ? "Suspended" : wanted ? "Running" : "Sleeping" };
+    let status: ProjectResource["status"] = { ...t.status, phase: t.spec.suspended ? "Suspended" : wanted ? "Running" : "Sleeping" };
 
     const idle = t.spec.idleMinutes ?? 30;
     if (wanted && ready && idle > 0 && now - ms(t.spec.wakeRequestedAt) > idle * 60_000) {
@@ -80,7 +80,7 @@ export class Reconciler {
         const { lastActivity, activeRuns } = await this.runtime.activity(id);
         status.lastActivity = new Date(lastActivity).toISOString();
         if (activeRuns === 0 && now - lastActivity > idle * 60_000 && (await this.runtime.prepareSleep(id))) {
-          this.log(`Tenant ${id}: idle for ${Math.round((now - lastActivity) / 60_000)} min, sleeping`);
+          this.log(`Project ${id}: idle for ${Math.round((now - lastActivity) / 60_000)} min, sleeping`);
           replicas = 0;
           status = { ...status, phase: "Sleeping", sleptAt: new Date(now).toISOString() };
         }
@@ -90,20 +90,20 @@ export class Reconciler {
       }
     }
 
-    for (const obj of tenantResources(t, this.settings, replicas)) await this.kube.apply(obj);
+    for (const obj of projectResources(t, this.settings, replicas)) await this.kube.apply(obj);
     await this.syncIngresses(t);
     if (JSON.stringify(status) !== JSON.stringify(t.status)) {
-      await this.kube.mergePatch("Tenant", ns, id, { status }, "/status");
+      await this.kube.mergePatch("Project", ns, id, { status }, "/status");
     }
   }
 
   /** Creates ingresses for the verified domains and removes the rest (with their certificates). */
-  private async syncIngresses(t: TenantResource) {
+  private async syncIngresses(t: ProjectResource) {
     const id = t.metadata.name;
     const ns = this.settings.namespace;
     const desired = t.spec.suspended ? [] : siteIngresses(t, this.settings);
     for (const ing of desired) await this.kube.apply(ing);
-    const existing = await this.kube.list<KubeObject>("Ingress", ns, `${TENANT_LABEL}=${id},${SITE_LABEL}=true`);
+    const existing = await this.kube.list<KubeObject>("Ingress", ns, `${PROJECT_LABEL}=${id},${SITE_LABEL}=true`);
     for (const ing of existing) {
       if (desired.some((d) => d.metadata.name === ing.metadata.name)) continue;
       await this.kube.delete("Ingress", ns, ing.metadata.name);
@@ -112,26 +112,26 @@ export class Reconciler {
     }
   }
 
-  /** A deleted Tenant: a last snapshot if the runtime is up, then the namespace (volume included) and the ingresses. */
-  private async finalize(t: TenantResource) {
+  /** A deleted Project: a last snapshot if the runtime is up, then the namespace (volume included) and the ingresses. */
+  private async finalize(t: ProjectResource) {
     const id = t.metadata.name;
     if (!t.metadata.finalizers?.includes(FINALIZER)) return;
     const sts = await this.kube.get<StatefulSetStatus>("StatefulSet", namespaceOf(id), "runtime");
     if ((sts?.status?.readyReplicas ?? 0) > 0) {
-      await this.runtime.prepareSleep(id).catch((err) => this.log(`Tenant ${id}: final snapshot failed`, err));
+      await this.runtime.prepareSleep(id).catch((err) => this.log(`Project ${id}: final snapshot failed`, err));
     }
     await this.syncIngresses({ ...t, spec: { ...t.spec, suspended: true } });
     await this.kube.delete("Namespace", undefined, namespaceOf(id));
-    await this.kube.mergePatch("Tenant", this.settings.namespace, id, {
+    await this.kube.mergePatch("Project", this.settings.namespace, id, {
       metadata: { finalizers: (t.metadata.finalizers ?? []).filter((f) => f !== FINALIZER) },
     });
-    this.log(`Tenant ${id}: removed`);
+    this.log(`Project ${id}: removed`);
   }
 
-  /** Reconciles every tenant; one failing tenant doesn't stop the others. */
+  /** Reconciles every project; one failing project doesn't stop the others. */
   async reconcileAll() {
-    for (const t of await this.kube.list<TenantResource>("Tenant", this.settings.namespace)) {
-      await this.reconcile(t).catch((err) => this.log(`Tenant ${t.metadata.name}: reconcile failed`, err instanceof KubeError ? err.message : err));
+    for (const t of await this.kube.list<ProjectResource>("Project", this.settings.namespace)) {
+      await this.reconcile(t).catch((err) => this.log(`Project ${t.metadata.name}: reconcile failed`, err instanceof KubeError ? err.message : err));
     }
   }
 }

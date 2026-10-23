@@ -49,7 +49,7 @@ if (command === "import-pocketid") {
     }
     const [first = "", ...rest] = (u.displayName ?? "").split(" ");
     const user = await users.create({
-      // The same id: tenant data (memories, files, schedules) is keyed by it.
+      // The same id: project data (memories, files, schedules) is keyed by it.
       id: u.id,
       email: u.email || null,
       emailVerified: !!u.emailVerified,

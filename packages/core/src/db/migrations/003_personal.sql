@@ -1,4 +1,4 @@
--- Personal settings next to the tenant-wide ones. `owner` is '' for tenant-wide rows (managed by admins)
+-- Personal settings next to the project-wide ones. `owner` is '' for project-wide rows (managed by admins)
 -- or the user's OIDC sub for personal rows (visible to and managed by that user only).
 -- '' rather than NULL so (owner, name) can be a primary key.
 
@@ -15,7 +15,7 @@ INSERT INTO skills_v2 (owner, name, description, instructions, updated_at)
 DROP TABLE skills;
 ALTER TABLE skills_v2 RENAME TO skills;
 
--- Server names stay unique across the whole tenant (tool names are `<server>_<tool>`); the API enforces that.
+-- Server names stay unique across the whole project (tool names are `<server>_<tool>`); the API enforces that.
 CREATE TABLE mcp_servers_v2 (
   owner TEXT NOT NULL DEFAULT '',
   name TEXT NOT NULL,

@@ -20,7 +20,7 @@ const pixel = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIW
 const dirs: string[] = [];
 const databases: ReturnType<typeof createDb>[] = [];
 afterEach(async () => { databases.splice(0).forEach(db => db.close()); await Promise.all(dirs.splice(0).map(d => rm(d, { recursive: true, force: true }))); });
-const ctx = { thread_id: "thread", tenant_id: "acme", user_id: "alice", role: "member" as const, channel: "web" as const };
+const ctx = { thread_id: "thread", project_id: "acme", user_id: "alice", role: "member" as const, channel: "web" as const };
 const config = { configurable: ctx };
 const plan = (name: string, args: Record<string, unknown>) => new AIMessage({ content: "", tool_calls: [{ id: name, name, args }] });
 async function setup(script: AIMessage[] = [], failedSubmit = false) {

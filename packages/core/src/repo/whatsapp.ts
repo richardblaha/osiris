@@ -1,10 +1,10 @@
 import type { Client } from "@libsql/client";
 
-// WhatsApp state of one user in one tenant (the tenant's own database).
+// WhatsApp state of one user in one project (the project's own database).
 
 export interface WhatsAppSession {
   threadId: string | null;
-  /** When the user last picked this tenant with `/tenant` (epoch ms), or null if never. */
+  /** When the user last picked this project with `/project` (epoch ms), or null if never. */
   selectedAt: number | null;
 }
 
@@ -15,7 +15,7 @@ export async function getSession(db: Client, userId: string): Promise<WhatsAppSe
   return { threadId: (row.thread_id as string | null) ?? null, selectedAt: row.selected_at == null ? null : Number(row.selected_at) };
 }
 
-export async function selectTenant(db: Client, userId: string, at: number): Promise<void> {
+export async function selectProject(db: Client, userId: string, at: number): Promise<void> {
   await db.execute({
     sql: `INSERT INTO whatsapp_sessions (user_id, selected_at) VALUES (?, ?)
           ON CONFLICT(user_id) DO UPDATE SET selected_at = excluded.selected_at`,

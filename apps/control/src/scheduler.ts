@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { CronExpressionParser } from "cron-parser";
 import type { Schedule, ScheduleInput } from "@osiris/shared";
 import { isUnreachable, ServiceError } from "@osiris/platform/http.ts";
-import { tenantAudience, type InternalSigner } from "@osiris/platform/internal-auth.ts";
+import { projectAudience, type InternalSigner } from "@osiris/platform/internal-auth.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { isSystemAdmin } from "@osiris/platform/claims.ts";
 import { configuredLocale, LocalizedError, translate } from "@osiris/platform/i18n.ts";
-import { roleIn, userAccess, type TenantStore } from "./tenants.ts";
+import { roleIn, userAccess, type ProjectStore } from "./projects.ts";
 import type { UserDirectory } from "./users.ts";
 import type { WhatsAppClient } from "./whatsapp/cloud-api.ts";
 import type { Inbox } from "./whatsapp/inbox.ts";
@@ -15,7 +15,7 @@ import { phoneKey, PHONE_CLAIM } from "./whatsapp/phones.ts";
 
 export const MIN_INTERVAL_MS = 15 * 60_000;
 export const MAX_PER_USER = 20;
-export const MAX_PER_TENANT = 200;
+export const MAX_PER_PROJECT = 200;
 /** A run more than this late (runtime down, control down) is skipped rather than done at an odd time. */
 export const MISFIRE_MS = 60 * 60_000;
 const MAX_ATTEMPTS = 3;
@@ -31,7 +31,7 @@ const note = (key: string) => translate(configuredLocale(), key);
 
 interface Row {
   id: string;
-  tenant_id: string;
+  project_id: string;
   owner_id: string;
   owner_name: string | null;
   title: string;
@@ -104,15 +104,15 @@ export class ScheduleStore {
     private readonly defaultTimezone: string,
   ) {}
 
-  async list(tenantId: string, ownerId?: string): Promise<Schedule[]> {
+  async list(projectId: string, ownerId?: string): Promise<Schedule[]> {
     const rows = ownerId
-      ? await this.db.query<Row>("SELECT * FROM schedules WHERE tenant_id = ? AND owner_id = ? ORDER BY created_at", [tenantId, ownerId])
-      : await this.db.query<Row>("SELECT * FROM schedules WHERE tenant_id = ? ORDER BY created_at", [tenantId]);
+      ? await this.db.query<Row>("SELECT * FROM schedules WHERE project_id = ? AND owner_id = ? ORDER BY created_at", [projectId, ownerId])
+      : await this.db.query<Row>("SELECT * FROM schedules WHERE project_id = ? ORDER BY created_at", [projectId]);
     return rows.map(toSchedule);
   }
 
-  async get(tenantId: string, id: string): Promise<Schedule> {
-    const [row] = await this.db.query<Row>("SELECT * FROM schedules WHERE tenant_id = ? AND id = ?", [tenantId, id], { fresh: true });
+  async get(projectId: string, id: string): Promise<Schedule> {
+    const [row] = await this.db.query<Row>("SELECT * FROM schedules WHERE project_id = ? AND id = ?", [projectId, id], { fresh: true });
     if (!row) throw new ScheduleNotFoundError("errors.schedule.notFound");
     return toSchedule(row);
   }
@@ -130,26 +130,26 @@ export class ScheduleStore {
     return { cron: null, runAt: at, next: at };
   }
 
-  async create(tenantId: string, owner: { id: string; name: string | null }, input: ScheduleInput, now = Date.now()): Promise<Schedule> {
+  async create(projectId: string, owner: { id: string; name: string | null }, input: ScheduleInput, now = Date.now()): Promise<Schedule> {
     const timezone = input.timezone ?? this.defaultTimezone;
     const t = this.timing({ ...input, timezone }, now);
     const [counts] = await this.db.query<{ mine: number; total: number; quotas: string | null }>(
-      `SELECT SUM(owner_id = ?) AS mine, COUNT(*) AS total, (SELECT quotas FROM tenants WHERE id = ?) AS quotas
-       FROM schedules WHERE tenant_id = ?`,
-      [owner.id, tenantId, tenantId],
+      `SELECT SUM(owner_id = ?) AS mine, COUNT(*) AS total, (SELECT quotas FROM projects WHERE id = ?) AS quotas
+       FROM schedules WHERE project_id = ?`,
+      [owner.id, projectId, projectId],
       { fresh: true },
     );
-    // The tenant's quota (set by a system admin) or the built-in ceiling.
-    const max = (JSON.parse(counts?.quotas ?? "{}") as { schedules?: number | null }).schedules ?? MAX_PER_TENANT;
+    // The project's quota (set by a system admin) or the built-in ceiling.
+    const max = (JSON.parse(counts?.quotas ?? "{}") as { schedules?: number | null }).schedules ?? MAX_PER_PROJECT;
     if (Number(counts?.mine ?? 0) >= MAX_PER_USER) throw new ScheduleError("errors.schedule.userLimit", { count: MAX_PER_USER });
-    if (Number(counts?.total ?? 0) >= max) throw new ScheduleError("errors.schedule.tenantLimit", { count: max });
+    if (Number(counts?.total ?? 0) >= max) throw new ScheduleError("errors.schedule.projectLimit", { count: max });
     const id = randomUUID();
     await this.db.execute([
       run(
-        `INSERT INTO schedules (id, tenant_id, owner_id, owner_name, title, prompt, cron, run_at, timezone, delivery, enabled, next_run_at, created_at, updated_at)
+        `INSERT INTO schedules (id, project_id, owner_id, owner_name, title, prompt, cron, run_at, timezone, delivery, enabled, next_run_at, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         id,
-        tenantId,
+        projectId,
         owner.id,
         owner.name,
         input.title,
@@ -164,11 +164,11 @@ export class ScheduleStore {
         now,
       ),
     ]);
-    return this.get(tenantId, id);
+    return this.get(projectId, id);
   }
 
-  async update(tenantId: string, id: string, input: Partial<ScheduleInput>, now = Date.now()): Promise<Schedule> {
-    const current = await this.get(tenantId, id);
+  async update(projectId: string, id: string, input: Partial<ScheduleInput>, now = Date.now()): Promise<Schedule> {
+    const current = await this.get(projectId, id);
     const timezone = input.timezone ?? current.timezone;
     const timingChanged = input.cron !== undefined || input.runAt !== undefined || input.timezone !== undefined || input.enabled === true;
     const t = timingChanged
@@ -179,7 +179,7 @@ export class ScheduleStore {
         `UPDATE schedules SET title = ?, prompt = ?, delivery = ?, enabled = ?, timezone = ?, updated_at = ?,
            cron = COALESCE(?, cron), run_at = CASE WHEN ? THEN ? ELSE run_at END,
            next_run_at = CASE WHEN ? THEN ? ELSE next_run_at END, attempts = CASE WHEN ? THEN 0 ELSE attempts END
-         WHERE tenant_id = ? AND id = ?`,
+         WHERE project_id = ? AND id = ?`,
         input.title ?? current.title,
         input.prompt ?? current.prompt,
         input.delivery ?? current.delivery,
@@ -192,44 +192,44 @@ export class ScheduleStore {
         t ? 1 : 0,
         t ? t.next : null,
         t ? 1 : 0,
-        tenantId,
+        projectId,
         id,
       ),
       // Switching from cron to a one-off clears the cron.
-      ...(t && !t.cron ? [run("UPDATE schedules SET cron = NULL WHERE tenant_id = ? AND id = ?", tenantId, id)] : []),
+      ...(t && !t.cron ? [run("UPDATE schedules SET cron = NULL WHERE project_id = ? AND id = ?", projectId, id)] : []),
     ]);
-    return this.get(tenantId, id);
+    return this.get(projectId, id);
   }
 
-  async delete(tenantId: string, id: string) {
-    const [r] = await this.db.execute([run("DELETE FROM schedules WHERE tenant_id = ? AND id = ?", tenantId, id)]);
+  async delete(projectId: string, id: string) {
+    const [r] = await this.db.execute([run("DELETE FROM schedules WHERE project_id = ? AND id = ?", projectId, id)]);
     if (!r?.rowsAffected) throw new ScheduleNotFoundError("errors.schedule.notFound");
   }
 
   /** Claims the next due task; its lease keeps other workers off until it's finished or the lease runs out. */
-  async claim(now = Date.now()): Promise<(Schedule & { tenantId: string; dueAt: number; attempts: number }) | null> {
+  async claim(now = Date.now()): Promise<(Schedule & { projectId: string; dueAt: number; attempts: number }) | null> {
     const next = "SELECT id FROM schedules WHERE enabled = 1 AND next_run_at <= ? AND (lease_until IS NULL OR lease_until < ?) ORDER BY next_run_at LIMIT 1";
     // Look before claiming: an UPDATE that changes nothing still grows rqlite's Raft log (see Inbox.claim).
     if (!(await this.db.query(next, [now, now])).length) return null;
     const claim = randomUUID();
     await this.db.execute([run(`UPDATE schedules SET claim = ?, lease_until = ? WHERE id = (${next})`, claim, now + LEASE_MS, now, now)]);
     const [row] = await this.db.query<Row>("SELECT * FROM schedules WHERE claim = ?", [claim], { fresh: true });
-    return row ? { ...toSchedule(row), tenantId: row.tenant_id, dueAt: Number(row.next_run_at), attempts: Number(row.attempts) } : null;
+    return row ? { ...toSchedule(row), projectId: row.project_id, dueAt: Number(row.next_run_at), attempts: Number(row.attempts) } : null;
   }
 
   /** Records the run and moves on to the next occurrence (a one-off is switched off). */
   async finish(
-    s: { id: string; tenantId: string; cron: string | null; timezone: string; dueAt: number },
+    s: { id: string; projectId: string; cron: string | null; timezone: string; dueAt: number },
     result: { status: "done" | "failed" | "skipped"; threadId?: string | null; error?: string | null },
     now = Date.now(),
   ) {
     const next = s.cron ? nextCron(s.cron, s.timezone, Math.max(now, s.dueAt)) : null;
     await this.db.execute([
       run(
-        "INSERT INTO schedule_runs (id, schedule_id, tenant_id, due_at, status, thread_id, error, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO schedule_runs (id, schedule_id, project_id, due_at, status, thread_id, error, finished_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         randomUUID(),
         s.id,
-        s.tenantId,
+        s.projectId,
         s.dueAt,
         result.status,
         result.threadId ?? null,
@@ -271,14 +271,14 @@ export class ScheduleStore {
     ]);
   }
 
-  /** Tasks of a tenant that was removed, or of a user who left it, are deleted by the caller. */
-  async deleteOwner(tenantId: string, ownerId: string) {
-    await this.db.execute([run("DELETE FROM schedules WHERE tenant_id = ? AND owner_id = ?", tenantId, ownerId)]);
+  /** Tasks of a project that was removed, or of a user who left it, are deleted by the caller. */
+  async deleteOwner(projectId: string, ownerId: string) {
+    await this.db.execute([run("DELETE FROM schedules WHERE project_id = ? AND owner_id = ?", projectId, ownerId)]);
   }
 }
 
 /**
- * Runs due tasks: wakes the tenant's runtime, runs the prompt there as the task's owner (same tools and rights as the
+ * Runs due tasks: wakes the project's runtime, runs the prompt there as the task's owner (same tools and rights as the
  * owner in chat) and optionally sends the result over WhatsApp. Each occurrence carries an idempotency key, so a run
  * repeated after a lost lease is answered by the runtime from its record instead of running twice.
  */
@@ -286,7 +286,7 @@ export class SchedulerWorker {
   constructor(
     private readonly deps: {
       schedules: ScheduleStore;
-      tenants: TenantStore;
+      projects: ProjectStore;
       users: UserDirectory;
       runtimes: RuntimeClient;
       signer: InternalSigner;
@@ -301,32 +301,32 @@ export class SchedulerWorker {
       await this.deps.schedules.finish(s, { status: "skipped", error: note("schedules.notes.missed") }, now);
       return true;
     }
-    const tenant = await this.deps.tenants.get(s.tenantId);
-    if (!tenant || tenant.status !== "active") {
-      await this.deps.schedules.disable(s.id, note("schedules.notes.tenantGone"), now);
+    const project = await this.deps.projects.get(s.projectId);
+    if (!project || project.status !== "active") {
+      await this.deps.schedules.disable(s.id, note("schedules.notes.projectGone"), now);
       return true;
     }
-    if (!tenant.features.scheduler) {
+    if (!project.features.scheduler) {
       await this.deps.schedules.finish(s, { status: "skipped", error: note("schedules.notes.featureOff") }, now);
       return true;
     }
     const owner = await this.deps.users.get(s.ownerId).catch(() => null);
-    const role = owner && !owner.disabled ? (isSystemAdmin(userAccess(owner)) ? "admin" : roleIn(owner, s.tenantId)) : null;
+    const role = owner && !owner.disabled ? (isSystemAdmin(userAccess(owner)) ? "admin" : roleIn(owner, s.projectId)) : null;
     if (!owner || !role) {
       await this.deps.schedules.disable(s.id, note("schedules.notes.ownerLeft"), now);
       return true;
     }
 
     try {
-      const res = await this.deps.runtimes.request(s.tenantId, "/internal/runs", {
+      const res = await this.deps.runtimes.request(s.projectId, "/internal/runs", {
         method: "POST",
         headers: {
           "content-type": "application/json",
           authorization: await this.deps.signer.header(
-            tenantAudience(s.tenantId),
+            projectAudience(s.projectId),
             {
               user: { sub: owner.id, name: owner.name, email: owner.email, phone: owner.claims[PHONE_CLAIM] ?? null, picture: null },
-              tenant: s.tenantId,
+              project: s.projectId,
               role,
               channel: s.delivery,
             },
@@ -338,7 +338,7 @@ export class SchedulerWorker {
       });
       if (!res.ok) throw new ServiceError(`Runtime: ${res.status} ${(await res.text()).slice(0, 300)}`, res.status);
       const { threadId, reply } = (await res.json()) as { threadId: string; reply: string };
-      const warning = s.delivery === "whatsapp" ? await this.sendWhatsApp(owner.claims[PHONE_CLAIM], s.title, reply, `t/${encodeURIComponent(s.tenantId)}/chat/${encodeURIComponent(threadId)}`, now) : null;
+      const warning = s.delivery === "whatsapp" ? await this.sendWhatsApp(owner.claims[PHONE_CLAIM], s.title, reply, `t/${encodeURIComponent(s.projectId)}/chat/${encodeURIComponent(threadId)}`, now) : null;
       await this.deps.schedules.finish(s, { status: "done", threadId, error: warning }, now);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

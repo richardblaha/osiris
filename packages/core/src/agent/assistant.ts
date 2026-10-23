@@ -5,7 +5,7 @@ import type { AssistantProfile, Persona } from "@osiris/shared";
 
 export const EMPTY_PROFILE: AssistantProfile = { persona: null };
 
-/** The assistant's persona and rules, tenant-wide (owner `''`) or a user's own (owner = their sub). */
+/** The assistant's persona and rules, project-wide (owner `''`) or a user's own (owner = their sub). */
 export class AssistantProfileStore {
   constructor(private readonly db: Client) {}
 
@@ -29,16 +29,16 @@ export class AssistantProfileStore {
 /** Rules by level, the higher level first; empty levels are left out. */
 export interface GuardRules {
   system: string;
-  tenant: string;
+  project: string;
   user: string;
 }
 
-export const hasRules = (r: GuardRules) => !!(r.system.trim() || r.tenant.trim() || r.user.trim());
+export const hasRules = (r: GuardRules) => !!(r.system.trim() || r.project.trim() || r.user.trim());
 
 export const rulesText = (r: GuardRules, userLabel = "Pravidla uživatele") =>
   [
     ["Pravidla systému", r.system],
-    ["Pravidla firmy", r.tenant],
+    ["Pravidla firmy", r.project],
     [userLabel, r.user],
   ]
     .filter(([, text]) => text!.trim())

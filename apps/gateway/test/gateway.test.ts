@@ -3,8 +3,8 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { accessFromClaims, accessibleTenants, isAuthorized, isSystemAdmin, membershipsFromClaims } from "@osiris/platform/claims.ts";
-import { CONTROL_AUDIENCE, generateInternalKeys, InternalSigner, InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
+import { accessFromClaims, accessibleProjects, isAuthorized, isSystemAdmin, membershipsFromClaims } from "@osiris/platform/claims.ts";
+import { CONTROL_AUDIENCE, generateInternalKeys, InternalSigner, InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
 import { RuntimeClient, SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import { createGatewayApp } from "../src/app.ts";
 import { ControlDirectory } from "../src/control.ts";
@@ -16,24 +16,24 @@ const verifier = new InternalVerifier(keys.publicKey);
 
 /** The gateway in front of a fake control and fake runtimes that echo what they were sent. */
 function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcounter?: string } } = {}) {
-  const calls: { service: string; path: string; method: string; auth: string | null; tenantHeader: string | null; body?: string }[] = [];
+  const calls: { service: string; path: string; method: string; auth: string | null; projectHeader: string | null; body?: string }[] = [];
   const asleep = new Set<string>(["beta"]);
   const woken: string[] = [];
   const fetchFn = (async (url: string, init: RequestInit = {}) => {
     const u = new URL(url);
     const headers = new Headers(init.headers);
     if (u.host === "control") {
-      if (u.pathname === "/internal/gateway/tenants") return Response.json([{ id: "acme", name: "ACME" }, { id: "beta", name: "Beta" }]);
-      const wake = /^\/internal\/gateway\/tenants\/([^/]+)\/wake$/.exec(u.pathname);
+      if (u.pathname === "/internal/gateway/projects") return Response.json([{ id: "acme", name: "ACME" }, { id: "beta", name: "Beta" }]);
+      const wake = /^\/internal\/gateway\/projects\/([^/]+)\/wake$/.exec(u.pathname);
       if (wake) {
         woken.push(wake[1]!);
         asleep.delete(wake[1]!);
         return new Response(null, { status: 204 });
       }
-      const endpoint = /^\/internal\/gateway\/tenants\/([^/]+)\/endpoint$/.exec(u.pathname);
+      const endpoint = /^\/internal\/gateway\/projects\/([^/]+)\/endpoint$/.exec(u.pathname);
       if (endpoint) return Response.json({ url: `http://runtime-${endpoint[1]}` });
       if (u.pathname.startsWith("/auth/")) {
-        calls.push({ service: "auth", path: u.pathname + u.search, method: init.method ?? "GET", auth: headers.get("cookie"), tenantHeader: headers.get("x-forwarded-host") });
+        calls.push({ service: "auth", path: u.pathname + u.search, method: init.method ?? "GET", auth: headers.get("cookie"), projectHeader: headers.get("x-forwarded-host") });
         const res = new Response(null, { status: 303, headers: { location: "/login?uid=1", "x-internal": "secret" } });
         res.headers.append("set-cookie", "a=1; path=/auth/interaction/1; httponly");
         res.headers.append("set-cookie", "b=2; path=/; httponly");
@@ -49,7 +49,7 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
       path: u.pathname + u.search,
       method: init.method ?? "GET",
       auth: headers.get("authorization"),
-      tenantHeader: headers.get("x-tenant-id"),
+      projectHeader: headers.get("x-project-id"),
       body: init.body ? Buffer.from(init.body as Uint8Array).toString() : undefined,
     });
     return Response.json({ ok: true, service }, { headers: { "x-internal": "secret", "content-type": "application/json" } });
@@ -68,29 +68,29 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
     web: options.web,
     fetchFn,
   });
-  const as = (token: string, tenant?: string) => (path: string, init: RequestInit = {}) =>
-    app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(tenant ? { "x-tenant-id": tenant } : {}), ...(init.headers as Record<string, string>) } });
+  const as = (token: string, project?: string) => (path: string, init: RequestInit = {}) =>
+    app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(project ? { "x-project-id": project } : {}), ...(init.headers as Record<string, string>) } });
   return { app, as, calls, woken };
 }
 
 describe("access from claims", () => {
-  it("maps tenant to member and tenant-admin to admin, from single values or comma-separated lists", () => {
-    const access = accessFromClaims((key) => ({ role: "osiris-user", tenant: "acme, novak-stavby,Bad", "tenant-admin": ["acme", "beta"] })[key]);
+  it("maps project to member and project-admin to admin, from single values or comma-separated lists", () => {
+    const access = accessFromClaims((key) => ({ role: "osiris-user", project: "acme, novak-stavby,Bad", "project-admin": ["acme", "beta"] })[key]);
     expect(isAuthorized(access)).toBe(true);
     expect(membershipsFromClaims(access)).toEqual([
-      { tenantId: "acme", role: "admin" },
-      { tenantId: "beta", role: "admin" },
-      { tenantId: "novak-stavby", role: "member" },
+      { projectId: "acme", role: "admin" },
+      { projectId: "beta", role: "admin" },
+      { projectId: "novak-stavby", role: "member" },
     ]);
   });
 
-  it("requires the role osiris-user or osiris-admin; a system admin gets every tenant", () => {
-    const without = accessFromClaims((key) => ({ tenant: "acme", role: "admin" })[key]);
+  it("requires the role osiris-user or osiris-admin; a system admin gets every project", () => {
+    const without = accessFromClaims((key) => ({ project: "acme", role: "admin" })[key]);
     expect(isAuthorized(without)).toBe(false);
-    expect(accessibleTenants(without, ["acme"])).toEqual([]);
+    expect(accessibleProjects(without, ["acme"])).toEqual([]);
     const admin = accessFromClaims((key) => ({ role: "osiris-admin" })[key]);
     expect(isAuthorized(admin) && isSystemAdmin(admin)).toBe(true);
-    expect(accessibleTenants(admin, ["x"])).toEqual([{ tenantId: "x", role: "admin" }]);
+    expect(accessibleProjects(admin, ["x"])).toEqual([{ projectId: "x", role: "admin" }]);
   });
 
   it("asks control whose a token is and reuses the answer for a minute", async () => {
@@ -103,7 +103,7 @@ describe("access from claims", () => {
         name: "A",
         phone: "+420777123456",
         picture: null,
-        claims: { role: "osiris-user", tenant: "a", "tenant-admin": undefined },
+        claims: { role: "osiris-user", project: "a", "project-admin": undefined },
         expiresAt: Date.now() + 3_600_000,
       };
     });
@@ -114,69 +114,69 @@ describe("access from claims", () => {
       name: "A",
       phone: "+420777123456",
       picture: null,
-      access: { roles: ["osiris-user"], tenants: ["a"], adminTenants: [] },
-      claimKeys: ["role", "tenant"],
+      access: { roles: ["osiris-user"], projects: ["a"], adminProjects: [] },
+      claimKeys: ["project", "role"],
     });
     await verifier.identify("t1");
     expect(asked).toEqual(["t1"]);
   });
 
-  it("dev verifier gives a user their own tenant unless claims are given", async () => {
+  it("dev verifier gives a user their own project unless claims are given", async () => {
     const dev = createDevVerifier();
-    expect((await dev.identify("alice")).access).toEqual({ roles: ["osiris-user"], tenants: [], adminTenants: ["alice"] });
-    expect((await dev.identify("bob:tenant=acme,beta&role=osiris-admin")).access).toEqual({ roles: ["osiris-admin"], tenants: ["acme", "beta"], adminTenants: [] });
+    expect((await dev.identify("alice")).access).toEqual({ roles: ["osiris-user"], projects: [], adminProjects: ["alice"] });
+    expect((await dev.identify("bob:project=acme,beta&role=osiris-admin")).access).toEqual({ roles: ["osiris-admin"], projects: ["acme", "beta"], adminProjects: [] });
     await expect(dev.identify("../x")).rejects.toThrow();
   });
 });
 
 describe("gateway", () => {
-  it("refuses missing tokens and users without a role or a tenant, saying which claims arrived", async () => {
+  it("refuses missing tokens and users without a role or a project, saying which claims arrived", async () => {
     const { app, as } = setup();
     expect((await app.request("/api/me")).status).toBe(401);
-    const refused = await as("alice:tenant-admin=&role=osiris-user")("/me");
+    const refused = await as("alice:project-admin=&role=osiris-user")("/me");
     expect(refused.status).toBe(403);
     expect(await refused.json()).toEqual({
       error: "This account doesn't belong to any organization yet. Ask an administrator for an invitation.",
-      code: "errors.access.noTenant",
-      user: { sub: "dev:alice", name: "alice", email: "alice@dev.local", role: ["osiris-user"], tenant: [], "tenant-admin": [] },
+      code: "errors.access.noProject",
+      user: { sub: "dev:alice", name: "alice", email: "alice@dev.local", role: ["osiris-user"], project: [], "project-admin": [] },
     });
-    const czech = await as("alice:tenant-admin=&role=osiris-user")("/me", { headers: { "accept-language": "sk-SK, en;q=0.5" } });
+    const czech = await as("alice:project-admin=&role=osiris-user")("/me", { headers: { "accept-language": "sk-SK, en;q=0.5" } });
     expect((await czech.json()).error).toBe("Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.");
-    expect((await as("alice:tenant=acme&role=")("/me")).status).toBe(403);
-    // Claims naming a removed tenant don't count.
-    expect((await as("alice:tenant=gone")("/me")).status).toBe(403);
+    expect((await as("alice:project=acme&role=")("/me")).status).toBe(403);
+    // Claims naming a removed project don't count.
+    expect((await as("alice:project=gone")("/me")).status).toBe(403);
   });
 
   it("sends account and administration calls to control with the user and memberships", async () => {
     const { as, calls } = setup();
-    const res = await as("root:role=osiris-admin", "beta")("/admin/tenants?x=1", { method: "POST", body: '{"id":"n"}', headers: { "content-type": "application/json" } });
+    const res = await as("root:role=osiris-admin", "beta")("/admin/projects?x=1", { method: "POST", body: '{"id":"n"}', headers: { "content-type": "application/json" } });
     expect(await res.json()).toEqual({ ok: true, service: "control" });
     // Internal headers of the services don't reach the browser.
     expect(res.headers.get("x-internal")).toBeNull();
-    expect(calls[0]).toMatchObject({ service: "control", path: "/api/admin/tenants?x=1", method: "POST", tenantHeader: "beta", body: '{"id":"n"}' });
+    expect(calls[0]).toMatchObject({ service: "control", path: "/api/admin/projects?x=1", method: "POST", projectHeader: "beta", body: '{"id":"n"}' });
     const call = await verifier.verifyHeader(calls[0]!.auth!, CONTROL_AUDIENCE);
     expect(call).toMatchObject({
       issuer: "gateway",
       user: { sub: "dev:root" },
       systemAdmin: true,
-      memberships: [{ tenantId: "acme", role: "admin" }, { tenantId: "beta", role: "admin" }],
+      memberships: [{ projectId: "acme", role: "admin" }, { projectId: "beta", role: "admin" }],
     });
   });
 
-  it("sends tenant calls to the tenant's runtime with the user's role there", async () => {
+  it("sends project calls to the project's runtime with the user's role there", async () => {
     const { as, calls } = setup();
-    expect((await as("alice:tenant=acme,beta")("/threads")).status).toBe(400);
-    expect((await as("alice:tenant=acme", "beta")("/threads")).status).toBe(403);
-    expect((await as("alice:tenant=acme")("/threads")).status).toBe(200);
+    expect((await as("alice:project=acme,beta")("/threads")).status).toBe(400);
+    expect((await as("alice:project=acme", "beta")("/threads")).status).toBe(403);
+    expect((await as("alice:project=acme")("/threads")).status).toBe(200);
     expect(calls[0]).toMatchObject({ service: "acme", path: "/api/threads" });
-    expect(await verifier.verifyHeader(calls[0]!.auth!, tenantAudience("acme"))).toMatchObject({ user: { sub: "dev:alice" }, tenant: "acme", role: "member", channel: "web" });
-    // A token for one tenant is useless at another.
-    await expect(verifier.verifyHeader(calls[0]!.auth!, tenantAudience("beta"))).rejects.toThrow();
+    expect(await verifier.verifyHeader(calls[0]!.auth!, projectAudience("acme"))).toMatchObject({ user: { sub: "dev:alice" }, project: "acme", role: "member", channel: "web" });
+    // A token for one project is useless at another.
+    await expect(verifier.verifyHeader(calls[0]!.auth!, projectAudience("beta"))).rejects.toThrow();
   });
 
   it("wakes a sleeping runtime and sends the request again", async () => {
     const { as, calls, woken } = setup();
-    const res = await as("bob:tenant-admin=beta")("/files/content?scope=personal&path=a.txt", { method: "PUT", body: "ahoj" });
+    const res = await as("bob:project-admin=beta")("/files/content?scope=personal&path=a.txt", { method: "PUT", body: "ahoj" });
     expect(res.status).toBe(200);
     expect(woken).toEqual(["beta"]);
     expect(calls).toMatchObject([{ service: "beta", method: "PUT", body: "ahoj" }]);
@@ -184,8 +184,8 @@ describe("gateway", () => {
 
   it("limits body size and agent runs per user", async () => {
     const { as } = setup({ runsPerMinute: 2 });
-    expect((await as("alice:tenant=acme")("/files/content?scope=personal&path=a.txt", { method: "PUT", body: "x".repeat(2000) })).status).toBe(413);
-    const run = () => as("alice:tenant=acme")("/threads/t1/runs", { method: "POST", body: "{}" });
+    expect((await as("alice:project=acme")("/files/content?scope=personal&path=a.txt", { method: "PUT", body: "x".repeat(2000) })).status).toBe(413);
+    const run = () => as("alice:project=acme")("/threads/t1/runs", { method: "POST", body: "{}" });
     expect((await run()).status).toBe(200);
     expect((await run()).status).toBe(200);
     expect((await run()).status).toBe(429);
@@ -211,7 +211,7 @@ describe("gateway", () => {
     expect([res.status, res.headers.get("location"), res.headers.get("x-internal")]).toEqual([303, "/login?uid=1", null]);
     expect(res.headers.getSetCookie()).toEqual(["a=1; path=/auth/interaction/1; httponly", "b=2; path=/; httponly"]);
     expect(calls).toEqual([
-      { service: "auth", path: "/auth/authorize?client_id=osiris-web", method: "GET", auth: "osiris_session=x", tenantHeader: "osiris.example.cz" },
+      { service: "auth", path: "/auth/authorize?client_id=osiris-web", method: "GET", auth: "osiris_session=x", projectHeader: "osiris.example.cz" },
     ]);
   });
 
@@ -226,16 +226,16 @@ describe("gateway", () => {
     expect(page.headers.get("x-frame-options")).toBe("DENY");
   });
 
-  it("passes customers to the public assistant with a visitor id and nothing else, and lets tenants embed the chat page", async () => {
+  it("passes customers to the public assistant with a visitor id and nothing else, and lets projects embed the chat page", async () => {
     const { app, calls } = setup();
     const visitor = { "x-visitor-id": "anna-visitor-123456" };
     const res = await app.request("/public/acme/threads", { method: "POST", headers: { ...visitor, authorization: "Bearer acme" } });
     expect(res.status).toBe(200);
     const call = calls.at(-1)!;
     expect([call.service, call.path]).toEqual(["acme", "/public/threads"]);
-    const claims = await new InternalVerifier(keys.publicKey).verifyHeader(call.auth!, tenantAudience("acme"));
+    const claims = await new InternalVerifier(keys.publicKey).verifyHeader(call.auth!, projectAudience("acme"));
     // The visitor's own bearer token is ignored: no user, no role, just the visitor.
-    expect(claims).toMatchObject({ tenant: "acme", visitor: "anna-visitor-123456", channel: "public" });
+    expect(claims).toMatchObject({ project: "acme", visitor: "anna-visitor-123456", channel: "public" });
     expect(claims.user).toBeUndefined();
     expect(claims.role).toBeUndefined();
 

@@ -4,7 +4,7 @@ import type { RunnableConfig } from "@langchain/core/runnables";
 import type { z } from "zod";
 
 /**
- * Runs a self-contained ReAct task (the tenant's agent with its tools) and returns its final answer; `progress` hears
+ * Runs a self-contained ReAct task (the project's agent with its tools) and returns its final answer; `progress` hears
  * what it is doing (the tools it calls), so the diagram shows more than "running" for minutes.
  */
 export type ReactDelegate = (goal: string, config: RunnableConfig, key: string, progress?: (message: string) => void) => Promise<string>;

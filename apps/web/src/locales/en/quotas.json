@@ -21,7 +21,7 @@
     "database": "Database",
     "dashboards": "Dashboards"
   },
-  "noTenant": "no tenant",
+  "noProject": "no project",
   "exhausted": "used up",
   "runningOut": "running out"
 }

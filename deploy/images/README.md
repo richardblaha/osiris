@@ -1,13 +1,13 @@
 # Conversational images through Comfy Cloud
 
-The existing tenant LangGraph agent provides image generation and editing through its native tool registry. It reuses the MCP adapter, OAuth, tenant vault, libSQL database/checkpointer, file storage, usage accounting, streaming, PWA and WhatsApp delivery. No separate agent, queue, server, database or mandatory paid service is introduced.
+The existing project LangGraph agent provides image generation and editing through its native tool registry. It reuses the MCP adapter, OAuth, project vault, libSQL database/checkpointer, file storage, usage accounting, streaming, PWA and WhatsApp delivery. No separate agent, queue, server, database or mandatory paid service is introduced.
 
 ## Configuration and authentication
 
 Enable `IMAGE_GENERATION_ENABLED=true` in the runtime environment. Two authentication paths are supported:
 
-- **Runtime API key:** set `COMFY_API_KEY` securely. At tenant initialization it is sealed into the existing tenant vault, restricted to `cloud.comfy.org`, and a missing `comfy-cloud` MCP connection is created at `https://cloud.comfy.org/mcp`. Existing vault values, OAuth connections and disabled connections are not overwritten; manage subsequent key rotation in the vault.
-- **Existing MCP connection:** create the tenant connection `comfy-cloud` in Tools and MCP, choose OAuth and sign in, or use `X-API-Key: {{secret:COMFY_API_KEY}}`. No environment bootstrap key is required for OAuth. Credentials never enter tool arguments, model context or artifact responses.
+- **Runtime API key:** set `COMFY_API_KEY` securely. At project initialization it is sealed into the existing project vault, restricted to `cloud.comfy.org`, and a missing `comfy-cloud` MCP connection is created at `https://cloud.comfy.org/mcp`. Existing vault values, OAuth connections and disabled connections are not overwritten; manage subsequent key rotation in the vault.
+- **Existing MCP connection:** create the project connection `comfy-cloud` in Tools and MCP, choose OAuth and sign in, or use `X-API-Key: {{secret:COMFY_API_KEY}}`. No environment bootstrap key is required for OAuth. Credentials never enter tool arguments, model context or artifact responses.
 
 Both `files` and `mcp` features must be on. Individual image tools respect the existing disabled-tools controls; public assistants get none. Raw tools of this Comfy connection are hidden from the conversational agent while native image integration is enabled, so paid execution cannot bypass its limits and user/thread authorization.
 
@@ -28,7 +28,7 @@ IMAGE_RETENTION_DAYS=30
 # IMAGE_MAX_ESTIMATED_COST=1
 ```
 
-Local child runtimes inherit control's environment. For Kubernetes, use the operator's existing passthrough: `RUNTIME_ENV_IMAGE_GENERATION_ENABLED=true`, other `RUNTIME_ENV_IMAGE_*` settings, and `RUNTIME_SECRET_COMFY_API_KEY` when using key bootstrap. The operator updates tenant ConfigMaps/Secrets and restarts runtimes on configuration changes. Configuration does not grant a Comfy subscription or credits.
+Local child runtimes inherit control's environment. For Kubernetes, use the operator's existing passthrough: `RUNTIME_ENV_IMAGE_GENERATION_ENABLED=true`, other `RUNTIME_ENV_IMAGE_*` settings, and `RUNTIME_SECRET_COMFY_API_KEY` when using key bootstrap. The operator updates project ConfigMaps/Secrets and restarts runtimes on configuration changes. Configuration does not grant a Comfy subscription or credits.
 
 The official [MCP reference](https://docs.comfy.org/agent-tools/mcp) documents the endpoint and available tools. Authenticated discovery was also performed against the user's account; sanitized input-schema fixtures are in `apps/runtime/test/fixtures/comfy-cloud-contracts.json`. MCP definitions are still discovered at runtime rather than frozen to these fixtures.
 
@@ -59,7 +59,7 @@ The agent's image instructions are included only when image tools are available.
 Requests have a natural-language `prompt` and optional fields:
 
 - `operation`: `generate`, `edit`, `variations`, `inpaint`, `outpaint`, `upscale`, `remove_background`, `resize`, `crop`, `pad`, `convert`, `text`, or `composite`.
-- `references`: existing file paths with `temp`/`tenant` scope and distinct `source`, `identity`, `style`, `composition`, `color`, `structure`, `texture`, or `mask` roles. Uploads already use this FileStore. `sourceRevision` and `sourceIndex` select a specific earlier output; otherwise the durable selection/latest completed image is used.
+- `references`: existing file paths with `temp`/`project` scope and distinct `source`, `identity`, `style`, `composition`, `color`, `structure`, `texture`, or `mask` roles. Uploads already use this FileStore. `sourceRevision` and `sourceIndex` select a specific earlier output; otherwise the durable selection/latest completed image is used.
 - `output`: dimensions, aspect ratio, PNG/JPEG/WebP format, genuine transparency, count (1–16, configurable).
 - `quality`: `auto`, `best`, `fast`, `economical`, `precise-edit`, or `consistent-style`.
 - `preserve`, `seed`, and `inheritConstraints`: preservation/style/identity references and available seed metadata survive edits. Set `inheritConstraints=false` only when the user explicitly replaces prior constraints.
@@ -92,7 +92,7 @@ Failed alpha, size, seamless or visual checks may trigger refinement only within
 
 ## Persistence, replay and limits
 
-Migrations `020_images.sql` and `021_image_execution.sql` extend the existing tenant DB with jobs, capability metadata and selected revisions. Binary images stay in FileStore; graph checkpoints and database rows retain lightweight references. Requests, original/parent revisions, selected variants, masks, constraints, workflow/model/seed metadata, provider identifiers, attempts and validation results survive process reconstruction. Selections use compare-and-set updates for concurrent branches.
+Migrations `020_images.sql` and `021_image_execution.sql` extend the existing project DB with jobs, capability metadata and selected revisions. Binary images stay in FileStore; graph checkpoints and database rows retain lightweight references. Requests, original/parent revisions, selected variants, masks, constraints, workflow/model/seed metadata, provider identifiers, attempts and validation results survive process reconstruction. Selections use compare-and-set updates for concurrent branches.
 
 The graph's stable tool-call id is the unique submission key for each user/thread. Atomic claims, execution leases and a conditional pre-submission write prevent concurrent/replayed paid calls. Provider ids are parsed and persisted immediately without another model call. An interrupted preparation can resume; a known job can be polled after restart. A saved raw submission response can recover its id if parsing was interrupted. The unavoidable window between remote acceptance and receipt/persistence of its id becomes `unknown` and is **not** automatically resubmitted. Inspect the Comfy queue to reconcile it; never invent provider-side idempotency.
 
@@ -102,7 +102,7 @@ Limits: 1–16 requested outputs, at most five references and 25 MiB combined in
 
 Output downloads preserve signed URLs and shortlinks intact. Each redirect is handled manually, limited to three, and revalidated against exact administrator-approved HTTPS hosts. DNS answers are validated and pinned for the real HTTPS connection, preventing private-network access and rebinding. Downloads never forward credentials. MIME, streamed size and full file integrity are validated. No provider command is run. Structured errors and logs omit raw provider messages, secrets, image bytes and private prompts by default.
 
-Final images use immutable revision/attempt paths in the existing thread temp scope. Existing temp-file expiry (normally 24 hours after last change in that thread) still applies; missing sources are reported accurately. `IMAGE_RETENTION_DAYS` additionally cleans terminal job metadata/artifacts at tenant startup; it does not extend FileStore's lifetime. Comfy's cloud-library retention is separate. Thread deletion cascades image metadata as well as existing files/checkpoints.
+Final images use immutable revision/attempt paths in the existing thread temp scope. Existing temp-file expiry (normally 24 hours after last change in that thread) still applies; missing sources are reported accurately. `IMAGE_RETENTION_DAYS` additionally cleans terminal job metadata/artifacts at project startup; it does not extend FileStore's lifetime. Comfy's cloud-library retention is separate. Thread deletion cascades image metadata as well as existing files/checkpoints.
 
 ## Verification and remaining provider limits
 

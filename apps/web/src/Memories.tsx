@@ -10,13 +10,13 @@ export const memoryKey = (m: Memory) => m.id;
 const intro = () => t("memory:intro");
 
 /**
- * A memory, the tenant's or the viewer's own. A member may write their own version of a tenant memory, which
+ * A memory, the project's or the viewer's own. A member may write their own version of a project memory, which
  * replaces it for them.
  */
 export function MemoryDetail({ item, scope, isAdmin, onSaved, onDeleted }: DetailProps<Memory>) {
   const [target, setTarget] = useState<Scope>(scope);
   const [content, setContent] = useState("");
-  // Writing the viewer's own version of a tenant memory.
+  // Writing the viewer's own version of a project memory.
   const [copying, setCopying] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();

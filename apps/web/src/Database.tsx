@@ -30,7 +30,7 @@ function toCsv(columns: string[], rows: unknown[][]) {
 }
 const downloadCsv = (name: string, r: DbQueryResult) => saveBlob(new Blob([toCsv(r.columns, r.rows)], { type: "text/csv" }), `${name}.csv`);
 
-/** Tenant > Databáze: the tables the assistant keeps (contacts, deals…), their rows, and read-only SQL. */
+/** Project > Databáze: the tables the assistant keeps (contacts, deals…), their rows, and read-only SQL. */
 export function Database({ isAdmin }: { isAdmin: boolean }) {
   const [tables, setTables] = useState<DbTable[]>();
   const [selected, setSelected] = useState<string | null>();
@@ -402,7 +402,7 @@ function StructureForm({ table, tables, onSaved }: { table?: DbTable; tables: Db
   );
 }
 
-/** Read-only SQL over the tenant's tables (one SELECT, at most 1000 rows), with the answer as a table or CSV. */
+/** Read-only SQL over the project's tables (one SELECT, at most 1000 rows), with the answer as a table or CSV. */
 function SqlConsole() {
   const [sql, setSql] = useState("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\';");
   const [result, setResult] = useState<DbQueryResult>();

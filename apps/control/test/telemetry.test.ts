@@ -29,7 +29,7 @@ describe("telemetry from ClickHouse", () => {
     expect(await (await app.request("/series?name=m&type=gauge")).json()).toEqual({ step: 60, series: [] });
   });
 
-  it("reads one of a tenant's sites' web analytics from the aggregates, the site as a parameter", async () => {
+  it("reads one of a project's sites' web analytics from the aggregates, the site as a parameter", async () => {
     const calls: { url: URL; sql: string }[] = [];
     const fake = (async (url: string, init: RequestInit) => {
       const sql = String(init.body);
@@ -46,7 +46,7 @@ describe("telemetry from ClickHouse", () => {
     const web = new Telemetry(new ClickHouse("http://clickhouse:8123", "osiris", "pw", fake)).web;
     const now = Date.now();
     const day = { from: now - 86_400_000, to: now };
-    // A site the tenant wasn't given is never read: its own comes instead.
+    // A site the project wasn't given is never read: its own comes instead.
     const stats = await web.stats("tras.cz", day, ["k6labs.cz", "jinde.cz"]);
     expect(stats).toMatchObject({
       sites: ["k6labs.cz"],

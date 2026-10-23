@@ -6,7 +6,7 @@ import { attempt, ErrorNotice, Pending } from "./Scope.tsx";
 import { t } from "i18next";
 
 /**
- * The assistant's persona at one level (the tenant's, the user's own or a public assistant's). A persona is written
+ * The assistant's persona at one level (the project's, the user's own or a public assistant's). A persona is written
  * by the model from a free-form description, then edited before saving. Rules are guards (Guards.tsx).
  */
 export function AssistantSettings({ scope, editable, assistant }: { scope: "personal" | "public"; editable: boolean; assistant?: string }) {

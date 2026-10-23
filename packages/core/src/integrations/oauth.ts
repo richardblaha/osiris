@@ -69,7 +69,7 @@ export class NotConnectedError extends LocalizedError {}
 
 /**
  * Users' connections to Google and Microsoft: authorization code with PKCE against Osiris's own OAuth clients, the
- * tokens sealed with the tenant's key and refreshed when they expire.
+ * tokens sealed with the project's key and refreshed when they expire.
  */
 export class IntegrationAccounts {
   constructor(

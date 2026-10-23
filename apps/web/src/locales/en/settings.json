@@ -1,5 +1,5 @@
 {
-  "newTenant": "New tenant",
+  "newProject": "New project",
   "newUser": "New user",
   "titles": {
     "features": "Features",
@@ -8,7 +8,7 @@
     "personalization": "Personalization",
     "persona": "Assistant persona"
   },
-  "intro": "Defaults for new tenants and users. Existing ones keep theirs.",
+  "intro": "Defaults for new projects and users. Existing ones keep theirs.",
   "quotaField": "{{label}} (empty = no limit)",
   "idle": "Sleep when idle (minutes, 0 = never)",
   "disk": "Disk (GB)",

@@ -7,7 +7,7 @@ import { emit, nodeId, traced } from "./telemetry.ts";
 /** Map tasks running at once, so a long collection doesn't hit the model's rate limit. */
 export const MAP_CONCURRENCY = 4;
 
-/** Inspects every item in parallel (each one a ReAct run with the tenant's tools), then aggregates the findings. */
+/** Inspects every item in parallel (each one a ReAct run with the project's tools), then aggregates the findings. */
 export function createMapReduceGraph(deps: OrchestratorDeps) {
   const map = async (s: MapReduceStateType, config: RunnableConfig) => {
     const { index, value } = s.item!;

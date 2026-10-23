@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import { loadSkills, parseSkill } from "@osiris/core/agent/skills.ts";
-import { createTestTenants } from "./helpers.ts";
+import { createTestProjects } from "./helpers.ts";
 
-const ctx = { thread_id: "t", tenant_id: "a", user_id: "u", role: "admin" as const, channel: "web" as const };
+const ctx = { thread_id: "t", project_id: "a", user_id: "u", role: "admin" as const, channel: "web" as const };
 
 function skillsDir(files: Record<string, string>) {
   const dir = mkdtempSync(join(tmpdir(), "osiris-skills-"));
@@ -43,14 +43,14 @@ describe("skills", () => {
   });
 
   it("lists skills in the prompt and returns instructions via load_skill", async () => {
-    const { tenants, model } = createTestTenants(
+    const { projects, model } = createTestProjects(
       [
         new AIMessage({ content: "", tool_calls: [{ id: "s1", name: "load_skill", args: { name: "faktura" } }] }),
         new AIMessage("Hotovo."),
       ],
       [{ name: "faktura", description: "Vystavení faktury", instructions: "Uveď IČO a datum splatnosti." }],
     );
-    const { graph } = await tenants.get("a");
+    const { graph } = await projects.get("a");
 
     const state = await graph.invoke({ messages: [new HumanMessage("Udělej fakturu")] }, { configurable: ctx });
 
@@ -60,41 +60,41 @@ describe("skills", () => {
     expect(result?.text).toBe("Uveď IČO a datum splatnosti.");
   });
 
-  it("puts the tenant's skills over bundled ones of the same name, per tenant", async () => {
+  it("puts the project's skills over bundled ones of the same name, per project", async () => {
     const bundled = [{ name: "faktura", description: "Obecná", instructions: "Obecný postup." }];
-    const { tenants } = createTestTenants([], bundled);
-    const a = await tenants.get("a");
-    const b = await tenants.get("b");
+    const { projects } = createTestProjects([], bundled);
+    const a = await projects.get("a");
+    const b = await projects.get("b");
 
     await a.skills.put({ name: "faktura", description: "Naše", instructions: "Náš postup." });
     await a.skills.put({ name: "revize", description: "Revize elektro", instructions: "Postup revize." });
     expect(await a.skills.list()).toEqual([
-      { name: "faktura", description: "Naše", source: "tenant" },
+      { name: "faktura", description: "Naše", source: "project" },
       { name: "faktura", description: "Obecná", source: "bundled", overridden: true },
-      { name: "revize", description: "Revize elektro", source: "tenant" },
+      { name: "revize", description: "Revize elektro", source: "project" },
     ]);
     expect(await b.skills.list()).toEqual([{ name: "faktura", description: "Obecná", source: "bundled" }]);
 
-    // A user's own skill wins over the tenant's, for them alone.
+    // A user's own skill wins over the project's, for them alone.
     await a.skills.put({ name: "faktura", description: "Moje", instructions: "Můj postup." }, "personal", "bob");
     expect((await a.skills.list("bob")).filter((s) => s.name === "faktura").map((s) => [s.source, !!s.overridden])).toEqual([
       ["personal", false],
-      ["tenant", true],
+      ["project", true],
       ["bundled", true],
     ]);
     expect((await a.skills.get("faktura", "bob"))?.instructions).toBe("Můj postup.");
     expect((await a.skills.get("faktura", "carol"))?.instructions).toBe("Náš postup.");
-    expect((await a.skills.get("faktura", "bob", "tenant"))?.instructions).toBe("Náš postup.");
+    expect((await a.skills.get("faktura", "bob", "project"))?.instructions).toBe("Náš postup.");
 
-    // Deleting the tenant's replacement reveals the bundled skill.
+    // Deleting the project's replacement reveals the bundled skill.
     expect(await a.skills.delete("faktura")).toBe(true);
     expect((await a.skills.get("faktura"))?.instructions).toBe("Obecný postup.");
     expect(await a.skills.delete("faktura")).toBe(false);
   });
 
   it("omits the skills section when there are none", async () => {
-    const { tenants, model } = createTestTenants([new AIMessage("Ahoj")]);
-    const { graph } = await tenants.get("a");
+    const { projects, model } = createTestProjects([new AIMessage("Ahoj")]);
+    const { graph } = await projects.get("a");
     await graph.invoke({ messages: [new HumanMessage("ahoj")] }, { configurable: ctx });
     expect(model.calls[0]?.[0]?.text).not.toContain("DOVEDNOSTI");
   });
@@ -110,9 +110,9 @@ describe("bundled skills", () => {
     const bundled = loadSkills(join(import.meta.dirname, "..", "skills"));
     expect(bundled.filter((s) => s.requires === "database").map((s) => s.name)).toEqual(["crm", "kontakty"]);
 
-    const { tenants, model } = createTestTenants([new AIMessage("Ahoj"), new AIMessage("Ahoj")], bundled);
-    const a = await tenants.get("a");
-    const ctx = { thread_id: "t", tenant_id: "a", user_id: "u", role: "member" as const, channel: "web" as const };
+    const { projects, model } = createTestProjects([new AIMessage("Ahoj"), new AIMessage("Ahoj")], bundled);
+    const a = await projects.get("a");
+    const ctx = { thread_id: "t", project_id: "a", user_id: "u", role: "member" as const, channel: "web" as const };
     await a.graph.invoke({ messages: [new HumanMessage("Ahoj")] }, { configurable: ctx });
     expect(model.calls[0]?.[0]?.text).toMatch(/- kontakty: /);
     await a.features.set({ database: false });

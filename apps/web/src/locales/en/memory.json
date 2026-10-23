@@ -6,6 +6,6 @@
   "new": "New memory",
   "what": "What to remember",
   "placeholder": "For example: I'm not a VAT payer. I want a 50% deposit up front.",
-  "replaces": "replaces the tenant's memory for you",
+  "replaces": "replaces the project's memory for you",
   "saveOwn": "Save my version"
 }

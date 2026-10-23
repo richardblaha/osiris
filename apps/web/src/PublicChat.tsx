@@ -30,11 +30,11 @@ const forget = (key: string, value?: string) => {
 };
 const randomId = () => btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(24)))).replace(/[+/=]/g, (c) => ({ "+": "-", "/": "_", "=": "" })[c]!);
 
-/** A public assistant's API, as the browser's anonymous visitor (the gateway's /public/<tenant>/<assistant>). */
-function publicApi(tenant: string, assistant: string) {
+/** A public assistant's API, as the browser's anonymous visitor (the gateway's /public/<project>/<assistant>). */
+function publicApi(project: string, assistant: string) {
   const visitor = remember("osiris.visitor", randomId)!;
   const call = async (path: string, init: RequestInit = {}) => {
-    const res = await fetch(`/public/${encodeURIComponent(tenant)}/${encodeURIComponent(assistant)}${path}`, {
+    const res = await fetch(`/public/${encodeURIComponent(project)}/${encodeURIComponent(assistant)}${path}`, {
       ...init,
       headers: { "x-visitor-id": visitor, "content-type": "application/json", "accept-language": currentLocale(), ...init.headers },
     });
@@ -56,13 +56,13 @@ function publicApi(tenant: string, assistant: string) {
 }
 
 /**
- * One of the tenant's assistants for its customers, without signing in: /c/<tenant>/<assistant> (without the
- * assistant, the tenant's first), full page or (?embed=1) inside the widget on the tenant's website. The
+ * One of the project's assistants for its customers, without signing in: /c/<project>/<assistant> (without the
+ * assistant, the project's first), full page or (?embed=1) inside the widget on the project's website. The
  * conversation continues on the next visit from the same browser.
  */
-export function PublicChat({ tenant, assistant = "_" }: { tenant: string; assistant?: string }) {
-  const client = useMemo(() => publicApi(tenant, assistant), [tenant, assistant]);
-  const threadKey = `osiris.publicThread.${tenant}${assistant === "_" ? "" : `.${assistant}`}`;
+export function PublicChat({ project, assistant = "_" }: { project: string; assistant?: string }) {
+  const client = useMemo(() => publicApi(project, assistant), [project, assistant]);
+  const threadKey = `osiris.publicThread.${project}${assistant === "_" ? "" : `.${assistant}`}`;
   const [info, setInfo] = useState<PublicInfo>();
   const [initial, setInitial] = useState<ThreadMessageLike[]>();
   const [error, setError] = useState<string>();

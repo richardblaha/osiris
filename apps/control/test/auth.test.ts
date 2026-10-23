@@ -91,7 +91,7 @@ const identify = async (control: Awaited<ReturnType<typeof createTestControl>>, 
     body: JSON.stringify({ token }),
   });
 
-const alice = { id: "alice", firstName: "Alice", lastName: "Nováková", email: "alice@firma.cz", claims: { role: "osiris-user", tenant: "acme" } };
+const alice = { id: "alice", firstName: "Alice", lastName: "Nováková", email: "alice@firma.cz", claims: { role: "osiris-user", project: "acme" } };
 
 describe("TOTP", () => {
   it("matches RFC 6238 and refuses codes it has seen", () => {
@@ -134,12 +134,12 @@ describe("sign-in", () => {
       sub: "alice",
       email: "alice@firma.cz",
       name: "Alice Nováková",
-      claims: { role: "osiris-user", tenant: "acme" },
+      claims: { role: "osiris-user", project: "acme" },
     });
     expect((await identify(control, "nonsense")).status).toBe(401);
 
     const userinfo = await (await b.request("/auth/userinfo", { headers: { authorization: `Bearer ${tokens.body.access_token}` } })).json();
-    expect(userinfo).toMatchObject({ sub: "alice", email: "alice@firma.cz", given_name: "Alice", role: "osiris-user", tenant: "acme" });
+    expect(userinfo).toMatchObject({ sub: "alice", email: "alice@firma.cz", given_name: "Alice", role: "osiris-user", project: "acme" });
 
     const refreshed = await b.token({ grant_type: "refresh_token", refresh_token: tokens.body.refresh_token! });
     expect(refreshed.status).toBe(200);

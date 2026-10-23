@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createTestApp, createTestDb, createTestTenants } from "./helpers.ts";
+import { createTestApp, createTestDb, createTestProjects } from "./helpers.ts";
 import { joinChunks, moveLegacyToFiles } from "@osiris/core/files/sync.ts";
 import { FileStore } from "@osiris/core/files/store.ts";
 import { mkdtempSync } from "node:fs";
@@ -10,12 +10,12 @@ const text = (s: string) => Buffer.from(s);
 
 describe("knowledge base", () => {
   it("keeps documents in the database, indexed as they're saved, and finds them by meaning and by words", async () => {
-    const { tenants } = createTestTenants();
-    const acme = await tenants.get("acme");
+    const { projects } = createTestProjects();
+    const acme = await projects.get("acme");
     await acme.knowledge.putDocument("novak.md", "Pan Novák chce rekonstrukci koupelny, obklad bílý.");
     await acme.knowledge.putDocument("public/cenik.md", "# Ceník\n\nHodinová sazba elektrikáře je 650 Kč, víkend dvojnásobně.");
     // A file is only full-text searchable, never knowledge.
-    await acme.files.write({ scope: "tenant" }, "knowledge/stary.md", text("Sazba DPH 21 %"));
+    await acme.files.write({ scope: "project" }, "knowledge/stary.md", text("Sazba DPH 21 %"));
 
     const [top] = await acme.knowledge.search("kolik stojí hodinová sazba");
     expect(top).toMatchObject({ title: "Ceník", path: "knowledge/public/cenik.md", owner: "" });
@@ -33,28 +33,28 @@ describe("knowledge base", () => {
     await expect(acme.knowledge.putDocument("../x.md", "x")).rejects.toThrow();
   });
 
-  it("gives a user their own documents, which replace the tenant's of the same id for them alone", async () => {
-    const { tenants } = createTestTenants();
-    const acme = await tenants.get("acme");
+  it("gives a user their own documents, which replace the project's of the same id for them alone", async () => {
+    const { projects } = createTestProjects();
+    const acme = await projects.get("acme");
     await acme.knowledge.putDocument("cenik.md", "Hodinová sazba elektrikáře je 650 Kč.");
     await acme.knowledge.putDocument("cenik.md", "Moje hodinová sazba elektrikáře je 700 Kč.", undefined, "bob");
     await acme.knowledge.putDocument("poznamky.md", "Bobova poznámka o rozvaděči.", undefined, "bob");
 
-    const found = async (user: string, query: string) => (await acme.knowledge.search(query, user)).map((r) => `${r.owner || "tenant"}:${r.content}`);
-    // Vector search returns the nearest of what the user may see, however far: the tenant's price list isn't among Bob's.
+    const found = async (user: string, query: string) => (await acme.knowledge.search(query, user)).map((r) => `${r.owner || "project"}:${r.content}`);
+    // Vector search returns the nearest of what the user may see, however far: the project's price list isn't among Bob's.
     expect(await found("bob", "hodinová sazba elektrikáře")).toEqual(["bob:Moje hodinová sazba elektrikáře je 700 Kč.", "bob:Bobova poznámka o rozvaděči."]);
-    expect(await found("carol", "hodinová sazba elektrikáře")).toEqual(["tenant:Hodinová sazba elektrikáře je 650 Kč."]);
-    // A public assistant only ever searches the tenant's.
+    expect(await found("carol", "hodinová sazba elektrikáře")).toEqual(["project:Hodinová sazba elektrikáře je 650 Kč."]);
+    // A public assistant only ever searches the project's.
     expect((await acme.knowledge.search("sazba", "", 5, { under: ["knowledge/cenik.md"] })).map((r) => r.content)).toEqual(["Hodinová sazba elektrikáře je 650 Kč."]);
     expect(await acme.knowledge.deleteDocument("cenik.md", "bob")).toBe(true);
-    expect((await found("bob", "hodinová sazba elektrikáře"))[0]).toBe("tenant:Hodinová sazba elektrikáře je 650 Kč.");
+    expect((await found("bob", "hodinová sazba elektrikáře"))[0]).toBe("project:Hodinová sazba elektrikáře je 650 Kč.");
   });
 
-  it("serves documents to the tenant's people", async () => {
-    const { tenants } = createTestTenants();
-    const app = await createTestApp(tenants);
+  it("serves documents to the project's people", async () => {
+    const { projects } = createTestProjects();
+    const app = await createTestApp(projects);
     const bob = (path: string, init: RequestInit = {}) =>
-      app.request(`/api${path}`, { ...init, headers: { authorization: "Bearer bob:tenant=acme", "x-tenant-id": "acme", "content-type": "application/json" } });
+      app.request(`/api${path}`, { ...init, headers: { authorization: "Bearer bob:project=acme", "x-project-id": "acme", "content-type": "application/json" } });
     const created = await (await bob("/knowledge/documents", { method: "POST", body: JSON.stringify({ title: "Ceník služeb", content: "650 Kč", folder: "public" }) })).json();
     expect(created).toMatchObject({ id: "public/cenik-sluzeb.md", title: "Ceník služeb", chunks: 1 });
     expect((await (await bob("/knowledge/documents/public/cenik-sluzeb.md")).json()).content).toBe("650 Kč");
@@ -65,24 +65,24 @@ describe("knowledge base", () => {
   });
 
   it("moves the files once in knowledge/ into documents, once", async () => {
-    const { tenants } = createTestTenants();
-    const acme = await tenants.get("acme");
-    await acme.files.write({ scope: "tenant" }, "knowledge/public/cenik.md", text("# Ceník\n\n650 Kč"));
-    await acme.files.write({ scope: "tenant" }, "knowledge/plán zakázek.md", text("Brno v pondělí"));
-    await acme.files.write({ scope: "tenant" }, "knowledge/foto.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+    const { projects } = createTestProjects();
+    const acme = await projects.get("acme");
+    await acme.files.write({ scope: "project" }, "knowledge/public/cenik.md", text("# Ceník\n\n650 Kč"));
+    await acme.files.write({ scope: "project" }, "knowledge/plán zakázek.md", text("Brno v pondělí"));
+    await acme.files.write({ scope: "project" }, "knowledge/foto.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
     await acme.init();
     expect((await acme.knowledge.listDocuments()).map((d) => [d.id, d.title, d.chunks])).toEqual([
       ["plán-zakázek.md", "plán zakázek", 1],
       ["public/cenik.md", "Ceník", 1],
     ]);
-    expect((await acme.files.list({ scope: "tenant" }, "knowledge")).map((e) => e.name)).toEqual(["public", "foto.png"]);
+    expect((await acme.files.list({ scope: "project" }, "knowledge")).map((e) => e.name)).toEqual(["public", "foto.png"]);
     expect((await acme.knowledge.search("Brno")).map((r) => r.path)[0]).toBe("knowledge/plán-zakázek.md");
   });
 
   it("searches all text files by words, with a snippet", async () => {
-    const { tenants } = createTestTenants();
-    const acme = await tenants.get("acme");
-    await acme.files.write({ scope: "tenant" }, "sablony/nabidka.md", text("Cenová nabídka na elektroinstalaci v Brně"));
+    const { projects } = createTestProjects();
+    const acme = await projects.get("acme");
+    await acme.files.write({ scope: "project" }, "sablony/nabidka.md", text("Cenová nabídka na elektroinstalaci v Brně"));
     await acme.files.write({ scope: "personal", userId: "bob" }, "poznamky.txt", text("Zavolat panu Dvořákovi kvůli elektroinstalaci"));
     expect(await acme.fileIndex.search("elektroinstal brne", ["", "bob"])).toEqual([
       { owner: "", path: "sablony/nabidka.md", snippet: "Cenová nabídka na «elektroinstalaci» v «Brně»" },
@@ -92,10 +92,10 @@ describe("knowledge base", () => {
   });
 
   it("indexes documents again whose chunks are gone (a new embedding model, a restore)", async () => {
-    const { tenants } = createTestTenants();
-    const acme = await tenants.get("acme");
+    const { projects } = createTestProjects();
+    const acme = await projects.get("acme");
     await acme.knowledge.putDocument("a.md", "stará verze");
-    await acme.files.write({ scope: "tenant" }, "poznamky/a.md", text("stará verze"));
+    await acme.files.write({ scope: "project" }, "poznamky/a.md", text("stará verze"));
     await acme.db.batch(["DELETE FROM indexed_files", "DELETE FROM file_text", "DELETE FROM knowledge_chunks", "DELETE FROM knowledge_text"], "write");
     await acme.init();
     expect((await acme.knowledge.search("verze")).map((r) => r.path)).toEqual(["knowledge/a.md"]);
@@ -117,9 +117,9 @@ describe("knowledge base", () => {
     );
     const files = new FileStore(mkdtempSync(join(tmpdir(), "osiris-legacy-")));
     await moveLegacyToFiles(db, files);
-    expect((await files.read({ scope: "tenant" }, "knowledge/cenik-sluzeb.md")).data.toString()).toBe("# Ceník služeb\n\nHodina práce 650 Kč a doprava 10 Kč/km\n");
+    expect((await files.read({ scope: "project" }, "knowledge/cenik-sluzeb.md")).data.toString()).toBe("# Ceník služeb\n\nHodina práce 650 Kč a doprava 10 Kč/km\n");
     expect((await files.read({ scope: "personal", userId: "bob" }, "knowledge/moje.md")).data.toString()).toContain("osobní");
-    expect((await files.read({ scope: "tenant" }, "skills/faktura/SKILL.md")).data.toString()).toBe(
+    expect((await files.read({ scope: "project" }, "skills/faktura/SKILL.md")).data.toString()).toBe(
       "---\nname: faktura\ndescription: Jak psát faktury\n---\n\nKrok 1.\n",
     );
     expect((await files.read({ scope: "personal", userId: "bob" }, "skills/moje/SKILL.md")).data.toString()).toContain("Krok A.");

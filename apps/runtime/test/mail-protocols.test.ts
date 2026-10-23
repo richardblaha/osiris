@@ -60,7 +60,7 @@ describe("standard mail protocols", () => {
     const createTransport = mocks.createTransport.mockReturnValue({ sendMail: mocks.sendMail, close: mocks.close });
     mocks.sendMail.mockResolvedValue({ messageId: "m1", accepted: ["eva@example.cz"], rejected: [] });
     const send = mailTools(accounts, true, createTransport as never).find(t => t.name === "mail_send")!;
-    const config = { configurable: { tenant_id: "acme", user_id: "bob", role: "member", channel: "web", thread_id: "t1" } };
+    const config = { configurable: { project_id: "acme", user_id: "bob", role: "member", channel: "web", thread_id: "t1" } };
     await send.invoke({ account: "work", to: ["eva@example.cz"], subject: "Český předmět", body: "Ahoj" }, config);
     expect(createTransport).toHaveBeenCalledWith(expect.objectContaining({ secure: false, requireTLS: true, disableFileAccess: true, disableUrlAccess: true }));
     expect(mocks.sendMail).toHaveBeenCalledWith(expect.objectContaining({ from: "bob@example.cz", text: "Ahoj" }));

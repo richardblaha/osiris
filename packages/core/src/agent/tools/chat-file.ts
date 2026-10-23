@@ -12,5 +12,5 @@ export function chatFileTool(files: FileStore) {
     const { entry } = await files.read(scope === "temp" ? { scope, threadId: scratchThread(ctx) } : { scope }, path);
     if (entry.size > 20 * 1024 * 1024) throw new Error("Soubor je větší než 20 MB.");
     return JSON.stringify({ file: { scope, path, mime: fileType(path)!.mime } });
-  }, { name: "send_chat_file", description: "Připojí existující soubor k odpovědi v aktuální konverzaci: v PWA nabídne stažení a ve WhatsAppu odešle médium. Použij jen na žádost uživatele. Dočasné soubory patří pouze této konverzaci.", schema: z.object({ scope: z.enum(["tenant", "temp"]), path: z.string().min(1).max(300) }) });
+  }, { name: "send_chat_file", description: "Připojí existující soubor k odpovědi v aktuální konverzaci: v PWA nabídne stažení a ve WhatsAppu odešle médium. Použij jen na žádost uživatele. Dočasné soubory patří pouze této konverzaci.", schema: z.object({ scope: z.enum(["project", "temp"]), path: z.string().min(1).max(300) }) });
 }

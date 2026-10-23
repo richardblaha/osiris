@@ -125,7 +125,7 @@
     "open": "Chat files",
     "hint": "Working files of this conversation: attachments and what the assistant made",
     "title": "Chat files",
-    "intro": "The working files of this conversation. They're deleted with it; save what you want to keep to the tenant's files."
+    "intro": "The working files of this conversation. They're deleted with it; save what you want to keep to the project's files."
   },
   "voiceHint": "Record a voice message; click again to send it",
   "stopAndSend": "Stop and send",

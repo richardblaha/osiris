@@ -1,5 +1,5 @@
 {
-  "adminOnly": "Weby firmy spravuje a publikuje správce tenanta.",
+  "adminOnly": "Weby firmy spravuje a publikuje správce projektu.",
   "intro": "Web je VitePress šablona (stránky v Markdownu). Sestaví se do www/ a publikuje přes SFTP na hosting.",
   "targets": "Cíle publikování",
   "addTarget": "Přidat cíl publikování",

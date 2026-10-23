@@ -28,7 +28,7 @@ export function publicDns(): DnsLookup {
 
 interface Row {
   domain: string;
-  tenant_id: string;
+  project_id: string;
   status: string;
   token: string;
   release_id: string | null;
@@ -37,15 +37,15 @@ interface Row {
 }
 
 /**
- * Custom domains of tenant sites. A tenant proves a domain is theirs with a TXT record and points it at our ingress;
- * only then does the operator create an ingress and certificate for it (HTTP-01). One domain belongs to one tenant,
- * our own domains can't be claimed, and each tenant has a limit (Let's Encrypt rate limits).
+ * Custom domains of project sites. A project proves a domain is theirs with a TXT record and points it at our ingress;
+ * only then does the operator create an ingress and certificate for it (HTTP-01). One domain belongs to one project,
+ * our own domains can't be claimed, and each project has a limit (Let's Encrypt rate limits).
  */
 export class DomainStore {
   constructor(
     private readonly db: Db,
     private readonly dns: DnsLookup,
-    private readonly options: { ingressIps: string[]; cnameTarget?: string; maxPerTenant: number; reserved: string[] },
+    private readonly options: { ingressIps: string[]; cnameTarget?: string; maxPerProject: number; reserved: string[] },
   ) {}
 
   private view = (r: Row): SiteDomain => ({
@@ -58,65 +58,65 @@ export class DomainStore {
     target: { ips: this.options.ingressIps, cname: this.options.cnameTarget ?? null },
   });
 
-  async list(tenantId: string): Promise<SiteDomain[]> {
-    return (await this.db.query<Row>("SELECT * FROM domains WHERE tenant_id = ? ORDER BY domain", [tenantId])).map(this.view);
+  async list(projectId: string): Promise<SiteDomain[]> {
+    return (await this.db.query<Row>("SELECT * FROM domains WHERE project_id = ? ORDER BY domain", [projectId])).map(this.view);
   }
 
-  async get(tenantId: string, domain: string, { fresh = true } = {}): Promise<SiteDomain | null> {
-    const [row] = await this.db.query<Row>("SELECT * FROM domains WHERE tenant_id = ? AND domain = ?", [tenantId, domain], { fresh });
+  async get(projectId: string, domain: string, { fresh = true } = {}): Promise<SiteDomain | null> {
+    const [row] = await this.db.query<Row>("SELECT * FROM domains WHERE project_id = ? AND domain = ?", [projectId, domain], { fresh });
     return row ? this.view(row) : null;
   }
 
-  async add(tenantId: string, input: string, now = Date.now()): Promise<SiteDomain> {
+  async add(projectId: string, input: string, now = Date.now()): Promise<SiteDomain> {
     const domain = input.trim().toLowerCase().replace(/\.$/, "");
     if (!DOMAIN.test(domain)) throw new DomainError("errors.domain.invalid");
     if (this.options.reserved.some((r) => domain === r || domain.endsWith(`.${r}`))) throw new DomainError("errors.domain.reserved");
-    const existing = await this.list(tenantId);
+    const existing = await this.list(projectId);
     if (existing.some((d) => d.domain === domain)) return existing.find((d) => d.domain === domain)!;
-    if (existing.length >= this.options.maxPerTenant) throw new DomainError("errors.domain.limit", { count: this.options.maxPerTenant });
+    if (existing.length >= this.options.maxPerProject) throw new DomainError("errors.domain.limit", { count: this.options.maxPerProject });
     const [r] = await this.db.execute([
       run(
-        "INSERT INTO domains (domain, tenant_id, token, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (domain) DO NOTHING",
+        "INSERT INTO domains (domain, project_id, token, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (domain) DO NOTHING",
         domain,
-        tenantId,
+        projectId,
         `osiris-${randomBytes(16).toString("hex")}`,
         now,
       ),
     ]);
     if (!r?.rowsAffected) throw new DomainError("errors.domain.taken");
-    return (await this.get(tenantId, domain))!;
+    return (await this.get(projectId, domain))!;
   }
 
   /** Checks the TXT record and where the domain points; returns the new state. */
-  async verify(tenantId: string, domain: string, now = Date.now()): Promise<SiteDomain> {
-    const current = await this.get(tenantId, domain);
+  async verify(projectId: string, domain: string, now = Date.now()): Promise<SiteDomain> {
+    const current = await this.get(projectId, domain);
     if (!current) throw new DomainError("errors.domain.notFound");
     const error = (await this.proofError(domain, current.token)) ?? (await this.pointsError(domain));
     await this.db.execute([
       run(
         `UPDATE domains SET status = ?, error = ?, checked_at = ?, verified_at = CASE WHEN ? = 'verified' THEN COALESCE(verified_at, ?) ELSE verified_at END
-         WHERE tenant_id = ? AND domain = ?`,
+         WHERE project_id = ? AND domain = ?`,
         error ? "failed" : "verified",
         error,
         now,
         error ? "failed" : "verified",
         now,
-        tenantId,
+        projectId,
         domain,
       ),
     ]);
-    return (await this.get(tenantId, domain))!;
+    return (await this.get(projectId, domain))!;
   }
 
-  async remove(tenantId: string, domain: string) {
-    const [r] = await this.db.execute([run("DELETE FROM domains WHERE tenant_id = ? AND domain = ?", tenantId, domain)]);
+  async remove(projectId: string, domain: string) {
+    const [r] = await this.db.execute([run("DELETE FROM domains WHERE project_id = ? AND domain = ?", projectId, domain)]);
     if (!r?.rowsAffected) throw new DomainError("errors.domain.notFound");
   }
 
   /**
    * Re-checks verified domains that weren't checked for a while. A domain that no longer points at us goes offline,
-   * so whoever gets it next can't be served the old tenant's site, and we stop renewing its certificate.
-   * Returns the tenants whose set of verified domains changed.
+   * so whoever gets it next can't be served the old project's site, and we stop renewing its certificate.
+   * Returns the projects whose set of verified domains changed.
    */
   async recheck(now = Date.now(), limit = 20): Promise<string[]> {
     const due = await this.db.query<Row>(
@@ -135,7 +135,7 @@ export class DomainStore {
           d.domain,
         ),
       ]);
-      if (error) changed.add(d.tenant_id);
+      if (error) changed.add(d.project_id);
     }
     return [...changed];
   }

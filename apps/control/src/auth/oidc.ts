@@ -84,8 +84,8 @@ export function userClaims(user: UserRecord) {
     email_verified: user.email ? user.emailVerified : undefined,
     phone_number: user.claims[PHONE_CLAIM],
     [CLAIMS.role]: user.claims[CLAIMS.role],
-    [CLAIMS.tenant]: user.claims[CLAIMS.tenant],
-    [CLAIMS.tenantAdmin]: user.claims[CLAIMS.tenantAdmin],
+    [CLAIMS.project]: user.claims[CLAIMS.project],
+    [CLAIMS.projectAdmin]: user.claims[CLAIMS.projectAdmin],
   };
 }
 
@@ -143,7 +143,7 @@ export function createOidcProvider(options: OidcOptions): Provider {
     scopes: ["openid", "profile", "email"],
     claims: {
       openid: ["sub"],
-      profile: ["name", "given_name", "family_name", "picture", "phone_number", CLAIMS.role, CLAIMS.tenant, CLAIMS.tenantAdmin],
+      profile: ["name", "given_name", "family_name", "picture", "phone_number", CLAIMS.role, CLAIMS.project, CLAIMS.projectAdmin],
       email: ["email", "email_verified"],
     },
     routes: {

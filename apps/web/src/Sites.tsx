@@ -14,7 +14,7 @@ const SITE = /^[a-z0-9]+([.\-][a-z0-9]+)*$/;
 const NEW_TARGET = "target:";
 
 /**
- * The tenant's websites: each a VitePress template in vitepress/<site>/ (edited here like files), built into
+ * The project's websites: each a VitePress template in vitepress/<site>/ (edited here like files), built into
  * www/<site>/ and published over SFTP to a target (its hosting). Domains and DNS are the hosting's.
  */
 export function Sites({ isAdmin }: { isAdmin: boolean }) {

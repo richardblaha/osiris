@@ -6,8 +6,8 @@ import type { FileEntry, FileScope } from "@osiris/shared";
 import { contentMatches, extensionOf, fileType } from "@osiris/shared";
 import { LocalizedError, type Params } from "@osiris/platform/i18n.ts";
 
-/** Where a file lives: the tenant's shared files, a user's own files, or one thread's temporary files. */
-export type FileLocation = { scope: "tenant" } | { scope: "personal"; userId: string } | { scope: "temp"; threadId: string };
+/** Where a file lives: the project's shared files, a user's own files, or one thread's temporary files. */
+export type FileLocation = { scope: "project" } | { scope: "personal"; userId: string } | { scope: "temp"; threadId: string };
 
 /** A change the store made: a file written (or a folder moved in), or a file or folder removed (or moved away). */
 export type FileChange = { kind: "write" | "delete"; loc: FileLocation; path: string };
@@ -28,9 +28,9 @@ export class FileError extends LocalizedError {
 export interface FileStoreOptions {
   /** Largest single file. */
   maxFileBytes?: number;
-  /** All of the tenant's files together: the volume's ceiling. */
+  /** All of the project's files together: the volume's ceiling. */
   quotaBytes?: number;
-  /** The tenant's own, lower limit when one is set (a system admin's quota), read on every write. */
+  /** The project's own, lower limit when one is set (a system admin's quota), read on every write. */
   quota?: () => Promise<number | null>;
   /** Told about every change once it's on disk (indexes follow the files); its failure doesn't undo the change. */
   onChange?: (change: FileChange) => Promise<void>;
@@ -64,7 +64,7 @@ const idDir = (id: string) => Buffer.from(id).toString("base64url");
 const isMissing = (err: unknown) => (err as NodeJS.ErrnoException)?.code === "ENOENT";
 
 /**
- * A tenant's files on local disk (in production the tenant's own volume). Paths are relative to a scope root and
+ * A project's files on local disk (in production the project's own volume). Paths are relative to a scope root and
  * validated segment by segment; the store never creates symlinks and refuses to traverse any it finds. Writes go to a
  * temp file that is renamed into place, so a reader never sees half a file. Only known file types are accepted, and
  * their content must match the extension.
@@ -90,7 +90,7 @@ export class FileStore {
     return { maxFileBytes: this.maxFileBytes, quotaBytes: this.quotaBytes };
   }
 
-  /** The limit in force: the tenant's quota, never above the volume's ceiling. */
+  /** The limit in force: the project's quota, never above the volume's ceiling. */
   async quotaInForce(): Promise<number> {
     const own = await this.quota?.();
     return own == null ? this.quotaBytes : Math.min(own, this.quotaBytes);
@@ -268,7 +268,7 @@ export class FileStore {
     return dirs.filter((d) => d.isDirectory()).map((d) => Buffer.from(d.name, "base64url").toString());
   }
 
-  /** Bytes used by all of the tenant's files. Counted once, then kept up to date by the store's own writes. */
+  /** Bytes used by all of the project's files. Counted once, then kept up to date by the store's own writes. */
   usage(): Promise<number> {
     return (this.used ??= sizeOf(this.root).catch((err) => {
       this.used = undefined;
@@ -282,8 +282,8 @@ export class FileStore {
 
   private scopeDir(loc: FileLocation): string {
     switch (loc.scope) {
-      case "tenant":
-        return join(this.root, "tenant");
+      case "project":
+        return join(this.root, "project");
       case "personal":
         return join(this.root, "users", idDir(loc.userId));
       case "temp":

@@ -1,4 +1,4 @@
--- Threads may be on the public channel too (the tenant's customers, owner public:<visitor>); SQLite can't change a
+-- Threads may be on the public channel too (the project's customers, owner public:<visitor>); SQLite can't change a
 -- CHECK constraint, so the table is rebuilt with the same rows
 CREATE TABLE threads_v2 (
   id TEXT PRIMARY KEY,

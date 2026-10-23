@@ -1,13 +1,13 @@
-import type { AdminUser, Role, TenantSummary } from "@osiris/shared";
+import type { AdminUser, Role, ProjectSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { Avatar } from "./Profile.tsx";
 import { attempt, ErrorNotice, Field, Loading } from "./Scope.tsx";
-import { LoginLink, roleLabel } from "./TenantInfo.tsx";
+import { LoginLink, roleLabel } from "./ProjectInfo.tsx";
 import { t } from "i18next";
 
 /** The system admin's user administration: everyone on the left, the chosen user's detail or a new user on the right. */
-export function UserAdmin({ self, tenants }: { self: string; tenants: TenantSummary[] }) {
+export function UserAdmin({ self, projects }: { self: string; projects: ProjectSummary[] }) {
   const [users, setUsers] = useState<AdminUser[]>();
   const [selected, setSelected] = useState<string | null>();
   const [error, setError] = useState<string>();
@@ -41,7 +41,7 @@ export function UserAdmin({ self, tenants }: { self: string; tenants: TenantSumm
         {selected === null ? (
           <NewUser onCreated={(id) => void load().then(() => setSelected(id))} />
         ) : user ? (
-          <UserDetail key={user.id} user={user} self={user.id === self} tenants={tenants} onChanged={() => void load()} />
+          <UserDetail key={user.id} user={user} self={user.id === self} projects={projects} onChanged={() => void load()} />
         ) : (
           <p className="detail text-sm text-fg-muted">{t("users:select")}</p>
         )}
@@ -71,7 +71,7 @@ function NewUser({ onCreated }: { onCreated: (id: string) => void }) {
       <div className="detail">
         <h1 className="text-lg font-semibold">{t("users:added")}</h1>
         <LoginLink who={created.who} url={created.link} />
-        <p className="mt-3 text-sm text-fg-secondary">{t("users:addToTenants")}</p>
+        <p className="mt-3 text-sm text-fg-secondary">{t("users:addToProjects")}</p>
         <button onClick={() => onCreated(created.id)} className="btn-primary mt-4">
           {t("users:openDetail")}
         </button>
@@ -100,7 +100,7 @@ function NewUser({ onCreated }: { onCreated: (id: string) => void }) {
   );
 }
 
-function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self: boolean; tenants: TenantSummary[]; onChanged: () => void }) {
+function UserDetail({ user, self, projects, onChanged }: { user: AdminUser; self: boolean; projects: ProjectSummary[]; onChanged: () => void }) {
   const [firstName, setFirstName] = useState(user.firstName);
   const [lastName, setLastName] = useState(user.lastName);
   const [email, setEmail] = useState(user.email ?? "");
@@ -120,9 +120,9 @@ function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self:
     e.preventDefault();
     void act(() => api.admin.updateUser(user.id, { firstName, lastName, ...(email !== (user.email ?? "") ? { email } : {}) }), t("savedNotice"));
   };
-  const role = (tenant: string) => user.tenants.find((t) => t.id === tenant)?.role ?? "";
-  const setRole = (tenant: string, value: Role | "") =>
-    void act(() => (value ? api.admin.setMember(tenant, user.id, value) : api.admin.removeMember(tenant, user.id)));
+  const role = (project: string) => user.projects.find((t) => t.id === project)?.role ?? "";
+  const setRole = (project: string, value: Role | "") =>
+    void act(() => (value ? api.admin.setMember(project, user.id, value) : api.admin.removeMember(project, user.id)));
 
   return (
     <div className="detail space-y-8">
@@ -174,14 +174,14 @@ function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self:
       </section>
 
       <section>
-        <h2 className="section-header">{t("app:nav.tenants")}</h2>
+        <h2 className="section-header">{t("app:nav.projects")}</h2>
         <ul className="mt-2 space-y-1 text-sm">
-          {tenants.map((tenant) => (
-            <li key={tenant.id} className="flex items-center gap-3">
+          {projects.map((project) => (
+            <li key={project.id} className="flex items-center gap-3">
               <span className="min-w-0 flex-1 truncate">
-                {tenant.name} <span className="text-xs text-fg-muted">· {tenant.id}</span>
+                {project.name} <span className="text-xs text-fg-muted">· {project.id}</span>
               </span>
-              <select value={role(tenant.id)} disabled={busy} onChange={(e) => setRole(tenant.id, e.target.value as Role | "")} className="field w-auto">
+              <select value={role(project.id)} disabled={busy} onChange={(e) => setRole(project.id, e.target.value as Role | "")} className="field w-auto">
                 <option value="">{t("users:noAccess")}</option>
                 <option value="member">{roleLabel("member")}</option>
                 <option value="admin">{roleLabel("admin")}</option>
@@ -189,7 +189,7 @@ function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self:
             </li>
           ))}
         </ul>
-        {!tenants.length && <p className="mt-2 text-sm text-fg-muted">{t("users:noTenants")}</p>}
+        {!projects.length && <p className="mt-2 text-sm text-fg-muted">{t("users:noProjects")}</p>}
       </section>
 
       <section>
@@ -199,7 +199,7 @@ function UserDetail({ user, self, tenants, onChanged }: { user: AdminUser; self:
             {t("users:createLink")}
           </button>
           <button disabled={busy} onClick={() => void act(() => api.admin.resetSecondFactor(user.id), t("users:twoFactorOff"))} className="btn-secondary">
-            {t("tenants:reset2fa")}
+            {t("projects:reset2fa")}
           </button>
         </div>
         {link && <LoginLink who={user.name ?? user.email ?? user.id} url={link} />}

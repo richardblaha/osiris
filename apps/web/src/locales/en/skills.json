@@ -1,5 +1,5 @@
 {
-  "intro": "Procedures the assistant follows (for example how to put together a quote). They are files skills/<name>/SKILL.md. A tenant's skill takes precedence over a default one with the same name.",
+  "intro": "Procedures the assistant follows (for example how to put together a quote). They are files skills/<name>/SKILL.md. A project's skill takes precedence over a default one with the same name.",
   "instructionsRequired": "Write the skill's procedure.",
   "new": "New skill",
   "bundled": "A default skill that ships with the app. An administrator changes it by saving a copy with the same name.",

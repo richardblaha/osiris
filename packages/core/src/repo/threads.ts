@@ -1,7 +1,7 @@
 import type { Client } from "@libsql/client";
 import type { Channel, ThreadSummary } from "@osiris/shared";
 
-// All functions take the tenant's own database; threads are additionally scoped to the user (OIDC sub).
+// All functions take the project's own database; threads are additionally scoped to the user (OIDC sub).
 
 export async function listThreads(db: Client, userId: string): Promise<ThreadSummary[]> {
   const { rows } = await db.execute({

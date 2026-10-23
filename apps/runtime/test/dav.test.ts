@@ -4,7 +4,7 @@ import { StandardAccounts } from "@osiris/core/integrations/standard.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
 import { createTestDb } from "./helpers.ts";
 
-const config = { configurable: { tenant_id: "acme", user_id: "bob", role: "member", channel: "web", thread_id: "t1" } };
+const config = { configurable: { project_id: "acme", user_id: "bob", role: "member", channel: "web", thread_id: "t1" } };
 
 describe("DAV tools", () => {
   for (const kind of ["caldav", "carddav"] as const) {

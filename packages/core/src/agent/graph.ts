@@ -15,20 +15,20 @@ import type { UserSettingsStore } from "./settings.ts";
 import type { SkillStore } from "./skills.ts";
 import type { UsageStore } from "./usage.ts";
 import type { SecretVault } from "../vault/vault.ts";
-import type { FeatureSource } from "../tenants/features.ts";
-import { DEFAULT_FEATURES } from "../tenants/features.ts";
+import type { FeatureSource } from "../projects/features.ts";
+import { DEFAULT_FEATURES } from "../projects/features.ts";
 import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
 import { LOCALES, QUESTION_TOOLS } from "@osiris/shared";
 
 export interface AgentDeps {
-  /** The tenant this graph serves; runs carrying another `tenant_id` are refused. */
-  tenantId: string;
+  /** The project this graph serves; runs carrying another `project_id` are refused. */
+  projectId: string;
   model: BaseChatModel;
   questions?: QuestionStore;
   images?: (thread: string, paths: string[]) => Promise<{ type: "image_url"; image_url: { url: string } }[]>;
   /** System-selected models for agent steps, tool follow-ups and guard checks. */
   models?: AgentModels;
-  /** Tools bound to this tenant's stores. */
+  /** Tools bound to this project's stores. */
   tools: StructuredToolInterface[];
   /** Tools that can change between turns or differ per user (MCP servers), resolved on every model and tool step. */
   dynamicTools?: (ctx: RunContext) => Promise<StructuredToolInterface[]>;
@@ -46,18 +46,18 @@ export interface AgentDeps {
   features?: FeatureSource;
   /** Counts the model's tokens per month; with a quota set, the agent stops answering once it's used up. */
   usage?: UsageStore;
-  /** The rules (system, tenant, user) for a run: in the prompt, and every message and answer is checked against them. */
+  /** The rules (system, project, user) for a run: in the prompt, and every message and answer is checked against them. */
   rules?: (ctx: RunContext) => Promise<GuardRules>;
   /** The persona for a run: the user's own, or the system's default. */
   persona?: (ctx: RunContext) => Promise<Persona | null>;
-  /** Runs on the `public` channel (the tenant's customers) get this prompt instead, and their own token quota. */
+  /** Runs on the `public` channel (the project's customers) get this prompt instead, and their own token quota. */
   publicPrompt?: (ctx: RunContext) => Promise<string>;
   publicLimit?: (ctx: RunContext) => Promise<number | null>;
-  /** The tenant database's tables, listed in the prompt while the feature is on. */
+  /** The project database's tables, listed in the prompt while the feature is on. */
   database?: () => Promise<DbTable[]>;
 }
 
-/** What a customer gets when the public assistant's (or the tenant's) quota is used up (catalog keys, like the two below). */
+/** What a customer gets when the public assistant's (or the project's) quota is used up (catalog keys, like the two below). */
 export const PUBLIC_UNAVAILABLE = "agent.publicUnavailable";
 export const TOKENS_EXHAUSTED = "agent.tokensExhausted";
 export const USER_TOKENS_EXHAUSTED = "agent.userTokensExhausted";
@@ -69,7 +69,7 @@ const NOTICES = new Set(LOCALES.flatMap((l) => [PUBLIC_UNAVAILABLE, TOKENS_EXHAU
 
 /** ReAct loop: `agent` calls the model, `tools` executes requested tool calls, repeat until the model answers. */
 export function createAgentGraph(deps: AgentDeps) {
-  const { tenantId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage, rules, persona, publicPrompt, publicLimit, database } =
+  const { projectId, model, tools, dynamicTools, checkpointer, timezone, skills, memory, settings, secrets, features, usage, rules, persona, publicPrompt, publicLimit, database } =
     deps;
   for (const chat of [deps.models?.agent ?? model, deps.models?.tools ?? model]) {
     if (!chat.bindTools) throw new Error("Chat model does not support tool calling");
@@ -80,7 +80,7 @@ export function createAgentGraph(deps: AgentDeps) {
     return dynamicTools ? [...own, ...(await dynamicTools(ctx))] : own;
   };
 
-  /** Which quota is used up: the tenant's, or the run's own (the member's, or the public assistant's); null for none. */
+  /** Which quota is used up: the project's, or the run's own (the member's, or the public assistant's); null for none. */
   const exhausted = async (ctx?: RunContext): Promise<string | null> => {
     if (!usage) return null;
     const quotas = await features?.quotas();
@@ -95,7 +95,7 @@ export function createAgentGraph(deps: AgentDeps) {
   };
   const count = (ctx: RunContext, tokens: number) =>
     usage?.add(tokens, Date.now(), ctx.channel === "public" ? { public: ctx.assistant } : { user: ctx.user_id });
-  const noRules: GuardRules = { system: "", tenant: "", user: "" };
+  const noRules: GuardRules = { system: "", project: "", user: "" };
 
   /** Checks a message against the rules; null when there are none to check (or the quota is used up). */
   const check = async (config: RunnableConfig, kind: "input" | "output", text: string) => {
@@ -144,7 +144,7 @@ export function createAgentGraph(deps: AgentDeps) {
 
   const callModel = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const ctx = getRunContext(config);
-    if (ctx.tenant_id !== tenantId) throw new Error(`Run for tenant ${ctx.tenant_id} sent to graph of ${tenantId}`);
+    if (ctx.project_id !== projectId) throw new Error(`Run for project ${ctx.project_id} sent to graph of ${projectId}`);
     const on = (await features?.get()) ?? DEFAULT_FEATURES;
     const used = await exhausted(ctx);
     if (used) return { messages: [new AIMessage(say(ctx, used))] };

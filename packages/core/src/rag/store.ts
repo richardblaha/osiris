@@ -12,7 +12,7 @@ export const DOCUMENT_ID = /^[\p{L}\p{N}_-][\p{L}\p{N}._-]*(\/[\p{L}\p{N}_-][\p{
 
 export interface KnowledgeDocument {
   id: string;
-  /** '' for the tenant's, a user's sub for their own. */
+  /** '' for the project's, a user's sub for their own. */
   owner: string;
   title: string;
   content: string;
@@ -36,7 +36,7 @@ const RRF_K = 60;
 export const titleOf = (path: string, text = "") => /^#\s+(.+)/.exec(text.trimStart())?.[1]?.trim() || (path.split("/").at(-1) ?? path).replace(/\.[^.]+$/, "");
 
 /**
- * The knowledge base: the tenant's documents (`knowledge_documents`) with their chunks' vectors and text, indexed as
+ * The knowledge base: the project's documents (`knowledge_documents`) with their chunks' vectors and text, indexed as
  * a document is saved. Search combines vector similarity with full-text matches.
  *
  * Chunks record `embeddingModel`, so changing EMBEDDING_MODEL hides old vectors until `reindexStale` (at startup).
@@ -82,11 +82,11 @@ export class KnowledgeStore {
   }
 
   /**
-   * Searches the tenant's documents plus `userId`'s own, by meaning (vectors) and by words (full text), merged. A
-   * tenant document the user has their own copy of (same id) is left out: theirs replaces it for them.
+   * Searches the project's documents plus `userId`'s own, by meaning (vectors) and by words (full text), merged. A
+   * project document the user has their own copy of (same id) is left out: theirs replaces it for them.
    */
   async search(query: string, userId = "", limit = 5, { under }: { under?: string[] } = {}): Promise<SearchResult[]> {
-    // `under`: only the tenant's files that are these files or in these folders (a public assistant's knowledge).
+    // `under`: only the project's files that are these files or in these folders (a public assistant's knowledge).
     if (under && !under.length) return [];
     const scope = under
       ? `owner = '' AND (${under.map(() => "path = ? OR substr(path, 1, length(?)) = ?").join(" OR ")})`
@@ -122,7 +122,7 @@ export class KnowledgeStore {
     });
   }
 
-  /** The tenant's documents and `viewer`'s own, with their chunk counts; a tenant one the viewer replaced is `overridden`. */
+  /** The project's documents and `viewer`'s own, with their chunk counts; a project one the viewer replaced is `overridden`. */
   async listDocuments(viewer = ""): Promise<DocumentSummary[]> {
     const { rows } = await this.db.execute({
       sql: `SELECT d.owner, d.id, d.title, d.updated_at,
@@ -135,13 +135,13 @@ export class KnowledgeStore {
       id: String(r.id),
       title: String(r.title),
       chunks: Number(r.chunks),
-      scope: r.owner === "" ? "tenant" : "personal",
+      scope: r.owner === "" ? "project" : "personal",
       ...(Number(r.overridden) ? { overridden: true } : {}),
       createdAt: new Date(`${String(r.updated_at).replace(" ", "T")}Z`).toISOString(),
     }));
   }
 
-  /** One owner's document ('' the tenant's). */
+  /** One owner's document ('' the project's). */
   async getDocument(id: string, owner = ""): Promise<KnowledgeDocument | null> {
     const { rows } = await this.db.execute({ sql: "SELECT * FROM knowledge_documents WHERE owner = ? AND id = ?", args: [owner, id] });
     const r = rows[0];

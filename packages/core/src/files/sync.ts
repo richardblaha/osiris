@@ -9,7 +9,7 @@ import type { FileChange, FileLocation, FileStore } from "./store.ts";
 const MAX_INDEXED_BYTES = 1024 * 1024;
 
 const ownerOf = (loc: FileLocation) => (loc.scope === "personal" ? loc.userId : "");
-const locOf = (owner: string): FileLocation => (owner ? { scope: "personal", userId: owner } : { scope: "tenant" });
+const locOf = (owner: string): FileLocation => (owner ? { scope: "personal", userId: owner } : { scope: "project" });
 
 /**
  * Keeps the full-text index in step with the files: every change the file store makes goes through `apply`, and
@@ -60,23 +60,23 @@ export class FileIndexer {
  * same ids, so their chunks and public assistants' picks stay; other files stay where they are.
  */
 export async function moveKnowledgeToDb(db: Client, files: FileStore, knowledge: KnowledgeStore) {
-  const tenant: FileLocation = { scope: "tenant" };
-  for await (const f of files.walk(tenant, KNOWLEDGE_DIR)) {
+  const project: FileLocation = { scope: "project" };
+  for await (const f of files.walk(project, KNOWLEDGE_DIR)) {
     if (!fileType(f.path)?.text) continue;
     const id = f.path
       .slice(KNOWLEDGE_DIR.length + 1)
       .split("/")
       .map((s) => s.replace(/[^\p{L}\p{N}._-]+/gu, "-").replace(/^[.-]+/, "") || "dokument")
       .join("/");
-    const content = (await files.read(tenant, f.path)).data.toString("utf8");
+    const content = (await files.read(project, f.path)).data.toString("utf8");
     await db.execute({ sql: "INSERT OR IGNORE INTO knowledge_documents (id, title, content) VALUES (?, ?, ?)", args: [id, titleOf(f.path, content), content] });
     if (id !== f.path.slice(KNOWLEDGE_DIR.length + 1)) await db.execute({ sql: "DELETE FROM knowledge_chunks WHERE owner = '' AND path = ?", args: [f.path] });
-    await files.delete(tenant, f.path);
+    await files.delete(project, f.path);
   }
   // An emptied knowledge/ goes too.
   let left = false;
-  for await (const _ of files.walk(tenant, KNOWLEDGE_DIR)) left = true;
-  if (!left) await files.delete(tenant, KNOWLEDGE_DIR).catch(() => {});
+  for await (const _ of files.walk(project, KNOWLEDGE_DIR)) left = true;
+  if (!left) await files.delete(project, KNOWLEDGE_DIR).catch(() => {});
   // Indexes what wasn't (renamed ids, a changed embedding model).
   await knowledge.reindexStale();
 }
@@ -107,7 +107,7 @@ const tableExists = async (db: Client, name: string) =>
 
 /**
  * Moves what the database used to hold into files, once: knowledge documents (rebuilt from their chunks) to
- * `knowledge/<title>.md` and skills to `skills/<name>/SKILL.md`, each in the tenant's or its owner's files. The old
+ * `knowledge/<title>.md` and skills to `skills/<name>/SKILL.md`, each in the project's or its owner's files. The old
  * tables are dropped afterwards.
  */
 export async function moveLegacyToFiles(db: Client, files: FileStore) {

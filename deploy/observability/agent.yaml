@@ -14,7 +14,7 @@ data:
         exclude:
           - /var/log/pods/observability_*/*/*.log
           - /var/log/pods/osiris_*/*/*.log
-          - /var/log/pods/osiris-t-*_*/*/*.log
+          - /var/log/pods/osiris-p-*_*/*/*.log
         start_at: end
         include_file_path: true
         operators:

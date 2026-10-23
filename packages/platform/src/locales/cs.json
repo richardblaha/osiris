@@ -2,12 +2,12 @@
   "errors": {
     "access": {
       "noRole": "Účet zatím nemá přístup do Osirisu (chybí role osiris-user). Požádej správce.",
-      "noTenant": "Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.",
-      "notMember": "Do tohoto tenanta nepatříš.",
+      "noProject": "Účet zatím nepatří k žádné firmě. Požádej správce o pozvánku.",
+      "notMember": "Do tohoto projektu nepatříš.",
       "adminOnly": "Vyžaduje roli správce",
       "systemAdminOnly": "Vyžaduje správce systému"
     },
-    "tenantRequired": "Vyber tenanta (chybí hlavička X-Tenant-Id).",
+    "projectRequired": "Vyber projekt (chybí hlavička X-Project-Id).",
     "tooManyRequests": "Příliš mnoho požadavků, zkus to za chvíli",
     "tooManyMessages": "Příliš mnoho zpráv za minutu, zkus to za chvíli",
     "requestTooLarge": "Požadavek je příliš velký",
@@ -30,12 +30,12 @@
       "userLimit_few": "Můžeš mít nejvýš {{count}} plánované úlohy",
       "userLimit_many": "Můžeš mít nejvýš {{count}} plánované úlohy",
       "userLimit_other": "Můžeš mít nejvýš {{count}} plánovaných úloh",
-      "tenantLimit_one": "Tenant může mít nejvýš {{count}} plánovanou úlohu",
-      "tenantLimit_few": "Tenant může mít nejvýš {{count}} plánované úlohy",
-      "tenantLimit_many": "Tenant může mít nejvýš {{count}} plánované úlohy",
-      "tenantLimit_other": "Tenant může mít nejvýš {{count}} plánovaných úloh",
+      "projectLimit_one": "Projekt může mít nejvýš {{count}} plánovanou úlohu",
+      "projectLimit_few": "Projekt může mít nejvýš {{count}} plánované úlohy",
+      "projectLimit_many": "Projekt může mít nejvýš {{count}} plánované úlohy",
+      "projectLimit_other": "Projekt může mít nejvýš {{count}} plánovaných úloh",
       "notFound": "Úloha nenalezena",
-      "featureOff": "Plánované úlohy nejsou pro tenant povolené"
+      "featureOff": "Plánované úlohy nejsou pro projekt povolené"
     },
     "signIn": {
       "expired": "Přihlášení vypršelo, začni prosím znovu",
@@ -109,15 +109,15 @@
     "domain": {
       "invalid": "Neplatná doména (např. www.mojefirma.cz)",
       "reserved": "Tuto doménu nelze použít",
-      "limit_one": "Tenant může mít nejvýš {{count}} doménu",
-      "limit_few": "Tenant může mít nejvýš {{count}} domény",
-      "limit_many": "Tenant může mít nejvýš {{count}} domény",
-      "limit_other": "Tenant může mít nejvýš {{count}} domén",
-      "taken": "Doménu už používá jiný tenant",
+      "limit_one": "Projekt může mít nejvýš {{count}} doménu",
+      "limit_few": "Projekt může mít nejvýš {{count}} domény",
+      "limit_many": "Projekt může mít nejvýš {{count}} domény",
+      "limit_other": "Projekt může mít nejvýš {{count}} domén",
+      "taken": "Doménu už používá jiný projekt",
       "notFound": "Doména nenalezena"
     },
     "publish": {
-      "foreignDomain": "Doména nepatří tenantovi",
+      "foreignDomain": "Doména nepatří projektu",
       "unverified": "Doména ještě není ověřená",
       "noIndex": "Web musí mít v kořeni soubor index.html",
       "releaseNotFound": "Vydání nenalezeno",
@@ -129,21 +129,21 @@
       "tooLarge": "Web je příliš velký"
     },
     "quota": {
-      "members_one": "Tenant může mít nejvýš {{count}} uživatele",
-      "members_few": "Tenant může mít nejvýš {{count}} uživatele",
-      "members_many": "Tenant může mít nejvýš {{count}} uživatele",
-      "members_other": "Tenant může mít nejvýš {{count}} uživatelů",
-      "dashboards_one": "Tenant může mít nejvýš {{count}} vlastní dashboard",
-      "dashboards_few": "Tenant může mít nejvýš {{count}} vlastní dashboardy",
-      "dashboards_many": "Tenant může mít nejvýš {{count}} vlastního dashboardu",
-      "dashboards_other": "Tenant může mít nejvýš {{count}} vlastních dashboardů"
+      "members_one": "Projekt může mít nejvýš {{count}} uživatele",
+      "members_few": "Projekt může mít nejvýš {{count}} uživatele",
+      "members_many": "Projekt může mít nejvýš {{count}} uživatele",
+      "members_other": "Projekt může mít nejvýš {{count}} uživatelů",
+      "dashboards_one": "Projekt může mít nejvýš {{count}} vlastní dashboard",
+      "dashboards_few": "Projekt může mít nejvýš {{count}} vlastní dashboardy",
+      "dashboards_many": "Projekt může mít nejvýš {{count}} vlastního dashboardu",
+      "dashboards_other": "Projekt může mít nejvýš {{count}} vlastních dashboardů"
     },
     "phone": {
       "invalid": "Neplatné telefonní číslo"
     },
     "dashboard": {
       "sourceSystem": "Zdroj {{source}} na systémovém dashboardu není",
-      "sourceTenant": "Zdroj {{source}} na tenantovém dashboardu není",
+      "sourceProject": "Zdroj {{source}} na projektovém dashboardu není",
       "notFound": "Dashboard nenalezen",
       "adminOnly": "Dashboardy mění jen správce",
       "unknownView": "Neznámý pohled"
@@ -168,17 +168,17 @@
       "allowedHostsEmpty": "Zadej aspoň jednu povolenou doménu"
     },
     "invalidJson": "Tělo požadavku není platný JSON",
-    "tenant": {
-      "exists": "Tenant s touto zkratkou už existuje",
-      "notFound": "Tenant nenalezen",
-      "removed": "Tenant byl odstraněn"
+    "project": {
+      "exists": "Projekt s touto zkratkou už existuje",
+      "notFound": "Projekt nenalezen",
+      "removed": "Projekt byl odstraněn"
     },
     "member": {
       "notFound": "Člen nenalezen"
     },
-    "featureOff": "Tato funkce není pro tenant povolená",
+    "featureOff": "Tato funkce není pro projekt povolená",
     "sites": {
-      "featureOff": "Weby nejsou pro tenant povolené",
+      "featureOff": "Weby nejsou pro projekt povolené",
       "name": "Název webu: malá písmena, číslice, pomlčky a tečky (např. firma.cz)",
       "exists": "Web {{site}} už existuje",
       "invalidName": "Neplatný název webu",
@@ -192,7 +192,7 @@
     "guard": {
       "notFound": "Pravidlo neexistuje",
       "adminOnly": "Pravidla (guards/) mění jen správce",
-      "level": "Úroveň: user, tenant nebo assistant"
+      "level": "Úroveň: user, project nebo assistant"
     },
     "files": {
       "pathMissing": "Chybí cesta k souboru",
@@ -221,7 +221,7 @@
       "featureOff": "Soubory nejsou povolené",
       "threadRequired": "Dočasné soubory potřebují konverzaci (thread)",
       "uploadTooLarge": "Soubor je příliš velký",
-      "tenantAdminOnly": "Soubory firmy mění jen její správci. Ulož si vlastní kopii mezi své soubory."
+      "projectAdminOnly": "Soubory firmy mění jen její správci. Ulož si vlastní kopii mezi své soubory."
     },
     "db": {
       "unterminated": "Dotaz má neukončený řetězec nebo komentář.",
@@ -357,7 +357,7 @@
       "notFound": "Konverzace nenalezena"
     },
     "scope": {
-      "invalid": "Rozsah musí být tenant nebo personal."
+      "invalid": "Rozsah musí být project nebo personal."
     },
     "assistant": {
       "notFound": "Asistent neexistuje",
@@ -385,9 +385,9 @@
   "schedules": {
     "notes": {
       "missed": "Úloha se nestihla spustit včas (služba nebyla dostupná)",
-      "tenantGone": "Tenant už neexistuje",
-      "featureOff": "Plánované úlohy jsou pro tenanta vypnuté",
-      "ownerLeft": "Vlastník úlohy už není členem tenanta",
+      "projectGone": "Projekt už neexistuje",
+      "featureOff": "Plánované úlohy jsou pro projekt vypnuté",
+      "ownerLeft": "Vlastník úlohy už není členem projektu",
       "whatsappOff": "WhatsApp není nastavený, výsledek je jen ve webovém chatu",
       "noPhone": "Uživatel nemá ověřené telefonní číslo, výsledek je jen ve webovém chatu",
       "whatsappWindow": "WhatsApp dovolí poslat zprávu jen do 24 hodin od poslední zprávy uživatele, výsledek je jen ve webovém chatu"
@@ -395,23 +395,23 @@
   },
   "whatsapp": {
     "notRegistered": "Tohle číslo nemá v Osirisu účet. Ověř si ho v profilu (Můj profil → Telefon), nebo požádej správce.",
-    "noTenant": "Nejsi přiřazený k žádnému tenantovi. Obrať se na správce.",
+    "noProject": "Nejsi přiřazený k žádnému projektu. Obrať se na správce.",
     "unsupported": "Podporuji text, obrázky, dokumenty a hlasové zprávy.",
     "failed": "Omlouvám se, něco se pokazilo. Zkus to prosím znovu.",
     "newThread": "Dobře, začínáme novou konverzaci.",
     "verified": "Číslo je ověřené. Teď mi můžeš psát.",
     "badCode": "Kód nesedí nebo vypršel. Vyžádej si v profilu nový.",
-    "help": "*Příkazy*\n• /tenant – tvoji tenanti a který je aktivní\n• /tenant <zkratka> – přepne na jiného tenanta\n• /nova – začne novou konverzaci\n• /zrusit – zruší otevřenou otázku nebo dotazník",
-    "chooseTenant": "Napiš /tenant <zkratka> a vyber, se kterým chceš pracovat.",
-    "featureOff": "WhatsApp není pro tenanta *{{tenant}}* povolený.",
+    "help": "*Příkazy*\n• /projekt – tvoje projekty a který je aktivní\n• /projekt <zkratka> – přepne na jiný projekt\n• /nova – začne novou konverzaci\n• /zrusit – zruší otevřenou otázku nebo dotazník",
+    "chooseProject": "Napiš /projekt <zkratka> a vyber, se kterým chceš pracovat.",
+    "featureOff": "WhatsApp není pro projekt *{{project}}* povolený.",
     "attachmentOnly": "Přikládám soubor.",
     "answerInvalid": "Odpověď není platná nebo otázka vypršela. Vyplň formulář znovu, případně pošli /zrusit.",
-    "activeTenant": "Aktivní tenant: *{{tenant}}*.",
-    "noActiveTenant": "Zatím nemáš vybraného tenanta.",
-    "switchHint": "Přepneš příkazem /tenant <zkratka>.",
-    "unknownTenant": "Tenanta „{{tenant}}“ nemáš.",
-    "switched": "Přepnuto na tenanta *{{tenant}}*.",
-    "tenants": "Tvoji tenanti: {{tenants}}.",
+    "activeProject": "Aktivní projekt: *{{project}}*.",
+    "noActiveProject": "Zatím nemáš vybraný projekt.",
+    "switchHint": "Přepneš příkazem /projekt <zkratka>.",
+    "unknownProject": "Projekt „{{project}}“ nemáš.",
+    "switched": "Přepnuto na projekt *{{project}}*.",
+    "projects": "Tvoje projekty: {{projects}}.",
     "scheduledTask": "Plánovaná úloha",
     "question": {
       "yes": "Ano",
@@ -470,7 +470,7 @@
       "failed": "selhal",
       "unknown": "neznámý"
     },
-    "tenant": {
+    "project": {
       "running": "běží",
       "sleeping": "spí",
       "suspended": "pozastaven",
@@ -488,11 +488,11 @@
       "reason": "Důvod",
       "message": "Zpráva",
       "count": "Počet",
-      "tenants": "Tenantů",
+      "projects": "Projektů",
       "running": "Běží",
       "sleeping": "Spí",
       "noBackup": "Bez zálohy {{hours}} h",
-      "tenant": "Tenant",
+      "project": "Projekt",
       "lastActivity": "Poslední aktivita",
       "lastBackup": "Poslední záloha",
       "backupSize": "Velikost zálohy",

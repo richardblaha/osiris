@@ -8,7 +8,7 @@ import { FEATURES, type Feature, type Scope, type SkillSummary } from "@osiris/s
  * the instructions in with the `load_skill` tool when a request matches, so many skills cost few prompt tokens.
  *
  * Bundled skills ship with the app as folders `<SKILLS_DIR>/<name>/SKILL.md` (Agent Skills layout: frontmatter
- * with `name` and `description`, then Markdown). The tenant adds its own in the same layout under `skills/` in its
+ * with `name` and `description`, then Markdown). The project adds its own in the same layout under `skills/` in its
  * files, which override a bundled skill of the same name.
  */
 export interface Skill {
@@ -57,18 +57,18 @@ export function parseSkill(source: string, file = "SKILL.md"): Skill {
   return { name, description, instructions, ...(open === "true" ? { public: true } : {}), ...(requires ? { requires: requires as Feature } : {}) };
 }
 
-/** Where skills live in the tenant's and each user's files: `skills/<name>/SKILL.md`. */
+/** Where skills live in the project's and each user's files: `skills/<name>/SKILL.md`. */
 export const SKILLS_DIR = "skills";
 
-const locationOf = (scope: Scope, userId: string): FileLocation => (scope === "tenant" ? { scope: "tenant" } : { scope: "personal", userId });
+const locationOf = (scope: Scope, userId: string): FileLocation => (scope === "project" ? { scope: "project" } : { scope: "personal", userId });
 
 /** A skill as its SKILL.md: frontmatter with name and description, then the instructions. */
 export const formatSkill = (s: Skill) =>
   `---\nname: ${s.name}\ndescription: ${s.description.replace(/\s+/g, " ").trim()}\n${s.public ? "public: true\n" : ""}${s.requires ? `requires: ${s.requires}\n` : ""}---\n\n${s.instructions.trim()}\n`;
 
 /**
- * Bundled skills merged with the tenant's (`skills/` in the tenant's files) and each user's (`skills/` in theirs):
- * personal wins over tenant, which wins over bundled. The files are read on every call, so a
+ * Bundled skills merged with the project's (`skills/` in the project's files) and each user's (`skills/` in theirs):
+ * personal wins over project, which wins over bundled. The files are read on every call, so a
  * skill edited or added in Soubory (or by the agent) applies from the next step; a malformed one is skipped.
  */
 export class SkillStore {
@@ -104,50 +104,50 @@ export class SkillStore {
   }
 
   /**
-   * Every layer's skills `userId` sees: bundled, the tenant's and their own. For one name, personal wins over tenant,
+   * Every layer's skills `userId` sees: bundled, the project's and their own. For one name, personal wins over project,
    * which wins over bundled; the ones that lose are listed `overridden`.
    */
   async list(userId = ""): Promise<SkillSummary[]> {
     const summary = (s: Skill, source: SkillSummary["source"]): SkillSummary => ({ name: s.name, description: s.description, source, ...(s.requires ? { requires: s.requires } : {}) });
-    const [tenant, personal] = await Promise.all([this.read("tenant", ""), userId ? this.read("personal", userId) : new Map<string, Skill>()]);
-    const layers: [Iterable<Skill>, SkillSummary["source"]][] = [[personal.values(), "personal"], [tenant.values(), "tenant"], [this.bundled.values(), "bundled"]];
+    const [project, personal] = await Promise.all([this.read("project", ""), userId ? this.read("personal", userId) : new Map<string, Skill>()]);
+    const layers: [Iterable<Skill>, SkillSummary["source"]][] = [[personal.values(), "personal"], [project.values(), "project"], [this.bundled.values(), "bundled"]];
     const won = new Set<string>();
     const out: SkillSummary[] = [];
     for (const [skills, source] of layers) {
       for (const s of skills) out.push(won.has(s.name) ? { ...summary(s, source), overridden: true } : summary(s, source));
       for (const s of out) won.add(s.name);
     }
-    const rank = { personal: 0, tenant: 1, bundled: 2 };
+    const rank = { personal: 0, project: 1, bundled: 2 };
     return out.sort((a, b) => a.name.localeCompare(b.name) || rank[a.source] - rank[b.source]);
   }
 
-  /** The tenant's own skills (not the bundled ones), for public assistants. */
-  async tenantSkills(): Promise<Skill[]> {
-    return [...(await this.read("tenant", "")).values()];
+  /** The project's own skills (not the bundled ones), for public assistants. */
+  async projectSkills(): Promise<Skill[]> {
+    return [...(await this.read("project", "")).values()];
   }
 
-  /** The skill `userId` gets for `name` (their own, else the tenant's, else the bundled one), or one layer's (`source`). */
+  /** The skill `userId` gets for `name` (their own, else the project's, else the bundled one), or one layer's (`source`). */
   async get(name: string, userId = "", source?: SkillSummary["source"]): Promise<(Skill & { source: SkillSummary["source"] }) | undefined> {
     if (!SKILL_NAME.test(name)) return undefined;
     if (userId && (!source || source === "personal")) {
       const personal = (await this.read("personal", userId)).get(name);
       if (personal || source) return personal && { ...personal, source: "personal" };
     }
-    if (!source || source === "tenant") {
-      const tenant = (await this.read("tenant", "")).get(name);
-      if (tenant || source) return tenant && { ...tenant, source: "tenant" };
+    if (!source || source === "project") {
+      const project = (await this.read("project", "")).get(name);
+      if (project || source) return project && { ...project, source: "project" };
     }
     const bundled = this.bundled.get(name);
     return bundled && { ...bundled, source: "bundled" };
   }
 
-  async put(skill: Skill, scope: Scope = "tenant", userId = ""): Promise<void> {
+  async put(skill: Skill, scope: Scope = "project", userId = ""): Promise<void> {
     if (!SKILL_NAME.test(skill.name)) throw new Error(`Invalid skill name "${skill.name}"`);
     await this.files.write(locationOf(scope, userId), `${SKILLS_DIR}/${skill.name}/SKILL.md`, Buffer.from(formatSkill(skill)));
   }
 
-  /** Deletes a tenant or personal skill (bundled ones can't be deleted; deleting a replacement reveals what it hid). */
-  async delete(name: string, scope: Scope = "tenant", userId = ""): Promise<boolean> {
+  /** Deletes a project or personal skill (bundled ones can't be deleted; deleting a replacement reveals what it hid). */
+  async delete(name: string, scope: Scope = "project", userId = ""): Promise<boolean> {
     if (!SKILL_NAME.test(name)) return false;
     return this.files.delete(locationOf(scope, userId), `${SKILLS_DIR}/${name}`).then(
       () => true,

@@ -22,30 +22,30 @@ const PDF_ASSETS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "css", "
 const ESCAPED = new Set(["html", "htm", "xml", "svg"]);
 
 const scope = z
-  .enum(["tenant", "personal", "temp"])
-  .default("tenant")
-  .describe("tenant = soubory firmy (společné, zapisuje jen správce), personal = vlastní soubory uživatele, temp = pracovní soubory této konverzace");
+  .enum(["project", "personal", "temp"])
+  .default("project")
+  .describe("project = soubory firmy (společné, zapisuje jen správce), personal = vlastní soubory uživatele, temp = pracovní soubory této konverzace");
 const path = z.string().trim().min(1).max(512).describe("Cesta uvnitř rozsahu, např. sablony/nabidka.html");
 
 export function locate(s: FileScope, ctx: RunContext): FileLocation {
   if (s === "temp") return { scope: "temp", threadId: scratchThread(ctx) };
   if (s === "personal") return { scope: "personal", userId: ctx.user_id };
-  return { scope: "tenant" };
+  return { scope: "project" };
 }
 
 /**
- * Why the run may not write there, or null when it may. The tenant's files are the admins'; the guards nobody's: the
+ * Why the run may not write there, or null when it may. The project's files are the admins'; the guards nobody's: the
  * agent never changes its own rules.
  */
 function refusal(s: FileScope, path: string, ctx: RunContext): string | null {
-  if (s !== "tenant") return null;
+  if (s !== "project") return null;
   if (isGuardPath(path)) return "Sem zapisovat nelze (pravidla v guards/ mění jen správce v Osirisu).";
   return ctx.role === "admin" ? null : "Do souborů firmy zapisuje jen správce. Ulož to do personal (vlastní kopie se stejnou cestou firemní soubor uživateli nahradí).";
 }
 
-/** A tenant file as the user sees it: their own copy at the same path, if they have one, replaces it. */
+/** A project file as the user sees it: their own copy at the same path, if they have one, replaces it. */
 async function readLayered(files: FileStore, s: FileScope, ctx: RunContext, path: string) {
-  if (s === "tenant") {
+  if (s === "project") {
     const own = await files.read(locate("personal", ctx), path).catch((err) => (err instanceof FileError && err.code === "not_found" ? null : Promise.reject(err)));
     if (own) return { ...own, own: true };
   }
@@ -381,7 +381,7 @@ function toEdit(a: EditArgs): TextEdit | EditFailure {
   }
 }
 
-/** Full-text search in the tenant's files and the user's own (not in temp files). */
+/** Full-text search in the project's files and the user's own (not in temp files). */
 export function searchFilesTool(index: FileIndex) {
   return tool(
     async ({ query }) => {

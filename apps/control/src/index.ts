@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { DashboardStore } from "./dashboards.ts";
 import { dirname, join } from "node:path";
 import { createServer } from "node:http";
-import { InternalSigner, InternalVerifier, tenantAudience } from "@osiris/platform/internal-auth.ts";
+import { InternalSigner, InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
 import { FsObjectStore, S3ObjectStore, type ObjectStore } from "@osiris/platform/objects.ts";
 import { LocalDb, migrate, RqliteDb, type Db } from "@osiris/platform/rqlite.ts";
 import { ClickHouse, Telemetry } from "./telemetry/clickhouse.ts";
@@ -20,7 +20,7 @@ import { ScheduleStore, SchedulerWorker } from "./scheduler.ts";
 import { controlListener } from "./server.ts";
 import { DomainStore, publicDns } from "./sites/domains.ts";
 import { SitePublisher } from "./sites/publisher.ts";
-import { TenantDirectory, TenantStore } from "./tenants.ts";
+import { ProjectDirectory, ProjectStore } from "./projects.ts";
 import { dbUsers } from "./users.ts";
 import { WhatsAppClient } from "./whatsapp/cloud-api.ts";
 import { Inbox } from "./whatsapp/inbox.ts";
@@ -69,14 +69,14 @@ const runtimes = new RuntimeClient({ endpoint: async (t) => orchestrator.endpoin
 const users = dbUsers(db, { objects, publicUrl: config.PUBLIC_URL });
 const auth = await createAuth(config, db, users);
 
-const store = new TenantStore(db, { objects, publicUrl: config.PUBLIC_URL });
+const store = new ProjectStore(db, { objects, publicUrl: config.PUBLIC_URL });
 await store.migrateSystemGuards();
-const directory = new TenantDirectory(store, users, orchestrator);
+const directory = new ProjectDirectory(store, users, orchestrator);
 const schedules = new ScheduleStore(db, config.TIMEZONE);
 const domains = new DomainStore(db, publicDns(), {
   ingressIps: config.SITES_INGRESS_IPS,
   cnameTarget: config.SITES_CNAME_TARGET,
-  maxPerTenant: config.MAX_DOMAINS_PER_TENANT,
+  maxPerProject: config.MAX_DOMAINS_PER_PROJECT,
   reserved: ["k6labs.cz", "localhost"],
 });
 const sites = new SitePublisher(db, objects);
@@ -91,13 +91,13 @@ const whatsappClient = config.WHATSAPP_ACCESS_TOKEN ? new WhatsAppClient(config.
 if (!whatsappClient) console.log("WhatsApp is not configured: /webhooks/whatsapp answers 404.");
 
 /** Asks a runtime to snapshot itself now; it streams the snapshot back to /internal/runtime/backups. */
-const snapshot = async (tenant: string) => {
-  const res = await runtimes.request(tenant, "/internal/snapshot?reason=manual", {
+const snapshot = async (project: string) => {
+  const res = await runtimes.request(project, "/internal/snapshot?reason=manual", {
     method: "POST",
-    headers: { authorization: await signer.header(tenantAudience(tenant)) },
+    headers: { authorization: await signer.header(projectAudience(project)) },
     signal: AbortSignal.timeout(10 * 60_000),
   });
-  if (!res.ok) throw new Error(`Snapshot of ${tenant} failed: ${res.status} ${await res.text()}`);
+  if (!res.ok) throw new Error(`Snapshot of ${project} failed: ${res.status} ${await res.text()}`);
 };
 
 const app = createControlApp({
@@ -123,17 +123,17 @@ const app = createControlApp({
 // Background work runs on every replica; claims in the database keep them from doing the same item twice.
 const loops = [
   startLoop("Scheduler", 5_000, (() => {
-    const worker = new SchedulerWorker({ schedules, tenants: store, users, runtimes, signer, whatsapp: whatsappClient && { client: whatsappClient, inbox } });
+    const worker = new SchedulerWorker({ schedules, projects: store, users, runtimes, signer, whatsapp: whatsappClient && { client: whatsappClient, inbox } });
     return () => worker.step();
   })()),
   ...(whatsappClient
     ? [startLoop("WhatsApp inbox", 1_000, (() => {
-        const router = new WhatsAppRouter({ db, inbox, users, tenants: store, phones, client: whatsappClient, runtimes, signer, publicUrl: config.PUBLIC_URL });
+        const router = new WhatsAppRouter({ db, inbox, users, projects: store, phones, client: whatsappClient, runtimes, signer, publicUrl: config.PUBLIC_URL });
         return () => router.step();
       })())]
     : []),
   startLoop("Domain re-check", 10 * 60_000, async () => {
-    for (const tenant of await domains.recheck()) await directory.sync(tenant);
+    for (const project of await domains.recheck()) await directory.sync(project);
     return false;
   }),
   startLoop("Cleanup", 6 * 60 * 60_000, async () => {
@@ -145,7 +145,7 @@ const loops = [
   }),
 ];
 
-// Tenants created before the operator existed (or whose resource was lost) get their resource back.
+// Projects created before the operator existed (or whose resource was lost) get their resource back.
 for (const t of await store.list({ archived: true })) await directory.sync(t.id).catch((err) => console.error(`Sync of ${t.id} failed`, err));
 
 const server = createServer(controlListener(app, auth.provider)).listen(config.PORT, () =>

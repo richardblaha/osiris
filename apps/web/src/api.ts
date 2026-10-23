@@ -39,13 +39,13 @@ import type {
   Skill,
   SkillSummary,
   SocialProvider,
-  TenantDetail,
-  TenantFeatures,
-  TenantInfo,
-  TenantMember,
-  TenantQuotas,
-  TenantSummary,
-  TenantUsage,
+  ProjectDetail,
+  ProjectFeatures,
+  ProjectInfo,
+  ProjectMember,
+  ProjectQuotas,
+  ProjectSummary,
+  ProjectUsage,
   ThreadMessage,
   ThreadSummary,
   UserProfile,
@@ -67,12 +67,12 @@ import { currentLocale } from "./i18n.ts";
 type PasskeyCreationOptions = Parameters<typeof startRegistration>[0]["optionsJSON"];
 
 const BASE = (import.meta.env.VITE_API_URL ?? "") + "/api";
-let tenantId: string | undefined;
+let projectId: string | undefined;
 
-export const setTenant = (id: string) => {
-  tenantId = id;
+export const setProject = (id: string) => {
+  projectId = id;
 };
-export const getTenant = () => tenantId;
+export const getProject = () => projectId;
 
 async function request(path: string, init: RequestInit = {}): Promise<Response> {
   const token = await getAccessToken();
@@ -87,7 +87,7 @@ async function request(path: string, init: RequestInit = {}): Promise<Response> 
       "content-type": "application/json",
       // Messages from the server (errors, generated texts) come in the app's language, not only the browser's.
       "accept-language": currentLocale(),
-      ...(tenantId ? { "x-tenant-id": tenantId } : {}),
+      ...(projectId ? { "x-project-id": projectId } : {}),
       ...init.headers,
     },
   });
@@ -149,13 +149,13 @@ export function saveBlob(blob: Blob, name: string) {
 
 export const api = {
   me: () => json<MeResponse>("/me"),
-  tenant: () => json<TenantInfo>("/tenant"),
+  project: () => json<ProjectInfo>("/project"),
   threads: () => json<ThreadSummary[]>("/threads"),
   createThread: () => json<{ id: string }>("/threads", { method: "POST" }),
   deleteThread: (id: string) => request(`/threads/${id}`, { method: "DELETE" }),
   messages: (id: string) => json<ThreadMessage[]>(`/threads/${id}/messages`),
   documents: () => json<DocumentSummary[]>("/knowledge/documents"),
-  /** `id`: exactly this id, the caller's own copy of a tenant document. */
+  /** `id`: exactly this id, the caller's own copy of a project document. */
   addDocument: (body: { title: string; content: string; folder?: string; scope: Scope; id?: string }) =>
     json<DocumentSummary>("/knowledge/documents", { method: "POST", body: JSON.stringify(body) }),
   /** Ids may hold folders (public/cenik.md): each segment is encoded, the slashes stay. */
@@ -182,7 +182,7 @@ export const api = {
   settings: () => json<UserSettings>("/settings"),
   saveSettings: (settings: UserSettings) => json<UserSettings>("/settings", { method: "PUT", body: JSON.stringify(settings) }),
   memories: () => json<Memory[]>("/memories"),
-  /** `overrides`: the tenant memory this personal one replaces for the caller. */
+  /** `overrides`: the project memory this personal one replaces for the caller. */
   addMemory: (content: string, scope: Scope, overrides?: string) =>
     json<Memory>("/memories", { method: "POST", body: JSON.stringify({ content, scope, overrides }) }),
   deleteMemory: (id: string, scope: Scope) => request(`/memories/${id}?scope=${scope}`, { method: "DELETE" }),
@@ -223,11 +223,11 @@ export const api = {
     delete: (name: string, id: number) => request(`/database/tables/${encodeURIComponent(name)}/rows/${id}`, { method: "DELETE" }),
     query: (sql: string) => json<DbQueryResult>("/database/query", { method: "POST", body: JSON.stringify({ sql }) }),
   },
-  usage: () => json<TenantUsage>("/usage"),
-  /** The active tenant's sites' web analytics, one site at a time. */
+  usage: () => json<ProjectUsage>("/usage"),
+  /** The active project's sites' web analytics, one site at a time. */
   analytics: (q: { site?: string; from: number; to: number }) => json<WebStats>(`/analytics?${query(strings(q))}`),
   usageBreakdown: () => json<UsageBreakdown>("/usage/breakdown"),
-  /** Dashboards of the active tenant (`/dashboards`) or of the system (`/admin/dashboards`). */
+  /** Dashboards of the active project (`/dashboards`) or of the system (`/admin/dashboards`). */
   dashboards: (system: boolean) => {
     const base = system ? "/admin/dashboards" : "/dashboards";
     return {
@@ -246,10 +246,10 @@ export const api = {
     json<PublicAssistantSettings>(`/public-assistants/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(settings) }),
   deletePublicAssistant: (name: string) => request(`/public-assistants/${encodeURIComponent(name)}`, { method: "DELETE" }),
   guards: () => json<Guards>("/guards"),
-  /** `level` user (the caller's own), tenant or assistant (with `assistant`). */
-  saveGuard: (level: "user" | "tenant" | "assistant", { name, ...body }: Guard, assistant?: string) =>
+  /** `level` user (the caller's own), project or assistant (with `assistant`). */
+  saveGuard: (level: "user" | "project" | "assistant", { name, ...body }: Guard, assistant?: string) =>
     json<Guard>(`/guards/${level}/${encodeURIComponent(name)}${assistant ? `?${query({ assistant })}` : ""}`, { method: "PUT", body: JSON.stringify(body) }),
-  deleteGuard: (level: "user" | "tenant" | "assistant", name: string, assistant?: string) =>
+  deleteGuard: (level: "user" | "project" | "assistant", name: string, assistant?: string) =>
     request(`/guards/${level}/${encodeURIComponent(name)}${assistant ? `?${query({ assistant })}` : ""}`, { method: "DELETE" }),
   inquiries: () => json<Inquiry[]>("/inquiries"),
   setInquiryStatus: (id: string, status: Inquiry["status"]) =>
@@ -270,7 +270,7 @@ export const api = {
     json<AssistantProfile>(`/assistant?${query({ scope, assistant })}`, { method: "PUT", body: JSON.stringify(profile) }),
   generatePersona: (description: string) =>
     json<Persona>("/assistant/persona", { method: "POST", body: JSON.stringify({ description }) }),
-  saveTenantLogo: (image: Blob) => request("/tenant/logo", { method: "PUT", body: image, headers: { "content-type": image.type } }),
+  saveProjectLogo: (image: Blob) => request("/project/logo", { method: "PUT", body: image, headers: { "content-type": image.type } }),
   startPhone: (phone: string) => json<UserProfile>("/me/phone", { method: "POST", body: JSON.stringify({ phone }) }),
   removePhone: () => request("/me/phone", { method: "DELETE" }),
   security: {
@@ -296,7 +296,7 @@ export const api = {
     unlinkSocial: (provider: SocialProvider) => json<SecurityOverview>(`/me/security/social/${provider}`, { method: "DELETE" }),
   },
 
-  members: () => json<TenantMember[]>("/members"),
+  members: () => json<ProjectMember[]>("/members"),
   invite: (body: { email: string; firstName: string; lastName: string; role: "admin" | "member" }) =>
     json<InviteResult>("/members", { method: "POST", body: JSON.stringify(body) }),
   setMemberRole: (userId: string, role: "admin" | "member") =>
@@ -325,20 +325,20 @@ export const api = {
     json<PublishResult>(`/site-targets/${encodeURIComponent(name)}/publish`, { method: "POST", body: JSON.stringify({ dir }) }),
 
   admin: {
-    tenants: () => json<TenantSummary[]>("/admin/tenants"),
-    tenant: (id: string) => json<TenantDetail>(`/admin/tenants/${id}`),
-    createTenant: (id: string, name: string) =>
-      json<TenantSummary>("/admin/tenants", { method: "POST", body: JSON.stringify({ id, name }) }),
-    updateTenant: (
+    projects: () => json<ProjectSummary[]>("/admin/projects"),
+    project: (id: string) => json<ProjectDetail>(`/admin/projects/${id}`),
+    createProject: (id: string, name: string) =>
+      json<ProjectSummary>("/admin/projects", { method: "POST", body: JSON.stringify({ id, name }) }),
+    updateProject: (
       id: string,
-      body: { name?: string; features?: Partial<TenantFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[]; quotas?: Partial<TenantQuotas>; webSites?: string[] },
+      body: { name?: string; features?: Partial<ProjectFeatures>; idleMinutes?: number; storageGb?: number; disabledTools?: string[]; quotas?: Partial<ProjectQuotas>; webSites?: string[] },
     ) =>
-      request(`/admin/tenants/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
-    deleteTenant: (id: string) => request(`/admin/tenants/${id}`, { method: "DELETE" }),
+      request(`/admin/projects/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+    deleteProject: (id: string) => request(`/admin/projects/${id}`, { method: "DELETE" }),
     setMember: (id: string, userId: string, role: "admin" | "member") =>
-      request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
+      request(`/admin/projects/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
     removeMember: (id: string, userId: string) =>
-      request(`/admin/tenants/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
+      request(`/admin/projects/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
     /** The cluster's telemetry in ClickHouse; times in epoch ms. */
     telemetry: {
       facets: (q: { from: number; to: number }) => json<TelemetryFacets>(`/admin/telemetry/facets?${query(strings(q))}`),
@@ -363,8 +363,8 @@ export const api = {
       request(`/admin/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(body) }),
     loginLink: (id: string) => json<{ loginLink: string }>(`/admin/users/${encodeURIComponent(id)}/login-link`, { method: "POST" }),
     invite: (id: string, body: { email: string; firstName: string; lastName: string; role: "admin" | "member" }) =>
-      json<InviteResult>(`/admin/tenants/${id}/members`, { method: "POST", body: JSON.stringify(body) }),
-    backup: (id: string) => request(`/admin/tenants/${id}/backups`, { method: "POST" }),
+      json<InviteResult>(`/admin/projects/${id}/members`, { method: "POST", body: JSON.stringify(body) }),
+    backup: (id: string) => request(`/admin/projects/${id}/backups`, { method: "POST" }),
     resetSecondFactor: (userId: string) => request(`/admin/users/${encodeURIComponent(userId)}/second-factor`, { method: "DELETE" }),
   },
 

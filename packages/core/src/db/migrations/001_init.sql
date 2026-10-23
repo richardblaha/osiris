@@ -1,5 +1,5 @@
--- Schema of one tenant's database. Every tenant has its own database (see src/tenants/), so no table
--- carries a tenant_id. Users and tenants themselves live in PocketID; user_id is the OIDC `sub`.
+-- Schema of one project's database. Every project has its own database (see src/projects/), so no table
+-- carries a project_id. Users and projects themselves live in PocketID; user_id is the OIDC `sub`.
 
 CREATE TABLE threads (
   id TEXT PRIMARY KEY,
@@ -17,7 +17,7 @@ CREATE TABLE documents (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Vectors are stored as libSQL vector32 blobs and searched with an exact scan; a tenant's corpus is small.
+-- Vectors are stored as libSQL vector32 blobs and searched with an exact scan; a project's corpus is small.
 CREATE TABLE chunks (
   id TEXT PRIMARY KEY,
   document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
@@ -29,7 +29,7 @@ CREATE TABLE chunks (
 CREATE INDEX chunks_model ON chunks(embedding_model);
 CREATE INDEX chunks_document ON chunks(document_id);
 
--- Tenant-specific skills; a row overrides a bundled skill (apps/api/skills/) with the same name.
+-- Project-specific skills; a row overrides a bundled skill (apps/api/skills/) with the same name.
 CREATE TABLE skills (
   name TEXT PRIMARY KEY,
   description TEXT NOT NULL,
@@ -37,7 +37,7 @@ CREATE TABLE skills (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
--- Long-term agent memory. user_id NULL means shared with everyone in the tenant.
+-- Long-term agent memory. user_id NULL means shared with everyone in the project.
 CREATE TABLE memories (
   id TEXT PRIMARY KEY,
   user_id TEXT,

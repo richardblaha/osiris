@@ -12,7 +12,7 @@
     "context": "Context",
     "files": "Files",
     "guards": "Checks",
-    "tenant": "Tenant",
+    "project": "Project",
     "dashboard": "Dashboard",
     "assistants": "Assistants",
     "database": "Database",
@@ -22,7 +22,7 @@
     "analytics": "Traffic",
     "system": "System",
     "diagnostics": "Diagnostics",
-    "tenants": "Tenants",
+    "projects": "Projects",
     "settings": "Settings"
   },
   "add": {
@@ -39,12 +39,12 @@
   "collapse": "Collapse sidebar",
   "newChat": "New chat",
   "filesIntro": "Documents, templates and images the assistant works with. Document templates belong in the sablony folder.",
-  "noTenant": "No tenant",
-  "chooseTenant": "choose or create a tenant",
+  "noProject": "No project",
+  "chooseProject": "choose or create a project",
   "users": {
-    "thisTenant": "This tenant",
+    "thisProject": "This project",
     "all": "All users (system)",
-    "adminManages": "The tenant's administrator manages its users."
+    "adminManages": "The project's administrator manages its users."
   },
   "builtinTools": "Built-in tools",
   "mcpServers": "MCP servers"

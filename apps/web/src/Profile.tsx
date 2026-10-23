@@ -1,5 +1,5 @@
 import { AccountActivity } from "./AccountActivity.tsx";
-import type { MeResponse, TenantFeatures, UserProfile, UserSettings } from "@osiris/shared";
+import type { MeResponse, ProjectFeatures, UserProfile, UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { AssistantSettings } from "./Assistant.tsx";
 import { Integrations } from "./Integrations.tsx";
@@ -41,7 +41,7 @@ type Part = "account" | SecurityPart | "personalization" | "activity";
  * The user's own: their account, each sign-in method, linked accounts and how the assistant treats them
  * (personalization), each a part of its own; signing out at the end.
  */
-export function Profile({ me, notice, features }: { me: MeResponse; notice?: { linked?: string; error?: string }; features?: TenantFeatures }) {
+export function Profile({ me, notice, features }: { me: MeResponse; notice?: { linked?: string; error?: string }; features?: ProjectFeatures }) {
   // Back from linking an account: its part.
   const [part, setPart] = useState<Part>(notice ? "linked" : "account");
   return (

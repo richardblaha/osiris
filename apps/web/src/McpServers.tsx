@@ -1,6 +1,6 @@
 import type { McpServer, McpServerStatus, Scope } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
-import { api, getTenant } from "./api.ts";
+import { api, getProject } from "./api.ts";
 import { attempt, canEdit, DetailHeader, ErrorNotice, Field, OwnCopy, ScopeChoice, type DetailProps } from "./Scope.tsx";
 import { t } from "i18next";
 
@@ -33,7 +33,7 @@ export function McpStatus({ server }: { server: McpServer }) {
   );
 }
 
-/** Services Osiris knows: filled in with one click. Each tenant (or user) connects its own account. */
+/** Services Osiris knows: filled in with one click. Each project (or user) connects its own account. */
 const PRESETS: { label: string; name: string; url: string; auth: McpServer["auth"]; headers?: string; hint: () => string }[] = [
   {
     label: "vas-hosting.cz",
@@ -52,12 +52,12 @@ const PRESETS: { label: string; name: string; url: string; auth: McpServer["auth
   },
 ];
 
-/** Where the browser goes back to after an OAuth sign-in: the server and tenant it was for. */
+/** Where the browser goes back to after an OAuth sign-in: the server and project it was for. */
 export const MCP_SIGN_IN = "osiris.mcpSignIn";
 
 /**
- * A server of the tenant's or the viewer's own. A member can't see or change the tenant's, but can add their own of the
- * same name, which replaces it in their runs (`copying`: the form for it, the tenant's server left alone).
+ * A server of the project's or the viewer's own. A member can't see or change the project's, but can add their own of the
+ * same name, which replaces it in their runs (`copying`: the form for it, the project's server left alone).
  */
 export function McpServerDetail({ item: shown, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<McpServer>) {
   const [copying, setCopying] = useState(false);
@@ -98,7 +98,7 @@ export function McpServerDetail({ item: shown, scope: tab, isAdmin, onSaved, onD
     const { authorizationUrl } = await api.signInMcpServer(server, scope);
     if (!authorizationUrl) return setTested(await api.testMcpServer(server, scope));
     try {
-      sessionStorage.setItem(MCP_SIGN_IN, JSON.stringify({ tenant: getTenant(), name: server, scope }));
+      sessionStorage.setItem(MCP_SIGN_IN, JSON.stringify({ project: getProject(), name: server, scope }));
     } catch {
       // The callback still works; it just can't return to this server's page.
     }

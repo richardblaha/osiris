@@ -57,8 +57,8 @@ import { DataStore } from "../database/store.ts";
 import { createDb } from "../db/client.ts";
 import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
 
-/** Everything one tenant owns, all on the tenant's own database. */
-export interface Tenant {
+/** Everything one project owns, all on the project's own database. */
+export interface Project {
   id: string;
   db: Client;
   checkpointer: LibSQLSaver;
@@ -71,16 +71,16 @@ export interface Tenant {
   secrets: SecretVault;
   features: FeatureSource;
   files: FileStore;
-  /** The tenant's own database of the assistant's tables (contacts, deals…). */
+  /** The project's own database of the assistant's tables (contacts, deals…). */
   data: DataStore;
-  /** Full-text index of the tenant's and users' text files. */
+  /** Full-text index of the project's and users' text files. */
   fileIndex: FileIndex;
-  /** Where the tenant's website is published over SFTP. */
+  /** Where the project's website is published over SFTP. */
   siteTargets: SiteTargetStore;
   /** Users' Google and Microsoft accounts. */
   integrations: IntegrationAccounts;
   standardAccounts: StandardAccounts;
-  /** The assistant for the tenant's customers, and the inquiries it took. */
+  /** The assistant for the project's customers, and the inquiries it took. */
   publicAssistants: PublicAssistantStore;
   /** The VitePress builder, when there is one. */
   vitepress?: VitepressClient;
@@ -90,10 +90,10 @@ export interface Tenant {
   /** The built-in tools, each with the feature it belongs to. */
   builtinTools: [Feature, StructuredToolInterface][];
   usage: UsageStore;
-  /** Persona and rules, tenant-wide (owner '') and per user. */
+  /** Persona and rules, project-wide (owner '') and per user. */
   profiles: AssistantProfileStore;
   guards: GuardStore;
-  /** The rules a user's runs keep to: system, tenant and the user's own. */
+  /** The rules a user's runs keep to: system, project and the user's own. */
   rules(userId: string): Promise<GuardRules>;
   model: BaseChatModel;
   personaModel: BaseChatModel;
@@ -102,10 +102,10 @@ export interface Tenant {
   media: MediaReader;
 }
 
-/** Shared, tenant-independent dependencies. */
-export interface TenantDeps {
+/** Shared, project-independent dependencies. */
+export interface ProjectDeps {
   images?: ImageOptions;
-  /** Optional runtime bootstrap credential; sealed into the existing tenant vault, never sent to the model. */
+  /** Optional runtime bootstrap credential; sealed into the existing project vault, never sent to the model. */
   comfyApiKey?: string;
   media?: MediaReader;
   model: BaseChatModel;
@@ -116,15 +116,15 @@ export interface TenantDeps {
   timezone: string;
   secrets: SecretBox;
   mcp?: McpOptions;
-  /** Where the tenant's files live. */
+  /** Where the project's files live. */
   files: FileStoreOptions & { dir: string };
-  /** The file of the tenant's database (feature `database`), next to the tenant's own. */
+  /** The file of the project's database (feature `database`), next to the project's own. */
   database: { path: string };
-  /** Which features the tenant may use (from control). */
+  /** Which features the project may use (from control). */
   features: FeatureSource;
   /** Tools beyond the built-in ones (the runtime's schedule and site tools), each tied to a feature. */
   extraTools?: (files: FileStore) => [Feature, StructuredToolInterface][];
-  /** Emails the tenant's admins (a new inquiry from the public assistant); through control. */
+  /** Emails the project's admins (a new inquiry from the public assistant); through control. */
   notifyAdmins?: (subject: string, text: string) => Promise<void>;
   /** Osiris's OAuth clients at Google and Microsoft, for users' mail, contacts and calendar (none: no such tools). */
   integrations?: { clients: Partial<Record<IntegrationProvider, IntegrationClient>>; redirectUrl: string; fetch?: typeof fetch };
@@ -136,7 +136,7 @@ export interface TenantDeps {
   fetch?: typeof fetch;
 }
 
-export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
+export function openProject(id: string, db: Client, deps: ProjectDeps): Project {
   const checkpointer = new LibSQLSaver(db);
   const knowledge = new KnowledgeStore(db, deps.embeddings, deps.embeddingModel);
   const memory = new MemoryStore(db);
@@ -154,18 +154,18 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   // Guards are files, so the store comes after the file store; rules() runs only in runs, long after.
   let guards!: GuardStore;
   const rules = async (userId: string): Promise<GuardRules> => {
-    const [system, tenant, user] = await Promise.all([features.systemGuards(), guards.list({ level: "tenant" }), guards.list({ level: "user", userId })]);
-    return { system: guardsText(system), tenant: guardsText(tenant), user: guardsText(user) };
+    const [system, project, user] = await Promise.all([features.systemGuards(), guards.list({ level: "project" }), guards.list({ level: "user", userId })]);
+    return { system: guardsText(system), project: guardsText(project), user: guardsText(user) };
   };
-  // The public assistants (customers): each its own persona and rules after the system's and the tenant's.
+  // The public assistants (customers): each its own persona and rules after the system's and the project's.
   const publicAssistants = new PublicAssistantStore(db);
   const publicRules = async (name = ""): Promise<GuardRules> => {
-    const [system, tenant, open] = await Promise.all([
+    const [system, project, open] = await Promise.all([
       features.systemGuards(),
-      guards.list({ level: "tenant" }),
+      guards.list({ level: "project" }),
       name ? guards.list({ level: "assistant", assistant: name }) : [],
     ]);
-    return { system: guardsText(system), tenant: guardsText(tenant), user: guardsText(open) };
+    return { system: guardsText(system), project: guardsText(project), user: guardsText(open) };
   };
   const inquiries = new InquiryStore(db);
   const fileIndex = new FileIndex(db);
@@ -197,7 +197,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
   const standardAccounts = new StandardAccounts(db, deps.secrets);
   const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   const vitepress = deps.vitepressUrl ? new VitepressClient(deps.vitepressUrl, deps.fetch) : undefined;
-  // Each built-in tool belongs to a feature a system admin can switch off for the tenant.
+  // Each built-in tool belongs to a feature a system admin can switch off for the project.
   const images = deps.images ? new ImageService(new ImageJobStore(db), files, mcp, deps.models?.tools ?? deps.model, { ...deps.images,
     uploadApi: deps.images.uploadApi ?? (deps.images.apiUploadFallback ? new ComfyUploadApi(secrets, deps.images.uploadApiKeySecret, deps.fetch) : undefined),
     authorize: async ctx => {
@@ -208,7 +208,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     },
   }, (ctx, tokens) => usage.add(tokens, Date.now(), { user: ctx.user_id })) : undefined;
   const questions = new QuestionStore(db);
-  // Workflow steps run as the tenant's agent itself, declared below (the graph exists before any tool runs).
+  // Workflow steps run as the project's agent itself, declared below (the graph exists before any tool runs).
   const orchestrator = createOrchestratorGraph({
     model: deps.models?.agent ?? deps.model,
     react: (goal, config, key) => reactFromAgentGraph(graph)(goal, config, key),
@@ -246,7 +246,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
         return { type: "image_url" as const, image_url: { url: `data:${fileType(path)!.mime};base64,${data.toString("base64")}` } };
       }));
     },
-    tenantId: id,
+    projectId: id,
     model: deps.model,
     models: deps.models,
     tools: [questions.tool()],
@@ -295,8 +295,8 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
       const [r, profile, own, facts] = await Promise.all([
         publicRules(a.name),
         profiles.get(publicProfile(a.name)),
-        skills.tenantSkills(),
-        memory.tenantByIds(a.memories),
+        skills.projectSkills(),
+        memory.projectByIds(a.memories),
       ]);
       return buildPublicPrompt({
         title: a.title || id,
@@ -318,7 +318,7 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
     secrets,
     database: () => data.tables(),
   });
-  // Old tenants' documents and skills move to files once, then the indexes catch up with the files on disk.
+  // Old projects' documents and skills move to files once, then the indexes catch up with the files on disk.
   const init = async () => {
     if (images && deps.comfyApiKey) {
       const name = deps.images?.server ?? "comfy-cloud", keyName = deps.images?.uploadApiKeySecret ?? "COMFY_API_KEY";

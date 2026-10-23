@@ -13,7 +13,7 @@ export interface StoredObject {
   modified: Date;
 }
 
-/** Object storage for published sites and tenant backups: Civo Object Store (S3) in the cluster, a folder locally. */
+/** Object storage for published sites and project backups: Civo Object Store (S3) in the cluster, a folder locally. */
 export interface ObjectStore {
   put(key: string, body: Uint8Array | Readable, contentType?: string): Promise<void>;
   /** Null when the object doesn't exist. */

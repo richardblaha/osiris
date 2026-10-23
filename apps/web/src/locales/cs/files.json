@@ -31,7 +31,7 @@
   "copyOwn": "Zkopírovat k sobě",
   "copied": "Zkopírováno do tvých souborů jako {{path}}. Tvoje kopie teď pro tebe nahrazuje firemní.",
   "tabs": {
-    "tenant": "Firma",
+    "project": "Firma",
     "personal": "Moje"
   }
 }

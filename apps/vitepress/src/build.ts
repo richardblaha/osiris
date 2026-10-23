@@ -13,7 +13,7 @@ export type BuildResult = { ok: true; files: BuildFile[] } | { ok: false; log: s
 
 export const LIMITS = { inputFiles: 2000, outputFiles: 5000, outputBytes: 200 * 1024 * 1024, timeoutMs: 120_000, logChars: 8000 };
 
-/** The site's config and theme folder: `.vitepress` in VitePress, `_vitepress` in the tenant's files (no hidden names there). */
+/** The site's config and theme folder: `.vitepress` in VitePress, `_vitepress` in the project's files (no hidden names there). */
 const CONFIG_DIR = "_vitepress";
 const NODE_MODULES = join(import.meta.dirname, "../node_modules");
 const VITEPRESS = join(NODE_MODULES, "vitepress/bin/vitepress.js");

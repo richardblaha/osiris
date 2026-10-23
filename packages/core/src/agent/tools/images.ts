@@ -37,8 +37,8 @@ export function imageTools(service: ImageService, files: FileStore): StructuredT
       const ctx = getRunContext(config);
       const { data } = await files.read(scope === "temp" ? { scope, threadId: scratchThread(ctx) } : { scope }, path);
       const metadata = await inspectImage(data);
-      const source = compareTo ? (await files.read(compareTo.scope === "temp" ? { scope: "temp", threadId: scratchThread(ctx) } : { scope: "tenant" }, compareTo.path)).data : undefined;
-      const maskData = mask ? (await files.read(mask.scope === "temp" ? { scope: "temp", threadId: scratchThread(ctx) } : { scope: "tenant" }, mask.path)).data : undefined;
+      const source = compareTo ? (await files.read(compareTo.scope === "temp" ? { scope: "temp", threadId: scratchThread(ctx) } : { scope: "project" }, compareTo.path)).data : undefined;
+      const maskData = mask ? (await files.read(mask.scope === "temp" ? { scope: "temp", threadId: scratchThread(ctx) } : { scope: "project" }, mask.path)).data : undefined;
       return { ...metadata, ...(question ? { visual: await service.analyzeVisual({ path, scope }, question, config) } : {}), ...(source ? { comparison: await compareImages(source, data, maskData) } : {}), ...(seamless ? { edges: await edgeContinuity(data) } : {}), ...(borderSlices ? { borderImage: borderImageMetadata(metadata.width, metadata.height, borderSlices) } : {}) };
     }), { name: "image_analyze", description: "Ověří rozměry, formát, integritu a skutečnou průhlednost obrázku. S argumentem question také vizuálně prozkoumá obrázek existujícím modelem; nalezené souřadnice jsou přibližné.", schema: imageFile.extend({ compareTo: imageFile.optional(), mask: imageFile.optional(), seamless: z.boolean().default(false), borderSlices: padding.optional(), question: z.string().max(2000).optional() }) }),
     tool(({ paths, columns, cellWidth, cellHeight, gap }, config) => safe(async () => {

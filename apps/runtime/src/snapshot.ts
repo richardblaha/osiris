@@ -7,11 +7,11 @@ import type { Client } from "@libsql/client";
 import * as tar from "tar";
 
 /**
- * The tenant's volume: `db/tenant.db` (libSQL) and `files/`. A snapshot is a tar.gz of a consistent copy of the
+ * The project's volume: `db/project.db` (libSQL) and `files/`. A snapshot is a tar.gz of a consistent copy of the
  * database (`VACUUM INTO`) and the files as they are; a runtime starting on an empty volume restores the newest one.
  */
-export const dbPath = (dataDir: string) => join(dataDir, "db", "tenant.db");
-/** The tenant's own tables (feature `database`), a file of its own so the agent never reaches the tenant's database. */
+export const dbPath = (dataDir: string) => join(dataDir, "db", "project.db");
+/** The project's own tables (feature `database`), a file of its own so the agent never reaches the project's database. */
 export const dataDbPath = (dataDir: string) => join(dataDir, "db", "data.db");
 export const filesDir = (dataDir: string) => join(dataDir, "files");
 
@@ -22,7 +22,7 @@ export async function withSnapshot<T>(db: Client, dataDir: string, data: Client 
   await mkdir(join(staging, "db"), { recursive: true });
   await mkdir(filesDir(dataDir), { recursive: true });
   try {
-    const copy = join(staging, "db", "tenant.db");
+    const copy = join(staging, "db", "project.db");
     await db.execute(`VACUUM INTO '${copy.replace(/'/g, "''")}'`);
     if (data) {
       const dataCopy = join(staging, "db", "data.db");

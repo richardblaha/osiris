@@ -5,8 +5,8 @@
   "myRole": "My role",
   "permissions": "Permissions",
   "featuresHint": "A system administrator switches features on and off.",
-  "members": "Tenant users",
+  "members": "Project users",
   "loginLink": "Sign-in link",
-  "confirmRemove": "Remove {{name}} from the tenant?",
+  "confirmRemove": "Remove {{name}} from the project?",
   "loginLinkFor": "One-time sign-in link for <strong>{{who}}</strong> (valid for 3 days). Send it to them; after signing in they set up a passkey or password, or link a Google or Microsoft account."
 }

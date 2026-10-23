@@ -1,7 +1,7 @@
 import { AIMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
 import { MediaReader, attachmentInput, attachmentMessage } from "@osiris/core/agent/attachments.ts";
-import { createTestApp, createTestTenants } from "./helpers.ts";
+import { createTestApp, createTestProjects } from "./helpers.ts";
 
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jKuoAAAAASUVORK5CYII=", "base64");
 function blankPdf() {
@@ -15,11 +15,11 @@ function blankPdf() {
 }
 describe("chat attachments", () => {
   it("loads only the caller's thread files and passes images as image content", async () => {
-    const { tenants, model } = createTestTenants([new AIMessage("Vidím obrázek.")]);
-    const app = await createTestApp(tenants);
-    const call = (path: string, init: RequestInit = {}) => app.request(`/api${path}`, { ...init, headers: { authorization: "Bearer bob:tenant=acme", "x-tenant-id": "acme", "content-type": "application/json" } });
+    const { projects, model } = createTestProjects([new AIMessage("Vidím obrázek.")]);
+    const app = await createTestApp(projects);
+    const call = (path: string, init: RequestInit = {}) => app.request(`/api${path}`, { ...init, headers: { authorization: "Bearer bob:project=acme", "x-project-id": "acme", "content-type": "application/json" } });
     const { id } = await (await call("/threads", { method: "POST" })).json();
-    const t = await tenants.get("acme");
+    const t = await projects.get("acme");
     await t.files.write({ scope: "temp", threadId: id }, "photo.png", png);
     const message = `@osiris-attachments:${JSON.stringify({ text: "Co vidíš?", paths: ["photo.png"] })}`;
     const response = await call(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message }) });
@@ -49,8 +49,8 @@ describe("chat attachments", () => {
     await expect(new MediaReader(undefined).extract(png, "audio/ogg")).rejects.toThrow("MISTRAL_API_KEY");
   });
   it("takes a recorded voice message as the user's own words, and an attached recording as data", async () => {
-    const { tenants } = createTestTenants([]);
-    const t = await tenants.get("acme");
+    const { projects } = createTestProjects([]);
+    const t = await projects.get("acme");
     const media = new MediaReader("key", undefined, undefined, (async () => Response.json({ text: "Naplánuj zítra revizi u Nováka" })) as typeof fetch);
     await t.files.write({ scope: "temp", threadId: "t1" }, "hlas.webm", Buffer.from([0x1a, 0x45, 0xdf, 0xa3, 0x01, 0x02]));
     await t.files.write({ scope: "temp", threadId: "t1" }, "porada.ogg", Buffer.from("OggS"));
@@ -70,12 +70,12 @@ describe("chat attachments", () => {
     expect(() => attachmentInput(`@osiris-attachments:${JSON.stringify({ text: "", paths: ["poznamka.txt"], voice: "poznamka.txt" })}`)).toThrow();
   });
   it("offers files from the current thread only", async () => {
-    const { tenants } = createTestTenants([]);
-    const t = await tenants.get("acme");
+    const { projects } = createTestProjects([]);
+    const t = await projects.get("acme");
     const tools = t.builtinTools.map(([, tool]) => tool);
     const send = tools.find(tool => tool.name === "send_chat_file")!;
     await t.files.write({ scope: "temp", threadId: "t1" }, "file.txt", Buffer.from("Obsah"));
-    expect(JSON.parse(await send.invoke({ scope: "temp", path: "file.txt" }, { configurable: { tenant_id: "acme", thread_id: "t1", user_id: "bob", role: "member", channel: "whatsapp" } }))).toMatchObject({ file: { path: "file.txt", scope: "temp" } });
-    await expect(send.invoke({ scope: "temp", path: "file.txt" }, { configurable: { tenant_id: "acme", thread_id: "t2", user_id: "bob", role: "member", channel: "whatsapp" } })).rejects.toThrow();
+    expect(JSON.parse(await send.invoke({ scope: "temp", path: "file.txt" }, { configurable: { project_id: "acme", thread_id: "t1", user_id: "bob", role: "member", channel: "whatsapp" } }))).toMatchObject({ file: { path: "file.txt", scope: "temp" } });
+    await expect(send.invoke({ scope: "temp", path: "file.txt" }, { configurable: { project_id: "acme", thread_id: "t2", user_id: "bob", role: "member", channel: "whatsapp" } })).rejects.toThrow();
   });
 });

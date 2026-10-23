@@ -1,4 +1,4 @@
--- Text files of the tenant (owner '' = tenant-wide, a sub = that user's), indexed for full-text search and kept in
+-- Text files of the project (owner '' = project-wide, a sub = that user's), indexed for full-text search and kept in
 -- step with the files by the file store's changes (and a check at startup)
 CREATE TABLE indexed_files (
   owner TEXT NOT NULL,

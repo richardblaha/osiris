@@ -1,33 +1,33 @@
 import type { Client } from "@libsql/client";
-import { FEATURES, NO_QUOTAS, type Feature, type Guard, type TenantFeatures, type UserDefaults, type TenantQuotas } from "@osiris/shared";
+import { FEATURES, NO_QUOTAS, type Feature, type Guard, type ProjectFeatures, type UserDefaults, type ProjectQuotas } from "@osiris/shared";
 
-/** Everything is on until a system admin switches it off, so existing tenants keep working. */
-export const DEFAULT_FEATURES: TenantFeatures = Object.fromEntries(FEATURES.map((f) => [f, true])) as TenantFeatures;
+/** Everything is on until a system admin switches it off, so existing projects keep working. */
+export const DEFAULT_FEATURES: ProjectFeatures = Object.fromEntries(FEATURES.map((f) => [f, true])) as ProjectFeatures;
 
-/** Which features the tenant may use. Read on every agent step, so implementations cache. */
+/** Which features the project may use. Read on every agent step, so implementations cache. */
 export interface FeatureSource {
-  get(): Promise<TenantFeatures>;
+  get(): Promise<ProjectFeatures>;
   enabled(feature: Feature): Promise<boolean>;
-  /** Built-in tools a system admin switched off for the tenant, by name. */
+  /** Built-in tools a system admin switched off for the project, by name. */
   disabledTools(): Promise<string[]>;
-  /** The tenant's limits (storage, tokens per month, ...). */
-  quotas(): Promise<TenantQuotas>;
-  /** Rules for every tenant, set by system admins; they come before the tenant's and the user's. */
+  /** The project's limits (storage, tokens per month, ...). */
+  quotas(): Promise<ProjectQuotas>;
+  /** Rules for every project, set by system admins; they come before the project's and the user's. */
   systemGuards(): Promise<Guard[]>;
   /** The system's defaults for users' assistant settings. */
   userDefaults?(): Promise<Partial<UserDefaults>>;
 }
 
 /**
- * Features kept in the tenant's own database (`tenant_settings.features`): the monolith's store, read now only to
- * import pre-split tenants. Runtimes get their features from control.
+ * Features kept in the project's own database (`project_settings.features`): the monolith's store, read now only to
+ * import pre-split projects. Runtimes get their features from control.
  */
-export class TenantFeatureStore implements FeatureSource {
-  private cached?: Promise<TenantFeatures>;
+export class ProjectFeatureStore implements FeatureSource {
+  private cached?: Promise<ProjectFeatures>;
 
   constructor(private readonly db: Client) {}
 
-  get(): Promise<TenantFeatures> {
+  get(): Promise<ProjectFeatures> {
     return (this.cached ??= this.load().catch((err) => {
       this.cached = undefined;
       throw err;
@@ -43,7 +43,7 @@ export class TenantFeatureStore implements FeatureSource {
     return [];
   }
 
-  async quotas(): Promise<TenantQuotas> {
+  async quotas(): Promise<ProjectQuotas> {
     return NO_QUOTAS;
   }
 
@@ -51,10 +51,10 @@ export class TenantFeatureStore implements FeatureSource {
     return [];
   }
 
-  async set(changes: Partial<TenantFeatures>): Promise<TenantFeatures> {
+  async set(changes: Partial<ProjectFeatures>): Promise<ProjectFeatures> {
     const features = { ...(await this.get()), ...changes };
     await this.db.execute({
-      sql: `INSERT INTO tenant_settings (key, value) VALUES ('features', ?)
+      sql: `INSERT INTO project_settings (key, value) VALUES ('features', ?)
             ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
       args: [JSON.stringify(features)],
     });
@@ -62,16 +62,16 @@ export class TenantFeatureStore implements FeatureSource {
     return features;
   }
 
-  private async load(): Promise<TenantFeatures> {
-    const { rows } = await this.db.execute("SELECT value FROM tenant_settings WHERE key = 'features'");
-    const stored = rows[0] ? (JSON.parse(String(rows[0].value)) as Partial<TenantFeatures>) : {};
+  private async load(): Promise<ProjectFeatures> {
+    const { rows } = await this.db.execute("SELECT value FROM project_settings WHERE key = 'features'");
+    const stored = rows[0] ? (JSON.parse(String(rows[0].value)) as Partial<ProjectFeatures>) : {};
     // Features added later default to on.
-    return Object.fromEntries(FEATURES.map((f) => [f, stored[f] ?? DEFAULT_FEATURES[f]])) as TenantFeatures;
+    return Object.fromEntries(FEATURES.map((f) => [f, stored[f] ?? DEFAULT_FEATURES[f]])) as ProjectFeatures;
   }
 }
 
-/** The tenant's own record in `tenant_settings`: its display name, and whether it was removed (a kept Turso database). */
-export class TenantProfileStore {
+/** The project's own record in `project_settings`: its display name, and whether it was removed (a kept Turso database). */
+export class ProjectProfileStore {
   private cached?: Promise<{ name: string | null; archived: boolean }>;
 
   constructor(private readonly db: Client) {}
@@ -93,7 +93,7 @@ export class TenantProfileStore {
   }
 
   private get() {
-    return (this.cached ??= this.db.execute("SELECT key, value FROM tenant_settings WHERE key IN ('name', 'archived')").then(
+    return (this.cached ??= this.db.execute("SELECT key, value FROM project_settings WHERE key IN ('name', 'archived')").then(
       ({ rows }) => {
         const value = (key: string) => {
           const row = rows.find((r) => r.key === key);
@@ -111,7 +111,7 @@ export class TenantProfileStore {
 
   private async put(key: string, value: unknown) {
     await this.db.execute({
-      sql: `INSERT INTO tenant_settings (key, value) VALUES (?, ?)
+      sql: `INSERT INTO project_settings (key, value) VALUES (?, ?)
             ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = datetime('now')`,
       args: [key, JSON.stringify(value)],
     });

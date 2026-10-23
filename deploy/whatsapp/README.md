@@ -2,7 +2,7 @@
 
 The agent's `ask_user` tool is shared by the signed-in PWA, the public website chat and WhatsApp. It supports text,
 finite numbers, calendar dates, single and multiple choice, and yes/no confirmations. Migration 019 stores question
-definitions and answers in the tenant database, bound to the user and the thread. A question expires after 24 hours.
+definitions and answers in the project database, bound to the user and the thread. A question expires after 24 hours.
 An answer is validated and accepted with a single conditional write; repeated answers, the wrong owner and unknown
 options are refused. A `false` value is kept as such. A cancellation is stored, and the model is told not to carry out
 the proposed action. The tool asks for the user's intent; it is not a general permission mechanism for arbitrary MCP
@@ -35,12 +35,12 @@ files offered by that tool in the current exchange.
 Simple choices use reply buttons (at most 3, labels up to 20 characters) or a native list (at most 10 items, labels
 up to 24 characters). Other questions are sent as text with a link to the PWA, which requires signing in. A
 single-field question can also be answered with a text message; `/cancel` (or `/zrusit`) cancels the question. For
-several fields, use the PWA form (recommended) or a JSON object. Switching tenants gives no right to answer another
-tenant's questions. The runtime refuses native answers to questions that have expired or were already answered.
+several fields, use the PWA form (recommended) or a JSON object. Switching projects gives no right to answer another
+project's questions. The runtime refuses native answers to questions that have expired or were already answered.
 
-WhatsApp commands work under their Czech and English names: `/tenant`, `/nova` or `/new`, `/pomoc` or `/help`,
+WhatsApp commands work under their Czech and English names: `/project`, `/nova` or `/new`, `/pomoc` or `/help`,
 `/zrusit` or `/cancel`. Phone numbers are verified by sending `OVERENI <code>` or `VERIFY <code>`. Replies from
-control (help, errors, tenant switching) are in `DEFAULT_LOCALE` (`en` by default, `cs` in the production manifests),
+control (help, errors, project switching) are in `DEFAULT_LOCALE` (`en` by default, `cs` in the production manifests),
 since a WhatsApp message carries no language preference.
 
 ## Native WhatsApp Flows forms
@@ -77,7 +77,7 @@ For English (`en`): body `The scheduled task “{{1}}” has finished. You'll fi
 **Show result**. For your own deployment, replace the domain with the app's address. The sample value of the button
 variable is `t/acme/chat/THREAD_ID` (use a real link to a test result for the approval).
 
-The button's parameter is separate from the body's. The app passes the path `t/<tenant>/chat/<thread>` of the
+The button's parameter is separate from the body's. The app passes the path `t/<project>/chat/<thread>` of the
 particular result. The whole result stays in the web chat; only the task's title goes into the template. The link
 requires signing in and the usual permissions for the thread. Whether it opens in the browser or the installed PWA
 depends on the device and its settings.

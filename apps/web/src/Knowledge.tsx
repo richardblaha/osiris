@@ -11,8 +11,8 @@ export const documentKey = (d: Pick<DocumentSummary, "scope" | "id">) => `${d.sc
 const intro = () => t("knowledge:intro");
 
 /**
- * A document of the knowledge base, the tenant's or the viewer's own: kept in the tenant's database and indexed as
- * it's saved. A member reads the tenant's and may make their own copy of one, which replaces it for them.
+ * A document of the knowledge base, the project's or the viewer's own: kept in the project's database and indexed as
+ * it's saved. A member reads the project's and may make their own copy of one, which replaces it for them.
  */
 export function KnowledgeDetail({ item, scope, isAdmin, onSaved, onDeleted }: DetailProps<DocumentSummary>) {
   const [target, setTarget] = useState<Scope>(scope);

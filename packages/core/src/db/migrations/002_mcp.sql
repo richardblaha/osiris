@@ -1,4 +1,4 @@
--- Remote MCP servers whose tools the tenant's agent may use. Headers (e.g. Authorization) are
+-- Remote MCP servers whose tools the project's agent may use. Headers (e.g. Authorization) are
 -- encrypted with SECRETS_KEY (see src/secrets.ts) and never returned by the API.
 CREATE TABLE mcp_servers (
   name TEXT PRIMARY KEY,

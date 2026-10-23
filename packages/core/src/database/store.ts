@@ -68,7 +68,7 @@ const FORBIDDEN = /\b(attach|detach|pragma|vacuum|load_extension)\b/i;
 
 /**
  * Checks a query is one SELECT (or WITH/VALUES) and returns it without trailing semicolons. The query runs on a
- * `query_only` connection, which refuses writes; ATTACH (which query_only allows, and which would reach the tenant's
+ * `query_only` connection, which refuses writes; ATTACH (which query_only allows, and which would reach the project's
  * own database) and PRAGMA are refused here.
  */
 export function readOnlySql(sql: string): string {
@@ -159,8 +159,8 @@ function friendly(err: unknown): never {
 }
 
 /**
- * The tenant's own database for the assistant's data (contacts, deals…): its own file next to the tenant's database,
- * so nothing here reaches the tenant's settings, conversations or secrets. Tables get `id`, `created_at` and
+ * The project's own database for the assistant's data (contacts, deals…): its own file next to the project's database,
+ * so nothing here reaches the project's settings, conversations or secrets. Tables get `id`, `created_at` and
  * `updated_at`; everything else is defined by the assistant or an admin. Writes are structured (no SQL from outside),
  * free-form SQL is read-only and runs in a process of its own (`query`).
  */

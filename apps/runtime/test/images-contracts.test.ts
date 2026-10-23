@@ -10,15 +10,15 @@ import { FileStore } from "@osiris/core/files/store.ts";
 import { createDb } from "@osiris/core/db/client.ts";
 import { migrate } from "@osiris/core/db/migrate.ts";
 import type { McpToolset } from "@osiris/core/mcp/toolset.ts";
-import { ScriptedChatModel, createTestTenants } from "./helpers.ts";
+import { ScriptedChatModel, createTestProjects } from "./helpers.ts";
 import contracts from "./fixtures/comfy-cloud-contracts.json";
 const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAADUlEQVQImWP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==", "base64");
-const ctx = { thread_id: "thread", tenant_id: "acme", user_id: "alice", role: "member" as const, channel: "web" as const }, config = { configurable: ctx };
+const ctx = { thread_id: "thread", project_id: "acme", user_id: "alice", role: "member" as const, channel: "web" as const }, config = { configurable: ctx };
 const resources: { dir: string; db: ReturnType<typeof createDb> }[] = [];
 afterEach(async () => { for (const { db, dir } of resources.splice(0)) { db.close(); await rm(dir, { recursive: true, force: true }); } });
 const plan = (name: string, args: Record<string, unknown>) => new AIMessage({ content: "", tool_calls: [{ id: name, name: `comfy-cloud_${name}`, args }] });
 async function fixture(batch: boolean, invalid = false) {
-  const dir = await mkdtemp(join(tmpdir(), "osiris-image-contract-")), db = createDb(`file:${join(dir, "tenant.db")}`); resources.push({ dir, db }); await migrate(db);
+  const dir = await mkdtemp(join(tmpdir(), "osiris-image-contract-")), db = createDb(`file:${join(dir, "project.db")}`); resources.push({ dir, db }); await migrate(db);
   await db.execute("INSERT INTO threads(id,user_id,channel) VALUES ('thread','alice','web')");
   let paid = 0;
   const tools = Object.entries(contracts.tools).map(([name, raw]) => tool(async (args: Record<string, unknown>) => {
@@ -61,14 +61,14 @@ it("submits multiple independent images as one real-schema batch and collects al
   expect(completed.status).toBe("completed"); expect(completed.artifacts).toHaveLength(2); expect(f.paid()).toBe(1);
 });
 it("bootstraps a missing MCP connection with a sealed host-scoped key without replacing existing OAuth", async () => {
-  const { tenants } = createTestTenants([], [], async () => ({ tools: [], close: async () => {} }), { images: {}, comfyApiKey: "test-runtime-key" });
-  const tenant = await tenants.get("bootstrap");
+  const { projects } = createTestProjects([], [], async () => ({ tools: [], close: async () => {} }), { images: {}, comfyApiKey: "test-runtime-key" });
+  const project = await projects.get("bootstrap");
   try {
-    expect((await tenant.mcpServers.get("comfy-cloud", ""))?.headers).toEqual({ "X-API-Key": "{{secret:COMFY_API_KEY}}" });
-    expect(JSON.stringify((await tenant.db.execute("SELECT value_enc FROM secrets")).rows)).not.toContain("test-runtime-key");
-    expect((await tenant.secrets.fill({ key: "{{secret:COMFY_API_KEY}}" }, { userId: "", host: "cloud.comfy.org" })).filled.key).toBe("test-runtime-key");
-    await tenant.mcpServers.put("comfy-cloud", "", { url: "https://cloud.comfy.org/mcp", auth: "oauth", enabled: false });
-    await tenant.init();
-    expect(await tenant.mcpServers.get("comfy-cloud", "")).toMatchObject({ auth: "oauth", enabled: false });
-  } finally { await tenant.mcp.close(); tenant.db.close(); }
+    expect((await project.mcpServers.get("comfy-cloud", ""))?.headers).toEqual({ "X-API-Key": "{{secret:COMFY_API_KEY}}" });
+    expect(JSON.stringify((await project.db.execute("SELECT value_enc FROM secrets")).rows)).not.toContain("test-runtime-key");
+    expect((await project.secrets.fill({ key: "{{secret:COMFY_API_KEY}}" }, { userId: "", host: "cloud.comfy.org" })).filled.key).toBe("test-runtime-key");
+    await project.mcpServers.put("comfy-cloud", "", { url: "https://cloud.comfy.org/mcp", auth: "oauth", enabled: false });
+    await project.init();
+    expect(await project.mcpServers.get("comfy-cloud", "")).toMatchObject({ auth: "oauth", enabled: false });
+  } finally { await project.mcp.close(); project.db.close(); }
 });

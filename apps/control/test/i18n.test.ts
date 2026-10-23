@@ -71,11 +71,11 @@ describe("service messages", () => {
     const app = new Hono()
       .get("/", async () => {
         await new Promise((r) => setTimeout(r, 5));
-        throw new HttpError(404, "errors.tenant.notFound");
+        throw new HttpError(404, "errors.project.notFound");
       })
       .onError((err, c) => c.json(errorBody(err, requestLocale(c.req.header("accept-language"))), 404));
     const ask = async (lang: string) => (await (await app.request("/", { headers: { "accept-language": lang } })).json()) as { error: string };
     const answers = await Promise.all(["cs", "en", "cs-CZ", "en-GB", "sk"].map(ask));
-    expect(answers.map((a) => a.error)).toEqual(["Tenant nenalezen", "Tenant not found.", "Tenant nenalezen", "Tenant not found.", "Tenant nenalezen"]);
+    expect(answers.map((a) => a.error)).toEqual(["Projekt nenalezen", "Project not found.", "Projekt nenalezen", "Project not found.", "Projekt nenalezen"]);
   });
 });

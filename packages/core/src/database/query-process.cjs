@@ -1,4 +1,4 @@
-// One read-only query against the tenant's database, in its own process: the parent kills it when it runs too long
+// One read-only query against the project's database, in its own process: the parent kills it when it runs too long
 // (SQLite's native loop can't be interrupted from JavaScript, not even in a worker thread).
 const { createClient } = require(process.env.OSIRIS_LIBSQL);
 

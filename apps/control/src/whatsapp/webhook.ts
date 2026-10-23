@@ -11,8 +11,8 @@ export interface WhatsAppWebhookOptions {
 }
 
 /**
- * The single WhatsApp webhook for all tenants (`/webhooks/whatsapp`). Not under `/api`: Meta sends no bearer token,
- * requests are authenticated by their signature instead, and the user and tenant come from the sender's number.
+ * The single WhatsApp webhook for all projects (`/webhooks/whatsapp`). Not under `/api`: Meta sends no bearer token,
+ * requests are authenticated by their signature instead, and the user and project come from the sender's number.
  */
 export function whatsappWebhook({ inbox, verifyToken, appSecret }: WhatsAppWebhookOptions) {
   return (

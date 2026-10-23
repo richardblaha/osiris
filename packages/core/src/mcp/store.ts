@@ -16,10 +16,10 @@ export interface McpServerConfig {
 
 const authOf = (r: Record<string, unknown>): McpAuth => (r.auth === "oauth" ? "oauth" : "headers");
 
-/** Row owner: '' for tenant-wide servers, the user's sub for personal ones. */
-export const mcpOwner = (scope: Scope, userId: string) => (scope === "tenant" ? "" : userId);
+/** Row owner: '' for project-wide servers, the user's sub for personal ones. */
+export const mcpOwner = (scope: Scope, userId: string) => (scope === "project" ? "" : userId);
 
-/** MCP server configuration in one tenant's database. Headers are sealed with the SecretBox. */
+/** MCP server configuration in one project's database. Headers are sealed with the SecretBox. */
 export class McpServerStore {
   constructor(
     private readonly db: Client,
@@ -37,22 +37,22 @@ export class McpServerStore {
   }
 
   /**
-   * Tenant servers plus `userId`'s personal ones, for the API: header names only, never values. A tenant server the
+   * Project servers plus `userId`'s personal ones, for the API: header names only, never values. A project server the
    * user has their own of (same name) is `overridden`.
    */
-  async list(userId: string, { showTenantUrls }: { showTenantUrls: boolean }): Promise<Omit<McpServer, "status">[]> {
+  async list(userId: string, { showProjectUrls }: { showProjectUrls: boolean }): Promise<Omit<McpServer, "status">[]> {
     const { rows } = await this.db.execute({
       sql: "SELECT * FROM mcp_servers WHERE owner IN ('', ?) ORDER BY owner <> '', name",
       args: [userId],
     });
     const own = new Set(rows.filter((r) => r.owner !== "").map((r) => String(r.name)));
     return rows.map((r) => {
-      const scope: Scope = r.owner === "" ? "tenant" : "personal";
+      const scope: Scope = r.owner === "" ? "project" : "personal";
       return {
-        ...(scope === "tenant" && own.has(String(r.name)) ? { overridden: true } : {}),
+        ...(scope === "project" && own.has(String(r.name)) ? { overridden: true } : {}),
         name: String(r.name),
         scope,
-        url: scope === "tenant" && !showTenantUrls ? "" : String(r.url),
+        url: scope === "project" && !showProjectUrls ? "" : String(r.url),
         enabled: Number(r.enabled) === 1,
         auth: authOf(r),
         headerNames: Object.keys(this.headers(r)),
@@ -82,7 +82,7 @@ export class McpServerStore {
     owner: string,
     { url, enabled, headers, auth = "headers" }: { url: string; enabled: boolean; headers?: Record<string, string>; auth?: McpAuth },
   ) {
-    // A user's server may share a name with the tenant's: theirs replaces it in their runs.
+    // A user's server may share a name with the project's: theirs replaces it in their runs.
     if (!MCP_SERVER_NAME.test(name)) throw new Error(`Invalid MCP server name "${name}"`);
     const sealed = headers === undefined ? undefined : Object.keys(headers).length ? this.secrets.seal(JSON.stringify(headers)) : null;
     await this.db.execute({

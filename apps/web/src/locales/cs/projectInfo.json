@@ -5,8 +5,8 @@
   "myRole": "Moje role",
   "permissions": "Oprávnění",
   "featuresHint": "Funkce zapíná a vypíná správce systému.",
-  "members": "Uživatelé tenanta",
+  "members": "Uživatelé projektu",
   "loginLink": "Přihlašovací odkaz",
-  "confirmRemove": "Odebrat {{name}} z tenanta?",
+  "confirmRemove": "Odebrat {{name}} z projektu?",
   "loginLinkFor": "Jednorázový přihlašovací odkaz pro <strong>{{who}}</strong> (platí 3 dny). Pošli ho dotyčnému, po přihlášení si nastaví klíč (passkey), heslo nebo propojí účet Google či Microsoft."
 }

@@ -1,11 +1,11 @@
 import type { Channel, Role } from "@osiris/shared";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import type { Tenant } from "@osiris/core/tenants/tenant.ts";
-import { InternalAuthError, tenantAudience, type InternalUser, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
+import type { Project } from "@osiris/core/projects/project.ts";
+import { InternalAuthError, projectAudience, type InternalUser, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
 
 export interface RequestContext {
-  tenant: Tenant;
+  project: Project;
   user: InternalUser;
   role: Role;
   channel: Channel;
@@ -13,11 +13,11 @@ export interface RequestContext {
 
 export type AuthEnv = { Variables: { ctx: RequestContext; call: VerifiedCall } };
 
-/** Verifies an internal token for this tenant from one of `issuers`. */
-export async function verifyCall(verifier: InternalVerifier, tenant: Tenant, header: string | undefined, issuers: string[]) {
+/** Verifies an internal token for this project from one of `issuers`. */
+export async function verifyCall(verifier: InternalVerifier, project: Project, header: string | undefined, issuers: string[]) {
   let call: VerifiedCall;
   try {
-    call = await verifier.verifyHeader(header, tenantAudience(tenant.id));
+    call = await verifier.verifyHeader(header, projectAudience(project.id));
   } catch (err) {
     if (err instanceof InternalAuthError) throw new HTTPException(401, { message: "Unauthorized" });
     throw err;
@@ -26,13 +26,13 @@ export async function verifyCall(verifier: InternalVerifier, tenant: Tenant, hea
   return call;
 }
 
-/** User calls: the token names the user and their role in this tenant (checked by the gateway against their claims). */
-export function userAuth(verifier: InternalVerifier, tenant: Tenant) {
+/** User calls: the token names the user and their role in this project (checked by the gateway against their claims). */
+export function userAuth(verifier: InternalVerifier, project: Project) {
   return createMiddleware<AuthEnv>(async (c, next) => {
-    const call = await verifyCall(verifier, tenant, c.req.header("authorization"), ["gateway", "control"]);
-    if (!call.user || !call.role || call.tenant !== tenant.id) throw new HTTPException(401, { message: "Unauthorized" });
+    const call = await verifyCall(verifier, project, c.req.header("authorization"), ["gateway", "control"]);
+    if (!call.user || !call.role || call.project !== project.id) throw new HTTPException(401, { message: "Unauthorized" });
     c.set("call", call);
-    c.set("ctx", { tenant, user: call.user, role: call.role, channel: call.channel ?? "web" });
+    c.set("ctx", { project, user: call.user, role: call.role, channel: call.channel ?? "web" });
     await next();
   });
 }
@@ -41,16 +41,16 @@ export function userAuth(verifier: InternalVerifier, tenant: Tenant) {
 export const VISITOR_ID = /^[A-Za-z0-9_-]{16,64}$/;
 
 /**
- * Public calls: the tenant's customers on its chat page or widget, signed by the gateway with the visitor's id and no
+ * Public calls: the project's customers on its chat page or widget, signed by the gateway with the visitor's id and no
  * user or role. They act as `public:<visitor>` on the `public` channel, which only ever gets the public assistant.
  */
-export function publicAuth(verifier: InternalVerifier, tenant: Tenant) {
+export function publicAuth(verifier: InternalVerifier, project: Project) {
   return createMiddleware<AuthEnv>(async (c, next) => {
-    const call = await verifyCall(verifier, tenant, c.req.header("authorization"), ["gateway"]);
-    if (!call.visitor || !VISITOR_ID.test(call.visitor) || call.user || call.tenant !== tenant.id) throw new HTTPException(401, { message: "Unauthorized" });
+    const call = await verifyCall(verifier, project, c.req.header("authorization"), ["gateway"]);
+    if (!call.visitor || !VISITOR_ID.test(call.visitor) || call.user || call.project !== project.id) throw new HTTPException(401, { message: "Unauthorized" });
     c.set("call", call);
     const user: InternalUser = { sub: `public:${call.visitor}`, name: null, email: null, phone: null, picture: null };
-    c.set("ctx", { tenant, user, role: "member", channel: "public" });
+    c.set("ctx", { project, user, role: "member", channel: "public" });
     await next();
   });
 }

@@ -7,7 +7,7 @@ import { databaseTools } from "@osiris/core/agent/tools/database.ts";
 import { createDb } from "@osiris/core/db/client.ts";
 import { DataError, DataStore, readOnlySql } from "@osiris/core/database/store.ts";
 import { NO_QUOTAS } from "@osiris/shared";
-import { createTestApp, createTestTenants } from "./helpers.ts";
+import { createTestApp, createTestProjects } from "./helpers.ts";
 
 const store = (limits = { tables: null as number | null, bytes: null as number | null }) => {
   const path = join(mkdtempSync(join(tmpdir(), "osiris-data-")), "data.db");
@@ -33,7 +33,7 @@ describe("readOnlySql", () => {
     expect(readOnlySql("SELECT ';' AS a; -- konec;")).toBe("SELECT ';' AS a");
     expect(readOnlySql("with x as (select 1) select * from x")).toBe("with x as (select 1) select * from x");
     expect(readOnlySql('SELECT "attach" FROM t')).toBe('SELECT "attach" FROM t');
-    for (const bad of ["SELECT 1; SELECT 2", "ATTACH 'tenant.db' AS t", "SELECT 1 FROM t; ATTACH 'x' AS y", "PRAGMA table_info(t)", "DELETE FROM t", "SELECT 'x", "SELECT 1 /* x", "VACUUM INTO 'x'"]) {
+    for (const bad of ["SELECT 1; SELECT 2", "ATTACH 'project.db' AS t", "SELECT 1 FROM t; ATTACH 'x' AS y", "PRAGMA table_info(t)", "DELETE FROM t", "SELECT 'x", "SELECT 1 /* x", "VACUUM INTO 'x'"]) {
       expect(() => readOnlySql(bad), bad).toThrow(DataError);
     }
   });
@@ -127,7 +127,7 @@ describe("database tools and API", () => {
   it("lets the agent fill tables but only admins drop them", async () => {
     const data = store();
     const tools = Object.fromEntries(databaseTools(data).map((t) => [t.name, t as StructuredToolInterface]));
-    const config = (role: "admin" | "member") => ({ configurable: { thread_id: "t", tenant_id: "a", user_id: "u", role, channel: "web" } });
+    const config = (role: "admin" | "member") => ({ configurable: { thread_id: "t", project_id: "a", user_id: "u", role, channel: "web" } });
     const call = async (name: string, args: object, role: "admin" | "member" = "member") => JSON.parse(await tools[name]!.invoke(args, config(role)));
     expect(await call("db_create_table", { name: "contacts", columns: [{ name: "name", type: "text" }] })).toMatchObject({ success: true });
     expect(await call("db_insert", { table: "contacts", rows: [{ name: "Jana" }] })).toEqual({ success: true, ids: [1] });
@@ -138,12 +138,12 @@ describe("database tools and API", () => {
   });
 
   it("serves the browser: admins shape tables, members edit rows", async () => {
-    const { tenants } = createTestTenants();
-    const app = await createTestApp(tenants);
+    const { projects } = createTestProjects();
+    const app = await createTestApp(projects);
     const as = (user: string) => (path: string, init: RequestInit = {}) =>
       app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${user}`, "content-type": "application/json", ...init.headers } });
     const acme = as("acme");
-    const bob = as("bob:tenant=acme");
+    const bob = as("bob:project=acme");
     const json = (body: object) => ({ method: "POST", body: JSON.stringify(body) });
     const table = { name: "contacts", columns: [{ name: "name", type: "text", required: true }] };
     expect((await bob("/database/tables", json(table))).status).toBe(403);
@@ -156,7 +156,7 @@ describe("database tools and API", () => {
     expect(await (await bob("/database/query", json({ sql: "SELECT COUNT(*) AS n FROM contacts" }))).json()).toEqual({ columns: ["n"], rows: [[2]], truncated: false });
     expect((await bob("/database/query", json({ sql: "DELETE FROM contacts" }))).status).toBe(400);
 
-    (await tenants.get("acme")).features.limits = { ...NO_QUOTAS, tables: 1 };
+    (await projects.get("acme")).features.limits = { ...NO_QUOTAS, tables: 1 };
     expect((await acme("/database/tables", json({ ...table, name: "other" }))).status).toBe(507);
   });
 });

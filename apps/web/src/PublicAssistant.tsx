@@ -36,11 +36,11 @@ const newAssistant = (): PublicAssistantSettings => ({
 });
 
 /**
- * The tenant's assistants for its customers: each with what it knows (picked knowledge, memories), which skills and
+ * The project's assistants for its customers: each with what it knows (picked knowledge, memories), which skills and
  * tools it has, how it talks, where customers find it (a link and the website widget); and the inquiries they took.
  * Settings are for admins.
  */
-export function PublicAssistants({ tenantId, isAdmin }: { tenantId: string; isAdmin: boolean }) {
+export function PublicAssistants({ projectId, isAdmin }: { projectId: string; isAdmin: boolean }) {
   const [list, setList] = useState<PublicAssistantSettings[]>();
   // An assistant's name, INQUIRIES, or null for a new one.
   const [selected, setSelected] = useState<string | null>(INQUIRIES);
@@ -86,7 +86,7 @@ export function PublicAssistants({ tenantId, isAdmin }: { tenantId: string; isAd
       ) : selected === null || open ? (
         <Editor
           key={open?.name ?? "new"}
-          tenantId={tenantId}
+          projectId={projectId}
           initial={open ?? newAssistant()}
           onSaved={(name) => void load().then(() => setSelected(name))}
           onDeleted={() => void load().then(() => setSelected(INQUIRIES))}
@@ -107,12 +107,12 @@ function knowledgeEntries(docs: DocumentSummary[]): { path: string; label: strin
 }
 
 function Editor({
-  tenantId,
+  projectId,
   initial,
   onSaved,
   onDeleted,
 }: {
-  tenantId: string;
+  projectId: string;
   initial: PublicAssistantSettings;
   onSaved: (name: string) => void;
   onDeleted: () => void;
@@ -128,8 +128,8 @@ function Editor({
   // A switched-off feature's list is just empty.
   useEffect(() => {
     void api.documents().then(setDocs, () => {});
-    void api.memories().then((m) => setMemories(m.filter((x) => x.scope === "tenant")), () => {});
-    void loadSkills().then((s) => setSkills(s.filter((x) => x.source === "tenant")), () => {});
+    void api.memories().then((m) => setMemories(m.filter((x) => x.scope === "project")), () => {});
+    void loadSkills().then((s) => setSkills(s.filter((x) => x.source === "project")), () => {});
   }, []);
 
   const set = <K extends keyof PublicAssistantSettings>(key: K, value: PublicAssistantSettings[K]) => (setSettings({ ...settings, [key]: value }), setSaved(false));
@@ -149,8 +149,8 @@ function Editor({
     void attempt(setBusy, setError, async () => (await api.deletePublicAssistant(settings.name), onDeleted()));
   // Inside a picked folder everything is picked.
   const covered = (path: string) => settings.knowledge.some((k) => k !== path && path.startsWith(`${k}/`));
-  const link = `${location.origin}/c/${tenantId}/${settings.name}`;
-  const snippet = `<script src="${location.origin}/widget.js" data-tenant="${tenantId}" data-assistant="${settings.name}" async></script>`;
+  const link = `${location.origin}/c/${projectId}/${settings.name}`;
+  const snippet = `<script src="${location.origin}/widget.js" data-project="${projectId}" data-assistant="${settings.name}" async></script>`;
 
   return (
     <div className="detail max-w-3xl space-y-10">
@@ -176,7 +176,7 @@ function Editor({
             />
           </Field>
           <Field label={t("public:title")}>
-            <input value={settings.title} onChange={(e) => set("title", e.target.value)} placeholder={tenantId} maxLength={120} className="field" />
+            <input value={settings.title} onChange={(e) => set("title", e.target.value)} placeholder={projectId} maxLength={120} className="field" />
           </Field>
           <Field label={t("public:tokens")}>
             <input
@@ -192,7 +192,7 @@ function Editor({
           <input value={settings.greeting} onChange={(e) => set("greeting", e.target.value)} maxLength={500} className="field" />
         </Field>
 
-        <Picker title={t("tenants:features.knowledge.label")} hint={t("public:knowledgeHint")} empty={t("public:knowledgeEmpty")}>
+        <Picker title={t("projects:features.knowledge.label")} hint={t("public:knowledgeHint")} empty={t("public:knowledgeEmpty")}>
           {knowledgeEntries(docs).map((k) => (
             <Check
               key={k.path}

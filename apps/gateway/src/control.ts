@@ -3,11 +3,11 @@ import { CONTROL_AUDIENCE, type InternalSigner } from "@osiris/platform/internal
 import type { RuntimeLocator } from "@osiris/platform/runtime-client.ts";
 import type { TokenOwner } from "./oidc.ts";
 
-const TENANTS_TTL_MS = 30_000;
+const PROJECTS_TTL_MS = 30_000;
 
-/** The gateway's own questions to control: whose a token is, which tenants exist, where a tenant's runtime is, and wake it up. */
+/** The gateway's own questions to control: whose a token is, which projects exist, where a project's runtime is, and wake it up. */
 export class ControlDirectory implements RuntimeLocator {
-  private tenants?: { at: number; list: Promise<{ id: string; name: string }[]> };
+  private projects?: { at: number; list: Promise<{ id: string; name: string }[]> };
   private lastForced = 0;
   private readonly endpoints = new Map<string, string>();
 
@@ -26,35 +26,35 @@ export class ControlDirectory implements RuntimeLocator {
   }
 
   /**
-   * Active tenants, cached briefly; a failed load isn't cached. `refresh` reloads at once (at most every few seconds),
-   * for a user whose claims name a tenant created after the cache was filled.
+   * Active projects, cached briefly; a failed load isn't cached. `refresh` reloads at once (at most every few seconds),
+   * for a user whose claims name a project created after the cache was filled.
    */
   list({ refresh = false } = {}): Promise<{ id: string; name: string }[]> {
     const forced = refresh && Date.now() - this.lastForced > 5_000;
     if (forced) this.lastForced = Date.now();
-    if (forced || !this.tenants || Date.now() - this.tenants.at > TENANTS_TTL_MS) {
-      const list = this.call<{ id: string; name: string }[]>("/tenants");
+    if (forced || !this.projects || Date.now() - this.projects.at > PROJECTS_TTL_MS) {
+      const list = this.call<{ id: string; name: string }[]>("/projects");
       list.catch(() => {
-        if (this.tenants?.list === list) this.tenants = undefined;
+        if (this.projects?.list === list) this.projects = undefined;
       });
-      this.tenants = { at: Date.now(), list };
+      this.projects = { at: Date.now(), list };
     }
-    return this.tenants.list;
+    return this.projects.list;
   }
 
   /** The user an access token belongs to; `ServiceError` 401 for an unknown or expired token. */
   identify = (token: string) => this.call<TokenOwner>("/identify", { method: "POST", body: JSON.stringify({ token }), timeoutMs: 10_000 });
 
-  async endpoint(tenant: string) {
-    let url = this.endpoints.get(tenant);
+  async endpoint(project: string) {
+    let url = this.endpoints.get(project);
     if (!url) {
-      url = (await this.call<{ url: string }>(`/tenants/${encodeURIComponent(tenant)}/endpoint`)).url;
-      this.endpoints.set(tenant, url);
+      url = (await this.call<{ url: string }>(`/projects/${encodeURIComponent(project)}/endpoint`)).url;
+      this.endpoints.set(project, url);
     }
     return url;
   }
 
-  async wake(tenant: string) {
-    await this.call<void>(`/tenants/${encodeURIComponent(tenant)}/wake`, { method: "POST" });
+  async wake(project: string) {
+    await this.call<void>(`/projects/${encodeURIComponent(project)}/wake`, { method: "POST" });
   }
 }

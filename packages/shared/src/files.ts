@@ -1,4 +1,4 @@
-/** File types a tenant may store, by extension. Anything else is refused, so the store never holds executables. */
+/** File types a project may store, by extension. Anything else is refused, so the store never holds executables. */
 export const FILE_TYPES: Record<string, { mime: string; text: boolean }> = {
   txt: { mime: "text/plain", text: true },
   md: { mime: "text/markdown", text: true },

@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
 
-/** Addresses a tenant's MCP URL must not reach: loopback, private, link-local (cloud metadata), CGNAT, ... */
+/** Addresses a project's MCP URL must not reach: loopback, private, link-local (cloud metadata), CGNAT, ... */
 const blocked = new BlockList();
 for (const [net, prefix] of [
   ["0.0.0.0", 8],

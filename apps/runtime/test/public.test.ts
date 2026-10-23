@@ -1,21 +1,21 @@
 import { AIMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
-import { tenantAudience } from "@osiris/platform/internal-auth.ts";
+import { projectAudience } from "@osiris/platform/internal-auth.ts";
 import { estimate } from "@osiris/core/public/assistant.ts";
 import type { RunEvent } from "@osiris/shared";
-import { createTestApp, createTestTenants } from "./helpers.ts";
+import { createTestApp, createTestProjects } from "./helpers.ts";
 
 const text = (s: string) => Buffer.from(s);
 
 async function setup(script: AIMessage[] = []) {
   const notified: { subject: string; text: string }[] = [];
-  const { tenants, model } = createTestTenants(script, [], undefined, { notifyAdmins: async (subject, text) => void notified.push({ subject, text }) });
-  const app = await createTestApp(tenants);
+  const { projects, model } = createTestProjects(script, [], undefined, { notifyAdmins: async (subject, text) => void notified.push({ subject, text }) });
+  const app = await createTestApp(projects);
   const admin = (path: string, init: RequestInit = {}) =>
-    app.request(`/api${path}`, { ...init, headers: { authorization: "Bearer acme", "x-tenant-id": "acme", "content-type": "application/json", ...init.headers } });
+    app.request(`/api${path}`, { ...init, headers: { authorization: "Bearer acme", "x-project-id": "acme", "content-type": "application/json", ...init.headers } });
   /** A customer, as the gateway passes them on: a visitor id, no user. */
   const visitor = (id: string) => async (path: string, init: RequestInit = {}) => {
-    const authorization = await app.signer.header(tenantAudience("acme"), { tenant: "acme", visitor: id, channel: "public" });
+    const authorization = await app.signer.header(projectAudience("acme"), { project: "acme", visitor: id, channel: "public" });
     return (await app.runtime("acme")).request(`/public${path}`, { ...init, headers: { authorization, "content-type": "application/json", ...init.headers } });
   };
   const chat = async (who: ReturnType<typeof visitor>, message: string, assistant = "web", thread?: string) => {
@@ -24,14 +24,14 @@ async function setup(script: AIMessage[] = []) {
     const events = (await res.text()).split("\n").filter((l) => l.startsWith("data: ")).map((l) => JSON.parse(l.slice(6)) as RunEvent);
     return { id, text: events.flatMap((e) => (e.type === "text-delta" ? [e.delta] : [])).join("") };
   };
-  return { tenants, model, admin, visitor, chat, notified };
+  return { projects, model, admin, visitor, chat, notified };
 }
 
 const assistant = (over: Record<string, unknown> = {}) =>
   JSON.stringify({ enabled: true, title: "", greeting: "", knowledge: [], memories: [], skills: [], tools: [], tokensPerMonth: null, ...over });
 
 describe("public assistants", () => {
-  it("are off until the tenant admin switches one on", async () => {
+  it("are off until the project admin switches one on", async () => {
     const { admin, visitor } = await setup();
     const anna = visitor("anna-visitor-123456");
     expect(await (await anna("/web/info")).json()).toMatchObject({ enabled: false });
@@ -51,14 +51,14 @@ describe("public assistants", () => {
   });
 
   it("each know only their knowledge, memories and skills, get only their tools and keep visitors apart", async () => {
-    const { tenants, model, admin, visitor, chat } = await setup([new AIMessage("Dobrý den."), new AIMessage("Dobrý den.")]);
-    const acme = await tenants.get("acme");
+    const { projects, model, admin, visitor, chat } = await setup([new AIMessage("Dobrý den."), new AIMessage("Dobrý den.")]);
+    const acme = await projects.get("acme");
     await acme.knowledge.putDocument("public/cenik.md", "# Ceník\nZásuvka montáž 450 Kč za kus.");
     await acme.knowledge.putDocument("public_x/jine.md", "Zásuvka jinde.");
     await acme.knowledge.putDocument("interni.md", "Marže na zásuvkách je 60 %.");
-    await acme.files.write({ scope: "tenant" }, "skills/reklamace/SKILL.md", text("---\nname: reklamace\ndescription: Jak přijmout reklamaci\n---\n\nPostup."));
-    const fact = await acme.memory.add("", "Otevřeno Po–Pá 8–16.", "tenant");
-    await acme.memory.add("", "Interní: šéf je na dovolené.", "tenant");
+    await acme.files.write({ scope: "project" }, "skills/reklamace/SKILL.md", text("---\nname: reklamace\ndescription: Jak přijmout reklamaci\n---\n\nPostup."));
+    const fact = await acme.memory.add("", "Otevřeno Po–Pá 8–16.", "project");
+    await acme.memory.add("", "Interní: šéf je na dovolené.", "project");
     await admin("/public-assistants/eshop", {
       method: "PUT",
       body: assistant({ title: "Elektro Novák", knowledge: ["public"], memories: [fact.id], skills: ["reklamace"], tools: ["estimate_price"] }),
@@ -94,17 +94,17 @@ describe("public assistants", () => {
     expect(await (await admin("/threads")).json()).toEqual([]);
   });
 
-  it("takes an inquiry, tells the admins and lists it for the tenant", async () => {
-    const { tenants, admin, notified } = await setup();
+  it("takes an inquiry, tells the admins and lists it for the project", async () => {
+    const { projects, admin, notified } = await setup();
     await admin("/public-assistants/web", { method: "PUT", body: assistant({ tools: ["create_inquiry"] }) });
-    const acme = await tenants.get("acme");
+    const acme = await projects.get("acme");
     const tool = (await import("@osiris/core/public/assistant.ts"))
       .publicTools(
         { knowledge: acme.knowledge, inquiries: acme.inquiries, skills: acme.skills, notify: async (i) => void notified.push({ subject: i.name, text: i.description }) },
         { knowledge: [], skills: [], tools: ["create_inquiry"] },
       )
       .find((t) => t.name === "create_inquiry")!;
-    const config = { configurable: { thread_id: "t1", tenant_id: "acme", user_id: "public:anna-visitor-123456", role: "member", channel: "public", assistant: "web" } };
+    const config = { configurable: { thread_id: "t1", project_id: "acme", user_id: "public:anna-visitor-123456", role: "member", channel: "public", assistant: "web" } };
     expect(await tool.invoke({ name: "Anna", contact: "777 123 456", description: "Výměna 5 zásuvek v Brně" }, config)).toContain("předaná");
     expect(notified.at(-1)).toEqual({ subject: "Anna", text: "Výměna 5 zásuvek v Brně" });
     const list = await (await admin("/inquiries")).json();
@@ -114,13 +114,13 @@ describe("public assistants", () => {
   });
 
   it("moves the old single assistant to one named web", async () => {
-    const { tenants, admin } = await setup();
-    const acme = await tenants.get("acme");
-    await acme.files.write({ scope: "tenant" }, "skills/cenik/SKILL.md", text("---\nname: cenik\ndescription: Ceník\npublic: true\n---\n\nPostup."));
+    const { projects, admin } = await setup();
+    const acme = await projects.get("acme");
+    await acme.files.write({ scope: "project" }, "skills/cenik/SKILL.md", text("---\nname: cenik\ndescription: Ceník\npublic: true\n---\n\nPostup."));
     await acme.db.batch(
       [
         {
-          sql: "INSERT INTO tenant_settings (key, value) VALUES ('public_assistant', ?)",
+          sql: "INSERT INTO project_settings (key, value) VALUES ('public_assistant', ?)",
           args: [JSON.stringify({ enabled: true, title: "Novák", greeting: "Ahoj", tools: ["create_inquiry", "load_skill"], tokensPerMonth: 5 })],
         },
         "INSERT INTO assistant_profiles (owner, persona, guards) VALUES ('@public', NULL, 'Vykej.')",

@@ -1,4 +1,4 @@
-# Runs tenants: reconciles Tenant objects into namespaces with the runtime, sleeps idle runtimes, site ingresses.
+# Runs projects: reconciles Project objects into namespaces with the runtime, sleeps idle runtimes, site ingresses.
 # One replica (Recreate), so two operators never act at once.
 # Secret osiris-operator: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, SECRETS_MASTER_KEY,
 # RUNTIME_SECRET_MISTRAL_API_KEY (passed to every runtime as MISTRAL_API_KEY).

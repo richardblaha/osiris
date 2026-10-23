@@ -11,8 +11,8 @@ const parseHosts = (text: string) => text.split(/[\s,]+/).map((h) => h.trim().to
 export const secretKey = (s: Pick<SecretSummary, "scope" | "name">) => `${s.scope}:${s.name}`;
 
 /**
- * A key of the tenant's or the viewer's own. A member can add their own value under a tenant key's name, which
- * replaces it in their runs (`copying`: the form for it, the tenant's key left alone).
+ * A key of the project's or the viewer's own. A member can add their own value under a project key's name, which
+ * replaces it in their runs (`copying`: the form for it, the project's key left alone).
  */
 export function SecretDetail({ item: shown, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<SecretSummary>) {
   const [copying, setCopying] = useState(false);

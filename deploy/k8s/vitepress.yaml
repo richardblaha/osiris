@@ -1,6 +1,6 @@
-# The VitePress builder (tool build_vitepress_site): builds tenants' sites from their vitepress/<site>/ files. A site's
+# The VitePress builder (tool build_vitepress_site): builds projects' sites from their vitepress/<site>/ files. A site's
 # config and Markdown run code during the build, so it is stateless, unprivileged, holds no secrets, is reachable only
-# from tenant runtimes and cut off from the network; builds run one at a time and each leaves nothing behind.
+# from project runtimes and cut off from the network; builds run one at a time and each leaves nothing behind.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -90,8 +90,8 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
-        # Tenant runtimes (build_vitepress_site).
-        - namespaceSelector: { matchExpressions: [{ key: osiris.k6labs.cz/tenant, operator: Exists }] }
+        # Project runtimes (build_vitepress_site).
+        - namespaceSelector: { matchExpressions: [{ key: osiris.k6labs.cz/project, operator: Exists }] }
           podSelector: { matchLabels: { app: runtime } }
       ports:
         - port: 3000

@@ -5,7 +5,7 @@ import { MasterDetail, type PanelGroup } from "./MasterDetail.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
 import { t } from "i18next";
 
-type Level = "system" | "tenant" | "user" | "assistant";
+type Level = "system" | "project" | "user" | "assistant";
 interface Place {
   level: Level;
   assistant?: string;
@@ -15,7 +15,7 @@ const keyOf = (p: Place, name: string) => [p.level, p.assistant ?? "", name].joi
 const levelLabel = (level: Level) => t(`guards:levels.${level}`);
 
 /**
- * Guards by level: the system's (system admins), the tenant's and its public assistants' (tenant admins) and the
+ * Guards by level: the system's (system admins), the project's and its public assistants' (project admins) and the
  * user's own. Each is a rule the assistant keeps to and every message and answer is checked against.
  */
 export function Guards({ isAdmin, systemAdmin }: { isAdmin: boolean; systemAdmin: boolean }) {
@@ -28,7 +28,7 @@ export function Guards({ isAdmin, systemAdmin }: { isAdmin: boolean; systemAdmin
   const places: { place: Place; title: string; guards: Guard[]; editable: boolean }[] = list
     ? [
         { place: { level: "system" }, title: t("guards:places.system"), guards: list.system, editable: systemAdmin },
-        { place: { level: "tenant" }, title: levelLabel("tenant"), guards: list.tenant, editable: isAdmin },
+        { place: { level: "project" }, title: levelLabel("project"), guards: list.project, editable: isAdmin },
         { place: { level: "user" }, title: levelLabel("user"), guards: list.user, editable: true },
         ...Object.entries(list.assistants ?? {}).map(([name, guards]) => ({
           place: { level: "assistant" as const, assistant: name },
@@ -119,7 +119,7 @@ function GuardForm(props: {
         <p className="text-sm text-fg-secondary">
           {levelLabel(place.level)}
           {place.assistant && ` ${place.assistant}`}
-          {!editable && ` · ${place.level === "system" ? t("guards:systemAdminOnly") : t("guards:tenantAdminOnly")}`}
+          {!editable && ` · ${place.level === "system" ? t("guards:systemAdminOnly") : t("guards:projectAdminOnly")}`}
         </p>
       ) : (
         <Field label={t("guards:target")}>

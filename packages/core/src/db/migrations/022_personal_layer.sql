@@ -1,5 +1,5 @@
--- Users get their own layer over the tenant's settings again: their own knowledge base documents (owner = sub,
--- '' for the tenant's) and memories that may replace one of the tenant's for them (overrides = its id)
+-- Users get their own layer over the project's settings again: their own knowledge base documents (owner = sub,
+-- '' for the project's) and memories that may replace one of the project's for them (overrides = its id)
 CREATE TABLE knowledge_documents_v2 (
   owner TEXT NOT NULL DEFAULT '',
   id TEXT NOT NULL,

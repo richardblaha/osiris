@@ -11,11 +11,11 @@ export interface UsageOwner {
 
 const key = (month: string, { public: open, user }: UsageOwner) => (open ? `public:${open}:${month}` : user ? `user:${user}:${month}` : month);
 
-/** Tokens the tenant's agent used per calendar month, checked against the tenant's, its members' and its public assistants' quotas. */
+/** Tokens the project's agent used per calendar month, checked against the project's, its members' and its public assistants' quotas. */
 export class UsageStore {
   constructor(private readonly db: Client) {}
 
-  /** Counts tokens for the tenant, and for the public assistant or the member who ran them. */
+  /** Counts tokens for the project, and for the public assistant or the member who ran them. */
   async add(tokens: number, now = Date.now(), owner: UsageOwner = {}) {
     if (!(tokens > 0)) return;
     const sql = "INSERT INTO usage_months (month, tokens) VALUES (?, ?) ON CONFLICT (month) DO UPDATE SET tokens = tokens + excluded.tokens";
@@ -30,7 +30,7 @@ export class UsageStore {
     return Number(rows[0]?.tokens ?? 0);
   }
 
-  /** This month's tokens by member and by public assistant (most first), and the tenant's of the last 12 months. */
+  /** This month's tokens by member and by public assistant (most first), and the project's of the last 12 months. */
   async breakdown(now = Date.now()): Promise<{ users: { userId: string; tokens: number }[]; assistants: { name: string; tokens: number }[]; months: { month: string; tokens: number }[] }> {
     const month = monthOf(now);
     const { rows } = await this.db.execute("SELECT month, tokens FROM usage_months");

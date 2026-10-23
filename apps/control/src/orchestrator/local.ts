@@ -2,11 +2,11 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { mkdirSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import type { Orchestrator, TenantSpec, TenantStatus } from "./types.ts";
+import type { Orchestrator, ProjectSpec, ProjectStatus } from "./types.ts";
 
 /**
- * Development stand-in for the operator: each tenant's runtime is a child process on its own port, started on the
- * first wake and stopped when the tenant is suspended. No sleeping, no isolation.
+ * Development stand-in for the operator: each project's runtime is a child process on its own port, started on the
+ * first wake and stopped when the project is suspended. No sleeping, no isolation.
  */
 export class LocalOrchestrator implements Orchestrator {
   private readonly ports = new Map<string, number>();
@@ -23,7 +23,7 @@ export class LocalOrchestrator implements Orchestrator {
     },
   ) {}
 
-  async apply(spec: TenantSpec) {
+  async apply(spec: ProjectSpec) {
     if (spec.suspended) {
       this.suspended.add(spec.id);
       this.running.get(spec.id)?.kill();
@@ -33,7 +33,7 @@ export class LocalOrchestrator implements Orchestrator {
   async statuses() {
     const ids = new Set([...this.running.keys(), ...this.suspended]);
     return new Map(
-      [...ids].map((id): [string, TenantStatus] => [id, { phase: this.suspended.has(id) ? "Suspended" : this.running.has(id) ? "Running" : "Sleeping" }]),
+      [...ids].map((id): [string, ProjectStatus] => [id, { phase: this.suspended.has(id) ? "Suspended" : this.running.has(id) ? "Running" : "Sleeping" }]),
     );
   }
 
@@ -45,7 +45,7 @@ export class LocalOrchestrator implements Orchestrator {
     const child = spawn(process.execPath, ["--import", tsx, resolve(this.options.entry)], {
       // The runtime package is the working directory (bundled skills are found relative to it).
       cwd: resolve(dirname(resolve(this.options.entry)), ".."),
-      env: { ...process.env, ...this.options.env, TENANT_ID: id, PORT: String(this.port(id)), DATA_DIR: dataDir },
+      env: { ...process.env, ...this.options.env, PROJECT_ID: id, PORT: String(this.port(id)), DATA_DIR: dataDir },
       stdio: ["ignore", "inherit", "inherit"],
     });
     this.running.set(id, child);

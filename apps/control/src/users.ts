@@ -4,7 +4,7 @@ import { DbError, run, type Db } from "@osiris/platform/rqlite.ts";
 import { newToken, sha256 } from "./auth/secrets.ts";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
 
-/** A user with their claims (`phone_number`, `role`, `tenant`, `tenant-admin`, ...). */
+/** A user with their claims (`phone_number`, `role`, `project`, `project-admin`, ...). */
 export interface UserRecord {
   id: string;
   name: string | null;
@@ -22,7 +22,7 @@ export interface NewUser {
   email: string | null;
   firstName: string;
   lastName: string;
-  /** Kept when importing from PocketID, so the user's data in the tenants stays theirs; new users get a UUID. */
+  /** Kept when importing from PocketID, so the user's data in the projects stays theirs; new users get a UUID. */
   id?: string;
   emailVerified?: boolean;
   disabled?: boolean;
@@ -38,7 +38,7 @@ export interface ProfileChanges {
 /** What a one-time sign-in link is for; shown nowhere, kept for the audit trail. */
 export type LinkPurpose = "invite" | "admin" | "email";
 
-/** The users behind the tokens: tenant members, roles, profiles and lookup by phone. Only control has it. */
+/** The users behind the tokens: project members, roles, profiles and lookup by phone. Only control has it. */
 export interface UserDirectory {
   list(): Promise<UserRecord[]>;
   get(userId: string): Promise<UserRecord>;

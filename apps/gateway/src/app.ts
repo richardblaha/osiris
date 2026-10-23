@@ -8,9 +8,9 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { accessibleTenants, isAuthorized, isSystemAdmin, membershipsFromClaims, TENANT_SLUG, type Membership } from "@osiris/platform/claims.ts";
+import { accessibleProjects, isAuthorized, isSystemAdmin, membershipsFromClaims, PROJECT_SLUG, type Membership } from "@osiris/platform/claims.ts";
 import { isUnreachable, retryUntil, ServiceError } from "@osiris/platform/http.ts";
-import { CONTROL_AUDIENCE, tenantAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
+import { CONTROL_AUDIENCE, projectAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import type { ControlDirectory } from "./control.ts";
 import type { Identity, TokenVerifier } from "./oidc.ts";
@@ -45,11 +45,11 @@ interface Authenticated {
 
 type Env = { Variables: { auth: Authenticated } };
 
-/** API paths answered by control; everything else under /api belongs to the active tenant's runtime. */
-const CONTROL_PATHS = /^\/api\/(me|admin|tenant|members|schedules|domains|sites|dashboards|analytics)(\/|$)/;
+/** API paths answered by control; everything else under /api belongs to the active project's runtime. */
+const CONTROL_PATHS = /^\/api\/(me|admin|project|members|schedules|domains|sites|dashboards|analytics)(\/|$)/;
 
 /** Request headers passed on to the services; credentials and hop-by-hop headers are not. */
-const FORWARD_REQUEST = ["content-type", "accept", "accept-language", "x-tenant-id", "x-hub-signature-256"];
+const FORWARD_REQUEST = ["content-type", "accept", "accept-language", "x-project-id", "x-hub-signature-256"];
 /** Response headers passed back to the browser. */
 const FORWARD_RESPONSE = ["content-type", "content-disposition", "cache-control", "content-security-policy", "x-content-type-options", "retry-after"];
 /** Sign-in (`/auth`, control's OIDC provider and the sign-in screens' API) takes cookies and answers with redirects. */
@@ -72,8 +72,8 @@ const describeUser = (user: Identity) => ({
   name: user.name,
   email: user.email,
   role: user.access.roles,
-  tenant: user.access.tenants,
-  "tenant-admin": user.access.adminTenants,
+  project: user.access.projects,
+  "project-admin": user.access.adminProjects,
   ...(user.claimKeys ? { claims: user.claimKeys } : {}),
 });
 
@@ -83,9 +83,9 @@ const plainUser = (u: Identity): InternalUser => ({ sub: u.sub, name: u.name, em
 
 /**
  * The only entry point from the internet for osiris.k6labs.cz. Passes sign-in (`/auth`) to control, which is the
- * OpenID Connect provider. For the API it has control identify the access token, works out the user's tenants from
+ * OpenID Connect provider. For the API it has control identify the access token, works out the user's projects from
  * their claims, and passes each call on with a short internal token: account, administration, schedules and sites to
- * control; the rest to the active tenant's runtime, which is woken up first if it sleeps. Services behind it never see
+ * control; the rest to the active project's runtime, which is woken up first if it sleeps. Services behind it never see
  * an access token, and network policies let only the gateway reach them.
  */
 export function createGatewayApp(deps: GatewayDeps) {
@@ -136,14 +136,14 @@ export function createGatewayApp(deps: GatewayDeps) {
     };
     if (!isAuthorized(user.access)) throw deny("errors.access.noRole");
     const systemAdmin = isSystemAdmin(user.access);
-    // Claims may name tenants that were removed; only active ones count. A tenant just created may be missing from
+    // Claims may name projects that were removed; only active ones count. A project just created may be missing from
     // the cached list, so an unknown one triggers a reload.
     let active = (await control.list()).map((t) => t.id);
-    if (membershipsFromClaims(user.access).some((m) => !active.includes(m.tenantId))) {
+    if (membershipsFromClaims(user.access).some((m) => !active.includes(m.projectId))) {
       active = (await control.list({ refresh: true })).map((t) => t.id);
     }
-    const memberships = accessibleTenants(user.access, active).filter((m) => active.includes(m.tenantId));
-    if (!memberships.length && !systemAdmin) throw deny("errors.access.noTenant");
+    const memberships = accessibleProjects(user.access, active).filter((m) => active.includes(m.projectId));
+    if (!memberships.length && !systemAdmin) throw deny("errors.access.noProject");
     if (!requests.take(user.sub)) throw new HttpError(429, "errors.tooManyRequests");
     c.set("auth", { user, memberships, systemAdmin });
     await next();
@@ -184,23 +184,23 @@ export function createGatewayApp(deps: GatewayDeps) {
 
   const toRuntime = async (c: Context<Env>) => {
     const { user, memberships } = c.get("auth");
-    const requested = c.req.header("x-tenant-id");
-    const membership = requested ? memberships.find((m) => m.tenantId === requested) : memberships.length === 1 ? memberships[0] : undefined;
+    const requested = c.req.header("x-project-id");
+    const membership = requested ? memberships.find((m) => m.projectId === requested) : memberships.length === 1 ? memberships[0] : undefined;
     if (!membership) {
-      throw requested ? new HttpError(403, "errors.access.notMember") : new HttpError(400, "errors.tenantRequired");
+      throw requested ? new HttpError(403, "errors.access.notMember") : new HttpError(400, "errors.projectRequired");
     }
     if (c.req.method === "POST" && /^\/api\/threads\/[^/]+\/runs$/.test(c.req.path) && !runs.take(user.sub)) {
       throw new HttpError(429, "errors.tooManyMessages");
     }
-    const authorization = await signer.header(tenantAudience(membership.tenantId), {
+    const authorization = await signer.header(projectAudience(membership.projectId), {
       user: plainUser(user),
-      tenant: membership.tenantId,
+      project: membership.projectId,
       role: membership.role,
       channel: "web",
     });
     const url = new URL(c.req.url);
     // The body is buffered, so the request can be sent again after waking a sleeping runtime.
-    const res = await runtimes.request(membership.tenantId, `${url.pathname}${url.search}`, {
+    const res = await runtimes.request(membership.projectId, `${url.pathname}${url.search}`, {
       method: c.req.method,
       headers: forwardHeaders(c, authorization),
       body: await body(c),
@@ -250,7 +250,7 @@ export function createGatewayApp(deps: GatewayDeps) {
       await next();
       c.header("x-content-type-options", "nosniff");
       c.header("referrer-policy", "strict-origin-when-cross-origin");
-      // The public chat page (/c/<tenant>) is embedded by tenants' websites (widget.js); it signs nobody in.
+      // The public chat page (/c/<project>) is embedded by projects' websites (widget.js); it signs nobody in.
       const embeddable = c.req.path.startsWith("/c/");
       if (!embeddable) c.header("x-frame-options", "DENY");
       c.header("strict-transport-security", "max-age=31536000");
@@ -259,23 +259,23 @@ export function createGatewayApp(deps: GatewayDeps) {
         c.header("content-security-policy", embeddable ? csp.replace("frame-ancestors 'none'", "frame-ancestors *") : csp);
       }
     })
-    .use("/api/*", cors({ origin: deps.corsOrigin, allowHeaders: ["authorization", "content-type", "x-tenant-id"] }))
+    .use("/api/*", cors({ origin: deps.corsOrigin, allowHeaders: ["authorization", "content-type", "x-project-id"] }))
     .get("/health", (c) => c.json({ ok: true }))
-    // A tenant's customers: no sign-in, a visitor id from their browser, the public assistant only.
-    .all("/public/:tenant/*", bodyLimit({ maxSize: 16 * 1024, onError: tooLarge("errors.public.messageTooLong") }), async (c) => {
-      const tenant = c.req.param("tenant");
+    // A project's customers: no sign-in, a visitor id from their browser, the public assistant only.
+    .all("/public/:project/*", bodyLimit({ maxSize: 16 * 1024, onError: tooLarge("errors.public.messageTooLong") }), async (c) => {
+      const project = c.req.param("project");
       const ip = clientIp(c);
-      if (!TENANT_SLUG.test(tenant)) throw new HTTPException(404, { message: "Not found" });
+      if (!PROJECT_SLUG.test(project)) throw new HTTPException(404, { message: "Not found" });
       if (!publicRequests.take(ip)) throw new HttpError(429, "errors.public.tooManyRequests");
       if (c.req.method === "POST" && c.req.path.endsWith("/runs") && !publicRuns.take(ip)) {
         throw new HttpError(429, "errors.public.tooManyMessages");
       }
       const visitor = c.req.header("x-visitor-id") ?? "";
       if (!/^[A-Za-z0-9_-]{16,64}$/.test(visitor)) throw new HttpError(400, "errors.public.visitorMissing");
-      if (!(await control.list()).some((t) => t.id === tenant)) throw new HTTPException(404, { message: "Not found" });
-      const authorization = await signer.header(tenantAudience(tenant), { tenant, visitor, channel: "public" });
+      if (!(await control.list()).some((t) => t.id === project)) throw new HTTPException(404, { message: "Not found" });
+      const authorization = await signer.header(projectAudience(project), { project, visitor, channel: "public" });
       const url = new URL(c.req.url);
-      const res = await runtimes.request(tenant, `${url.pathname.replace(`/public/${tenant}`, "/public")}${url.search}`, {
+      const res = await runtimes.request(project, `${url.pathname.replace(`/public/${project}`, "/public")}${url.search}`, {
         method: c.req.method,
         headers: forwardHeaders(c, authorization),
         body: await body(c),

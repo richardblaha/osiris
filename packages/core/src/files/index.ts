@@ -13,7 +13,7 @@ export function ftsQuery(query: string, join: "AND" | "OR" = "AND"): string | nu
   return words.length ? words.map((w) => `"${w}"*`).join(` ${join} `) : null;
 }
 
-/** Full-text index of the tenant's text files (tenant-wide and personal); temp files are left out. */
+/** Full-text index of the project's text files (project-wide and personal); temp files are left out. */
 export class FileIndex {
   constructor(private readonly db: Client) {}
 

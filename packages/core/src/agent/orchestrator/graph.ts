@@ -38,7 +38,7 @@ export function reactFromAgentGraph(agent: AgentGraph): ReactDelegate {
   return async (goal, config, key, progress) => {
     const ctx = getRunContext(config);
     // Only the run's identity, not the parent's Pregel internals: the agent is its own graph with its own checkpoints.
-    const configurable: RunContext = { thread_id: `${ctx.thread_id}:${key}`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, assistant: ctx.assistant, user_name: ctx.user_name, locale: ctx.locale, workflow: true, scratch_thread: scratchThread(ctx) };
+    const configurable: RunContext = { thread_id: `${ctx.thread_id}:${key}`, project_id: ctx.project_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, assistant: ctx.assistant, user_name: ctx.user_name, locale: ctx.locale, workflow: true, scratch_thread: scratchThread(ctx) };
     const timeout = AbortSignal.timeout(STEP_TIMEOUT_MS);
     const signal = config.signal ? AbortSignal.any([config.signal, timeout]) : timeout;
     let answer = "";

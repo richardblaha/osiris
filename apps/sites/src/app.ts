@@ -10,19 +10,19 @@ const MAX_CACHED_FILE = 2 * 1024 * 1024;
 
 /** Which release a host serves; unknown and unverified hosts are cached too, briefly. */
 class HostMap {
-  private readonly cache = new Map<string, { at: number; site: { tenant: string; release: string } | null }>();
+  private readonly cache = new Map<string, { at: number; site: { project: string; release: string } | null }>();
 
   constructor(private readonly db: Db) {}
 
-  async lookup(host: string): Promise<{ tenant: string; release: string } | null> {
+  async lookup(host: string): Promise<{ project: string; release: string } | null> {
     const hit = this.cache.get(host);
     if (hit && Date.now() - hit.at < SITE_TTL_MS) return hit.site;
     try {
-      const [row] = await this.db.query<{ tenant_id: string; release_id: string | null }>(
-        "SELECT d.tenant_id, d.release_id FROM domains d JOIN tenants t ON t.id = d.tenant_id WHERE d.domain = ? AND d.status = 'verified' AND t.status = 'active'",
+      const [row] = await this.db.query<{ project_id: string; release_id: string | null }>(
+        "SELECT d.project_id, d.release_id FROM domains d JOIN projects t ON t.id = d.project_id WHERE d.domain = ? AND d.status = 'verified' AND t.status = 'active'",
         [host],
       );
-      const site = row?.release_id ? { tenant: row.tenant_id, release: row.release_id } : null;
+      const site = row?.release_id ? { project: row.project_id, release: row.release_id } : null;
       if (this.cache.size > 10_000) this.cache.clear();
       this.cache.set(host, { at: Date.now(), site });
       return site;
@@ -82,13 +82,13 @@ const SECURITY_HEADERS = {
   "x-content-type-options": "nosniff",
   "referrer-policy": "strict-origin-when-cross-origin",
   "strict-transport-security": "max-age=31536000",
-  // A tenant's site runs its own scripts, but can't be framed or reach into other origins' storage.
+  // A project's site runs its own scripts, but can't be framed or reach into other origins' storage.
   "content-security-policy": "frame-ancestors 'self'; base-uri 'self'; object-src 'none'",
   "permissions-policy": "camera=(), microphone=(), geolocation=()",
 };
 
 /**
- * Serves published tenant sites on their custom domains: static files only, GET and HEAD, from the release the
+ * Serves published project sites on their custom domains: static files only, GET and HEAD, from the release the
  * domain points to. No cookies, no server-side code, no directory listings.
  */
 export function createSitesApp({ db, objects }: { db: Db; objects: ObjectStore }) {
@@ -114,7 +114,7 @@ export function createSitesApp({ db, objects }: { db: Db; objects: ObjectStore }
       if (!site) return c.text("Site not found", 404, SECURITY_HEADERS);
       const path = sitePath(new URL(c.req.url).pathname);
       if (!path) return c.text("Not found", 404, SECURITY_HEADERS);
-      const base = `sites/${site.tenant}/${site.release}`;
+      const base = `sites/${site.project}/${site.release}`;
       let file = path;
       let data = await load(`${base}/${file}`);
       // `/about` may be the folder `about/`.

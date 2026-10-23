@@ -1,30 +1,30 @@
 import type { Role } from "@osiris/shared";
 
 export interface Membership {
-  tenantId: string;
+  projectId: string;
   role: Role;
 }
 
 /**
  * The user's claims that grant access (rows of control's `users`). Each takes one value, a comma-separated list or a
- * JSON array: `role=osiris-user`, `tenant=acme`, `tenant-admin=acme,beta`.
+ * JSON array: `role=osiris-user`, `project=acme`, `project-admin=acme,beta`.
  */
-export const CLAIMS = { role: "role", tenant: "tenant", tenantAdmin: "tenant-admin" } as const;
+export const CLAIMS = { role: "role", project: "project", projectAdmin: "project-admin" } as const;
 
 /** Every user of Osiris has one of these roles; without it, the user is refused. */
 export const USER_ROLE = "osiris-user";
-/** Admin of every tenant, manages tenants. */
+/** Admin of every project, manages projects. */
 export const SYSTEM_ADMIN_ROLE = "osiris-admin";
 
-/** A tenant slug: lowercase kebab-case. */
-export const TENANT_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
+/** A project slug: lowercase kebab-case. */
+export const PROJECT_SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
 export interface Access {
   roles: string[];
-  /** Tenants the user is a member of (claim `tenant`). */
-  tenants: string[];
-  /** Tenants the user administers (claim `tenant-admin`). */
-  adminTenants: string[];
+  /** Projects the user is a member of (claim `project`). */
+  projects: string[];
+  /** Projects the user administers (claim `project-admin`). */
+  adminProjects: string[];
 }
 
 /** Claim values as a list: a string is split on commas, an array (a JSON claim value) is taken as is. */
@@ -35,30 +35,30 @@ export function claimList(value: unknown): string[] {
 
 export const accessFromClaims = (claim: (key: string) => unknown): Access => ({
   roles: claimList(claim(CLAIMS.role)),
-  tenants: claimList(claim(CLAIMS.tenant)),
-  adminTenants: claimList(claim(CLAIMS.tenantAdmin)),
+  projects: claimList(claim(CLAIMS.project)),
+  adminProjects: claimList(claim(CLAIMS.projectAdmin)),
 });
 
 export const isSystemAdmin = (access: Access) => access.roles.includes(SYSTEM_ADMIN_ROLE);
 export const isAuthorized = (access: Access) => access.roles.includes(USER_ROLE) || isSystemAdmin(access);
 
 /**
- * Tenant memberships from the claims: `tenant-admin` makes the user an admin, `tenant` a member (no need for both).
+ * Project memberships from the claims: `project-admin` makes the user an admin, `project` a member (no need for both).
  * Values that aren't valid slugs are ignored.
  */
 export function membershipsFromClaims(access: Access): Membership[] {
   const roles = new Map<string, Role>();
-  for (const id of access.tenants) if (TENANT_SLUG.test(id)) roles.set(id, "member");
-  for (const id of access.adminTenants) if (TENANT_SLUG.test(id)) roles.set(id, "admin");
-  return [...roles].map(([tenantId, role]) => ({ tenantId, role })).sort((a, b) => a.tenantId.localeCompare(b.tenantId));
+  for (const id of access.projects) if (PROJECT_SLUG.test(id)) roles.set(id, "member");
+  for (const id of access.adminProjects) if (PROJECT_SLUG.test(id)) roles.set(id, "admin");
+  return [...roles].map(([projectId, role]) => ({ projectId, role })).sort((a, b) => a.projectId.localeCompare(b.projectId));
 }
 
 /**
- * The tenants a user can open: none without an Osiris role, every tenant (as admin) for a system admin,
+ * The projects a user can open: none without an Osiris role, every project (as admin) for a system admin,
  * otherwise those in their claims.
  */
-export function accessibleTenants(access: Access, allTenants: string[]): Membership[] {
+export function accessibleProjects(access: Access, allProjects: string[]): Membership[] {
   if (!isAuthorized(access)) return [];
   if (!isSystemAdmin(access)) return membershipsFromClaims(access);
-  return allTenants.map((tenantId) => ({ tenantId, role: "admin" as const }));
+  return allProjects.map((projectId) => ({ projectId, role: "admin" as const }));
 }

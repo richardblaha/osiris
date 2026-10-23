@@ -1,4 +1,4 @@
--- Inquiries customers left with the tenant's public assistant: who, how to reach them, what they want, and the chat
+-- Inquiries customers left with the project's public assistant: who, how to reach them, what they want, and the chat
 CREATE TABLE inquiries (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

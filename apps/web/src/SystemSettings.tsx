@@ -5,15 +5,15 @@ import { CUSTOM_PERSONA, FEATURES, type SystemDefaults, type UserSettings } from
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
-import { featureLabels } from "./Tenants.tsx";
+import { featureLabels } from "./Projects.tsx";
 import { QUOTA_KEYS, quotaLabel } from "./Quotas.tsx";
 import { LanguageSelect } from "./Profile.tsx";
 import { t } from "i18next";
 
-/** What new tenants and users start with (system admins); existing ones keep what they have. */
+/** What new projects and users start with (system admins); existing ones keep what they have. */
 export function SystemSettings({ part = "features", onSelect }: { part?: SettingsPart; onSelect: (part: SettingsPart) => void }) {
   return <MasterDetail title={t("app:nav.settings")} groups={[
-    { title: t("settings:newTenant"), items: [{ key: "features", label: title("features") }, { key: "quotas", label: title("quotas") }, { key: "runtime", label: title("runtime") }] },
+    { title: t("settings:newProject"), items: [{ key: "features", label: title("features") }, { key: "quotas", label: title("quotas") }, { key: "runtime", label: title("runtime") }] },
     { title: t("settings:newUser"), items: [{ key: "personalization", label: title("personalization") }, { key: "persona", label: title("persona") }] },
   ]} selected={part} onSelect={(key) => onSelect(key as SettingsPart)}>
     <DefaultsForm key={part} part={part} />
@@ -30,7 +30,7 @@ function DefaultsForm({ part }: { part: SettingsPart }) {
   useEffect(() => void api.admin.defaults().then(setD, (e: Error) => setError(e.message)), []);
   if (!d) return <Pending error={error} className="detail relative" />;
 
-  const tenant = (change: Partial<SystemDefaults["tenant"]>) => (setSaved(false), setD({ ...d, tenant: { ...d.tenant, ...change } }));
+  const project = (change: Partial<SystemDefaults["project"]>) => (setSaved(false), setD({ ...d, project: { ...d.project, ...change } }));
   const user = (change: Partial<SystemDefaults["user"]>) => (setSaved(false), setD({ ...d, user: { ...d.user, ...change } }));
   const persona = d.user.persona ?? { character: "", source: "", description: "" };
   const setPersona = (description: string) => user({ persona: description.trim() ? { character: CUSTOM_PERSONA, source: "", description } : null });
@@ -42,11 +42,11 @@ function DefaultsForm({ part }: { part: SettingsPart }) {
       // Each smaller form saves only its section, preserving the latest values of the other sections.
       const body = await api.admin.defaults();
       switch (part) {
-        case "features": body.tenant.features = d.tenant.features; break;
-        case "quotas": body.tenant.quotas = d.tenant.quotas; break;
+        case "features": body.project.features = d.project.features; break;
+        case "quotas": body.project.quotas = d.project.quotas; break;
         case "runtime":
-          body.tenant.idleMinutes = d.tenant.idleMinutes;
-          body.tenant.storageGb = d.tenant.storageGb;
+          body.project.idleMinutes = d.project.idleMinutes;
+          body.project.storageGb = d.project.storageGb;
           break;
         case "personalization": body.user = { ...d.user, persona: body.user.persona }; break;
         case "persona": body.user.persona = d.user.persona; break;
@@ -69,7 +69,7 @@ function DefaultsForm({ part }: { part: SettingsPart }) {
           <div className="mt-1 grid gap-1 sm:grid-cols-2">
             {FEATURES.map((f) => (
               <label key={f} className="flex items-start gap-2 text-sm">
-                <input type="checkbox" className="mt-1" checked={d.tenant.features[f]} onChange={(e) => tenant({ features: { ...d.tenant.features, [f]: e.target.checked } })} />
+                <input type="checkbox" className="mt-1" checked={d.project.features[f]} onChange={(e) => project({ features: { ...d.project.features, [f]: e.target.checked } })} />
                 <span>{featureLabels()[f].label}</span>
               </label>
             ))}
@@ -83,18 +83,18 @@ function DefaultsForm({ part }: { part: SettingsPart }) {
               <input
                 type="number"
                 min={0}
-                value={d.tenant.quotas[key] ?? ""}
-                onChange={(e) => tenant({ quotas: { ...d.tenant.quotas, [key]: e.target.value === "" ? null : Number(e.target.value) } })}
+                value={d.project.quotas[key] ?? ""}
+                onChange={(e) => project({ quotas: { ...d.project.quotas, [key]: e.target.value === "" ? null : Number(e.target.value) } })}
                 className="field w-48"
               />
             </Field>
           ))}
           {part === "runtime" && <>
           <Field label={t("settings:idle")}>
-            <input type="number" min={0} max={1440} value={d.tenant.idleMinutes} onChange={(e) => tenant({ idleMinutes: Number(e.target.value) })} className="field w-48" />
+            <input type="number" min={0} max={1440} value={d.project.idleMinutes} onChange={(e) => project({ idleMinutes: Number(e.target.value) })} className="field w-48" />
           </Field>
           <Field label={t("settings:disk")}>
-            <input type="number" min={1} max={500} value={d.tenant.storageGb} onChange={(e) => tenant({ storageGb: Number(e.target.value) })} className="field w-48" />
+            <input type="number" min={1} max={500} value={d.project.storageGb} onChange={(e) => project({ storageGb: Number(e.target.value) })} className="field w-48" />
           </Field>
           </>}
       </section>}

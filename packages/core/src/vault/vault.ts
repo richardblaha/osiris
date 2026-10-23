@@ -3,11 +3,11 @@ import type { Scope, SecretSummary } from "@osiris/shared";
 import type { SecretBox } from "../secrets.ts";
 import { hostAllowed, SECRET_NAME, SECRET_REF, SecretUseError } from "./template.ts";
 
-/** Row owner: '' for tenant-wide secrets, the user's sub for personal ones. */
-export const secretOwner = (scope: Scope, userId: string) => (scope === "tenant" ? "" : userId);
+/** Row owner: '' for project-wide secrets, the user's sub for personal ones. */
+export const secretOwner = (scope: Scope, userId: string) => (scope === "project" ? "" : userId);
 
 /**
- * Secrets of one tenant and its users. Values are sealed at rest and never leave the server except when
+ * Secrets of one project and its users. Values are sealed at rest and never leave the server except when
  * substituted into a request to one of the secret's allowed hosts.
  */
 export class SecretVault {
@@ -16,7 +16,7 @@ export class SecretVault {
     private readonly box: SecretBox,
   ) {}
 
-  /** Tenant secrets plus `userId`'s personal ones, without values; a tenant one the user has their own of is `overridden`. */
+  /** Project secrets plus `userId`'s personal ones, without values; a project one the user has their own of is `overridden`. */
   async list(userId: string): Promise<SecretSummary[]> {
     const { rows } = await this.db.execute({
       sql: `SELECT s.owner, s.name, s.allowed_hosts, s.description, s.updated_at,
@@ -26,7 +26,7 @@ export class SecretVault {
     });
     return rows.map((r) => ({
       name: String(r.name),
-      scope: r.owner === "" ? "tenant" : "personal",
+      scope: r.owner === "" ? "project" : "personal",
       ...(Number(r.overridden) ? { overridden: true } : {}),
       allowedHosts: JSON.parse(String(r.allowed_hosts)) as string[],
       description: String(r.description),
@@ -59,8 +59,8 @@ export class SecretVault {
   }
 
   /**
-   * Substitutes `{{secret:NAME}}` in `texts` for a request to `host`. `userId` '' resolves tenant secrets only
-   * (tenant-wide MCP servers); a user's sub resolves their personal secrets first, then the tenant's.
+   * Substitutes `{{secret:NAME}}` in `texts` for a request to `host`. `userId` '' resolves project secrets only
+   * (project-wide MCP servers); a user's sub resolves their personal secrets first, then the project's.
    * Throws SecretUseError for an unknown secret or a host the secret isn't allowed for.
    * Returns the filled texts and the values used, for redaction.
    */

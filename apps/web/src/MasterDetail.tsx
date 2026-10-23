@@ -19,7 +19,7 @@ export interface PanelGroup {
 }
 
 /**
- * A list in a secondary panel on the left and the chosen item on the right, as in tenant and user administration.
+ * A list in a secondary panel on the left and the chosen item on the right, as in project and user administration.
  * `selected` null is the add form (`add`); undefined shows `placeholder`.
  */
 export function MasterDetail(props: {

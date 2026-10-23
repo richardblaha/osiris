@@ -1,4 +1,4 @@
-import type { Dashboard, DashboardDefinition, DashboardPanel, DashboardRange, MetricSeries, PanelData, PanelFormat, PanelSource, TenantUsage, WebSummary } from "@osiris/shared";
+import type { Dashboard, DashboardDefinition, DashboardPanel, DashboardRange, MetricSeries, PanelData, PanelFormat, PanelSource, ProjectUsage, WebSummary } from "@osiris/shared";
 import { DASHBOARD_RANGES } from "@osiris/shared";
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api.ts";
@@ -14,7 +14,7 @@ const HOUR = 3_600_000;
 const RANGE_MS: Record<DashboardRange, number> = { "1h": HOUR, "24h": 24 * HOUR, "7d": 7 * 24 * HOUR, "30d": 30 * 24 * HOUR, "90d": 90 * 24 * HOUR };
 const rangeLabel = (r: DashboardRange) => t(`dashboards:ranges.${r}`);
 
-/** Dashboards shipped with Osiris: the system's (system admins) and every tenant's. Built per render, in the current language. */
+/** Dashboards shipped with Osiris: the system's (system admins) and every project's. Built per render, in the current language. */
 const systemBuiltins = (): Dashboard[] => [
   {
     id: "builtin:system",
@@ -23,14 +23,14 @@ const systemBuiltins = (): Dashboard[] => [
     definition: {
       range: "24h",
       panels: [
-        { title: t("dashboards:panels.tenants"), kind: "stat", width: 4, source: { type: "cluster", view: "summary" } },
+        { title: t("dashboards:panels.projects"), kind: "stat", width: 4, source: { type: "cluster", view: "summary" } },
         { title: t("dashboards:panels.nodeCpu"), kind: "line", source: { type: "metric", name: "k8s.node.cpu.usage", metricType: "gauge", groupBy: "k8s.node.name" } },
         { title: t("dashboards:panels.nodeMemory"), kind: "line", source: { type: "metric", name: "k8s.node.memory.working_set", metricType: "gauge", groupBy: "k8s.node.name" } },
         { title: t("dashboards:panels.latency"), kind: "line", source: { type: "metric", name: "http.server.request.duration", metricType: "histogram", groupBy: "service.name" } },
         { title: t("dashboards:panels.logErrors"), kind: "bar", source: { type: "logs", view: "by_service", severity: "error" } },
         { title: t("dashboards:panels.pods"), kind: "table", source: { type: "cluster", view: "pods" } },
         { title: t("dashboards:panels.events"), kind: "table", source: { type: "cluster", view: "events" } },
-        { title: t("dashboards:panels.tenantState"), kind: "table", width: 4, source: { type: "cluster", view: "tenants" } },
+        { title: t("dashboards:panels.projectState"), kind: "table", width: 4, source: { type: "cluster", view: "projects" } },
       ],
     },
   },
@@ -39,7 +39,7 @@ const systemBuiltins = (): Dashboard[] => [
     id: "builtin:usage",
     name: t("dashboards:builtin.usage"),
     builtin: true,
-    definition: { range: "30d", panels: [{ title: t("dashboards:panels.tenantQuotas"), kind: "table", width: 4, source: { type: "usage", view: "tenants" } }] },
+    definition: { range: "30d", panels: [{ title: t("dashboards:panels.projectQuotas"), kind: "table", width: 4, source: { type: "usage", view: "projects" } }] },
   },
 ];
 
@@ -60,7 +60,7 @@ const webBuiltin = (totals: string): Dashboard => ({
   },
 });
 
-const tenantBuiltins = (): Dashboard[] => [
+const projectBuiltins = (): Dashboard[] => [
   {
     id: "builtin:usage",
     name: t("dashboards:builtin.usage"),
@@ -86,10 +86,10 @@ const NEW_DEFINITION = (system: boolean): DashboardDefinition =>
 const SOURCES_HELP = {
   system: `metric: { "type": "metric", "name": "k8s.node.cpu.usage", "metricType": "gauge" | "sum" | "histogram", "groupBy"?: "k8s.node.name" }
 logs: { "type": "logs", "view": "by_service" | "list", "severity"?: "warn" | "error" | "fatal", "namespace"?, "service"?, "q"? }
-cluster: { "type": "cluster", "view": "summary" | "tenants" | "pods" | "events" }
+cluster: { "type": "cluster", "view": "summary" | "projects" | "pods" | "events" }
 web: { "type": "web", "view": "totals" | "series" | "sites" | "pages" | "referrers" | "countries" }
-usage: { "type": "usage", "view": "tenants" }`,
-  tenant: `database: { "type": "database", "sql": "SELECT stage, SUM(value) FROM deals GROUP BY stage" }
+usage: { "type": "usage", "view": "projects" }`,
+  project: `database: { "type": "database", "sql": "SELECT stage, SUM(value) FROM deals GROUP BY stage" }
 web: { "type": "web", "view": "totals" | "series" | "sites" | "pages" | "referrers" | "countries" }
 usage: { "type": "usage", "view": "quotas" | "users" | "assistants" | "months" }`,
 };
@@ -126,12 +126,12 @@ interface Loader {
   from: number;
   to: number;
   web: () => Promise<WebSummary>;
-  usage: () => Promise<TenantUsage>;
+  usage: () => Promise<ProjectUsage>;
   /** User id → name (admins: all members; members: themselves). */
   names: () => Promise<Map<string, string>>;
 }
 
-const USAGE_METERS: { key: keyof TenantUsage; bytes?: boolean }[] = [
+const USAGE_METERS: { key: keyof ProjectUsage; bytes?: boolean }[] = [
   { key: "tokens" },
   { key: "userTokens" },
   { key: "storage", bytes: true },
@@ -175,13 +175,13 @@ async function load(source: PanelSource, l: Loader): Promise<PanelData> {
       if (source.view === "series") return { columns: [t("dashboards:columns.time"), t("dashboards:columns.pageviews"), t("dashboards:columns.visitors")], rows: w.series.map((x) => [x.t, x.pageviews, x.visitors]), formats: ["time", "number", "number"] };
       if (source.view === "sites") {
         return l.system
-          ? { columns: [t("dashboards:columns.site"), t("app:nav.tenant"), t("dashboards:columns.pageviews"), t("dashboards:columns.visitors")], rows: w.sites.map((s) => [s.site, s.tenant ?? "—", s.pageviews, s.visitors]), formats: ["text", "text", "number", "number"] }
+          ? { columns: [t("dashboards:columns.site"), t("app:nav.project"), t("dashboards:columns.pageviews"), t("dashboards:columns.visitors")], rows: w.sites.map((s) => [s.site, s.project ?? "—", s.pageviews, s.visitors]), formats: ["text", "text", "number", "number"] }
           : { columns: [t("dashboards:columns.site"), t("dashboards:columns.pageviews"), t("dashboards:columns.visitors")], rows: w.sites.map((s) => [s.site, s.pageviews, s.visitors]), formats: ["text", "number", "number"] };
       }
       return top(w[source.view], { pages: t("dashboards:columns.page"), referrers: t("dashboards:columns.referrer"), countries: t("dashboards:columns.country") }[source.view]);
     }
     case "usage": {
-      if (source.view === "tenants") return d.usage();
+      if (source.view === "projects") return d.usage();
       if (source.view === "quotas") {
         const u = await l.usage();
         return { columns: [t("dashboards:columns.quota"), t("dashboards:columns.usage")], rows: USAGE_METERS.map((m) => [t(`dashboards:meters.${m.key}`), { ...u[m.key], bytes: m.bytes }]), formats: ["text", "meter"] };
@@ -201,9 +201,9 @@ async function load(source: PanelSource, l: Loader): Promise<PanelData> {
   }
 }
 
-/** System > Dashboard (system admins) or Tenant > Dashboard (members see, admins edit): the built-in ones and own ones. */
+/** System > Dashboard (system admins) or Project > Dashboard (members see, admins edit): the built-in ones and own ones. */
 export function Dashboards({ system, canEdit, me }: { system: boolean; canEdit: boolean; me: { id: string; name: string | null } }) {
-  const builtins = system ? systemBuiltins() : tenantBuiltins();
+  const builtins = system ? systemBuiltins() : projectBuiltins();
   const [own, setOwn] = useState<Dashboard[]>();
   const [selected, setSelected] = useState<string | null>(builtins[0]!.id);
   const [editing, setEditing] = useState(false);
@@ -274,7 +274,7 @@ function DashboardView({
     const to = Date.now();
     const from = to - RANGE_MS[range];
     let web: Promise<WebSummary> | undefined;
-    let usage: Promise<TenantUsage> | undefined;
+    let usage: Promise<ProjectUsage> | undefined;
     let names: Promise<Map<string, string>> | undefined;
     return {
       system,
@@ -493,7 +493,7 @@ function DashboardEditor({
         <p className="text-xs text-fg-muted">
           {t("dashboards:definitionHelp", { ranges: DASHBOARD_RANGES.join(", ") })}
         </p>
-        <pre className="overflow-x-auto rounded-md bg-sidebar p-2 text-xs text-fg-secondary">{SOURCES_HELP[system ? "system" : "tenant"]}</pre>
+        <pre className="overflow-x-auto rounded-md bg-sidebar p-2 text-xs text-fg-secondary">{SOURCES_HELP[system ? "system" : "project"]}</pre>
         <LazyCodeEditor path="dashboard.json" value={json} onChange={setJson} height="45vh" />
       </div>
       <ErrorNotice error={error} />

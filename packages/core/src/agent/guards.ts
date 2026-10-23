@@ -2,16 +2,16 @@ import type { Client } from "@libsql/client";
 import { GUARD_NAME, type Guard } from "@osiris/shared";
 import { FileError, type FileStore } from "../files/store.ts";
 
-/** Where the tenant's guards live in its files; `users/` and `assistants/` hold the users' and public assistants'. */
+/** Where the project's guards live in its files; `users/` and `assistants/` hold the users' and public assistants'. */
 export const GUARDS_DIR = "guards";
 
 /** Guards are the admins' (and each user's own); the agent's file tools never write there, so no prompt can lift them. */
 export const isGuardPath = (path: string) => path.split("/").filter(Boolean)[0] === GUARDS_DIR;
 
-export type GuardOwner = { level: "tenant" } | { level: "user"; userId: string } | { level: "assistant"; assistant: string };
+export type GuardOwner = { level: "project" } | { level: "user"; userId: string } | { level: "assistant"; assistant: string };
 
 const dirOf = (o: GuardOwner) =>
-  o.level === "tenant"
+  o.level === "project"
     ? GUARDS_DIR
     : o.level === "user"
       ? `${GUARDS_DIR}/users/${Buffer.from(o.userId).toString("base64url")}`
@@ -33,14 +33,14 @@ export const guardsText = (guards: Guard[]) =>
     .filter(Boolean)
     .join("\n");
 
-const tenant = { scope: "tenant" } as const;
+const project = { scope: "project" } as const;
 
-/** The tenant's, its users' and its public assistants' guards, one `<name>.md` each, read on every call. */
+/** The project's, its users' and its public assistants' guards, one `<name>.md` each, read on every call. */
 export class GuardStore {
   constructor(private readonly files: FileStore) {}
 
   async list(owner: GuardOwner): Promise<Guard[]> {
-    const entries = await this.files.list(tenant, dirOf(owner)).catch((err) => {
+    const entries = await this.files.list(project, dirOf(owner)).catch((err) => {
       if (err instanceof FileError && err.code === "not_found") return [];
       throw err;
     });
@@ -48,18 +48,18 @@ export class GuardStore {
     for (const e of entries) {
       const name = e.name.replace(/\.md$/, "");
       if (e.type !== "file" || !e.name.endsWith(".md") || !GUARD_NAME.test(name)) continue;
-      guards.push(parseGuard(name, (await this.files.read(tenant, e.path)).data.toString("utf8")));
+      guards.push(parseGuard(name, (await this.files.read(project, e.path)).data.toString("utf8")));
     }
     return guards.sort((a, b) => a.name.localeCompare(b.name));
   }
 
   async put(owner: GuardOwner, guard: Guard): Promise<void> {
-    await this.files.write(tenant, `${dirOf(owner)}/${guard.name}.md`, Buffer.from(formatGuard(guard)), { overwrite: true });
+    await this.files.write(project, `${dirOf(owner)}/${guard.name}.md`, Buffer.from(formatGuard(guard)), { overwrite: true });
   }
 
   async delete(owner: GuardOwner, name: string): Promise<boolean> {
     try {
-      await this.files.delete(tenant, `${dirOf(owner)}/${name}.md`);
+      await this.files.delete(project, `${dirOf(owner)}/${name}.md`);
       return true;
     } catch (err) {
       if (err instanceof FileError && err.code === "not_found") return false;
@@ -69,7 +69,7 @@ export class GuardStore {
 
   /** A public assistant's guards go with it. */
   async deleteAll(owner: GuardOwner): Promise<void> {
-    await this.files.delete(tenant, dirOf(owner)).catch((err) => {
+    await this.files.delete(project, dirOf(owner)).catch((err) => {
       if (!(err instanceof FileError && err.code === "not_found")) throw err;
     });
   }
@@ -80,7 +80,7 @@ export class GuardStore {
     for (const r of rows) {
       const owner = String(r.owner);
       const to: GuardOwner | null =
-        owner === "" ? { level: "tenant" } : owner.startsWith("@public:") ? { level: "assistant", assistant: owner.slice(8) } : owner.startsWith("@") ? null : { level: "user", userId: owner };
+        owner === "" ? { level: "project" } : owner.startsWith("@public:") ? { level: "assistant", assistant: owner.slice(8) } : owner.startsWith("@") ? null : { level: "user", userId: owner };
       if (to) await importLines(this, to, String(r.guards));
       await db.execute({ sql: "UPDATE assistant_profiles SET guards = '' WHERE owner = ?", args: [owner] });
     }

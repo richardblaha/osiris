@@ -6,13 +6,13 @@ const bool = z
   .transform((v) => v === "true" || v === "1");
 const pem = z.string().transform((v) => v.replace(/\\n/g, "\n"));
 
-/** One runtime serves one tenant. In the cluster the operator fills this in (ConfigMap and Secret per tenant). */
+/** One runtime serves one project. In the cluster the operator fills this in (ConfigMap and Secret per project). */
 const schema = z
   .object({
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
     PORT: z.coerce.number().int().default(8080),
-    TENANT_ID: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
-    // The tenant's volume: the database in db/, files in files/.
+    PROJECT_ID: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
+    // The project's volume: the database in db/, files in files/.
     DATA_DIR: z.string().default("/data"),
 
     // Control: features, backups, schedules, site publishing.
@@ -21,11 +21,11 @@ const schema = z
     INTERNAL_JWT_PUBLIC_KEY: pem,
     // Projected ServiceAccount token (audience osiris-control), sent to control.
     RUNTIME_TOKEN_PATH: z.string().default("/var/run/secrets/osiris/token"),
-    // Development only: authenticate to control with `dev-runtime:<tenant>`.
+    // Development only: authenticate to control with `dev-runtime:<project>`.
     DEV_RUNTIME_AUTH: bool,
 
-    // This tenant's key for sealing secrets (derived by the operator from the master key), 32 bytes base64.
-    TENANT_SECRETS_KEY: z.string().optional(),
+    // This project's key for sealing secrets (derived by the operator from the master key), 32 bytes base64.
+    PROJECT_SECRETS_KEY: z.string().optional(),
 
     AUDIO_MODEL: z.string().default("voxtral-mini-latest"),
     OCR_MODEL: z.string().default("mistral-ocr-latest"),
@@ -70,7 +70,7 @@ const schema = z
   })
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";
-    if (prod && !env.TENANT_SECRETS_KEY) ctx.addIssue({ code: "custom", path: ["TENANT_SECRETS_KEY"], message: "is required in production" });
+    if (prod && !env.PROJECT_SECRETS_KEY) ctx.addIssue({ code: "custom", path: ["PROJECT_SECRETS_KEY"], message: "is required in production" });
     if (prod && env.MCP_ALLOW_PRIVATE) ctx.addIssue({ code: "custom", path: ["MCP_ALLOW_PRIVATE"], message: "must not be enabled in production" });
     if (prod && env.DEV_RUNTIME_AUTH) ctx.addIssue({ code: "custom", path: ["DEV_RUNTIME_AUTH"], message: "must not be enabled in production" });
   });

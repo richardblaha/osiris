@@ -1,19 +1,19 @@
 {
   "scope": {
     "personal": "Applies to you only.",
-    "tenant": "Applies to everyone in the tenant.",
-    "tenantAdminOnly": "Applies to everyone in the tenant. Only a tenant administrator can change it.",
+    "project": "Applies to everyone in the project.",
+    "projectAdminOnly": "Applies to everyone in the project. Only a project administrator can change it.",
     "overridden": "Your own copy replaces this for you; the assistant uses yours.",
     "choose": "For whom",
-    "forTenant": "The whole tenant",
+    "forProject": "The whole project",
     "forMe": "Just me",
     "makeCopy": "Make my own copy",
-    "copyHint": "Your copy replaces this one for you only; the tenant's stays as it is.",
-    "layered": "The tenant's records and your own. Your own copy replaces the tenant's for you."
+    "copyHint": "Your copy replaces this one for you only; the project's stays as it is.",
+    "layered": "The project's records and your own. Your own copy replaces the project's for you."
   },
   "badge": {
     "bundled": "default",
-    "tenant": "tenant",
+    "project": "project",
     "personal": "personal",
     "overridden": "replaced"
   },

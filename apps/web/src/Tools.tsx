@@ -2,7 +2,7 @@ import { FEATURES, type BuiltinTool } from "@osiris/shared";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
-import { featureLabels } from "./Tenants.tsx";
+import { featureLabels } from "./Projects.tsx";
 import { t as i18n } from "i18next";
 
 /** The Google and Microsoft tools (`<provider>_<area>_<action>`) are split by service. */
@@ -61,10 +61,10 @@ function GroupSwitch({ group, disabled, onChange }: { group: Group; disabled: bo
 }
 
 /**
- * The assistant's built-in tools, grouped by feature (the Google and Microsoft ones by service). A system admin switches each one on or off for the tenant;
+ * The assistant's built-in tools, grouped by feature (the Google and Microsoft ones by service). A system admin switches each one on or off for the project;
  * the runtime picks the change up within half a minute, so the list keeps the admin's choice rather than reloading.
  */
-export function BuiltinTools({ tenantId, systemAdmin }: { tenantId: string; systemAdmin: boolean }) {
+export function BuiltinTools({ projectId, systemAdmin }: { projectId: string; systemAdmin: boolean }) {
   const [tools, setTools] = useState<BuiltinTool[]>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -74,7 +74,7 @@ export function BuiltinTools({ tenantId, systemAdmin }: { tenantId: string; syst
   const toggle = (names: string[], on: boolean) =>
     attempt(setBusy, setError, async () => {
       const next = tools!.map((t) => (names.includes(t.name) ? { ...t, disabled: !on } : t));
-      await api.admin.updateTenant(tenantId, { disabledTools: next.filter((t) => t.disabled).map((t) => t.name) });
+      await api.admin.updateProject(projectId, { disabledTools: next.filter((t) => t.disabled).map((t) => t.name) });
       setTools(next);
     });
 

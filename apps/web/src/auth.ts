@@ -12,7 +12,7 @@ const manager = devUser
       client_id: "osiris-web",
       redirect_uri: `${location.origin}/callback`,
       post_logout_redirect_uri: location.origin,
-      // profile carries the claims role, tenant, tenant-admin and phone_number.
+      // profile carries the claims role, project, project-admin and phone_number.
       scope: "openid profile email",
       userStore: new WebStorageStateStore({ store: localStorage }),
       // Renews with the refresh token, which lives as long as the sign-in session.

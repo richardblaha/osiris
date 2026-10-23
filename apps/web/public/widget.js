@@ -1,15 +1,15 @@
 /*
  * Osiris chat widget for a business's website:
- *   <script src="https://osiris.k6labs.cz/widget.js" data-tenant="<tenant>" data-assistant="<assistant>" async></script>
- * A button in the corner opens the business's public assistant (osiris.k6labs.cz/c/<tenant>/<assistant>) in a panel;
- * without data-assistant, the tenant's first one. The button speaks the page's language (data-lang, else <html lang>,
+ *   <script src="https://osiris.k6labs.cz/widget.js" data-project="<project>" data-assistant="<assistant>" async></script>
+ * A button in the corner opens the business's public assistant (osiris.k6labs.cz/c/<project>/<assistant>) in a panel;
+ * without data-assistant, the project's first one. The button speaks the page's language (data-lang, else <html lang>,
  * else the browser's): English, or Czech for Czech and Slovak; data-label replaces its text.
  */
 (function () {
   var script = document.currentScript;
-  var tenant = script && script.getAttribute("data-tenant");
+  var project = script && script.getAttribute("data-project");
   var assistant = script && script.getAttribute("data-assistant");
-  if (!tenant || document.getElementById("osiris-widget")) return;
+  if (!project || document.getElementById("osiris-widget")) return;
   var origin = new URL(script.src).origin;
   var color = script.getAttribute("data-color") || "#0f766e";
   var texts = { en: { label: "Ask us", close: "Close" }, cs: { label: "Zeptejte se nás", close: "Zavřít" } };
@@ -37,7 +37,7 @@
   button.addEventListener("click", function () {
     var open = frame.style.display === "none";
     // The chat loads the first time it's opened.
-    if (open && !frame.src) frame.src = origin + "/c/" + encodeURIComponent(tenant) + (assistant ? "/" + encodeURIComponent(assistant) : "") + "?embed=1";
+    if (open && !frame.src) frame.src = origin + "/c/" + encodeURIComponent(project) + (assistant ? "/" + encodeURIComponent(assistant) : "") + "?embed=1";
     frame.style.display = open ? "block" : "none";
     button.textContent = open ? text.close : label;
     button.setAttribute("aria-expanded", String(open));

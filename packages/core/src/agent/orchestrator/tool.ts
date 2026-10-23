@@ -16,7 +16,7 @@ export const WORKFLOW_TOOL = "run_workflow";
 /** The orchestrator keeps its own checkpoints next to the chat's, on a thread of its own. */
 export function workflowConfig(ctx: RunContext, signal?: AbortSignal): RunnableConfig {
   return {
-    configurable: { thread_id: `${ctx.thread_id}:workflow`, tenant_id: ctx.tenant_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, user_name: ctx.user_name, locale: ctx.locale, scratch_thread: scratchThread(ctx) },
+    configurable: { thread_id: `${ctx.thread_id}:workflow`, project_id: ctx.project_id, user_id: ctx.user_id, role: ctx.role, channel: ctx.channel, user_name: ctx.user_name, locale: ctx.locale, scratch_thread: scratchThread(ctx) },
     signal,
   };
 }
