@@ -319,7 +319,15 @@ export interface AdminUser extends DirectoryUser {
 /** Who a setting applies to: the whole tenant (managed by admins) or only the current user. */
 export type Scope = "tenant" | "personal";
 
-export interface SkillSummary {
+/**
+ * A user's own layer over the tenant's settings: each list holds the tenant's records and the viewer's own, and a
+ * tenant record the viewer replaced with their own copy (same name, id or path) is `overridden` for them.
+ */
+export interface Layered {
+  overridden?: boolean;
+}
+
+export interface SkillSummary extends Layered {
   name: string;
   description: string;
   /** Precedence for one name: `personal` (this user) > `tenant` (admin) > `bundled` (ships with the app). */
@@ -332,16 +340,18 @@ export interface Skill extends SkillSummary {
   instructions: string;
 }
 
-export interface Memory {
+export interface Memory extends Layered {
   id: string;
   content: string;
   /** `tenant`: shared with everyone in the tenant (admins manage it); `personal`: only this user. */
   scope: Scope;
+  /** A personal memory that replaces this tenant memory for its owner. */
+  overrides?: string;
   createdAt: string;
 }
 
 /** A remote MCP server, tenant-wide or personal. Header values are write-only: the API returns only their names. */
-export interface McpServer {
+export interface McpServer extends Layered {
   name: string;
   scope: Scope;
   /** Empty for tenant servers when the viewer isn't an admin (the URL may carry an API key). */
@@ -359,7 +369,7 @@ export interface McpServer {
 
 export type McpServerStatus = { ok: true; tools: string[] } | { ok: false; error: string };
 
-export interface DocumentSummary {
+export interface DocumentSummary extends Layered {
   id: string;
   title: string;
   chunks: number;
@@ -388,7 +398,7 @@ export const CUSTOM_PERSONA = "Vlastní";
 export type UserDefaults = UserSettings & { persona: Persona | null };
 
 /** A secret without its value: values are write-only and never leave the server. */
-export interface SecretSummary {
+export interface SecretSummary extends Layered {
   name: string;
   scope: Scope;
   /** Hosts the secret may be sent to (`api.example.com` or `*.example.com`). */

@@ -26,5 +26,12 @@
   "newFile": "Nový soubor",
   "newFolder": "Nová složka",
   "file": "Soubor",
-  "noPreview": "{{type}} · {{size}}. Náhled tu není, soubor si můžete stáhnout."
+  "noPreview": "{{type}} · {{size}}. Náhled tu není, soubor si můžete stáhnout.",
+  "readOnlyHint": "Tyto soubory mění jen správci firmy. Zkopíruj si soubor mezi své a uprav ho pro sebe.",
+  "copyOwn": "Zkopírovat k sobě",
+  "copied": "Zkopírováno do tvých souborů jako {{path}}. Tvoje kopie teď pro tebe nahrazuje firemní.",
+  "tabs": {
+    "tenant": "Firma",
+    "personal": "Moje"
+  }
 }

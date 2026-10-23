@@ -33,6 +33,23 @@ describe("knowledge base", () => {
     await expect(acme.knowledge.putDocument("../x.md", "x")).rejects.toThrow();
   });
 
+  it("gives a user their own documents, which replace the tenant's of the same id for them alone", async () => {
+    const { tenants } = createTestTenants();
+    const acme = await tenants.get("acme");
+    await acme.knowledge.putDocument("cenik.md", "Hodinová sazba elektrikáře je 650 Kč.");
+    await acme.knowledge.putDocument("cenik.md", "Moje hodinová sazba elektrikáře je 700 Kč.", undefined, "bob");
+    await acme.knowledge.putDocument("poznamky.md", "Bobova poznámka o rozvaděči.", undefined, "bob");
+
+    const found = async (user: string, query: string) => (await acme.knowledge.search(query, user)).map((r) => `${r.owner || "tenant"}:${r.content}`);
+    // Vector search returns the nearest of what the user may see, however far: the tenant's price list isn't among Bob's.
+    expect(await found("bob", "hodinová sazba elektrikáře")).toEqual(["bob:Moje hodinová sazba elektrikáře je 700 Kč.", "bob:Bobova poznámka o rozvaděči."]);
+    expect(await found("carol", "hodinová sazba elektrikáře")).toEqual(["tenant:Hodinová sazba elektrikáře je 650 Kč."]);
+    // A public assistant only ever searches the tenant's.
+    expect((await acme.knowledge.search("sazba", "", 5, { under: ["knowledge/cenik.md"] })).map((r) => r.content)).toEqual(["Hodinová sazba elektrikáře je 650 Kč."]);
+    expect(await acme.knowledge.deleteDocument("cenik.md", "bob")).toBe(true);
+    expect((await found("bob", "hodinová sazba elektrikáře"))[0]).toBe("tenant:Hodinová sazba elektrikáře je 650 Kč.");
+  });
+
   it("serves documents to the tenant's people", async () => {
     const { tenants } = createTestTenants();
     const app = await createTestApp(tenants);

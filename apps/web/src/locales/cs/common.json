@@ -3,12 +3,19 @@
     "personal": "Platí jen pro tebe.",
     "tenant": "Platí pro všechny v tenantovi.",
     "tenantAdminOnly": "Platí pro všechny v tenantovi. Měnit ho může jen správce tenanta.",
-    "tenantAdminOnlyList": "Platí pro všechny v tenantovi. Měnit je může jen správce tenanta."
+    "overridden": "Pro tebe ji nahrazuje tvoje vlastní kopie; asistent používá tu tvoji.",
+    "choose": "Pro koho",
+    "forTenant": "Celá firma",
+    "forMe": "Jen já",
+    "makeCopy": "Vytvořit vlastní kopii",
+    "copyHint": "Tvoje kopie nahradí tuto jen tobě; firemní zůstane, jak je.",
+    "layered": "Položky firmy a tvoje vlastní. Tvoje vlastní kopie má pro tebe přednost před firemní."
   },
   "badge": {
     "bundled": "výchozí",
     "tenant": "tenant",
-    "personal": "osobní"
+    "personal": "osobní",
+    "overridden": "nahrazeno"
   },
   "loading": "Načítám",
   "loadingCaption": "NAČÍTÁNÍ...",

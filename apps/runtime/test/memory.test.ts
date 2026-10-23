@@ -39,15 +39,26 @@ describe("memory tools", () => {
     expect(model.calls[2]?.[0]?.text).toMatch(/# PAMĚŤ[\s\S]*Preferuje platbu převodem/);
   });
 
-  it("lets members remember facts for the whole tenant", async () => {
+  it("remembers for the whole tenant when an admin asks, and for themselves when a member does", async () => {
     const { tenants } = createTestTenants([
       new AIMessage({ content: "", tool_calls: [{ id: "m1", name: "remember", args: { content: "Sleva 5 % pro stálé zákazníky" } }] }),
+      new AIMessage("Zapamatováno."),
+      new AIMessage({ content: "", tool_calls: [{ id: "m2", name: "remember", args: { content: "Bob jezdí autem", scope: "tenant" } }] }),
+      new AIMessage("Nelze."),
+      new AIMessage({ content: "", tool_calls: [{ id: "m3", name: "remember", args: { content: "Bob jezdí autem" } }] }),
       new AIMessage("Zapamatováno."),
     ]);
     const tenant = await tenants.get("a");
 
-    await tenant.graph.invoke({ messages: [new HumanMessage("x")] }, { configurable: ctx("bob", "member") });
+    await tenant.graph.invoke({ messages: [new HumanMessage("x")] }, { configurable: ctx("alice", "admin") });
+    const refused = await tenant.graph.invoke({ messages: [new HumanMessage("y")] }, { configurable: ctx("bob", "member") });
+    expect(refused.messages.find((m) => m.getType() === "tool")?.text).toMatch(/Firemní paměť mění jen správce/);
+    await tenant.graph.invoke({ messages: [new HumanMessage("z")] }, { configurable: { ...ctx("bob", "member"), thread_id: "t2" } });
 
-    expect((await tenant.memory.list("alice")).map((m) => m.content)).toEqual(["Sleva 5 % pro stálé zákazníky"]);
+    expect((await tenant.memory.list("carol")).map((m) => m.content)).toEqual(["Sleva 5 % pro stálé zákazníky"]);
+    expect((await tenant.memory.list("bob")).map((m) => [m.content, m.scope])).toEqual([
+      ["Bob jezdí autem", "personal"],
+      ["Sleva 5 % pro stálé zákazníky", "tenant"],
+    ]);
   });
 });

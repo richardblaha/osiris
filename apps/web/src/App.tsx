@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { api, setTenant } from "./api.ts";
 import { getAccessToken, login, logout } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
-import { Files, OWN_VIEWS } from "./Files.tsx";
+import { LayeredFiles, OWN_VIEWS } from "./Files.tsx";
 import { Schedules } from "./Schedules.tsx";
 import { Database } from "./Database.tsx";
 import { Dashboards } from "./Dashboards.tsx";
@@ -29,7 +29,7 @@ import { MCP_SIGN_IN, mcpKey, McpServerDetail, McpStatus } from "./McpServers.ts
 import { INTEGRATION_RETURN } from "./Integrations.tsx";
 import { MemoryDetail, memoryKey } from "./Memories.tsx";
 import { Avatar, Profile } from "./Profile.tsx";
-import { Loading, Pending, ScopeBadge, Splash } from "./Scope.tsx";
+import { Loading, OverriddenBadge, Pending, ScopeBadge, Splash } from "./Scope.tsx";
 import { SignIn } from "./SignIn.tsx";
 import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
@@ -111,25 +111,30 @@ interface Row {
   badge?: ReactNode;
 }
 
-/** Everyone in a tenant adds to its knowledge base and memory; the rest is the admins'. */
-const MEMBERS_WRITE: Section[] = ["knowledge", "memory"];
+/**
+ * A record's marks in the list: the viewer's own, replaced by their own copy, or bundled. The tenant's are the
+ * default and unmarked.
+ */
+const layerBadge = (r: { scope?: Scope | "bundled"; overridden?: boolean }, extra?: ReactNode) =>
+  r.overridden || r.scope === "personal" || r.scope === "bundled" || extra ? (
+    <span className="flex items-center gap-1">
+      {r.overridden ? <OverriddenBadge /> : r.scope && r.scope !== "tenant" && <ScopeBadge scope={r.scope} />}
+      {extra}
+    </span>
+  ) : undefined;
 
 function rows(section: Section, lists: Lists): Row[] {
   switch (section) {
     case "knowledge":
-      return lists.knowledge.map((d) => ({ key: documentKey(d), label: d.title }));
+      return lists.knowledge.map((d) => ({ key: documentKey(d), label: d.title, badge: layerBadge(d) }));
     case "skills":
-      return lists.skills.map((s) => ({
-        key: skillKey(s),
-        label: s.name,
-        badge: s.source === "bundled" ? <ScopeBadge scope="bundled" /> : undefined,
-      }));
+      return lists.skills.map((s) => ({ key: skillKey(s), label: s.name, badge: layerBadge({ scope: s.source, overridden: s.overridden }) }));
     case "memory":
-      return lists.memory.map((m) => ({ key: memoryKey(m), label: m.content }));
+      return lists.memory.map((m) => ({ key: memoryKey(m), label: m.content, badge: layerBadge(m) }));
     case "mcp":
-      return lists.mcp.map((s) => ({ key: mcpKey(s), label: s.name, badge: <McpStatus server={s} /> }));
+      return lists.mcp.map((s) => ({ key: mcpKey(s), label: s.name, badge: layerBadge(s, s.overridden ? undefined : <McpStatus server={s} />) }));
     case "secrets":
-      return lists.secrets.map((s) => ({ key: secretKey(s), label: s.name }));
+      return lists.secrets.map((s) => ({ key: secretKey(s), label: s.name, badge: layerBadge(s) }));
   }
 }
 
@@ -349,7 +354,8 @@ function Workspace() {
   if (!me) return <Splash />;
   const isAdmin = tenant?.role === "admin";
   const sections = tenant ? SECTIONS.filter((s) => s.enabled(tenant.features)) : [];
-  const canAdd = (section: Section) => isAdmin || MEMBERS_WRITE.includes(section);
+  // Everyone adds their own records; admins also the tenant's.
+  const canAdd = (_section: Section) => true;
   /** After a save the record is shown. */
   const showSaved = (section: Section, key: string) => void refresh(section).then(() => setView({ kind: "item", section, id: key }));
   /** A sidebar link to a section, when the tenant has its feature. */
@@ -536,7 +542,7 @@ function Workspace() {
             me.tenants.length ? <Pending className="relative h-full" /> : null
           ) : view.kind === "files" ? (
             tenant.features.files ? (
-              <Files key={tenant.id} hide={OWN_VIEWS} intro={t("app:filesIntro")} />
+              <LayeredFiles key={tenant.id} isAdmin={isAdmin} hide={OWN_VIEWS} intro={t("app:filesIntro")} />
             ) : null
           ) : view.kind === "schedules" ? (
             tenant.features.scheduler ? <Schedules key={tenant.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
@@ -568,7 +574,7 @@ function Workspace() {
                   section={view.section}
                   id={view.id}
                   lists={lists}
-                  scope="tenant"
+                  scope={isAdmin ? "tenant" : "personal"}
                   isAdmin={isAdmin}
                   onSaved={(key) => showSaved(view.section, key)}
                   onDeleted={() => void refresh(view.section).then(() => setView({ kind: "list", section: view.section }))}
@@ -750,7 +756,7 @@ function SectionPanel(props: {
   return (
     <MasterDetail
       title={section.label()}
-      top={<p className="px-2 text-xs text-fg-muted">{props.canAdd ? t("scope.tenant") : t("scope.tenantAdminOnlyList")}</p>}
+      top={<p className="px-2 text-xs text-fg-muted">{t("scope.layered")}</p>}
       groups={
         props.tools
           ? [{ items: [{ key: BUILTIN_TOOLS, label: t("app:builtinTools") }] }, { title: t("app:mcpServers"), items, empty: t("noneYet") }]

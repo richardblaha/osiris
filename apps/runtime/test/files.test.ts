@@ -120,11 +120,17 @@ describe("file tools", () => {
   const byName = (files: FileStore, gotenberg?: GotenbergClient) =>
     Object.fromEntries(fileTools(files, gotenberg).map((t) => [t.name, t]));
 
-  it("lets every member write the tenant's files and their thread's temp files", async () => {
+  it("lets admins write the tenant's files, everyone their own and their thread's temp files", async () => {
     const { files } = store();
     const tools = byName(files);
-    expect(await tools.write_file!.invoke({ scope: "tenant", path: "a.txt", content: "x" }, ctx("member"))).toMatch(/^Uloženo: tenant:a.txt/);
-    expect(await tools.read_file!.invoke({ scope: "tenant", path: "a.txt" }, ctx("admin"))).toBe("x");
+    expect(await tools.write_file!.invoke({ scope: "tenant", path: "a.txt", content: "x" }, ctx("admin"))).toMatch(/^Uloženo: tenant:a.txt/);
+    expect(await tools.write_file!.invoke({ scope: "tenant", path: "a.txt", content: "y" }, ctx("member"))).toMatch(/^Do souborů firmy zapisuje jen správce/);
+    expect(await tools.delete_file!.invoke({ scope: "tenant", path: "a.txt" }, ctx("member"))).toMatch(/^Do souborů firmy zapisuje jen správce/);
+    expect(await tools.read_file!.invoke({ scope: "tenant", path: "a.txt" }, ctx("member"))).toBe("x");
+    // The member's own copy at the same path replaces the tenant's file for them, and only for them.
+    expect(await tools.write_file!.invoke({ scope: "personal", path: "a.txt", content: "moje" }, ctx("member"))).toMatch(/^Uloženo: personal:a.txt/);
+    expect(await tools.read_file!.invoke({ scope: "tenant", path: "a.txt" }, ctx("member"))).toMatch(/nahrazuje firemní soubor\.\)\nmoje$/);
+    expect(await tools.read_file!.invoke({ scope: "tenant", path: "a.txt" }, { configurable: { ...ctx("member").configurable, user_id: "dev:bob" } })).toBe("x");
     expect(await tools.write_file!.invoke({ scope: "temp", path: "b.txt", content: "y" }, ctx("member"))).toMatch(/^Uloženo: temp:b.txt/);
     expect((await files.read({ scope: "temp", threadId: "t1" }, "b.txt")).data.toString()).toBe("y");
     expect(await tools.read_file!.invoke({ scope: "tenant", path: "../x.txt" }, ctx("member"))).toMatch(/^Nelze:/);
@@ -174,7 +180,7 @@ describe("file tools", () => {
   it("edits a text file exactly, by pattern, at a line or by a patch, and refuses what's ambiguous", async () => {
     const { files } = store();
     const tools = byName(files);
-    const edit = async (args: object) => JSON.parse(await tools.edit_text!.invoke({ scope: "tenant", path: "c.txt", ...args }, ctx("member")));
+    const edit = async (args: object) => JSON.parse(await tools.edit_text!.invoke({ scope: "tenant", path: "c.txt", ...args }, ctx("admin")));
     const content = async () => (await files.read(tenant, "c.txt")).data.toString();
     await files.write(tenant, "c.txt", text("a = 1\r\nb = 2\r\nb = 2\r\nc = 3\r\n"));
 
@@ -211,7 +217,7 @@ describe("file tools", () => {
     await files.write(tenant, "r.txt", text(`${"a".repeat(40)}!`));
     const started = Date.now();
     const out = JSON.parse(
-      await byName(files).edit_text!.invoke({ scope: "tenant", path: "r.txt", operation: "replace_regex", pattern: "(a+)+$", replacement: "" }, ctx("member")),
+      await byName(files).edit_text!.invoke({ scope: "tenant", path: "r.txt", operation: "replace_regex", pattern: "(a+)+$", replacement: "" }, ctx("admin")),
     );
     expect(out).toMatchObject({ success: false, error_code: "REGEX_TIMEOUT" });
     expect(Date.now() - started).toBeLessThan(3000);
@@ -231,7 +237,7 @@ describe("file tools", () => {
 
     const result = await tools.convert_to_pdf!.invoke(
       { scope: "tenant", path: "faktura/f.html", output_scope: "tenant", output_path: "faktura/f.pdf" },
-      ctx("member"),
+      ctx("admin"),
     );
     expect(result).toMatch(/^PDF vytvořeno: tenant:faktura\/f.pdf/);
     expect(sent).toEqual([{ url: "http://gotenberg:3000/forms/chromium/convert/html", names: ["index.html", "logo.png"] }]);
@@ -243,7 +249,7 @@ describe("file tools", () => {
     const tools = byName(files);
     await files.write(firm, "logo.png", PNG);
     expect(
-      await tools.resize_image!.invoke({ scope: "tenant", path: "logo.png", width: 10, output_scope: "tenant", output_path: "logo.webp" }, ctx("member")),
+      await tools.resize_image!.invoke({ scope: "tenant", path: "logo.png", width: 10, output_scope: "tenant", output_path: "logo.webp" }, ctx("admin")),
     ).toMatch(/^Uloženo: tenant:logo.webp/);
     expect((await files.read(firm, "logo.webp")).data.subarray(8, 12).toString()).toBe("WEBP");
   });
@@ -258,13 +264,14 @@ describe("files API", () => {
     return { as, tenants };
   }
 
-  it("searches the tenant's text files by words", async () => {
+  it("searches the tenant's text files and the caller's own by words", async () => {
     const { as } = await setup();
     await as("acme")("/files/content?scope=tenant&path=www/index.html", { method: "PUT", body: "<h1>Elektro Novák Brno</h1>" });
-    await as("bob:tenant=acme")("/files/content?scope=tenant&path=poznamky.md", { method: "PUT", body: "Novák chce nabídku do pátku" });
+    await as("bob:tenant=acme")("/files/content?scope=personal&path=poznamky.md", { method: "PUT", body: "Novák chce nabídku do pátku" });
     const bob = as("bob:tenant=acme");
     const hits = (await (await bob("/files/search?q=novak")).json()) as { scope: string; path: string }[];
-    expect(hits.map((h) => `${h.scope}:${h.path}`).sort()).toEqual(["tenant:poznamky.md", "tenant:www/index.html"]);
+    expect(hits.map((h) => `${h.scope}:${h.path}`).sort()).toEqual(["personal:poznamky.md", "tenant:www/index.html"]);
+    expect(await (await as("carol:tenant=acme")("/files/search?q=pátku")).json()).toEqual([]);
     expect(await (await bob("/files/search?q=brno")).json()).toEqual([{ scope: "tenant", path: "www/index.html", snippet: "<h1>Elektro Novák «Brno»</h1>" }]);
   });
 
@@ -286,14 +293,18 @@ describe("files API", () => {
     expect(await (await admin("/files?scope=tenant")).json()).toEqual([]);
   });
 
-  it("lets every member read and write the tenant's files, and refuses personal ones", async () => {
+  it("lets members read the tenant's files and keep their own, which only they see", async () => {
     const { as } = await setup();
     await as("acme")("/files/content?scope=tenant&path=a.txt", { method: "PUT", body: "firemni" });
     const bob = as("bob:tenant=acme");
     expect(await (await bob("/files/content?scope=tenant&path=a.txt")).text()).toBe("firemni");
-    expect((await bob("/files/content?scope=tenant&path=b.txt", { method: "PUT", body: "x" })).status).toBe(201);
-    expect((await bob("/files?scope=tenant&path=a.txt", { method: "DELETE" })).status).toBe(204);
-    expect((await bob("/files/content?scope=personal&path=c.txt", { method: "PUT", body: "x" })).status).toBe(400);
+    expect((await bob("/files/content?scope=tenant&path=b.txt", { method: "PUT", body: "x" })).status).toBe(403);
+    expect((await bob("/files?scope=tenant&path=a.txt", { method: "DELETE" })).status).toBe(403);
+    expect((await bob("/files/move", { method: "POST", body: JSON.stringify({ from: { scope: "tenant", path: "a.txt" }, to: { scope: "personal", path: "a.txt" } }) })).status).toBe(403);
+    expect((await bob("/files/content?scope=personal&path=a.txt", { method: "PUT", body: "moje" })).status).toBe(201);
+    expect(await (await bob("/files/content?scope=personal&path=a.txt")).text()).toBe("moje");
+    expect((await as("carol:tenant=acme")("/files/content?scope=personal&path=a.txt")).status).toBe(404);
+    expect(await (await as("carol:tenant=acme")("/files/content?scope=tenant&path=a.txt")).text()).toBe("firemni");
   });
 
   it("serves temp files only to the thread's owner and removes them with the thread", async () => {

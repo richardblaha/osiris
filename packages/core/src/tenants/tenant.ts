@@ -50,7 +50,7 @@ import { microsoftTools } from "../integrations/microsoft.ts";
 import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
 import { buildVitepressTool, publishSiteTool } from "../agent/tools/site.ts";
 import { VitepressClient } from "../files/vitepress.ts";
-import { FileIndexer, mergePersonalIntoTenant, moveKnowledgeToDb, moveLegacyToFiles } from "../files/sync.ts";
+import { FileIndexer, moveKnowledgeToDb, moveLegacyToFiles } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 import { databaseTools } from "../agent/tools/database.ts";
 import { DataStore } from "../database/store.ts";
@@ -329,7 +329,6 @@ export function openTenant(id: string, db: Client, deps: TenantDeps): Tenant {
       }
     }
     await moveLegacyToFiles(db, files);
-    await mergePersonalIntoTenant(db, files);
     await moveKnowledgeToDb(db, files, knowledge);
     await publicAssistants.migrateLegacy(skills);
     await guards.migrateProfiles(db);

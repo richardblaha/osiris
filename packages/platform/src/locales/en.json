@@ -206,7 +206,8 @@
       "folderEmpty": "Folder {{path}} doesn't exist or is empty.",
       "featureOff": "Files are not enabled.",
       "threadRequired": "Temporary files need the conversation (thread).",
-      "uploadTooLarge": "The file is too large."
+      "uploadTooLarge": "The file is too large.",
+      "tenantAdminOnly": "Only the organization's administrators change its files. Save your own copy among your files instead."
     },
     "db": {
       "unterminated": "The query has an unterminated string or comment.",
@@ -289,7 +290,6 @@
       "missing": "Secret not found."
     },
     "mcp": {
-      "nameTaken": "Another server in the organization already uses the name “{{name}}”.",
       "signInNotStarted": "Signing in to the MCP server wasn't started.",
       "signInFailed": "The sign-in couldn't be completed.",
       "timeout": "Timed out after {{seconds}} s.",
@@ -341,7 +341,7 @@
       "notFound": "Conversation not found."
     },
     "scope": {
-      "personalGone": "Personal settings no longer exist; everything applies to the whole tenant."
+      "invalid": "The scope must be tenant or personal."
     },
     "assistant": {
       "notFound": "The assistant doesn't exist.",
@@ -349,7 +349,8 @@
     },
     "knowledge": {
       "folder": "Invalid folder: letters, digits, dots and hyphens, / between folders.",
-      "notFound": "The document doesn't exist."
+      "notFound": "The document doesn't exist.",
+      "exists": "You already have a document with this id."
     },
     "skill": {
       "notFound": "Skill not found."
@@ -361,7 +362,8 @@
       "notFound": "The inquiry doesn't exist."
     },
     "memory": {
-      "notFound": "Memory not found."
+      "notFound": "Memory not found.",
+      "overrideOwn": "Only your own memory can replace one of the organization's."
     }
   },
   "schedules": {

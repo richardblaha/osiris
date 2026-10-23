@@ -125,9 +125,9 @@ describe("secrets API", () => {
       app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${user}`, "content-type": "application/json" } });
     return { as };
   }
-  const put = (body: object) => ({ method: "PUT", body: JSON.stringify({ allowedHosts: ["api.example.com"], ...body }) });
+  const put = (body: object) => ({ method: "PUT", body: JSON.stringify({ allowedHosts: ["api.example.com"], scope: "tenant", ...body }) });
 
-  it("never returns values and lets only admins manage them", async () => {
+  it("never returns values, lets only admins manage the tenant's and everyone keep their own", async () => {
     const { as } = await setup();
     const admin = as("alice:tenant-admin=acme");
     const member = as("bob:tenant=acme");
@@ -136,14 +136,22 @@ describe("secrets API", () => {
     expect((await admin("/secrets/crm", put({ value: "x" }))).status).toBe(400);
     expect((await admin("/secrets/CRM", put({ value: "x", allowedHosts: [] }))).status).toBe(400);
     expect((await admin("/secrets/CRM", put({ value: "x", allowedHosts: ["https://api.example.com/"] }))).status).toBe(400);
-    expect((await admin("/secrets/CRM", put({ value: "x", scope: "personal" }))).status).toBe(400);
     expect((await admin("/secrets/CRM", put({ value: "tenant-value-1", description: "CRM" }))).status).toBe(204);
 
     const listed = await (await member("/secrets")).text();
     expect(listed).not.toMatch(/value-1/);
     expect(JSON.parse(listed)).toMatchObject([{ name: "CRM", scope: "tenant", allowedHosts: ["api.example.com"], description: "CRM" }]);
-    expect((await member("/secrets/CRM", { method: "DELETE" })).status).toBe(403);
-    expect((await admin("/secrets/CRM", { method: "DELETE" })).status).toBe(204);
+    expect((await member("/secrets/CRM?scope=tenant", { method: "DELETE" })).status).toBe(403);
+
+    // Bob's own key of the same name replaces the tenant's for him.
+    expect((await member("/secrets/CRM", put({ value: "bob-value", scope: "personal" }))).status).toBe(204);
+    expect(await (await member("/secrets")).json()).toMatchObject([
+      { name: "CRM", scope: "tenant", overridden: true },
+      { name: "CRM", scope: "personal" },
+    ]);
+    expect(await (await admin("/secrets")).json()).toMatchObject([{ name: "CRM", scope: "tenant" }]);
+    expect((await member("/secrets/CRM?scope=personal", { method: "DELETE" })).status).toBe(204);
+    expect((await admin("/secrets/CRM?scope=tenant", { method: "DELETE" })).status).toBe(204);
   });
 
   it("rejects MCP URLs with a secret in the host", async () => {

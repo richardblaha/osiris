@@ -12,6 +12,8 @@ export const DOCUMENT_ID = /^[\p{L}\p{N}_-][\p{L}\p{N}._-]*(\/[\p{L}\p{N}_-][\p{
 
 export interface KnowledgeDocument {
   id: string;
+  /** '' for the tenant's, a user's sub for their own. */
+  owner: string;
   title: string;
   content: string;
   createdAt: string;
@@ -79,14 +81,17 @@ export class KnowledgeStore {
     ];
   }
 
-  /** Searches the tenant's files plus `userId`'s own: by meaning (vectors) and by words (full text), merged. */
+  /**
+   * Searches the tenant's documents plus `userId`'s own, by meaning (vectors) and by words (full text), merged. A
+   * tenant document the user has their own copy of (same id) is left out: theirs replaces it for them.
+   */
   async search(query: string, userId = "", limit = 5, { under }: { under?: string[] } = {}): Promise<SearchResult[]> {
     // `under`: only the tenant's files that are these files or in these folders (a public assistant's knowledge).
     if (under && !under.length) return [];
     const scope = under
       ? `owner = '' AND (${under.map(() => "path = ? OR substr(path, 1, length(?)) = ?").join(" OR ")})`
-      : "owner IN ('', ?)";
-    const scopeArgs = under ? under.flatMap((p) => [p, `${p}/`, `${p}/`]) : [userId];
+      : "(owner = ? OR (owner = '' AND path NOT IN (SELECT o.path FROM knowledge_chunks o WHERE o.owner = ?)))";
+    const scopeArgs = under ? under.flatMap((p) => [p, `${p}/`, `${p}/`]) : [userId, userId];
     const vector = await this.embeddings.embedQuery(query);
     const { rows: near } = await this.db.execute({
       sql: `SELECT id FROM knowledge_chunks WHERE embedding_model = ? AND ${scope}
@@ -97,7 +102,7 @@ export class KnowledgeStore {
     const { rows: words } = match
       ? await this.db.execute({
           sql: `SELECT c.id FROM knowledge_text t JOIN knowledge_chunks c ON c.id = t.rowid
-                WHERE knowledge_text MATCH ? AND ${scope.replaceAll("owner", "c.owner").replaceAll("path", "c.path")} ORDER BY bm25(knowledge_text) LIMIT 20`,
+                WHERE knowledge_text MATCH ? AND ${scope.replace(/(?<![.\w])(owner|path)\b/g, "c.$1")} ORDER BY bm25(knowledge_text) LIMIT 20`,
           args: [match, ...scopeArgs],
         })
       : { rows: [] };
@@ -117,53 +122,57 @@ export class KnowledgeStore {
     });
   }
 
-  /** The documents, with their chunk counts. */
-  async listDocuments(): Promise<DocumentSummary[]> {
-    const { rows } = await this.db.execute(
-      `SELECT d.id, d.title, d.updated_at,
-         (SELECT COUNT(*) FROM knowledge_chunks c WHERE c.owner = '' AND c.path = '${KNOWLEDGE_DIR}/' || d.id) AS chunks
-       FROM knowledge_documents d ORDER BY d.id`,
-    );
+  /** The tenant's documents and `viewer`'s own, with their chunk counts; a tenant one the viewer replaced is `overridden`. */
+  async listDocuments(viewer = ""): Promise<DocumentSummary[]> {
+    const { rows } = await this.db.execute({
+      sql: `SELECT d.owner, d.id, d.title, d.updated_at,
+              (SELECT COUNT(*) FROM knowledge_chunks c WHERE c.owner = d.owner AND c.path = '${KNOWLEDGE_DIR}/' || d.id) AS chunks,
+              (d.owner = '' AND ? <> '' AND EXISTS (SELECT 1 FROM knowledge_documents m WHERE m.owner = ? AND m.id = d.id)) AS overridden
+            FROM knowledge_documents d WHERE d.owner IN ('', ?) ORDER BY d.id, d.owner <> ''`,
+      args: [viewer, viewer, viewer],
+    });
     return rows.map((r) => ({
       id: String(r.id),
       title: String(r.title),
       chunks: Number(r.chunks),
-      scope: "tenant",
+      scope: r.owner === "" ? "tenant" : "personal",
+      ...(Number(r.overridden) ? { overridden: true } : {}),
       createdAt: new Date(`${String(r.updated_at).replace(" ", "T")}Z`).toISOString(),
     }));
   }
 
-  async getDocument(id: string): Promise<KnowledgeDocument | null> {
-    const { rows } = await this.db.execute({ sql: "SELECT * FROM knowledge_documents WHERE id = ?", args: [id] });
+  /** One owner's document ('' the tenant's). */
+  async getDocument(id: string, owner = ""): Promise<KnowledgeDocument | null> {
+    const { rows } = await this.db.execute({ sql: "SELECT * FROM knowledge_documents WHERE owner = ? AND id = ?", args: [owner, id] });
     const r = rows[0];
-    return r ? { id: String(r.id), title: String(r.title), content: String(r.content), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } : null;
+    return r ? { id: String(r.id), owner, title: String(r.title), content: String(r.content), createdAt: String(r.created_at), updatedAt: String(r.updated_at) } : null;
   }
 
   /** Saves a document (new or changed) and indexes it; the title defaults to its leading heading or its id. */
-  async putDocument(id: string, content: string, title = titleOf(id, content)): Promise<void> {
+  async putDocument(id: string, content: string, title = titleOf(id, content), owner = ""): Promise<void> {
     if (!DOCUMENT_ID.test(id) || id.length > 300) throw new Error(`Invalid document id: ${id}`);
     await this.db.execute({
-      sql: `INSERT INTO knowledge_documents (id, title, content) VALUES (?, ?, ?)
-            ON CONFLICT (id) DO UPDATE SET title = excluded.title, content = excluded.content, updated_at = datetime('now')`,
-      args: [id, title, content],
+      sql: `INSERT INTO knowledge_documents (owner, id, title, content) VALUES (?, ?, ?, ?)
+            ON CONFLICT (owner, id) DO UPDATE SET title = excluded.title, content = excluded.content, updated_at = datetime('now')`,
+      args: [owner, id, title, content],
     });
-    await this.indexFile("", `${KNOWLEDGE_DIR}/${id}`, content);
+    await this.indexFile(owner, `${KNOWLEDGE_DIR}/${id}`, content);
   }
 
-  async deleteDocument(id: string): Promise<boolean> {
-    const [r] = await this.db.batch([{ sql: "DELETE FROM knowledge_documents WHERE id = ?", args: [id] }, ...this.removing("", `${KNOWLEDGE_DIR}/${id}`, false)], "write");
+  async deleteDocument(id: string, owner = ""): Promise<boolean> {
+    const [r] = await this.db.batch([{ sql: "DELETE FROM knowledge_documents WHERE owner = ? AND id = ?", args: [owner, id] }, ...this.removing(owner, `${KNOWLEDGE_DIR}/${id}`, false)], "write");
     return r!.rowsAffected > 0;
   }
 
   /** Indexes the documents without chunks of the current embedding model (new model, or never indexed). */
   async reindexStale(): Promise<void> {
     const { rows } = await this.db.execute({
-      sql: `SELECT id, content FROM knowledge_documents d WHERE NOT EXISTS
-              (SELECT 1 FROM knowledge_chunks c WHERE c.owner = '' AND c.path = '${KNOWLEDGE_DIR}/' || d.id AND c.embedding_model = ?)`,
+      sql: `SELECT owner, id, content FROM knowledge_documents d WHERE NOT EXISTS
+              (SELECT 1 FROM knowledge_chunks c WHERE c.owner = d.owner AND c.path = '${KNOWLEDGE_DIR}/' || d.id AND c.embedding_model = ?)`,
       args: [this.embeddingModel],
     });
     for (const r of rows) {
-      await this.indexFile("", `${KNOWLEDGE_DIR}/${String(r.id)}`, String(r.content)).catch((err) => console.error(`Indexing ${String(r.id)} failed`, err));
+      await this.indexFile(String(r.owner), `${KNOWLEDGE_DIR}/${String(r.id)}`, String(r.content)).catch((err) => console.error(`Indexing ${String(r.id)} failed`, err));
     }
   }
 }

@@ -220,7 +220,8 @@
       "folderEmpty": "Složka {{path}} neexistuje nebo je prázdná.",
       "featureOff": "Soubory nejsou povolené",
       "threadRequired": "Dočasné soubory potřebují konverzaci (thread)",
-      "uploadTooLarge": "Soubor je příliš velký"
+      "uploadTooLarge": "Soubor je příliš velký",
+      "tenantAdminOnly": "Soubory firmy mění jen její správci. Ulož si vlastní kopii mezi své soubory."
     },
     "db": {
       "unterminated": "Dotaz má neukončený řetězec nebo komentář.",
@@ -305,7 +306,6 @@
       "missing": "Secret nenalezen"
     },
     "mcp": {
-      "nameTaken": "Název „{{name}}“ už ve firmě používá jiný server",
       "signInNotStarted": "Přihlášení k MCP serveru nebylo zahájeno",
       "signInFailed": "Přihlášení se nepodařilo dokončit",
       "timeout": "Timeout po {{seconds}} s",
@@ -357,7 +357,7 @@
       "notFound": "Konverzace nenalezena"
     },
     "scope": {
-      "personalGone": "Osobní nastavení už nejsou, vše platí pro celý tenant"
+      "invalid": "Rozsah musí být tenant nebo personal."
     },
     "assistant": {
       "notFound": "Asistent neexistuje",
@@ -365,7 +365,8 @@
     },
     "knowledge": {
       "folder": "Neplatná složka: písmena, číslice, tečky a pomlčky, / mezi složkami",
-      "notFound": "Dokument neexistuje"
+      "notFound": "Dokument neexistuje",
+      "exists": "Dokument s tímto id už máš."
     },
     "skill": {
       "notFound": "Dovednost nenalezena"
@@ -377,7 +378,8 @@
       "notFound": "Poptávka neexistuje"
     },
     "memory": {
-      "notFound": "Záznam paměti nenalezen"
+      "notFound": "Záznam paměti nenalezen",
+      "overrideOwn": "Firemní záznam může nahradit jen tvůj vlastní."
     }
   },
   "schedules": {

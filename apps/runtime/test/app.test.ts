@@ -127,47 +127,67 @@ describe("API", () => {
     expect(events).toContainEqual({ type: "tool-result", toolCallId: "c", result: "Nic nenalezeno." });
   });
 
-  it("lets admins manage the tenant's settings and refuses the old personal scope", async () => {
+  it("lets admins manage the tenant's skills and everyone keep their own over them", async () => {
     const { as } = await setup();
     const member = as("bob:tenant=acme");
     const admin = as("alice:tenant-admin=acme");
-    const skill = (body: object = {}) => ({ method: "PUT", body: JSON.stringify({ description: "Revize", instructions: "Postup.", ...body }) });
+    const skill = (body: object = {}) => ({ method: "PUT", body: JSON.stringify({ description: "Revize", instructions: "Postup.", scope: "tenant", ...body }) });
 
     expect((await member("/skills/revize", skill())).status).toBe(403);
     expect((await admin("/skills/Bad_Name", skill())).status).toBe(400);
-    expect((await admin("/skills/revize", skill({ scope: "personal" }))).status).toBe(400);
     expect((await admin("/skills/revize", skill())).status).toBe(200);
     expect(await (await member("/skills")).json()).toContainEqual({ name: "revize", description: "Revize", source: "tenant" });
     expect(await (await member("/skills/revize")).json()).toMatchObject({ instructions: "Postup.", source: "tenant" });
-    expect((await member("/skills/revize", { method: "DELETE" })).status).toBe(403);
-    expect((await admin("/skills/revize?scope=personal", { method: "DELETE" })).status).toBe(400);
-    expect((await admin("/skills/revize", { method: "DELETE" })).status).toBe(204);
+    expect((await member("/skills/revize?scope=tenant", { method: "DELETE" })).status).toBe(403);
+
+    // Bob's own copy replaces the tenant's for him only.
+    expect((await member("/skills/revize", skill({ scope: "personal", instructions: "Můj postup." }))).status).toBe(200);
+    expect((await (await member("/skills")).json()).filter((s: { name: string }) => s.name === "revize")).toEqual([
+      { name: "revize", description: "Revize", source: "personal" },
+      { name: "revize", description: "Revize", source: "tenant", overridden: true },
+    ]);
+    expect(await (await member("/skills/revize")).json()).toMatchObject({ instructions: "Můj postup.", source: "personal" });
+    expect(await (await member("/skills/revize?source=tenant")).json()).toMatchObject({ instructions: "Postup.", source: "tenant" });
+    expect(await (await admin("/skills/revize")).json()).toMatchObject({ instructions: "Postup.", source: "tenant" });
+    expect((await member("/skills/revize?scope=personal", { method: "DELETE" })).status).toBe(204);
+    expect(await (await member("/skills/revize")).json()).toMatchObject({ source: "tenant" });
+    expect((await admin("/skills/revize?scope=tenant", { method: "DELETE" })).status).toBe(204);
+    expect((await admin("/skills/revize?scope=everyone", { method: "DELETE" })).status).toBe(400);
   });
 
-  it("keeps one knowledge base for the tenant, which every member adds to and searches", async () => {
+  it("searches the tenant's knowledge base and the caller's own documents, which replace the tenant's of the same id", async () => {
     const { as } = await setup([
       new AIMessage({ content: "", tool_calls: [{ id: "k", name: "search_knowledge", args: { query: "kód od garáže" } }] }),
       new AIMessage("4321."),
     ]);
     const bob = as("bob:tenant=acme");
     const alice = as("alice:tenant-admin=acme");
-    const add = (title: string, content: string) => ({ method: "POST", body: JSON.stringify({ title, content }) });
+    const add = (title: string, content: string, body: object = {}) => ({ method: "POST", body: JSON.stringify({ title, content, ...body }) });
 
+    expect((await bob("/knowledge/documents", add("Ceník", "x", { scope: "tenant" }))).status).toBe(403);
     const garage = await (await bob("/knowledge/documents", add("Garáž", "Kód od garáže je 4321."))).json();
-    await alice("/knowledge/documents", add("Ceník", "Hodinová sazba 650 Kč."));
-    for (const who of [bob, alice]) {
-      expect((await (await who("/knowledge/documents")).json()).map((d: { title: string; scope: string }) => [d.title, d.scope])).toEqual([
-        ["Ceník", "tenant"],
-        ["Garáž", "tenant"],
-      ]);
-    }
+    expect(garage).toMatchObject({ id: "garaz.md", scope: "personal" });
+    const price = await (await alice("/knowledge/documents", add("Ceník", "Hodinová sazba 650 Kč.", { scope: "tenant" }))).json();
+    expect((await bob("/knowledge/documents", add("Ceník", "Moje sazba 700 Kč.", { id: price.id }))).status).toBe(201);
+    const list = async (who: typeof bob) => (await (await who("/knowledge/documents")).json()).map((d: { title: string; scope: string; overridden?: boolean }) => [d.title, d.scope, !!d.overridden]);
+    expect(await list(bob)).toEqual([
+      ["Ceník", "tenant", true],
+      ["Ceník", "personal", false],
+      ["Garáž", "personal", false],
+    ]);
+    expect(await list(alice)).toEqual([["Ceník", "tenant", false]]);
+    expect(await (await bob(`/knowledge/documents/${price.id}`)).json()).toMatchObject({ content: "Moje sazba 700 Kč.", scope: "personal" });
+    expect(await (await bob(`/knowledge/documents/${price.id}?scope=tenant`)).json()).toMatchObject({ content: "Hodinová sazba 650 Kč.", scope: "tenant" });
+    expect((await bob(`/knowledge/documents/${price.id}?scope=tenant`, { method: "PUT", body: JSON.stringify({ title: "Ceník", content: "y" }) })).status).toBe(403);
 
-    const { id } = await (await alice("/threads", { method: "POST" })).json();
-    const events = await readEvents(await alice(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Kód?" }) }));
+    // Bob's own document reaches his runs, not Alice's.
+    const { id } = await (await bob("/threads", { method: "POST" })).json();
+    const events = await readEvents(await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Kód?" }) }));
     const result = events.find((e) => e.type === "tool-result");
     expect(result?.type === "tool-result" && result.result).toContain("4321");
 
-    expect((await alice(`/knowledge/documents/${garage.id}`, { method: "DELETE" })).status).toBe(204);
+    expect((await alice(`/knowledge/documents/${garage.id}?scope=personal`, { method: "DELETE" })).status).toBe(404);
+    expect((await bob(`/knowledge/documents/${garage.id}`, { method: "DELETE" })).status).toBe(204);
   });
 
   it("stores the user's profile and puts it into the system prompt", async () => {
@@ -191,21 +211,32 @@ describe("API", () => {
     expect(system).toMatch(/pokud nejsou v rozporu s pravidly výše\):\nCeny uváděj s DPH\./);
   });
 
-  it("keeps one memory for the tenant, which every member manages", async () => {
+  it("keeps the tenant's memory for admins to manage and everyone's own beside it", async () => {
     const { as } = await setup();
     const member = as("bob:tenant=acme");
     const admin = as("alice:tenant-admin=acme");
-    const post = (content: string) => ({ method: "POST", body: JSON.stringify({ content }) });
+    const post = (content: string, body: object = {}) => ({ method: "POST", body: JSON.stringify({ content, ...body }) });
 
-    const vat = await (await member("/memories", post("Neplátce DPH"))).json();
-    await admin("/memories", post("Sídlo Brno"));
-    expect((await (await admin("/memories")).json()).map((m: { content: string; scope: string }) => [m.content, m.scope]).sort()).toEqual([
-      ["Neplátce DPH", "tenant"],
-      ["Sídlo Brno", "tenant"],
+    expect((await member("/memories", post("Sídlo Praha", { scope: "tenant" }))).status).toBe(403);
+    const seat = await (await admin("/memories", post("Sídlo Brno", { scope: "tenant" }))).json();
+    await member("/memories", post("Neplátce DPH"));
+    const mine = await (await member("/memories", post("Sídlo Brno, pobočka Zlín", { overrides: seat.id }))).json();
+    expect(mine).toMatchObject({ scope: "personal", overrides: seat.id });
+    const view = async (who: typeof member) =>
+      (await (await who("/memories")).json() as { content: string; scope: string; overridden?: boolean }[])
+        .map((m) => [m.content, m.scope, !!m.overridden])
+        .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+    expect(await view(member)).toEqual([
+      ["Neplátce DPH", "personal", false],
+      ["Sídlo Brno", "tenant", true],
+      ["Sídlo Brno, pobočka Zlín", "personal", false],
     ]);
-    expect((await member(`/memories/${vat.id}?scope=personal`, { method: "DELETE" })).status).toBe(400);
-    expect((await admin(`/memories/${vat.id}`, { method: "DELETE" })).status).toBe(204);
-    expect((await member("/memories", { method: "POST", body: JSON.stringify({ content: "x", scope: "personal" }) })).status).toBe(400);
+    expect(await view(admin)).toEqual([["Sídlo Brno", "tenant", false]]);
+    expect((await member(`/memories/${seat.id}?scope=tenant`, { method: "DELETE" })).status).toBe(403);
+    expect((await member("/memories", post("x", { scope: "tenant", overrides: seat.id }))).status).toBe(403);
+    // Removing the tenant's memory takes the replacements with it.
+    expect((await admin(`/memories/${seat.id}?scope=tenant`, { method: "DELETE" })).status).toBe(204);
+    expect(await view(member)).toEqual([["Neplátce DPH", "personal", false]]);
   });
 
   it("deletes a thread and its checkpoints", async () => {

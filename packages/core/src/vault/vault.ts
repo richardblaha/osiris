@@ -16,15 +16,18 @@ export class SecretVault {
     private readonly box: SecretBox,
   ) {}
 
-  /** Tenant secrets plus `userId`'s personal ones, without values. */
+  /** Tenant secrets plus `userId`'s personal ones, without values; a tenant one the user has their own of is `overridden`. */
   async list(userId: string): Promise<SecretSummary[]> {
     const { rows } = await this.db.execute({
-      sql: "SELECT owner, name, allowed_hosts, description, updated_at FROM secrets WHERE owner IN ('', ?) ORDER BY owner <> '', name",
-      args: [userId],
+      sql: `SELECT s.owner, s.name, s.allowed_hosts, s.description, s.updated_at,
+              (s.owner = '' AND ? <> '' AND EXISTS (SELECT 1 FROM secrets p WHERE p.owner = ? AND p.name = s.name)) AS overridden
+            FROM secrets s WHERE s.owner IN ('', ?) ORDER BY s.owner <> '', s.name`,
+      args: [userId, userId, userId],
     });
     return rows.map((r) => ({
       name: String(r.name),
       scope: r.owner === "" ? "tenant" : "personal",
+      ...(Number(r.overridden) ? { overridden: true } : {}),
       allowedHosts: JSON.parse(String(r.allowed_hosts)) as string[],
       description: String(r.description),
       updatedAt: String(r.updated_at),

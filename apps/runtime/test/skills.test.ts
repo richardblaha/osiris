@@ -70,9 +70,21 @@ describe("skills", () => {
     await a.skills.put({ name: "revize", description: "Revize elektro", instructions: "Postup revize." });
     expect(await a.skills.list()).toEqual([
       { name: "faktura", description: "Naše", source: "tenant" },
+      { name: "faktura", description: "Obecná", source: "bundled", overridden: true },
       { name: "revize", description: "Revize elektro", source: "tenant" },
     ]);
     expect(await b.skills.list()).toEqual([{ name: "faktura", description: "Obecná", source: "bundled" }]);
+
+    // A user's own skill wins over the tenant's, for them alone.
+    await a.skills.put({ name: "faktura", description: "Moje", instructions: "Můj postup." }, "personal", "bob");
+    expect((await a.skills.list("bob")).filter((s) => s.name === "faktura").map((s) => [s.source, !!s.overridden])).toEqual([
+      ["personal", false],
+      ["tenant", true],
+      ["bundled", true],
+    ]);
+    expect((await a.skills.get("faktura", "bob"))?.instructions).toBe("Můj postup.");
+    expect((await a.skills.get("faktura", "carol"))?.instructions).toBe("Náš postup.");
+    expect((await a.skills.get("faktura", "bob", "tenant"))?.instructions).toBe("Náš postup.");
 
     // Deleting the tenant's replacement reveals the bundled skill.
     expect(await a.skills.delete("faktura")).toBe(true);

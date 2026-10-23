@@ -1,7 +1,6 @@
 import type { Client } from "@libsql/client";
 import type { McpServer, Scope } from "@osiris/shared";
 import type { SecretBox } from "../secrets.ts";
-import { LocalizedError } from "@osiris/platform/i18n.ts";
 
 export const MCP_SERVER_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -17,9 +16,6 @@ export interface McpServerConfig {
 
 const authOf = (r: Record<string, unknown>): McpAuth => (r.auth === "oauth" ? "oauth" : "headers");
 
-/** The name is used by another server in the tenant (tool names `<server>_<tool>` must not clash). */
-export class McpNameTakenError extends LocalizedError {}
-
 /** Row owner: '' for tenant-wide servers, the user's sub for personal ones. */
 export const mcpOwner = (scope: Scope, userId: string) => (scope === "tenant" ? "" : userId);
 
@@ -34,15 +30,26 @@ export class McpServerStore {
     return row.headers_enc ? (JSON.parse(this.secrets.open(String(row.headers_enc))) as Record<string, string>) : {};
   }
 
-  /** Tenant servers plus `userId`'s personal ones, for the API: header names only, never values. */
+  /** One owner's server names, enabled or not. */
+  async names(owner: string): Promise<string[]> {
+    const { rows } = await this.db.execute({ sql: "SELECT name FROM mcp_servers WHERE owner = ?", args: [owner] });
+    return rows.map((r) => String(r.name));
+  }
+
+  /**
+   * Tenant servers plus `userId`'s personal ones, for the API: header names only, never values. A tenant server the
+   * user has their own of (same name) is `overridden`.
+   */
   async list(userId: string, { showTenantUrls }: { showTenantUrls: boolean }): Promise<Omit<McpServer, "status">[]> {
     const { rows } = await this.db.execute({
       sql: "SELECT * FROM mcp_servers WHERE owner IN ('', ?) ORDER BY owner <> '', name",
       args: [userId],
     });
+    const own = new Set(rows.filter((r) => r.owner !== "").map((r) => String(r.name)));
     return rows.map((r) => {
       const scope: Scope = r.owner === "" ? "tenant" : "personal";
       return {
+        ...(scope === "tenant" && own.has(String(r.name)) ? { overridden: true } : {}),
         name: String(r.name),
         scope,
         url: scope === "tenant" && !showTenantUrls ? "" : String(r.url),
@@ -75,9 +82,8 @@ export class McpServerStore {
     owner: string,
     { url, enabled, headers, auth = "headers" }: { url: string; enabled: boolean; headers?: Record<string, string>; auth?: McpAuth },
   ) {
+    // A user's server may share a name with the tenant's: theirs replaces it in their runs.
     if (!MCP_SERVER_NAME.test(name)) throw new Error(`Invalid MCP server name "${name}"`);
-    const taken = await this.db.execute({ sql: "SELECT 1 FROM mcp_servers WHERE name = ? AND owner <> ?", args: [name, owner] });
-    if (taken.rows.length) throw new McpNameTakenError("errors.mcp.nameTaken", { name });
     const sealed = headers === undefined ? undefined : Object.keys(headers).length ? this.secrets.seal(JSON.stringify(headers)) : null;
     await this.db.execute({
       sql: `INSERT INTO mcp_servers (owner, name, url, enabled, headers_enc, auth) VALUES (?, ?, ?, ?, ?, ?)

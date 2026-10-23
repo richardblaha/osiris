@@ -2,11 +2,11 @@ import type { Scope } from "@osiris/shared";
 import { useId, type ReactNode } from "react";
 import { t } from "i18next";
 
-/** What every detail form gets. Settings records are the tenant's. */
+/** What every detail form gets. Records are the tenant's or the viewer's own. */
 export interface DetailProps<T> {
   /** The record shown, or undefined for a new one. */
   item?: T;
-  /** Always "tenant": settings are no longer personal. */
+  /** Where a new record goes unless the admin picks otherwise: the tenant for admins, their own for everyone else. */
   scope: Scope;
   isAdmin: boolean;
   /** After a save: the list is reloaded and the saved record (by its sidebar key) selected. */
@@ -14,14 +14,14 @@ export interface DetailProps<T> {
   onDeleted: () => void;
 }
 
-/** Admin-only settings (skills, MCP servers, secrets) only a tenant admin may change. */
+/** The tenant's records are the admins' to change; everyone changes their own. */
 export const canEdit = (scope: Scope, isAdmin: boolean) => scope === "personal" || isAdmin;
 
-export function DetailHeader({ title, scope, canEdit, children }: { title: string; scope?: Scope; canEdit: boolean; children?: ReactNode }) {
+export function DetailHeader({ title, scope, canEdit, overridden, children }: { title: string; scope?: Scope; canEdit: boolean; overridden?: boolean; children?: ReactNode }) {
   return (
     <>
       <h1 className="text-lg font-semibold break-words">
-        {title} {scope && <ScopeBadge scope={scope} />}
+        {title} {scope && <ScopeBadge scope={scope} />} {overridden && <OverriddenBadge />}
       </h1>
       {children && <p className="mt-1 text-sm text-fg-secondary">{children}</p>}
       {scope && (
@@ -29,6 +29,7 @@ export function DetailHeader({ title, scope, canEdit, children }: { title: strin
           {scope === "personal" ? t("scope.personal") : canEdit ? t("scope.tenant") : t("scope.tenantAdminOnly")}
         </p>
       )}
+      {overridden && <p className="notice mt-3 px-3 py-2 text-sm">{t("scope.overridden")}</p>}
     </>
   );
 }
@@ -36,6 +37,37 @@ export function DetailHeader({ title, scope, canEdit, children }: { title: strin
 export function ScopeBadge({ scope }: { scope: Scope | "bundled" }) {
   if (scope === "bundled") return <span className="badge align-middle">{t("badge.bundled")}</span>;
   return scope === "tenant" ? <span className="badge badge-accent align-middle">{t("badge.tenant")}</span> : <span className="badge align-middle">{t("badge.personal")}</span>;
+}
+
+/** A tenant record the viewer's own copy replaces for them. */
+export const OverriddenBadge = () => <span className="badge align-middle text-fg-muted">{t("badge.overridden")}</span>;
+
+/** Where a new record goes: admins choose the tenant or themselves; everyone else always keeps their own. */
+export function ScopeChoice({ value, onChange, isAdmin }: { value: Scope; onChange: (scope: Scope) => void; isAdmin: boolean }) {
+  if (!isAdmin) return null;
+  return (
+    <fieldset className="flex flex-wrap items-center gap-4 text-sm">
+      <legend className="section-header mb-1">{t("scope.choose")}</legend>
+      <label className="flex items-center gap-1">
+        <input type="radio" checked={value === "tenant"} onChange={() => onChange("tenant")} /> {t("scope.forTenant")}
+      </label>
+      <label className="flex items-center gap-1">
+        <input type="radio" checked={value === "personal"} onChange={() => onChange("personal")} /> {t("scope.forMe")}
+      </label>
+    </fieldset>
+  );
+}
+
+/** On a tenant record the viewer may not change: make their own copy, which then replaces it for them. */
+export function OwnCopy({ onClick, busy, label = t("scope.makeCopy") }: { onClick: () => void; busy?: boolean; label?: string }) {
+  return (
+    <div className="mt-4 flex flex-wrap items-center gap-3">
+      <button type="button" onClick={onClick} disabled={busy} className="btn-secondary text-sm">
+        {label}
+      </button>
+      <span className="text-xs text-fg-muted">{t("scope.copyHint")}</span>
+    </div>
+  );
 }
 
 export const Field = ({ label, children }: { label: string; children: ReactNode }) => (

@@ -1,7 +1,7 @@
 import type { Scope, SecretSummary } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api } from "./api.ts";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { attempt, canEdit, DetailHeader, ErrorNotice, Field, OwnCopy, ScopeChoice, type DetailProps } from "./Scope.tsx";
 import { t } from "i18next";
 import { Trans } from "react-i18next";
 
@@ -10,12 +10,19 @@ const parseHosts = (text: string) => text.split(/[\s,]+/).map((h) => h.trim().to
 
 export const secretKey = (s: Pick<SecretSummary, "scope" | "name">) => `${s.scope}:${s.name}`;
 
-export function SecretDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<SecretSummary>) {
-  const [name, setName] = useState(item?.name ?? "");
+/**
+ * A key of the tenant's or the viewer's own. A member can add their own value under a tenant key's name, which
+ * replaces it in their runs (`copying`: the form for it, the tenant's key left alone).
+ */
+export function SecretDetail({ item: shown, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<SecretSummary>) {
+  const [copying, setCopying] = useState(false);
+  const item = copying ? undefined : shown;
+  const [target, setTarget] = useState<Scope>(tab);
+  const [name, setName] = useState(shown?.name ?? "");
   const [value, setValue] = useState("");
-  const [hosts, setHosts] = useState(item?.allowedHosts.join(", ") ?? "");
-  const [description, setDescription] = useState(item?.description ?? "");
-  const scope = item?.scope ?? tab;
+  const [hosts, setHosts] = useState(shown?.allowedHosts.join(", ") ?? "");
+  const [description, setDescription] = useState(shown?.description ?? "");
+  const scope = copying ? "personal" : (item?.scope ?? target);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const editable = !item || canEdit(item.scope, isAdmin);
@@ -31,18 +38,19 @@ export function SecretDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: 
 
   return (
     <div className="detail">
-      <DetailHeader title={item?.name ?? t("secrets:new")} scope={scope} canEdit={editable}>
+      <DetailHeader title={shown?.name ?? t("secrets:new")} scope={scope} canEdit={editable} overridden={item?.overridden}>
         <Trans ns="secrets" i18nKey="intro" values={{ reference: `{{secret:${name || t("secrets:namePlaceholderShort")}}}` }} components={{ code: <code className="text-fg" /> }} />
       </DetailHeader>
 
       <form onSubmit={submit} className="mt-6 space-y-4" autoComplete="off">
+        {!shown && <ScopeChoice value={target} onChange={setTarget} isAdmin={isAdmin} />}
         <Field label={t("name")}>
           <input
             value={name}
             onChange={(e) => setName(e.target.value.toUpperCase().replace(/[^A-Z0-9_]/g, "_"))}
             placeholder={t("secrets:namePlaceholder")}
             pattern={NAME.source}
-            readOnly={!!item}
+            readOnly={!!shown}
             required
             className="field"
           />
@@ -98,6 +106,7 @@ export function SecretDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: 
           </div>
         )}
       </form>
+      {!editable && !shown?.overridden && <OwnCopy onClick={() => setCopying(true)} />}
       <ErrorNotice error={error} />
     </div>
   );

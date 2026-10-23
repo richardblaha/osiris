@@ -22,19 +22,35 @@ const PDF_ASSETS = new Set(["png", "jpg", "jpeg", "gif", "webp", "svg", "css", "
 const ESCAPED = new Set(["html", "htm", "xml", "svg"]);
 
 const scope = z
-  .enum(["tenant", "temp"])
+  .enum(["tenant", "personal", "temp"])
   .default("tenant")
-  .describe("tenant = soubory firmy (společné pro všechny), temp = dočasné soubory této konverzace");
+  .describe("tenant = soubory firmy (společné, zapisuje jen správce), personal = vlastní soubory uživatele, temp = pracovní soubory této konverzace");
 const path = z.string().trim().min(1).max(512).describe("Cesta uvnitř rozsahu, např. sablony/nabidka.html");
 
 export function locate(s: FileScope, ctx: RunContext): FileLocation {
   if (s === "temp") return { scope: "temp", threadId: scratchThread(ctx) };
+  if (s === "personal") return { scope: "personal", userId: ctx.user_id };
   return { scope: "tenant" };
 }
 
-/** The tenant's files are everyone's to write, except the guards: the agent never changes its own rules. */
-const canWrite = (s: FileScope, path: string) => s !== "tenant" || !isGuardPath(path);
-const READ_ONLY = "Sem zapisovat nelze (pravidla v guards/ mění jen správce v Osirisu).";
+/**
+ * Why the run may not write there, or null when it may. The tenant's files are the admins'; the guards nobody's: the
+ * agent never changes its own rules.
+ */
+function refusal(s: FileScope, path: string, ctx: RunContext): string | null {
+  if (s !== "tenant") return null;
+  if (isGuardPath(path)) return "Sem zapisovat nelze (pravidla v guards/ mění jen správce v Osirisu).";
+  return ctx.role === "admin" ? null : "Do souborů firmy zapisuje jen správce. Ulož to do personal (vlastní kopie se stejnou cestou firemní soubor uživateli nahradí).";
+}
+
+/** A tenant file as the user sees it: their own copy at the same path, if they have one, replaces it. */
+async function readLayered(files: FileStore, s: FileScope, ctx: RunContext, path: string) {
+  if (s === "tenant") {
+    const own = await files.read(locate("personal", ctx), path).catch((err) => (err instanceof FileError && err.code === "not_found" ? null : Promise.reject(err)));
+    if (own) return { ...own, own: true };
+  }
+  return { ...(await files.read(locate(s, ctx), path)), own: false };
+}
 
 /** Tool answers the model reads as JSON: `success`, then the result or the error with a hint how to fix the call. */
 const answer = (value: object) => JSON.stringify(value);
@@ -98,10 +114,11 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
   const readFile = tool(
     ({ scope: s, path: p }, config) =>
       guarded(async () => {
-        const { entry, data } = await files.read(locate(s, getRunContext(config)), p);
+        const { entry, data, own } = await readLayered(files, s, getRunContext(config), p);
         if (!fileType(p)?.text) return `Binární soubor ${entry.path} (${entry.mime ?? "neznámý typ"}, ${kb(entry.size)}), obsah nelze zobrazit jako text.`;
         const text = data.toString("utf8");
-        return text.length > MAX_READ_CHARS ? `${text.slice(0, MAX_READ_CHARS)}\n… (zkráceno)` : text;
+        const body = text.length > MAX_READ_CHARS ? `${text.slice(0, MAX_READ_CHARS)}\n… (zkráceno)` : text;
+        return own ? `(Vlastní kopie uživatele v personal:${entry.path}, nahrazuje firemní soubor.)\n${body}` : body;
       }),
     {
       name: "read_file",
@@ -114,7 +131,8 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ scope: s, path: p, content, overwrite }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(s, p)) return READ_ONLY;
+        const denied = refusal(s, p, ctx);
+        if (denied) return denied;
         if (!fileType(p)?.text) return "write_file umí jen textové soubory (txt, md, csv, json, html, css, svg…).";
         const entry = await files.write(locate(s, ctx), p, Buffer.from(content, "utf8"), { overwrite });
         return `Uloženo: ${s}:${entry.path} (${kb(entry.size)}).`;
@@ -135,7 +153,8 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ scope: s, path: p }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(s, p)) return READ_ONLY;
+        const denied = refusal(s, p, ctx);
+        if (denied) return denied;
         await files.delete(locate(s, ctx), p);
         return `Smazáno: ${s}:${p}.`;
       }),
@@ -150,7 +169,8 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ from_scope, from_path, to_scope, to_path }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(from_scope, from_path) || !canWrite(to_scope, to_path)) return READ_ONLY;
+        const denied = refusal(from_scope, from_path, ctx) ?? refusal(to_scope, to_path, ctx);
+        if (denied) return denied;
         const entry = await files.move(locate(from_scope, ctx), from_path, locate(to_scope, ctx), to_path);
         return `Přesunuto do ${to_scope}:${entry.path}.`;
       }),
@@ -165,10 +185,11 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ template_scope, template_path, data, output_scope, output_path, strict }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(output_scope, output_path)) return READ_ONLY;
+        const denied = refusal(output_scope, output_path, ctx);
+        if (denied) return denied;
         if (!fileType(template_path)?.text) return "Šablona musí být textový soubor (html, md, txt…).";
         if (extensionOf(template_path) !== extensionOf(output_path)) return "Výstup musí mít stejnou příponu jako šablona.";
-        const template = (await files.read(locate(template_scope, ctx), template_path)).data.toString("utf8");
+        const template = (await readLayered(files, template_scope, ctx, template_path)).data.toString("utf8");
         const missing = strict ? missingKeys(template, data) : [];
         if (missing.length) {
           return answer({
@@ -204,7 +225,8 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     (args, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!args.dry_run && !canWrite(args.scope, args.path)) return READ_ONLY;
+        const denied = args.dry_run ? null : refusal(args.scope, args.path, ctx);
+        if (denied) return denied;
         if (!fileType(args.path)?.text) return answer({ success: false, error_code: "NOT_TEXT", message: "edit_text upravuje jen textové soubory." });
         const edit = toEdit(args);
         if ("success" in edit) return answer(edit);
@@ -248,7 +270,8 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ scope: s, path: p, width, height, output_scope, output_path }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(output_scope, output_path)) return READ_ONLY;
+        const denied = refusal(output_scope, output_path, ctx);
+        if (denied) return denied;
         const inExt = extensionOf(p);
         const outExt = extensionOf(output_path);
         if (!RASTER.has(inExt)) return "Upravit jde jen obrázek png, jpg, webp nebo gif.";
@@ -284,7 +307,8 @@ export function fileTools(files: FileStore, gotenberg?: GotenbergClient): Struct
     ({ scope: s, path: p, output_scope, output_path }, config) =>
       guarded(async () => {
         const ctx = getRunContext(config);
-        if (!canWrite(output_scope, output_path)) return READ_ONLY;
+        const denied = refusal(output_scope, output_path, ctx);
+        if (denied) return denied;
         if (extensionOf(output_path) !== "pdf") return "Výstup musí mít příponu .pdf.";
         const ext = extensionOf(p);
         const loc = locate(s, ctx);

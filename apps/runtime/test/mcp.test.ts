@@ -69,14 +69,19 @@ describe("McpServerStore", () => {
     expect(await store.enabled("")).toEqual([]);
   });
 
-  it("keeps personal servers private and server names unique within the tenant", async () => {
+  it("keeps personal servers private, each replacing the tenant's of its name for its owner", async () => {
     const store = new McpServerStore(await createTestDb(), SecretBox.insecureDev());
     await store.put("kalendar", "alice", { url: "https://cal.example/mcp", enabled: true });
 
     expect(await store.list("bob", { showTenantUrls: true })).toEqual([]);
     expect(await store.list("alice", { showTenantUrls: false })).toMatchObject([{ name: "kalendar", scope: "personal", url: "https://cal.example/mcp" }]);
-    await expect(store.put("kalendar", "bob", { url: "https://x.example/mcp", enabled: true })).rejects.toThrow(/Another server/);
-    await expect(store.put("kalendar", "", { url: "https://x.example/mcp", enabled: true })).rejects.toThrow(/Another server/);
+    await store.put("kalendar", "bob", { url: "https://x.example/mcp", enabled: true });
+    await store.put("kalendar", "", { url: "https://firm.example/mcp", enabled: true });
+    expect(await store.list("alice", { showTenantUrls: true })).toMatchObject([
+      { name: "kalendar", scope: "tenant", overridden: true },
+      { name: "kalendar", scope: "personal", url: "https://cal.example/mcp" },
+    ]);
+    expect(await store.list("carol", { showTenantUrls: true })).toEqual([expect.not.objectContaining({ overridden: true })]);
   });
 });
 
@@ -128,7 +133,7 @@ describe("MCP API", () => {
       app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${user}`, "content-type": "application/json" } });
     return { as, tenants };
   }
-  const put = (body: unknown) => ({ method: "PUT", body: JSON.stringify(body) });
+  const put = (body: object) => ({ method: "PUT", body: JSON.stringify({ scope: "tenant", ...body }) });
   const url = "https://93.184.215.14/mcp";
 
   it("validates input and never returns header values", async () => {
@@ -160,12 +165,18 @@ describe("MCP API", () => {
     expect((await admin("/mcp-servers/weather", put({ url }))).status).toBe(204);
 
     expect((await member("/mcp-servers/crm", put({ url }))).status).toBe(403);
-    expect((await member("/mcp-servers/weather", { method: "DELETE" })).status).toBe(403);
-    expect((await admin("/mcp-servers/crm", put({ url, scope: "personal" }))).status).toBe(400);
+    expect((await member("/mcp-servers/weather?scope=tenant", { method: "DELETE" })).status).toBe(403);
     expect(await (await member("/mcp-servers")).json()).toMatchObject([{ name: "weather", scope: "tenant", url: "" }]);
     expect(await (await admin("/mcp-servers")).json()).toMatchObject([{ name: "weather", scope: "tenant", url }]);
-    expect((await admin("/mcp-servers/weather/test", { method: "POST" })).status).toBe(200);
-    expect((await admin("/mcp-servers/weather", { method: "DELETE" })).status).toBe(204);
+    expect((await admin("/mcp-servers/weather/test?scope=tenant", { method: "POST" })).status).toBe(200);
+    // A member's own server of the same name replaces the tenant's for them, and its address is theirs to see.
+    expect((await member("/mcp-servers/weather", put({ url, scope: "personal" }))).status).toBe(204);
+    expect(await (await member("/mcp-servers")).json()).toMatchObject([
+      { name: "weather", scope: "tenant", url: "", overridden: true },
+      { name: "weather", scope: "personal", url },
+    ]);
+    expect((await member("/mcp-servers/weather?scope=personal", { method: "DELETE" })).status).toBe(204);
+    expect((await admin("/mcp-servers/weather?scope=tenant", { method: "DELETE" })).status).toBe(204);
   });
 
   it("applies config changes to the agent without a restart", async () => {
@@ -178,8 +189,12 @@ describe("MCP API", () => {
     await admin("/mcp-servers/crm", put({ url }));
     expect((await tenant.mcp.tools("dev:alice")).map((t) => t.name)).toEqual(["crm_forecast", "weather_forecast"]);
 
+    // Bob's own (disabled) weather server hides the tenant's from his runs only.
+    await as("bob:tenant=acme")("/mcp-servers/weather", put({ url, scope: "personal", enabled: false }));
+    expect((await tenant.mcp.tools("dev:bob")).map((t) => t.name)).toEqual(["crm_forecast"]);
+
     await admin("/mcp-servers/weather", put({ url, enabled: false }));
-    await admin("/mcp-servers/crm", { method: "DELETE" });
+    await admin("/mcp-servers/crm?scope=tenant", { method: "DELETE" });
     expect(await tenant.mcp.tools("dev:alice")).toEqual([]);
   });
 });

@@ -20,7 +20,7 @@ import { TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED } from "@osiris/core/agent/grap
 import { SKILL_NAME } from "@osiris/core/agent/skills.ts";
 import { FileError, type FileErrorCode, type FileLocation } from "@osiris/core/files/store.ts";
 import { streamRun, toThreadMessages } from "@osiris/core/agent/run.ts";
-import { MCP_SERVER_NAME, McpNameTakenError, mcpOwner } from "@osiris/core/mcp/store.ts";
+import { MCP_SERVER_NAME, mcpOwner } from "@osiris/core/mcp/store.ts";
 import { UnsafeUrlError } from "@osiris/core/mcp/url.ts";
 import * as threads from "@osiris/core/repo/threads.ts";
 import { HOST_PATTERN, SECRET_NAME, SecretUseError } from "@osiris/core/vault/template.ts";
@@ -37,13 +37,16 @@ import { detail, errorResponse, HttpError, requestLocale, translate, ValidationE
 
 
 const runBody = z.object({ message: z.string().trim().min(1).max(60_000).refine(v => v.length <= 20_000 || v.startsWith("@osiris-answer:"), "errors.validation.messageTooLong") });
-// Everything is the tenant's; "personal" is gone (only the user's profile is theirs).
-const scope = z.literal("tenant").default("tenant");
+// The tenant's records (admins write them) or the caller's own, which replace the tenant's of the same name for them.
+const scope = z.enum(["tenant", "personal"]).default("personal");
 const documentBody = z.object({
   title: z.string().trim().min(1).max(200),
   content: z.string().min(1).max(500_000),
   /** New documents: a folder, e.g. public (a public assistant may get just that folder). */
   folder: z.string().trim().max(200).optional(),
+  /** New documents: this exact id (the caller's own copy of a tenant document) instead of one from the title. */
+  id: z.string().max(300).optional(),
+  scope,
 });
 const skillBody = z.object({
   description: z.string().trim().min(1).max(500),
@@ -97,7 +100,7 @@ const siteTargetBody = z.object({
   secret: z.string().min(1).max(20_000).optional(),
 });
 const oauthCallbackBody = z.object({ state: z.string().min(16).max(200), code: z.string().min(1).max(4000), iss: z.string().max(2000).optional() });
-const memoryBody = z.object({ content: z.string().trim().min(1).max(500), scope });
+const memoryBody = z.object({ content: z.string().trim().min(1).max(500), scope, overrides: z.string().max(100).optional() });
 const secretBody = z.object({
   // Omitted = keep the stored value (e.g. when only the hosts change). Never returned.
   value: z.string().min(1).max(10_000).optional(),
@@ -134,7 +137,7 @@ const FILE_ERROR_STATUS: Record<FileErrorCode, 400 | 404 | 409 | 413 | 415 | 507
   type: 415,
   quota: 507,
 };
-const fileScope = z.enum(["tenant", "temp"]).default("tenant");
+const fileScope = z.enum(["tenant", "personal", "temp"]).default("tenant");
 const fileRef = z.object({ scope: fileScope, path: z.string().min(1).max(512), thread: z.string().max(100).optional() });
 const moveBody = z.object({ from: fileRef, to: fileRef });
 
@@ -206,13 +209,17 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
   const requireAdmin = (ctx: RequestContext) => {
     if (ctx.role !== "admin") throw new HttpError(403, "errors.access.adminOnly");
   };
-  /** Anyone may change their personal settings; tenant-wide ones need an admin. */
-  /** Tenant settings (skills, MCP servers, secrets, rules) are the admins'; the knowledge base, memory and files everyone's. */
-  const requireScope = (ctx: RequestContext, _scope: Scope) => requireAdmin(ctx);
-  const queryScope = (value: string | undefined): Scope => {
-    if (value === undefined || value === "tenant") return "tenant";
-    throw new HttpError(400, "errors.scope.personalGone");
+  /** Everyone reads the tenant's records and keeps their own; only admins change the tenant's. */
+  const requireScope = (ctx: RequestContext, scope: Scope) => {
+    if (scope === "tenant") requireAdmin(ctx);
   };
+  const queryScope = (value: string | undefined): Scope => {
+    if (value === undefined || value === "personal") return "personal";
+    if (value === "tenant") return "tenant";
+    throw new HttpError(400, "errors.scope.invalid");
+  };
+  /** Row owner of a scope: '' for the tenant's records, the caller's sub for their own. */
+  const ownerOf = (ctx: RequestContext, scope: Scope) => (scope === "tenant" ? "" : ctx.user.sub);
   const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
     const r = schema.safeParse(value, { reportInput: true });
     if (!r.success) throw new ValidationError(r.error);
@@ -229,15 +236,17 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
   /** The file scope a request names; temp files belong to one of the caller's threads. */
   const fileLocation = async (ctx: RequestContext, scope: FileScope, thread: string | undefined): Promise<FileLocation> => {
     if (scope === "tenant") return { scope };
+    if (scope === "personal") return { scope, userId: ctx.user.sub };
     if (!thread) throw new HttpError(400, "errors.files.threadRequired");
     await requireThread(ctx, thread);
     return { scope: "temp", threadId: thread };
   };
   const fileQuery = (c: { req: { query: (k: string) => string | undefined } }) =>
     parse(fileRef.partial({ path: true }), { scope: c.req.query("scope"), path: c.req.query("path"), thread: c.req.query("thread") });
-  /** The tenant's files are everyone's to write, but guards/ only admins'; temp files are checked to be the caller's own thread's. */
+  /** The tenant's files are the admins' to write (guards/ above all); personal ones the caller's; temp ones their thread's (checked by `fileLocation`). */
   const requireFileWrite = (ctx: RequestContext, scope: FileScope, path: string | undefined) => {
-    if (scope === "tenant" && isGuardPath(path ?? "") && ctx.role !== "admin") throw new HttpError(403, "errors.guard.adminOnly");
+    if (scope !== "tenant" || ctx.role === "admin") return;
+    throw new HttpError(403, isGuardPath(path ?? "") ? "errors.guard.adminOnly" : "errors.files.tenantAdminOnly");
   };
   const fileErrors = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
@@ -390,40 +399,69 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
     // Settings come in two scopes: `tenant` (everyone in the tenant, admins only) and `personal` (the caller only).
 
     // The knowledge base: documents in the tenant's database (not files), indexed as they're saved.
-    .get("/knowledge/documents", async (c) => c.json(await c.get("ctx").tenant.knowledge.listDocuments()))
-    .post("/knowledge/documents", async (c) => {
-      const { tenant } = c.get("ctx");
-      const { title, content, folder } = parse(documentBody, await c.req.json());
-      const base = `${folder ? `${folder}/` : ""}${slug(title)}`;
-      let id = `${base}.md`;
-      for (let n = 2; await tenant.knowledge.getDocument(id); n++) id = `${base}-${n}.md`;
-      if (!DOCUMENT_ID.test(id)) throw new HttpError(400, "errors.knowledge.folder");
-      await tenant.knowledge.putDocument(id, content, title);
-      return c.json((await tenant.knowledge.listDocuments()).find((d) => d.id === id), 201);
+    .get("/knowledge/documents", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      return c.json(await tenant.knowledge.listDocuments(user.sub));
     })
+    .post("/knowledge/documents", async (c) => {
+      const ctx = c.get("ctx");
+      const { title, content, folder, id: exact, scope } = parse(documentBody, await c.req.json());
+      requireScope(ctx, scope);
+      const owner = ownerOf(ctx, scope);
+      let id = exact ?? "";
+      if (!exact) {
+        const base = `${folder ? `${folder}/` : ""}${slug(title)}`;
+        id = `${base}.md`;
+        for (let n = 2; await ctx.tenant.knowledge.getDocument(id, owner); n++) id = `${base}-${n}.md`;
+      } else if (await ctx.tenant.knowledge.getDocument(id, owner)) throw new HttpError(409, "errors.knowledge.exists");
+      if (!DOCUMENT_ID.test(id)) throw new HttpError(400, "errors.knowledge.folder");
+      await ctx.tenant.knowledge.putDocument(id, content, title, owner);
+      return c.json((await ctx.tenant.knowledge.listDocuments(ctx.user.sub)).find((d) => d.id === id && d.scope === scope), 201);
+    })
+    // Without ?scope: the document as the caller sees it (their own copy, else the tenant's).
     .get("/knowledge/documents/:id{.+}", async (c) => {
-      const doc = await c.get("ctx").tenant.knowledge.getDocument(c.req.param("id"));
+      const ctx = c.get("ctx");
+      const id = c.req.param("id");
+      const asked = c.req.query("scope");
+      const doc = asked
+        ? await ctx.tenant.knowledge.getDocument(id, ownerOf(ctx, queryScope(asked)))
+        : ((await ctx.tenant.knowledge.getDocument(id, ctx.user.sub)) ?? (await ctx.tenant.knowledge.getDocument(id)));
       if (!doc) throw new HttpError(404, "errors.knowledge.notFound");
-      return c.json(doc);
+      const { owner, ...rest } = doc;
+      return c.json({ ...rest, scope: owner === "" ? "tenant" : "personal" });
     })
     .put("/knowledge/documents/:id{.+}", async (c) => {
-      const { tenant } = c.get("ctx");
+      const ctx = c.get("ctx");
       const id = c.req.param("id");
-      if (!(await tenant.knowledge.getDocument(id))) throw new HttpError(404, "errors.knowledge.notFound");
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      const owner = ownerOf(ctx, scope);
+      if (!(await ctx.tenant.knowledge.getDocument(id, owner))) throw new HttpError(404, "errors.knowledge.notFound");
       const { title, content } = parse(documentBody, await c.req.json());
-      await tenant.knowledge.putDocument(id, content, title);
-      return c.json(await tenant.knowledge.getDocument(id));
+      await ctx.tenant.knowledge.putDocument(id, content, title, owner);
+      const { owner: _, ...doc } = (await ctx.tenant.knowledge.getDocument(id, owner))!;
+      return c.json({ ...doc, scope });
     })
     .delete("/knowledge/documents/:id{.+}", async (c) => {
-      if (!(await c.get("ctx").tenant.knowledge.deleteDocument(c.req.param("id")))) throw new HttpError(404, "errors.knowledge.notFound");
+      const ctx = c.get("ctx");
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      if (!(await ctx.tenant.knowledge.deleteDocument(c.req.param("id"), ownerOf(ctx, scope)))) throw new HttpError(404, "errors.knowledge.notFound");
       return c.body(null, 204);
     })
 
-    // The tenant's skills and the bundled ones it doesn't replace.
-    .get("/skills", async (c) => c.json(await c.get("ctx").tenant.skills.list()))
+    // Bundled, the tenant's and the caller's own skills; the ones a higher layer replaces are `overridden`.
+    .get("/skills", async (c) => {
+      const { tenant, user } = c.get("ctx");
+      return c.json(await tenant.skills.list(user.sub));
+    })
 
+    // ?source=personal|tenant|bundled for one layer's; without it the one the caller gets.
     .get("/skills/:name", async (c) => {
-      const skill = await c.get("ctx").tenant.skills.get(c.req.param("name"));
+      const { tenant, user } = c.get("ctx");
+      const source = c.req.query("source");
+      if (source !== undefined && !["personal", "tenant", "bundled"].includes(source)) throw new HttpError(400, "errors.scope.invalid");
+      const skill = await tenant.skills.get(c.req.param("name"), user.sub, source as Skill["source"] | undefined);
       if (!skill) throw new HttpError(404, "errors.skill.notFound");
       return c.json<Skill>(skill);
     })
@@ -433,15 +471,15 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const name = skillName(c.req.param("name"));
       const { scope, ...skill } = parse(skillBody, await c.req.json());
       requireScope(ctx, scope);
-      await fileErrors(() => ctx.tenant.skills.put({ name, ...skill }));
-      return c.json<Skill>((await ctx.tenant.skills.get(name))!);
+      await fileErrors(() => ctx.tenant.skills.put({ name, ...skill }, scope, ctx.user.sub));
+      return c.json<Skill>((await ctx.tenant.skills.get(name, ctx.user.sub, scope))!);
     })
 
     .delete("/skills/:name", async (c) => {
       const ctx = c.get("ctx");
       const scope = queryScope(c.req.query("scope"));
       requireScope(ctx, scope);
-      if (!(await fileErrors(() => ctx.tenant.skills.delete(c.req.param("name"))))) {
+      if (!(await fileErrors(() => ctx.tenant.skills.delete(c.req.param("name"), scope, ctx.user.sub)))) {
         throw new HttpError(404, "errors.skill.notFound");
       }
       return c.body(null, 204);
@@ -469,12 +507,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       requireScope(ctx, scope);
       await checkMcpUrl(ctx, body.url);
       const owner = mcpOwner(scope, ctx.user.sub);
-      try {
-        await ctx.tenant.mcpServers.put(name, owner, body);
-      } catch (err) {
-        if (err instanceof McpNameTakenError) throw new HttpError(409, err.key, err.params);
-        throw err;
-      }
+      await ctx.tenant.mcpServers.put(name, owner, body);
       ctx.tenant.mcp.invalidate(owner);
       return c.body(null, 204);
     })
@@ -739,14 +772,21 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     .post("/memories", async (c) => {
       const ctx = c.get("ctx");
-      const { content } = parse(memoryBody, await c.req.json());
-      return c.json(await ctx.tenant.memory.add(ctx.user.sub, content, "tenant"), 201);
+      const { content, scope, overrides } = parse(memoryBody, await c.req.json());
+      requireScope(ctx, scope);
+      if (overrides && scope !== "personal") throw new HttpError(400, "errors.memory.overrideOwn");
+      try {
+        return c.json(await ctx.tenant.memory.add(ctx.user.sub, content, scope, overrides), 201);
+      } catch {
+        throw new HttpError(404, "errors.memory.notFound");
+      }
     })
 
     .delete("/memories/:id", async (c) => {
       const ctx = c.get("ctx");
-      queryScope(c.req.query("scope"));
-      if (!(await ctx.tenant.memory.delete(c.req.param("id"), "tenant", ctx.user.sub))) {
+      const scope = queryScope(c.req.query("scope"));
+      requireScope(ctx, scope);
+      if (!(await ctx.tenant.memory.delete(c.req.param("id"), scope, ctx.user.sub))) {
         throw new HttpError(404, "errors.memory.notFound");
       }
       return c.body(null, 204);
@@ -757,7 +797,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
       const { tenant, user } = c.get("ctx");
       const q = (c.req.query("q") ?? "").slice(0, 200);
       const scope = c.req.query("scope");
-      const owners = [""];
+      const owners = scope === "tenant" ? [""] : scope === "personal" ? [user.sub] : ["", user.sub];
       const hits = await tenant.fileIndex.search(q, owners, 50);
       return c.json<FileSearchHit[]>(hits.map((h) => ({ scope: h.owner ? "personal" : "tenant", path: h.path, snippet: h.snippet })));
     })

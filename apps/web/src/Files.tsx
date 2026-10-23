@@ -71,12 +71,14 @@ function Icon({ entry }: { entry: Pick<FileEntry, "type" | "name"> }) {
  * Files folder by folder: the tenant's by default, or another `location` (a chat's scratchpad). `root` limits the
  * view to one folder (a website's template), `hide` leaves out top-level folders that have views of their own.
  */
-export function Files({ root = "", title = t("app:nav.files"), intro, hide = [], location = { scope: "tenant" } }: {
+export function Files({ root = "", title = t("app:nav.files"), intro, hide = [], location = { scope: "tenant" }, readOnly = false }: {
   root?: string;
   title?: string;
   intro?: ReactNode;
   hide?: string[];
   location?: { scope: FileScope; thread?: string };
+  /** The tenant's files for a member: read, downloaded and copied to their own, never changed. */
+  readOnly?: boolean;
 }) {
   const loc = location;
   // Search covers the indexed files; a chat's scratchpad isn't indexed.
@@ -162,16 +164,30 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
     }
     await load();
   };
+  /** The viewer's own copy at the same path among their files, where it replaces the tenant's for them. */
+  const copyOwn = (path: string) =>
+    attempt(setBusy, setError, async () => {
+      const data = await api.downloadFile({ ...loc, path });
+      try {
+        await api.uploadFile({ scope: "personal", path }, data);
+      } catch (err) {
+        if ((err as { status?: number }).status !== 409 || !window.confirm(t("files:overwriteOne", { name: nameOf(path) }))) throw err;
+        await api.uploadFile({ scope: "personal", path }, data, true);
+      }
+      setCopied(path);
+    });
+  const [copied, setCopied] = useState<string>();
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
     setDragging(false);
+    if (readOnly) return;
     void droppedFiles(e).then(upload, (err: Error) => setError(err.message));
   };
   // Pasted images and files (Ctrl+V) go into the current folder; text pasted into fields stays there.
   useEffect(() => {
     const paste = (e: ClipboardEvent) => {
       const target = e.target as HTMLElement | null;
-      if (target?.closest("input, textarea, [contenteditable], .monaco-editor")) return;
+      if (readOnly || target?.closest("input, textarea, [contenteditable], .monaco-editor")) return;
       const files = [...(e.clipboardData?.files ?? [])];
       if (!files.length) return;
       e.preventDefault();
@@ -227,7 +243,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
       className="relative flex h-full"
       aria-busy={opening}
       onDragOver={(e) => {
-        if (![...e.dataTransfer.types].includes("Files")) return;
+        if (readOnly || ![...e.dataTransfer.types].includes("Files")) return;
         e.preventDefault();
         setDragging(true);
       }}
@@ -246,7 +262,8 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
           {intro && <p className="mt-1 text-sm text-fg-secondary">{intro}</p>}
 
 
-          <p className="mt-1 text-xs text-fg-muted">{t("files:dragHint")}</p>
+          <p className="mt-1 text-xs text-fg-muted">{readOnly ? t("files:readOnlyHint") : t("files:dragHint")}</p>
+          {copied && <p className="notice mt-3 px-3 py-2 text-sm">{t("files:copied", { path: copied })}</p>}
 
           {editing && (
             <form onSubmit={submitEdit} className="mt-3 flex gap-2">
@@ -365,19 +382,29 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
                       {t("download")}
                     </button>
                   )}
-                  <button onClick={() => startEdit({ kind: "rename", entry: e })} className="btn-link">
-                    {t("tenants:rename")}
-                  </button>
-                  <button onClick={() => remove(e)} className="btn-danger">
-                    {t("delete")}
-                  </button>
+                  {readOnly ? (
+                    e.type === "file" && (
+                      <button onClick={() => void copyOwn(e.path)} className="btn-link">
+                        {t("files:copyOwn")}
+                      </button>
+                    )
+                  ) : (
+                    <>
+                      <button onClick={() => startEdit({ kind: "rename", entry: e })} className="btn-link">
+                        {t("tenants:rename")}
+                      </button>
+                      <button onClick={() => remove(e)} className="btn-danger">
+                        {t("delete")}
+                      </button>
+                    </>
+                  )}
                 </span>
               </li>
             ))}
           </ul>
           {entries && !entries.length && <p className="px-2 py-3 text-sm text-fg-muted">{t("files:emptyFolder")}</p>}
           {!entries && !error && <Pending />}
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className={`mt-3 flex flex-wrap gap-2 ${readOnly ? "hidden" : ""}`}>
             <button onClick={() => pickFiles.current?.click()} disabled={busy} className="btn-primary text-sm">
               {t("files:uploadFiles")}
             </button>
@@ -411,9 +438,14 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
           <div className="mb-2 flex items-center gap-2 text-sm">
             <code className="min-w-0 flex-1 truncate">{open.path.slice(root ? root.length + 1 : 0)}</code>
             {open.kind === "text" && open.text !== open.saved && <span className="text-xs text-warning">{t("unsaved")}</span>}
-            {open.kind === "text" && (
+            {open.kind === "text" && !readOnly && (
               <button onClick={() => void saveDoc()} disabled={busy || (open.text === open.saved && !open.isNew)} className="btn-primary text-sm">
                 {t("save")}
+              </button>
+            )}
+            {readOnly && (
+              <button onClick={() => void copyOwn(open.path)} disabled={busy} className="btn-secondary text-sm">
+                {t("files:copyOwn")}
               </button>
             )}
             {!(open.kind === "text" && open.isNew) && (
@@ -427,7 +459,7 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
           </div>
           <div className="min-h-0 flex-1">
             {open.kind === "text" ? (
-              <LazyCodeEditor key={open.path} path={open.path} value={open.text} onChange={(text) => setOpen({ ...open, text })} height="100%" />
+              <LazyCodeEditor key={open.path} path={open.path} value={open.text} readOnly={readOnly} onChange={(text) => setOpen({ ...open, text })} height="100%" />
             ) : open.kind === "image" ? (
               <img src={open.url} alt={open.path} className="max-h-full max-w-full object-contain" />
             ) : (
@@ -445,4 +477,33 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
 /** A search snippet with its matches (marked « and » by the index) in bold. */
 function highlight(snippet: string) {
   return snippet.split(/(«[^»]*»)/).map((part, i) => (part.startsWith("«") ? <strong key={i}>{part.slice(1, -1)}</strong> : part));
+}
+
+/**
+ * Soubory: the tenant's files and the viewer's own, as two tabs. Members read the tenant's and copy a file to their own,
+ * where it replaces the tenant's for them (the assistant reads their copy).
+ */
+export function LayeredFiles({ isAdmin, ...props }: { isAdmin: boolean; hide?: string[]; intro?: ReactNode }) {
+  const [tab, setTab] = useState<"tenant" | "personal">("tenant");
+  return (
+    <div className="flex h-full flex-col">
+      <nav aria-label={t("app:nav.files")} className="flex shrink-0 items-center gap-2 border-b border-line px-6 py-3">
+        {(["tenant", "personal"] as const).map((s) => (
+          <button key={s} type="button" aria-current={tab === s ? "page" : undefined} data-active={tab === s} onClick={() => setTab(s)} className="list-row rounded px-3 py-1.5 text-sm">
+            {t(`files:tabs.${s}`)}
+          </button>
+        ))}
+      </nav>
+      <div className="min-h-0 flex-1">
+        <Files
+          key={tab}
+          {...props}
+          title={t(`files:tabs.${tab}`)}
+          location={{ scope: tab }}
+          readOnly={tab === "tenant" && !isAdmin}
+          hide={tab === "tenant" ? props.hide : undefined}
+        />
+      </div>
+    </div>
+  );
 }

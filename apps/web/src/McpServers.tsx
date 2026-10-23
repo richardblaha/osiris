@@ -1,7 +1,7 @@
 import type { McpServer, McpServerStatus, Scope } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
 import { api, getTenant } from "./api.ts";
-import { attempt, canEdit, DetailHeader, ErrorNotice, Field, type DetailProps } from "./Scope.tsx";
+import { attempt, canEdit, DetailHeader, ErrorNotice, Field, OwnCopy, ScopeChoice, type DetailProps } from "./Scope.tsx";
 import { t } from "i18next";
 
 const NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -55,15 +55,23 @@ const PRESETS: { label: string; name: string; url: string; auth: McpServer["auth
 /** Where the browser goes back to after an OAuth sign-in: the server and tenant it was for. */
 export const MCP_SIGN_IN = "osiris.mcpSignIn";
 
-export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<McpServer>) {
-  const [name, setName] = useState(item?.name ?? "");
+/**
+ * A server of the tenant's or the viewer's own. A member can't see or change the tenant's, but can add their own of the
+ * same name, which replaces it in their runs (`copying`: the form for it, the tenant's server left alone).
+ */
+export function McpServerDetail({ item: shown, scope: tab, isAdmin, onSaved, onDeleted }: DetailProps<McpServer>) {
+  const [copying, setCopying] = useState(false);
+  // The record being edited: none while writing the viewer's own copy.
+  const item = copying ? undefined : shown;
+  const [target, setTarget] = useState<Scope>(tab);
+  const [name, setName] = useState(shown?.name ?? "");
   const [url, setUrl] = useState(item?.url ?? "");
   const [auth, setAuth] = useState<McpServer["auth"]>(item?.auth ?? "headers");
   const [hint, setHint] = useState<string>();
   const [headers, setHeaders] = useState("");
   const [clearHeaders, setClearHeaders] = useState(false);
   const [enabled, setEnabled] = useState(item?.enabled ?? true);
-  const scope = item?.scope ?? tab;
+  const scope = copying ? "personal" : (item?.scope ?? target);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [tested, setTested] = useState<McpServerStatus>();
@@ -108,7 +116,7 @@ export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted 
 
   return (
     <div className="detail">
-      <DetailHeader title={item?.name ?? t("mcp:new")} scope={scope} canEdit={editable}>
+      <DetailHeader title={shown?.name ?? t("mcp:new")} scope={scope} canEdit={editable} overridden={item?.overridden}>
         {t("mcp:intro")}
       </DetailHeader>
 
@@ -140,13 +148,14 @@ export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted 
 
       {editable ? (
         <form onSubmit={submit} className="mt-6 space-y-4">
+          {!shown && <ScopeChoice value={target} onChange={setTarget} isAdmin={isAdmin} />}
           <Field label={t("name")}>
             <input
               value={name}
               onChange={(e) => setName(e.target.value.toLowerCase())}
               placeholder={t("mcp:namePlaceholder")}
               pattern={NAME.source}
-              readOnly={!!item}
+              readOnly={!!shown}
               required
               className="field"
             />
@@ -212,7 +221,10 @@ export function McpServerDetail({ item, scope: tab, isAdmin, onSaved, onDeleted 
           </div>
         </form>
       ) : (
-        <p className="mt-4 text-sm text-fg-secondary">{t("mcp:adminOnly")}</p>
+        <>
+          <p className="mt-4 text-sm text-fg-secondary">{t("mcp:adminOnly")}</p>
+          {!shown?.overridden && <OwnCopy onClick={() => (setUrl(""), setHeaders(""), setCopying(true))} />}
+        </>
       )}
       <ErrorNotice error={error} />
     </div>

@@ -161,10 +161,15 @@ export class McpToolset {
     );
   }
 
-  /** Tools for a run: the tenant's servers (they are all the tenant's). */
-  async tools(_userId?: string): Promise<StructuredToolInterface[]> {
+  /**
+   * Tools for a user's run: the tenant's servers and the user's own. A server of theirs replaces the tenant's of the
+   * same name (enabled or not), so its tools never come twice.
+   */
+  async tools(userId = ""): Promise<StructuredToolInterface[]> {
     this.evictIdle();
-    return this.ownerTools("");
+    if (!userId) return this.ownerTools("");
+    const [own, tenant, mine] = await Promise.all([this.store.names(userId), this.ownerTools(""), this.ownerTools(userId)]);
+    return [...tenant.filter((t) => !own.some((name) => t.name.startsWith(`${name}_`))), ...mine];
   }
 
   invalidate(owner: string): void {

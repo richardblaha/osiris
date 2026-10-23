@@ -5,5 +5,7 @@
   "forget": "Zapomenout",
   "new": "Nový záznam v paměti",
   "what": "Co si má pamatovat",
-  "placeholder": "Např. Nejsem plátce DPH. Zálohy chci 50 % předem."
+  "placeholder": "Např. Nejsem plátce DPH. Zálohy chci 50 % předem.",
+  "replaces": "nahrazuje ti firemní záznam",
+  "saveOwn": "Uložit moji verzi"
 }
