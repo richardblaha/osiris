@@ -74,17 +74,9 @@
   "uploadFailed": "Nahrávání selhalo",
   "voiceFile": "hlas",
   "noMicrophone": "Mikrofon není dostupný",
-  "uploading": "Nahrávám…",
   "attach": "Připojit soubor",
-  "stopRecording": "Zastavit nahrávání",
   "voice": "Hlasová zpráva",
-  "attachments_one": "{{count}} příloha",
-  "attachments_few": "{{count}} přílohy",
-  "attachments_many": "{{count}} přílohy",
-  "attachments_other": "{{count}} příloh",
   "lookAtAttachments": "Prohlédni přiložené soubory.",
-  "sendAttachments": "Odeslat přílohy",
-  "removeAttachments": "Odebrat přílohy",
   "answerFailed": "Odpověď se nepodařila",
   "answered": "Zodpovězeno",
   "cancelled": "Zrušeno",
@@ -130,5 +122,11 @@
     "hint": "Pracovní soubory této konverzace: přílohy a co asistent vytvořil",
     "title": "Soubory konverzace",
     "intro": "Pracovní soubory této konverzace. Smažou se spolu s ní; co si chceš nechat, ulož do souborů firmy."
-  }
+  },
+  "voiceHint": "Nahrát hlasovou zprávu; dalším klepnutím ji odešleš",
+  "stopAndSend": "Ukončit a odeslat",
+  "cancelRecording": "Zahodit nahrávku",
+  "recording": "Nahrávám {{time}}",
+  "removeAttachment": "Odebrat {{name}}",
+  "voiceSent": "Hlasová zpráva odeslána, přepisuji…"
 }

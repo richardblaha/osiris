@@ -54,7 +54,7 @@ export function createInternalRoutes({
       const { messages } = await activity.track(async () => {
         const quota = await tenant.features.quotas();
         if (decoded.paths.length && (!(await tenant.features.get()).files || (quota.tokensPerMonth !== null && await tenant.usage.tokens() >= quota.tokensPerMonth) || (quota.tokensPerUserMonth !== null && await tenant.usage.tokens(Date.now(), { user: ctx.user_id }) >= quota.tokensPerUserMonth))) throw new HttpError(403, "errors.attachment.unavailable");
-        const input = decoded.paths.length ? await attachmentMessage(tenant.files, tenant.media, ctx.thread_id, text, decoded.paths, n => tenant.usage.add(n, Date.now(), { user: ctx.user_id }), ctx.locale) : new HumanMessage({ content: text, additional_kwargs: { display_text: displayUserText(text, ctx.locale) } });
+        const input = decoded.paths.length ? await attachmentMessage(tenant.files, tenant.media, ctx.thread_id, text, decoded.paths, n => tenant.usage.add(n, Date.now(), { user: ctx.user_id }), ctx.locale, decoded.voice) : new HumanMessage({ content: text, additional_kwargs: { display_text: displayUserText(text, ctx.locale) } });
         return tenant.graph.invoke({ messages: [input] }, { configurable: { ...ctx } });
       });
       const last = messages.at(-1);

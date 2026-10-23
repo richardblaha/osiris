@@ -1,7 +1,6 @@
-import { Attachments } from "./Attachments.tsx";
+import { Composer } from "./Attachments.tsx";
 import { Question } from "./Question.tsx";
 import {
-  ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
   useAuiState,
@@ -201,11 +200,12 @@ function UserMessage() {
   const text = useAuiState(s => s.message.content.filter(p => p.type === "text").map(p => p.text).join(""));
   const submitted = text.startsWith("@osiris-answer:");
   const attachment = text.startsWith("@osiris-attachments:");
+  const voice = attachment && text.includes('"voice":');
 
   return (
     <MessagePrimitive.Root className="flex justify-end py-2">
       <div className="max-w-[80%] rounded-sm border border-line-strong bg-selection px-4 py-2 whitespace-pre-wrap">
-        {submitted ? t("chat:answerSent") : attachment ? t("chat:attachmentsSent") : <MessagePrimitive.Parts />}
+        {submitted ? t("chat:answerSent") : voice ? t("chat:voiceSent") : attachment ? t("chat:attachmentsSent") : <MessagePrimitive.Parts />}
       </div>
     </MessagePrimitive.Root>
   );
@@ -244,32 +244,7 @@ export function Thread({ greeting = t("chat:greeting"), placeholder = t("chat:pl
         </div>
         {/* The composer floats over the conversation, which scrolls underneath it. */}
         <ThreadPrimitive.ViewportFooter className="sticky bottom-0 mx-auto w-full max-w-3xl bg-gradient-to-t from-canvas from-70% pb-4 pt-2">
-          <ComposerPrimitive.Root className="composer relative rounded-md border border-line-strong bg-input shadow-lg">
-            <ComposerPrimitive.Input
-              autoFocus
-              placeholder={placeholder}
-              minRows={3}
-              maxRows={12}
-              className="block w-full resize-none bg-transparent px-4 pt-3 pb-12 outline-none"
-            />
-            <div className="absolute end-2 bottom-2">
-              <ThreadPrimitive.If running={false}>
-                <ComposerPrimitive.Send className="icon-button btn-primary" aria-label={t("chat:send")} title={t("chat:sendHint")}>
-                  <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                    <path d="M12 19V5M5 12l7-7 7 7" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-                  </svg>
-                </ComposerPrimitive.Send>
-              </ThreadPrimitive.If>
-              <ThreadPrimitive.If running>
-                <ComposerPrimitive.Cancel className="icon-button btn-secondary" aria-label={t("chat:stop")} title={t("chat:stop")}>
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-                    <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
-                  </svg>
-                </ComposerPrimitive.Cancel>
-              </ThreadPrimitive.If>
-            </div>
-            <Attachments />
-          </ComposerPrimitive.Root>
+          <Composer placeholder={placeholder} />
         </ThreadPrimitive.ViewportFooter>
       </ThreadPrimitive.Viewport>
     </ThreadPrimitive.Root>

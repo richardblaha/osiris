@@ -100,8 +100,16 @@ function Chat({ threadId, initial, onThreadCreated, onRunFinished }: Props & { i
         <div className="relative h-full">
           <UploadContext.Provider value={upload}><Thread /></UploadContext.Provider>
           {thread && !scratchpad && (
-            <button onClick={() => setScratchpad(true)} className="btn-secondary absolute end-4 top-3 z-10 text-sm" title={t("chat:scratchpad.hint")}>
-              {t("chat:scratchpad.open")}
+            <button
+              onClick={() => setScratchpad(true)}
+              className="btn-secondary absolute end-4 top-3 z-10 flex items-center gap-2 px-2.5 text-sm sm:px-4"
+              title={t("chat:scratchpad.hint")}
+              aria-label={t("chat:scratchpad.open")}
+            >
+              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
+                <path d="M2 4h4l1.5 1.5H14V13H2z" fill="none" stroke="currentColor" strokeWidth="1.3" />
+              </svg>
+              <span className="hidden sm:inline">{t("chat:scratchpad.open")}</span>
             </button>
           )}
           {thread && scratchpad && (

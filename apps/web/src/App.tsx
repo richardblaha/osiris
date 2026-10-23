@@ -141,6 +141,21 @@ function rows(section: Section, lists: Lists): Row[] {
 const LAST_TENANT = "osiris.tenant";
 const SIDEBAR_COLLAPSED = "osiris.sidebarCollapsed";
 
+/** Phone-sized screens: the sidebar starts as icons and opens over the content as a drawer. */
+const NARROW = "(max-width: 767px)";
+const isNarrow = () => window.matchMedia?.(NARROW).matches ?? false;
+function useNarrow() {
+  const [narrow, setNarrow] = useState(isNarrow);
+  useEffect(() => {
+    const query = window.matchMedia?.(NARROW);
+    if (!query) return;
+    const change = () => setNarrow(query.matches);
+    query.addEventListener("change", change);
+    return () => query.removeEventListener("change", change);
+  }, []);
+  return narrow;
+}
+
 /** Per-browser conveniences only; the app works the same when storage is unavailable. */
 const stored = <T,>(key: string, fallback: T): T => {
   try {
@@ -209,7 +224,9 @@ function Workspace() {
     if (started.tenant) store(LAST_TENANT, started.tenant);
     return { ...started, code: params.get("code"), state: params.get("state"), error: params.get("error_description") ?? params.get("error") };
   });
-  const [collapsed, setCollapsed] = useState(() => stored(SIDEBAR_COLLAPSED, false));
+  const narrow = useNarrow();
+  // On a phone the sidebar always starts as icons; elsewhere as the user left it.
+  const [collapsed, setCollapsed] = useState(() => isNarrow() || stored(SIDEBAR_COLLAPSED, false));
   // Where to start: the URL, else (the installed app opens at /) where the user last was in this sign-in.
   const [route] = useState(() => {
     if (notice || integrationReturn) return { view: { kind: "profile" } as View };
@@ -219,6 +236,10 @@ function Workspace() {
     return r;
   });
   const [view, setView] = useState<View>(route?.view ?? { kind: "chat", threadId: null, session: 0 });
+  // On a phone the sidebar drawer closes once something in it was chosen, and when the screen turns narrow.
+  useEffect(() => {
+    if (narrow) setCollapsed(true);
+  }, [narrow, view]);
   const [error, setError] = useState<string>();
 
   const refreshThreads = useCallback(() => api.threads().then(setThreads, (e: Error) => setError(e.message)), []);
@@ -373,13 +394,23 @@ function Workspace() {
       )
     );
   };
-  const toggleSidebar = () => setCollapsed((c) => (store(SIDEBAR_COLLAPSED, !c), !c));
+  const toggleSidebar = () => setCollapsed((c) => (narrow || store(SIDEBAR_COLLAPSED, !c), !c));
+  const drawer = narrow && !collapsed;
 
   return (
     <div className="flex h-full flex-col">
       <div className="flex min-h-0 flex-1">
-        {/* Collapsed: icons only; `side-label` parts hide. */}
-        <aside data-collapsed={collapsed} className={`group/side flex shrink-0 flex-col border-e border-line bg-sidebar text-sm ${collapsed ? "w-16" : "w-72"}`}>
+        {/* Collapsed: icons only; `side-label` parts hide. On a phone the open sidebar lies over the content. */}
+        {drawer && (
+          <>
+            <div className="w-16 shrink-0" aria-hidden="true" />
+            <button type="button" className="fixed inset-0 z-30 bg-black/30" onClick={() => setCollapsed(true)} aria-label={t("app:collapse")} />
+          </>
+        )}
+        <aside
+          data-collapsed={collapsed}
+          className={`group/side flex shrink-0 flex-col border-e border-line bg-sidebar text-sm ${collapsed ? "w-16" : "w-72"} ${drawer ? "fixed inset-y-0 start-0 z-40 max-w-[85vw] shadow-xl" : ""}`}
+        >
           <div className={`flex items-center gap-2 pt-3 ${collapsed ? "flex-col px-2" : "px-3"}`}>
             <img src="/logo.svg" alt="" className="h-8 w-8" />
             {/* Centred between the logo and the toggle; the letter spacing also follows the last letter, so it's taken back. */}

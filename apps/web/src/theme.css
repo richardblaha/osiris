@@ -152,6 +152,12 @@
     border-color: var(--accent-primary) !important;
     box-shadow: 0 0 0 3px var(--accent-primary-soft) !important;
   }
+  /* The message box wears the ring (its focus-within classes), not its borderless textarea. It must be said here: an
+     !important declaration of an earlier layer beats the same in a later one, so a components-layer override loses. */
+  .composer textarea:focus-visible {
+    border-color: transparent !important;
+    box-shadow: none !important;
+  }
 }
 
 /* Component contract (osiris-theme docs/DESIGN_SYSTEM.md §7). */

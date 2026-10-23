@@ -501,6 +501,7 @@
       "no": "No"
     },
     "attachments": "Attachments: {{files}}",
-    "workflowApproval": "Approve the workflow's steps that change data"
+    "workflowApproval": "Approve the workflow's steps that change data",
+    "voiceEmpty": "(A voice message with no recognised speech.)"
   }
 }

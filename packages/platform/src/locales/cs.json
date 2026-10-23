@@ -519,6 +519,7 @@
       "no": "Ne"
     },
     "attachments": "Přílohy: {{files}}",
-    "workflowApproval": "Schválení kroků postupu, které mění data"
+    "workflowApproval": "Schválení kroků postupu, které mění data",
+    "voiceEmpty": "(Hlasová zpráva bez rozpoznané řeči.)"
   }
 }

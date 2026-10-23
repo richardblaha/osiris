@@ -243,14 +243,33 @@ body,
     cursor: not-allowed;
   }
 
-  /* The composer box takes the focus ring of its textarea. */
-  .composer:focus-within {
-    border-color: var(--accent-primary);
-    box-shadow: 0 0 0 3px var(--accent-primary-soft);
+  /* Borderless icon button (attach in the composer). */
+  .btn-ghost {
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    transition: background var(--transition), color var(--transition);
   }
-  .composer textarea:focus-visible {
-    border-color: transparent !important;
-    box-shadow: none !important;
+  .btn-ghost:hover:not(:disabled) {
+    background: var(--bg-hover);
+    color: var(--text-primary);
+  }
+  .btn-ghost:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+  /* The microphone while it records: a click stops and sends. */
+  .btn-recording {
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    background: var(--state-error);
+    color: #fff;
+    animation: recording-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes recording-pulse {
+    50% {
+      box-shadow: 0 0 0 4px color-mix(in srgb, var(--state-error) 25%, transparent);
+    }
   }
 }
 

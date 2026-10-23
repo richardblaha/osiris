@@ -72,15 +72,9 @@
   "uploadFailed": "Uploading failed",
   "voiceFile": "voice",
   "noMicrophone": "The microphone isn't available",
-  "uploading": "Uploading…",
   "attach": "Attach file",
-  "stopRecording": "Stop recording",
   "voice": "Voice message",
-  "attachments_one": "{{count}} attachment",
-  "attachments_other": "{{count}} attachments",
   "lookAtAttachments": "Have a look at the attached files.",
-  "sendAttachments": "Send attachments",
-  "removeAttachments": "Remove attachments",
   "answerFailed": "The answer failed",
   "answered": "Answered",
   "cancelled": "Cancelled",
@@ -126,5 +120,11 @@
     "hint": "Working files of this conversation: attachments and what the assistant made",
     "title": "Chat files",
     "intro": "The working files of this conversation. They're deleted with it; save what you want to keep to the tenant's files."
-  }
+  },
+  "voiceHint": "Record a voice message; click again to send it",
+  "stopAndSend": "Stop and send",
+  "cancelRecording": "Discard the recording",
+  "recording": "Recording {{time}}",
+  "removeAttachment": "Remove {{name}}",
+  "voiceSent": "Voice message sent, transcribing…"
 }

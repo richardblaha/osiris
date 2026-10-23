@@ -169,8 +169,9 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
 
     activeRuns.add(runKey);
     let paths: string[] = [];
+    let voice: string | undefined;
     try {
-      const decoded = attachmentInput(message); paths = decoded.paths;
+      const decoded = attachmentInput(message); paths = decoded.paths; voice = decoded.voice;
       if (paths.length && !(await tenant.features.get()).files) throw new HttpError(403, "errors.files.featureOff");
       message = await tenant.questions.prepare(user.sub, id, decoded.text);
     }
@@ -186,7 +187,7 @@ export function createRuntimeApp({ tenant, verifier, activity, snapshot, counts 
         const guarded = channel === "public" ? true : hasRules(await tenant.rules(user.sub));
         const quota = await tenant.features.quotas();
         if (paths.length && ((quota.tokensPerMonth !== null && await tenant.usage.tokens() >= quota.tokensPerMonth) || (quota.tokensPerUserMonth !== null && await tenant.usage.tokens(Date.now(), { user: user.sub }) >= quota.tokensPerUserMonth))) throw new Error("Token quota used up");
-        const input = paths.length ? await attachmentMessage(tenant.files, tenant.media, id, message, paths, n => tenant.usage.add(n, Date.now(), { user: user.sub }), locale) : undefined;
+        const input = paths.length ? await attachmentMessage(tenant.files, tenant.media, id, message, paths, n => tenant.usage.add(n, Date.now(), { user: user.sub }), locale, voice) : undefined;
         for await (const event of streamRun(tenant.graph, runCtx, message, abort.signal, { guarded, input })) {
           await sse.writeSSE({ data: JSON.stringify(event) });
         }
