@@ -1,18 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { buildVitepressTool } from "@osiris/core/agent/tools/site.ts";
+import { buildVitepressTool, srcDirOf } from "@osiris/core/agent/tools/site.ts";
 import { VitepressClient } from "@osiris/core/files/vitepress.ts";
 import { createTestApp, createTestProjects } from "./helpers.ts";
 
 const project = { scope: "project" } as const;
 
 describe("build_vitepress_site", () => {
-  it("sends vitepress/<site>/ to the builder and replaces www/<site>/ with the result", async () => {
+  it("sends .vitepress/ and the pages' folder to the builder and replaces .vitepress/dist/ with the result", async () => {
     const { projects } = createTestProjects();
     const acme = await projects.get("acme");
-    await acme.files.write(project, "vitepress/firma/index.md", Buffer.from("# Firma"));
-    await acme.files.write(project, "vitepress/firma/_vitepress/config.js", Buffer.from("export default {}"));
-    await acme.files.write(project, "www/firma/stara.html", Buffer.from("<p>stará</p>"));
-    await acme.files.write(project, "www/jiny/index.html", Buffer.from("<p>jiný web</p>"));
+    await acme.files.write(project, ".vitepress/config.mjs", Buffer.from('export default { srcDir: "./web/" }'));
+    await acme.files.write(project, "web/index.md", Buffer.from("# Firma"));
+    // The project's other files never go to the site.
+    await acme.files.write(project, "poznamky.md", Buffer.from("# Interní"));
+    await acme.files.write(project, ".vitepress/dist/stara.html", Buffer.from("<p>stará</p>"));
+    await acme.files.write(project, ".vitepress/cache/x.json", Buffer.from("{}"));
 
     let sent: string[] = [];
     const fakeFetch = (async (_url: URL, init: RequestInit) => {
@@ -25,42 +27,41 @@ describe("build_vitepress_site", () => {
     }) as typeof fetch;
     const tool = buildVitepressTool(acme.files, new VitepressClient("http://vitepress:3000", fakeFetch));
 
-    const answer = await tool.invoke({ site: "firma" });
-    expect(sent).toEqual(["_vitepress/config.js", "index.md"]);
-    expect(answer).toContain("Sestaveno do www/firma: 2 souborů");
+    const answer = await tool.invoke({});
+    expect(sent).toEqual([".vitepress/config.mjs", "web/index.md"]);
+    expect(answer).toContain("Sestaveno do .vitepress/dist: 2 souborů");
     expect(answer).toContain("smazáno 1");
     expect(answer).toContain("data.bin");
-    expect((await acme.files.read(project, "www/firma/index.html")).data.toString()).toBe("<h1>Firma</h1>");
-    await expect(acme.files.read(project, "www/firma/stara.html")).rejects.toThrow();
-    // Other sites stay.
-    expect((await acme.files.read(project, "www/jiny/index.html")).data.toString()).toBe("<p>jiný web</p>");
+    expect((await acme.files.read(project, ".vitepress/dist/index.html")).data.toString()).toBe("<h1>Firma</h1>");
+    await expect(acme.files.read(project, ".vitepress/dist/stara.html")).rejects.toThrow();
+    // .vitepress is the one hidden folder the files reach; the project's own data never.
+    expect((await acme.files.list(project)).map((e) => e.name)).toEqual([".vitepress", "web", "poznamky.md"]);
+    await expect(acme.files.read(project, ".osiris/project.json")).rejects.toThrow();
+  });
 
-    expect(await tool.invoke({ site: "nic" })).toContain("doesn't exist");
-    await expect(tool.invoke({ site: "../www" })).rejects.toThrow();
+  it("reads the pages' folder from the config", () => {
+    expect(srcDirOf('export default { srcDir: "web" }')).toBe("web");
+    expect(srcDirOf("srcDir: './stranky/'")).toBe("stranky");
+    expect(srcDirOf("export default { title: 'x' }")).toBe("");
   });
 });
 
-describe("VitePress sites", () => {
-  it("are created from the default template, built and removed by admins", async () => {
+describe("the project's website", () => {
+  it("is created once from the template by admins, with its pages apart from the project's files", async () => {
     const { projects } = createTestProjects();
     const app = await createTestApp(projects);
     const as = (who: string) => (path: string, init: RequestInit = {}) =>
       app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${who}`, "x-project-id": "acme", "content-type": "application/json" } });
     const admin = as("acme");
-    expect((await as("bob:project=acme")("/vitepress-sites", { method: "POST", body: JSON.stringify({ name: "firma.cz" }) })).status).toBe(403);
-    expect((await admin("/vitepress-sites", { method: "POST", body: JSON.stringify({ name: "firma.cz" }) })).status).toBe(201);
-    expect((await admin("/vitepress-sites", { method: "POST", body: JSON.stringify({ name: "firma.cz" }) })).status).toBe(409);
-    expect((await admin("/vitepress-sites", { method: "POST", body: JSON.stringify({ name: "../x" }) })).status).toBe(400);
-    expect(await (await admin("/vitepress-sites")).json()).toEqual({ sites: ["firma.cz"], builder: false });
+    expect(await (await admin("/site")).json()).toEqual({ exists: false, srcDir: null, builder: false });
+    expect((await as("bob:project=acme")("/site", { method: "POST", body: JSON.stringify({ title: "Firma" }) })).status).toBe(403);
+    expect((await admin("/site", { method: "POST", body: JSON.stringify({ title: "Elektro Novák" }) })).status).toBe(201);
+    expect((await admin("/site", { method: "POST", body: JSON.stringify({ title: "Znovu" }) })).status).toBe(409);
+    expect(await (await admin("/site")).json()).toEqual({ exists: true, srcDir: "web", builder: false });
     const acme = await projects.get("acme");
-    const config = (await acme.files.read(project, "vitepress/firma.cz/_vitepress/config.mjs")).data.toString();
-    expect(config).toContain('title: "firma.cz"');
-    expect((await acme.files.read(project, "vitepress/firma.cz/index.md")).data.toString()).toContain("layout: home");
+    expect((await acme.files.read(project, ".vitepress/config.mjs")).data.toString()).toContain('title: "Elektro Novák"');
+    expect((await acme.files.read(project, "web/index.md")).data.toString()).toContain("layout: home");
     // Without a builder there is nothing to build with.
-    expect((await admin("/vitepress-sites/firma.cz/build", { method: "POST" })).status).toBe(503);
-    await acme.files.write(project, "www/firma.cz/index.html", Buffer.from("<p>x</p>"));
-    expect((await admin("/vitepress-sites/firma.cz", { method: "DELETE" })).status).toBe(204);
-    expect(await (await admin("/vitepress-sites")).json()).toEqual({ sites: [], builder: false });
-    await expect(acme.files.read(project, "www/firma.cz/index.html")).rejects.toThrow();
+    expect((await admin("/site/build", { method: "POST" })).status).toBe(503);
   });
 });

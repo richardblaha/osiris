@@ -13,8 +13,6 @@ type Open = { path: string; kind: "text"; text: string; saved: string; isNew: bo
 type Upload = { path: string; file: File; state: "waiting" | "uploading" | "done" | "exists" | "error"; error?: string };
 
 const IMAGE = /^image\/(png|jpeg|gif|webp|svg\+xml)$/;
-/** Folders with their own view (Weby): not in Soubory. */
-export const OWN_VIEWS = ["vitepress", "www"];
 
 /** A size in the reader's number format, with its unit (B, kB, MB). */
 export const fileSize = (n: number) =>

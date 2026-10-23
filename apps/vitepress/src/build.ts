@@ -13,15 +13,15 @@ export type BuildResult = { ok: true; files: BuildFile[] } | { ok: false; log: s
 
 export const LIMITS = { inputFiles: 2000, outputFiles: 5000, outputBytes: 200 * 1024 * 1024, timeoutMs: 120_000, logChars: 8000 };
 
-/** The site's config and theme folder: `.vitepress` in VitePress, `_vitepress` in the project's files (no hidden names there). */
-const CONFIG_DIR = "_vitepress";
+/** The site's config and theme folder, the only hidden name a site's files may have. */
+const CONFIG_DIR = ".vitepress";
 const NODE_MODULES = join(import.meta.dirname, "../node_modules");
 const VITEPRESS = join(NODE_MODULES, "vitepress/bin/vitepress.js");
 
-/** Relative paths only: no absolute, `..`, empty or hidden segments, backslashes or control characters. */
+/** Relative paths only: no absolute, `..`, empty or hidden segments (but a leading `.vitepress`), backslashes or control characters. */
 export function safePath(path: string): string[] | null {
   const segs = path.split("/");
-  const ok = segs.every((s) => s && s !== "." && s !== ".." && !s.startsWith(".") && s.length <= 255 && !/[\\\x00-\x1f\x7f]/.test(s));
+  const ok = segs.every((s, i) => s && s !== "." && s !== ".." && (!s.startsWith(".") || (i === 0 && s === CONFIG_DIR)) && s.length <= 255 && !/[\\\x00-\x1f\x7f]/.test(s));
   return ok && segs.length <= 32 ? segs : null;
 }
 
@@ -39,12 +39,11 @@ export async function build(files: BuildFile[]): Promise<BuildResult> {
     for (const f of files) {
       const segs = safePath(f.path);
       if (!segs) return { ok: false, log: `Invalid path: ${f.path}` };
-      if (segs[0] === CONFIG_DIR) segs[0] = ".vitepress";
       const abs = join(src, ...segs);
       await mkdir(dirname(abs), { recursive: true });
       await writeFile(abs, f.data);
     }
-    if (!files.some((f) => f.path === "index.md")) return { ok: false, log: "index.md is missing" };
+    if (!files.some((f) => f.path.endsWith(".md"))) return { ok: false, log: "The site has no Markdown pages" };
     // The config imports vitepress; ESM resolves it from the files' folders upwards.
     await symlink(NODE_MODULES, join(dir, "node_modules"), "dir");
     await writeFile(join(dir, "package.json"), JSON.stringify({ type: "module" }));

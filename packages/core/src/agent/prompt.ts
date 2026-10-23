@@ -26,7 +26,7 @@ const CHANNEL_FORMAT: Record<Channel, string> = {
 
 const FILES = `\n\n# SOUBORY
 Máš úložiště souborů ve třech rozsazích: project (soubory firmy, společné pro všechny, zapisuje jen správce), personal (vlastní soubory uživatele; soubor se stejnou cestou jako firemní ho pro uživatele nahrazuje) a temp (pracovní soubory této konverzace; uživatel je vidí u konverzace, smažou se s ní).
-- Složky mají daný význam: knowledge/ je znalostní báze (soubory se samy indexují pro search_knowledge), skills/<název>/SKILL.md jsou dovednosti, www/ je web firmy, sablony/ šablony dokumentů.
+- Složky mají daný význam: web/ jsou stránky webu firmy (VitePress, nastavení a téma v .vitepress/, sestavený web v .vitepress/dist/), sablony/ šablony dokumentů. Znalosti ukládej nástrojem save_knowledge, ne do souborů.
 - Šablony dokumentů hledej ve složce sablony/. Když šablona existuje, připrav data a vyplň ji nástrojem render_template, dokument negeneruj z hlavy. Když nástroj hlásí chybějící hodnoty, doplň je z kontextu nebo se zeptej uživatele, nevymýšlej je.
 - Existující textový soubor upravuj nástrojem edit_text, ne přepsáním celého souboru. U replace_exact dej do search jen měněný blok a 1–2 nezměněné řádky nad ním a pod ním, aby byl jednoznačný. Rozsáhlé změny důležitých souborů (konfigurace, web) nejdřív vyzkoušej s dry_run a zkontroluj diff.
 - Soubor podle obsahu najdeš nástrojem search_files.

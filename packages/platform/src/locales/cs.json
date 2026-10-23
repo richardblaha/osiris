@@ -179,10 +179,8 @@
     "featureOff": "Tato funkce není pro projekt povolená",
     "sites": {
       "featureOff": "Weby nejsou pro projekt povolené",
-      "name": "Název webu: malá písmena, číslice, pomlčky a tečky (např. firma.cz)",
-      "exists": "Web {{site}} už existuje",
-      "invalidName": "Neplatný název webu",
-      "notFound": "Web neexistuje"
+      "exists": "Projekt už web má.",
+      "missing": "Projekt zatím nemá web."
     },
     "image": {
       "tooLarge": "Obrázek může mít nejvýš {{mb}} MB",
@@ -216,7 +214,6 @@
       "folderNotFound": "Složka {{path}} neexistuje",
       "badPath": "Neplatná cesta",
       "isFile": "{{path}} je soubor, ne složka",
-      "folderEmpty": "Složka {{path}} neexistuje nebo je prázdná.",
       "featureOff": "Soubory nejsou povolené",
       "threadRequired": "Dočasné soubory potřebují konverzaci (thread)",
       "uploadTooLarge": "Soubor je příliš velký",

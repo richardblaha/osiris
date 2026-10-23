@@ -11,7 +11,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
 import { publicProfile } from "@osiris/core/public/assistant.ts";
-import { buildSite, createSite, describeBuild, listSites, SITE_NAME, VITEPRESS_DIR } from "@osiris/core/agent/tools/site.ts";
+import { buildSite, createSite, describeBuild, SITE_DIST, siteInfo } from "@osiris/core/agent/tools/site.ts";
 import type { GuardOwner } from "@osiris/core/agent/guards.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";
 import { slug } from "@osiris/core/files/sync.ts";
@@ -125,7 +125,7 @@ const FEATURE_ROUTES: [string, Feature[]][] = [
   ["/secrets", ["http", "mcp"]],
   ["/files", ["files"]],
   ["/site-targets", ["sites", "files"]],
-  ["/vitepress-sites", ["sites"]],
+  ["/site", ["sites"]],
   ["/database", ["database"]],
 ];
 
@@ -865,38 +865,27 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
       return c.body(null, 204);
     })
 
-    // The project's VitePress sites (vitepress/<site>/, built into www/<site>/): admins create, build and remove them.
-    .get("/vitepress-sites", async (c) => {
+    // The project's one website: VitePress in its root (.vitepress/, pages in srcDir), built into .vitepress/dist/.
+    .get("/site", async (c) => {
       const { project } = c.get("ctx");
-      return c.json({ sites: await listSites(project.files), builder: !!project.vitepress });
+      return c.json({ ...(await siteInfo(project.files)), builder: !!project.vitepress });
     })
-    .post("/vitepress-sites", async (c) => {
+    .post("/site", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
-      const { name } = parse(z.object({ name: z.string().trim().toLowerCase().max(60) }), await c.req.json());
-      await fileErrors(() => createSite(ctx.project.files, name));
-      return c.json({ name }, 201);
+      const { title } = parse(z.object({ title: z.string().trim().min(1).max(80) }), await c.req.json());
+      await fileErrors(() => createSite(ctx.project.files, title));
+      return c.json(await siteInfo(ctx.project.files), 201);
     })
-    .post("/vitepress-sites/:name/build", async (c) => {
+    .post("/site/build", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
       if (!ctx.project.vitepress) throw new HttpError(503, "errors.vitepress.off");
-      const name = c.req.param("name");
-      if (!SITE_NAME.test(name)) throw new HttpError(400, "errors.sites.invalidName");
-      const result = await fileErrors(() => buildSite(ctx.project.files, ctx.project.vitepress!, name)).catch((err: Error) => {
+      const result = await fileErrors(() => buildSite(ctx.project.files, ctx.project.vitepress!)).catch((err: Error) => {
         if (err instanceof HTTPException || err instanceof HttpError) throw err;
         throw new HttpError(502, "errors.vitepress.buildFailed", { detail: detail(err) });
       });
       return c.json({ ...result, message: describeBuild(result) });
-    })
-    .delete("/vitepress-sites/:name", async (c) => {
-      const ctx = c.get("ctx");
-      requireAdmin(ctx);
-      const name = c.req.param("name");
-      if (!(await listSites(ctx.project.files)).includes(name)) throw new HttpError(404, "errors.sites.notFound");
-      await fileErrors(() => ctx.project.files.delete({ scope: "project" }, `${VITEPRESS_DIR}/${name}`));
-      await ctx.project.files.delete({ scope: "project" }, `www/${name}`).catch(() => {});
-      return c.body(null, 204);
     })
 
     // Where the project's website is published over SFTP (its VPS at vas-hosting.cz…): admins manage and publish.
@@ -933,7 +922,7 @@ export function createRuntimeApp({ project, verifier, activity, snapshot, counts
     .post("/site-targets/:name/publish", async (c) => {
       const ctx = c.get("ctx");
       requireAdmin(ctx);
-      const { dir } = parse(z.object({ dir: z.string().max(512).default("www") }), await c.req.json().catch(() => ({})));
+      const { dir } = parse(z.object({ dir: z.string().max(512).default(SITE_DIST) }), await c.req.json().catch(() => ({})));
       const result = await fileErrors(() => publishSftp(ctx.project.files, { scope: "project" }, dir, ctx.project.siteTargets, c.req.param("name"))).catch(
         (err: Error) => {
           if (err instanceof HTTPException || err instanceof HttpError) throw err;

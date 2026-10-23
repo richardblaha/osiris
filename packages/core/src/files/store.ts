@@ -40,7 +40,11 @@ const MAX_PATH = 512;
 const MAX_DEPTH = 16;
 const MAX_SEGMENT = 120;
 
-/** Splits a relative path into checked segments: no `..`, hidden names, control characters or backslashes. */
+/** The one hidden name the files reach: the project website's VitePress config and theme (`.osiris` and `.git` never). */
+export const VITEPRESS_DIR = ".vitepress";
+const visible = (name: string) => !name.startsWith(".") || name === VITEPRESS_DIR;
+
+/** Splits a relative path into checked segments: no `..`, hidden names (but `.vitepress`), control characters or backslashes. */
 export function pathSegments(path: string, { allowRoot = false } = {}): string[] {
   const p = path.normalize("NFC").replace(/^\/+|\/+$/g, "");
   if (!p) {
@@ -51,7 +55,7 @@ export function pathSegments(path: string, { allowRoot = false } = {}): string[]
   const segments = p.split("/");
   if (segments.length > MAX_DEPTH) throw new FileError("invalid", "errors.files.tooDeep");
   for (const s of segments) {
-    if (!s || s === "." || s === ".." || s.startsWith(".") || s.length > MAX_SEGMENT || s !== s.trim() || /[\\\x00-\x1f\x7f]/.test(s)) {
+    if (!s || s === "." || s === ".." || !visible(s) || s.length > MAX_SEGMENT || s !== s.trim() || /[\\\x00-\x1f\x7f]/.test(s)) {
       throw new FileError("invalid", "errors.files.badName", { name: s });
     }
   }
@@ -118,8 +122,8 @@ export class FileStore {
     }
     const entries: FileEntry[] = [];
     for (const d of names) {
-      // Hidden names are in-progress writes; symlinks are never created by the store and never followed.
-      if (d.name.startsWith(".") || !(d.isFile() || d.isDirectory())) continue;
+      // Hidden names are in-progress writes or the project's own data; symlinks are never created by the store and never followed.
+      if (!visible(d.name) || !(d.isFile() || d.isDirectory())) continue;
       const s = await lstat(join(abs, d.name)).catch(() => undefined);
       if (!s) continue;
       entries.push(this.entry(loc, [...segments, d.name].join("/"), d.isDirectory(), s.size, s.mtime));
@@ -287,7 +291,7 @@ export class FileStore {
   /** The project's files, users' own and threads' temporary ones; not the project's data in `.osiris/` or `.git`. */
   private async count(): Promise<number> {
     let total = 0;
-    for (const name of await readdir(this.root).catch(() => [])) if (!name.startsWith(".")) total += await sizeOf(join(this.root, name));
+    for (const name of await readdir(this.root).catch(() => [])) if (visible(name)) total += await sizeOf(join(this.root, name));
     for (const user of await readdir(join(this.root, USERS)).catch(() => [])) total += await sizeOf(join(this.root, USERS, user, "files"));
     return total + (await sizeOf(join(this.root, TMP)));
   }

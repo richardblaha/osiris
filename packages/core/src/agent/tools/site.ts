@@ -6,37 +6,44 @@ import type { SiteFile, VitepressClient } from "../../files/vitepress.ts";
 import { publishFolder, type SiteTargetStore } from "../../sites/sftp.ts";
 import { getRunContext } from "../context.ts";
 
-/** Publishes the project's website (a folder of its files, www/ by default) to a target over SFTP. */
+/** Publishes the project's website (its build, or another folder of its files) to one target over SFTP, or to all. */
 export function publishSiteTool(files: FileStore, targets: SiteTargetStore) {
   return tool(
     async ({ target, dir }, config) => {
       const ctx = getRunContext(config);
       if (ctx.role !== "admin") return "Web firmy může publikovat jen správce projektu.";
-      const all = await targets.list();
-      const name = target ?? (all.length === 1 ? all[0]!.name : undefined);
-      if (!name) return all.length ? `Uveď cíl: ${all.map((t) => t.name).join(", ")}.` : "Firma nemá nastavený žádný cíl publikování (Web → cíle).";
-      try {
-        const r = await publishFolder(files, { scope: "project" }, dir, targets, name);
-        return `Publikováno na ${name}: nahráno ${r.uploaded}, smazáno ${r.deleted}, beze změny ${r.unchanged} souborů.`;
-      } catch (err) {
-        return `Publikování selhalo: ${(err as Error).message}`;
+      const all = (await targets.list()).map((t) => t.name);
+      if (!all.length) return "Firma nemá nastavený žádný cíl publikování (Web → cíle).";
+      if (target && !all.includes(target)) return `Cíl ${target} neexistuje. Cíle: ${all.join(", ")}.`;
+      const lines: string[] = [];
+      for (const name of target ? [target] : all) {
+        try {
+          const r = await publishFolder(files, { scope: "project" }, dir, targets, name);
+          lines.push(`${name}: nahráno ${r.uploaded}, smazáno ${r.deleted}, beze změny ${r.unchanged} souborů.`);
+        } catch (err) {
+          lines.push(`${name}: publikování selhalo: ${(err as Error).message}`);
+        }
       }
+      return `Publikováno:\n${lines.join("\n")}`;
     },
     {
       name: "publish_site",
       description:
-        "Zveřejní web firmy: nahraje složku (obvykle www, musí obsahovat index.html) z firemních souborů přes SFTP na hosting (např. VPS u vas-hosting.cz). Nahrává jen změny. Jen na výslovný pokyn uživatele.",
+        "Zveřejní web projektu: nahraje sestavený web (.vitepress/dist, musí obsahovat index.html) přes SFTP na hosting, na zadaný cíl, nebo bez cíle na všechny. Nahrává jen změny. Jen na výslovný pokyn uživatele.",
       schema: z.object({
-        target: z.string().max(80).optional().describe("Název cíle publikování; když je jen jeden, není potřeba"),
-        dir: z.string().max(512).default("www").describe("Složka s webem, obvykle www"),
+        target: z.string().max(80).optional().describe("Název cíle publikování; bez něj na všechny cíle"),
+        dir: z.string().max(512).default(SITE_DIST).describe("Složka s webem, obvykle .vitepress/dist"),
       }),
     },
   );
 }
 
-/** A site's name, its folder: kebab-case, dots allowed between parts (k6labs.cz). */
-export const SITE_NAME = /^[a-z0-9]+([.-][a-z0-9]+)*$/;
-export const VITEPRESS_DIR = "vitepress";
+/** The project's one website is a standard VitePress project in its root: `.vitepress/` with the config and theme. */
+export const SITE_CONFIG_DIR = ".vitepress";
+/** Where a build goes (VitePress's default), published from there. */
+export const SITE_DIST = ".vitepress/dist";
+/** Pages of a new site: their own folder, so the project's other Markdown files never become public pages. */
+export const SITE_SRC = "web";
 
 export interface SiteBuild {
   dir: string;
@@ -47,18 +54,47 @@ export interface SiteBuild {
 }
 
 const project = { scope: "project" } as const;
+const CONFIGS = ["config.mts", "config.ts", "config.mjs", "config.js"];
+
+/** The site's config file, or undefined when the project has no website yet. */
+async function configOf(files: FileStore): Promise<{ path: string; text: string } | undefined> {
+  for (const name of CONFIGS) {
+    const path = `${SITE_CONFIG_DIR}/${name}`;
+    const found = await files.read(project, path).catch(() => undefined);
+    if (found) return { path, text: found.data.toString("utf8") };
+  }
+  return undefined;
+}
+
+/** The pages' folder the config names (`srcDir`), '' for the project's root. */
+export const srcDirOf = (config: string) => (/\bsrcDir\s*:\s*["'`](?:\.\/)?([^"'`]*?)\/?["'`]/.exec(config)?.[1] ?? "").replace(/^\.$/, "");
+
+/** Whether the project has a website, and where its pages are. */
+export async function siteInfo(files: FileStore): Promise<{ exists: boolean; srcDir: string | null }> {
+  const config = await configOf(files);
+  return { exists: !!config, srcDir: config ? srcDirOf(config.text) : null };
+}
 
 /**
- * Builds a VitePress site from the project's `vitepress/<site>/` (`_vitepress/` holds its config and theme, as
- * `.vitepress/` in VitePress) into `www/<site>/`, replacing what was there. The build runs in the shared builder.
+ * Builds the project's website: `.vitepress/` (without its own `dist/` and `cache/`) and the pages' folder (`srcDir`,
+ * else every file of the project) go to the shared builder, and the result replaces `.vitepress/dist/`.
  */
-export async function buildSite(files: FileStore, vitepress: VitepressClient, site: string): Promise<SiteBuild> {
-  const src = `${VITEPRESS_DIR}/${site}`;
-  const dst = `www/${site}`;
+export async function buildSite(files: FileStore, vitepress: VitepressClient): Promise<SiteBuild> {
+  const config = await configOf(files);
+  if (!config) throw new FileError("not_found", "errors.sites.missing");
+  const srcDir = srcDirOf(config.text);
   const input: SiteFile[] = [];
-  for await (const e of files.walk(project, src)) input.push({ path: e.path.slice(src.length + 1), data: (await files.read(project, e.path)).data });
-  if (!input.length) throw new FileError("not_found", "errors.files.folderEmpty", { path: src });
+  const add = async (dir: string) => {
+    for await (const e of files.walk(project, dir)) {
+      if (e.path.startsWith(`${SITE_DIST}/`) || e.path.startsWith(`${SITE_CONFIG_DIR}/cache/`)) continue;
+      input.push({ path: e.path, data: (await files.read(project, e.path)).data });
+    }
+  };
+  await add(SITE_CONFIG_DIR);
+  if (srcDir) await add(srcDir);
+  else for (const e of await files.list(project)) if (e.name !== SITE_CONFIG_DIR) await add(e.path);
   const built = await vitepress.build(input);
+  const dst = SITE_DIST;
   const written = new Set<string>();
   let bytes = 0;
   const skipped: string[] = [];
@@ -99,10 +135,10 @@ export const describeBuild = (b: SiteBuild) =>
     .filter(Boolean)
     .join(" ");
 
-/** The default template of a new site: VitePress's default theme, a home page and one more page, in Czech. */
+/** The template of a new site: VitePress's default theme, a home page and one more page in `web/`, in Czech. */
 export function defaultTemplate(site: string): Record<string, string> {
   return {
-    "index.md": `---
+    [`${SITE_SRC}/index.md`]: `---
 layout: home
 
 hero:
@@ -121,12 +157,14 @@ features:
     details: Jak se s námi spojit.
 ---
 `,
-    "o-nas.md": `# O nás
+    [`${SITE_SRC}/o-nas.md`]: `# O nás
 
 Kdo jsme, co umíme a kde nás najdete.
 `,
-    "_vitepress/config.mjs": `// Nastavení webu: https://vitepress.dev/reference/site-config
+    [`${SITE_CONFIG_DIR}/config.mjs`]: `// Nastavení webu: https://vitepress.dev/reference/site-config
 export default {
+  // Stránky webu jsou jen ve složce ${SITE_SRC}/: ostatní soubory projektu se nezveřejní.
+  srcDir: "${SITE_SRC}",
   lang: "cs",
   title: ${JSON.stringify(site)},
   description: "",
@@ -143,27 +181,17 @@ export default {
   };
 }
 
-/** The project's VitePress sites: the folders in vitepress/. */
-export async function listSites(files: FileStore): Promise<string[]> {
-  const entries = await files.list(project, VITEPRESS_DIR).catch((err) => {
-    if (err instanceof FileError && err.code === "not_found") return [];
-    throw err;
-  });
-  return entries.filter((e) => e.type === "dir" && SITE_NAME.test(e.name)).map((e) => e.name);
-}
-
-/** A new site from the default template; refused when the folder exists. */
-export async function createSite(files: FileStore, site: string): Promise<void> {
-  if (!SITE_NAME.test(site)) throw new FileError("invalid", "errors.sites.name");
-  if ((await listSites(files)).includes(site)) throw new FileError("exists", "errors.sites.exists", { site });
-  for (const [path, text] of Object.entries(defaultTemplate(site))) await files.write(project, `${VITEPRESS_DIR}/${site}/${path}`, Buffer.from(text), { overwrite: false });
+/** The project's website from the template; refused when it has one. */
+export async function createSite(files: FileStore, title: string): Promise<void> {
+  if (await configOf(files)) throw new FileError("exists", "errors.sites.exists");
+  for (const [path, text] of Object.entries(defaultTemplate(title))) await files.write(project, path, Buffer.from(text), { overwrite: false });
 }
 
 export function buildVitepressTool(files: FileStore, vitepress: VitepressClient) {
   return tool(
-    async ({ site }) => {
+    async () => {
       try {
-        return `${describeBuild(await buildSite(files, vitepress, site))} Zveřejnit jde nástrojem publish_site se složkou www/${site}.`;
+        return `${describeBuild(await buildSite(files, vitepress))} Zveřejnit jde nástrojem publish_site.`;
       } catch (err) {
         if (err instanceof FileError && err.code === "not_found") return err.message;
         return `Sestavení selhalo: ${(err as Error).message}`;
@@ -172,9 +200,9 @@ export function buildVitepressTool(files: FileStore, vitepress: VitepressClient)
     {
       name: "build_vitepress_site",
       description:
-        "Sestaví web z VitePress šablony ve firemních souborech vitepress/<site>/ (stránky v Markdownu, index.md povinný; konfigurace a téma " +
-        "ve vitepress/<site>/_vitepress/, tj. config.js a theme/, místo .vitepress) a uloží hotový web do www/<site>/ (to, co tam bylo, nahradí).",
-      schema: z.object({ site: z.string().regex(SITE_NAME, "Název webu: malá písmena, číslice, pomlčky a tečky (např. firma.cz)").max(60).describe("Název webu, složka ve vitepress/") }),
+        "Sestaví web projektu: standardní VitePress v kořeni projektu (konfigurace a téma v .vitepress/, stránky v Markdownu ve složce ze srcDir, obvykle web/) " +
+        "a uloží hotový web do .vitepress/dist/ (to, co tam bylo, nahradí).",
+      schema: z.object({}),
     },
   );
 }

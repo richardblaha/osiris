@@ -311,17 +311,16 @@ export const api = {
   deleteSchedule: (id: string) => request(`/schedules/${id}`, { method: "DELETE" }),
 
   siteTargets: () => json<SiteTarget[]>("/site-targets"),
-  vitepressSites: () => json<{ sites: string[]; builder: boolean }>("/vitepress-sites"),
-  createVitepressSite: (name: string) => json<{ name: string }>("/vitepress-sites", { method: "POST", body: JSON.stringify({ name }) }),
-  buildVitepressSite: (name: string) => json<{ dir: string; written: number; bytes: number; deleted: number; skipped: string[] }>(`/vitepress-sites/${encodeURIComponent(name)}/build`, { method: "POST" }),
-  deleteVitepressSite: (name: string) => request(`/vitepress-sites/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  site: () => json<{ exists: boolean; srcDir: string | null; builder: boolean }>("/site"),
+  createSite: (title: string) => json<{ exists: boolean; srcDir: string | null }>("/site", { method: "POST", body: JSON.stringify({ title }) }),
+  buildSite: () => json<{ dir: string; written: number; bytes: number; deleted: number; skipped: string[] }>("/site/build", { method: "POST" }),
   saveSiteTarget: (
     name: string,
     body: { host: string; port: number; username: string; remoteDir: string; auth: SiteTarget["auth"]; secret?: string },
   ) => request(`/site-targets/${encodeURIComponent(name)}`, { method: "PUT", body: JSON.stringify(body) }),
   deleteSiteTarget: (name: string) => request(`/site-targets/${encodeURIComponent(name)}`, { method: "DELETE" }),
   testSiteTarget: (name: string) => json<{ entries: string[] }>(`/site-targets/${encodeURIComponent(name)}/test`, { method: "POST" }),
-  publishSite: (name: string, dir = "www") =>
+  publishSite: (name: string, dir = ".vitepress/dist") =>
     json<PublishResult>(`/site-targets/${encodeURIComponent(name)}/publish`, { method: "POST", body: JSON.stringify({ dir }) }),
 
   admin: {

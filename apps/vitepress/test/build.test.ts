@@ -9,14 +9,14 @@ const form = (files: Record<string, string>) => {
 };
 
 describe("the VitePress builder", () => {
-  it("builds a site, with _vitepress as its config folder", { timeout: 120_000 }, async () => {
+  it("builds a site from its .vitepress config and the pages in its srcDir", { timeout: 120_000 }, async () => {
     const app = createVitepressApp();
     const res = await app.request("/build", {
       method: "POST",
       body: form({
-        "index.md": "# Elektro Novák\n\nMontáže a revize.",
-        "sluzby.md": "# Služby",
-        "_vitepress/config.js": "export default { title: 'Elektro Novák', lang: 'cs' }",
+        "web/index.md": "# Elektro Novák\n\nMontáže a revize.",
+        "web/sluzby.md": "# Služby",
+        ".vitepress/config.js": "export default { title: 'Elektro Novák', lang: 'cs', srcDir: 'web' }",
       }),
     });
     expect(res.status).toBe(200);
@@ -30,18 +30,19 @@ describe("the VitePress builder", () => {
   it("answers a failing build with its log", { timeout: 120_000 }, async () => {
     const res = await createVitepressApp().request("/build", {
       method: "POST",
-      body: form({ "index.md": "# Ahoj", "_vitepress/config.js": "export default {" }),
+      body: form({ "index.md": "# Ahoj", ".vitepress/config.js": "export default {" }),
     });
     expect(res.status).toBe(422);
     expect((await res.json()).error).toBeTruthy();
   });
 
-  it("refuses paths outside the site and a site without index.md", async () => {
+  it("refuses paths outside the site and a site without pages", async () => {
     expect(safePath("../etc/passwd")).toBeNull();
-    expect(safePath(".vitepress/config.js")).toBeNull();
+    expect(safePath(".git/config")).toBeNull();
+    expect(safePath("web/.vitepress/config.js")).toBeNull();
     expect(safePath("a//b")).toBeNull();
-    expect(safePath("_vitepress/theme/index.js")).toEqual(["_vitepress", "theme", "index.js"]);
-    const res = await createVitepressApp().request("/build", { method: "POST", body: form({ "readme.md": "x" }) });
-    expect(await res.json()).toEqual({ error: "index.md is missing" });
+    expect(safePath(".vitepress/theme/index.js")).toEqual([".vitepress", "theme", "index.js"]);
+    const res = await createVitepressApp().request("/build", { method: "POST", body: form({ ".vitepress/config.js": "x" }) });
+    expect(await res.json()).toEqual({ error: "The site has no Markdown pages" });
   });
 });

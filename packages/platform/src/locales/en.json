@@ -165,10 +165,8 @@
     "featureOff": "This feature is not enabled for the project.",
     "sites": {
       "featureOff": "Sites are not enabled for the project.",
-      "name": "Site name: lowercase letters, digits, hyphens and dots (for example mycompany.com).",
-      "exists": "Site {{site}} already exists.",
-      "invalidName": "Invalid site name.",
-      "notFound": "The site doesn't exist."
+      "exists": "The project already has a website.",
+      "missing": "The project has no website yet."
     },
     "image": {
       "tooLarge": "The image can be at most {{mb}} MB.",
@@ -202,7 +200,6 @@
       "folderNotFound": "Folder {{path}} doesn't exist.",
       "badPath": "Invalid path.",
       "isFile": "{{path}} is a file, not a folder.",
-      "folderEmpty": "Folder {{path}} doesn't exist or is empty.",
       "featureOff": "Files are not enabled.",
       "threadRequired": "Temporary files need the conversation (thread).",
       "uploadTooLarge": "The file is too large.",

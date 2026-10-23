@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { api, setProject } from "./api.ts";
 import { getAccessToken, login, logout } from "./auth.ts";
 import { ChatPane } from "./chat/ChatPane.tsx";
-import { LayeredFiles, OWN_VIEWS } from "./Files.tsx";
+import { LayeredFiles } from "./Files.tsx";
 import { Schedules } from "./Schedules.tsx";
 import { Database } from "./Database.tsx";
 import { Dashboards } from "./Dashboards.tsx";
@@ -573,7 +573,7 @@ function Workspace() {
             me.projects.length ? <Pending className="relative h-full" /> : null
           ) : view.kind === "files" ? (
             project.features.files ? (
-              <LayeredFiles key={project.id} isAdmin={isAdmin} hide={OWN_VIEWS} intro={t("app:filesIntro")} />
+              <LayeredFiles key={project.id} isAdmin={isAdmin} intro={t("app:filesIntro")} />
             ) : null
           ) : view.kind === "schedules" ? (
             project.features.scheduler ? <Schedules key={project.id} isAdmin={isAdmin} onOpenThread={(id) => (openThread(id), void refreshThreads())} /> : null
