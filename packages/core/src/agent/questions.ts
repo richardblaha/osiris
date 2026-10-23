@@ -30,6 +30,10 @@ export class QuestionStore {
     if (!row) return null;
     return { id: String(row.id), ...JSON.parse(String(row.definition)), state: row.state === "open" && Number(row.expires_at) <= Date.now() ? "expired" : String(row.state), expiresAt: Number(row.expires_at) };
   }
+  /** Takes back a question nobody answered yet: it ends as cancelled, so whatever waited on it doesn't happen. */
+  async withdraw(user: string, thread: string, id: string): Promise<void> {
+    await this.db.execute({ sql: "UPDATE chat_questions SET state='cancelled', answer='{}' WHERE id=? AND user_id=? AND thread_id=? AND state='open'", args: [id, user, thread] });
+  }
   /** The validated values of an answered question (`{}` when cancelled), null while it isn't answered. */
   async answer(user: string, thread: string, id: string): Promise<Record<string, unknown> | null> {
     const { rows } = await this.db.execute({ sql: "SELECT state, answer FROM chat_questions WHERE id=? AND user_id=? AND thread_id=?", args: [id, user, thread] });

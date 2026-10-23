@@ -217,4 +217,31 @@ describe("run_workflow tool", () => {
     await checkpointer.deleteDerivedThreads("t1");
     expect(await derived()).toBe(0);
   });
+
+  it("withdraws an approval question that breaks the rules, like ask_user's", async () => {
+    const db = await createTestDb();
+    await db.execute("INSERT INTO threads (id, user_id, channel) VALUES ('t1', 'bob', 'web')");
+    const checkpointer = new LibSQLSaver(db);
+    const questions = new QuestionStore(db);
+    const model = new ScriptModel([
+      new AIMessage({ content: "", tool_calls: [{ id: "c1", name: WORKFLOW_TOOL, args: { request: "Smaž zákazníka Nováka" } }] }),
+      { rationale: "mazání", steps: [step({ id: "smazani", goal: "Smaž zákazníka Nováka", pattern: "ReAct", destructive: true })] },
+      "Tohle udělat nemohu.",
+    ]);
+    // Input check passes, the approval question breaks the rules, the final answer passes.
+    const guard = new ScriptModel(["NE", "ANO", "NE"]);
+    let agent!: ReturnType<typeof createAgentGraph>;
+    const orchestrator = createOrchestratorGraph({ model, react: (g, c, k) => reactFromAgentGraph(agent)(g, c, k), checkpointer });
+    const wf = workflowTool(orchestrator, questions);
+    agent = createAgentGraph({
+      tenantId: "acme", model, models: { agent: model, tools: model, guard, persona: model }, tools: [questions.tool()], dynamicTools: async () => [wf], checkpointer,
+      timezone: "Europe/Prague", questions, rules: async () => ({ system: "Nemaž zákazníky.", tenant: "", user: "" }),
+    });
+    const ctx: RunContext = { thread_id: "t1", tenant_id: "acme", user_id: "bob", role: "admin", channel: "web" };
+    const events: RunEvent[] = [];
+    for await (const e of streamRun(agent, ctx, "Smaž zákazníka Nováka", undefined, { guarded: true })) events.push(e);
+    expect(events.find((e) => e.type === "tool-result")).toMatchObject({ result: expect.stringMatching(/porušuje pravidla/) });
+    expect(await questions.get("bob", "t1")).toBeNull();
+    expect((await questions.latest("bob", "t1"))!.state).toBe("cancelled");
+  });
 });

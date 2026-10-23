@@ -18,7 +18,7 @@ import type { SecretVault } from "../vault/vault.ts";
 import type { FeatureSource } from "../tenants/features.ts";
 import { DEFAULT_FEATURES } from "../tenants/features.ts";
 import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
-import { LOCALES } from "@osiris/shared";
+import { LOCALES, QUESTION_TOOLS } from "@osiris/shared";
 
 export interface AgentDeps {
   /** The tenant this graph serves; runs carrying another `tenant_id` are refused. */
@@ -124,6 +124,24 @@ export function createAgentGraph(deps: AgentDeps) {
     return { messages: [new AIMessage({ id: last.id, content: say(getRunContext(config), GUARD_REFUSAL) })] };
   };
 
+  /**
+   * A question another tool put to the user (run_workflow's approval) is checked like ask_user's arguments: one that
+   * breaks the rules is withdrawn (as cancelled, so nothing it asked about runs) before anyone sees it.
+   */
+  const checkAskedQuestion = async (m: ToolMessage, config: RunnableConfig): Promise<ToolMessage> => {
+    if (!ToolMessage.isInstance(m) || m.name === "ask_user" || !QUESTION_TOOLS.includes(m.name ?? "") || !deps.questions) return m;
+    let question: { id: string; title: string; fields: unknown[] } | undefined;
+    try {
+      question = (JSON.parse(m.text) as { question?: typeof question }).question;
+    } catch {
+      return m;
+    }
+    if (!question || !(await check(config, "output", JSON.stringify({ title: question.title, fields: question.fields })))) return m;
+    const ctx = getRunContext(config);
+    await deps.questions.withdraw(ctx.user_id, ctx.thread_id, question.id);
+    return new ToolMessage({ id: m.id, name: m.name, tool_call_id: m.tool_call_id, content: "Otázka porušuje pravidla a nebyla položena. Žádná akce nebyla provedena." });
+  };
+
   const callModel = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const ctx = getRunContext(config);
     if (ctx.tenant_id !== tenantId) throw new Error(`Run for tenant ${ctx.tenant_id} sent to graph of ${tenantId}`);
@@ -178,7 +196,8 @@ export function createAgentGraph(deps: AgentDeps) {
       if (ask && ((last.tool_calls?.length ?? 0) !== 1 || await check(config, "output", JSON.stringify(ask.args)))) {
         return { messages: last.tool_calls!.map(c => new ToolMessage({ tool_call_id: c.id!, content: "Otázku je nutné položit samostatně a musí respektovat pravidla. Žádná akce nebyla provedena." })) };
       }
-      return new ToolNode(await allTools(getRunContext(config))).invoke(state, config);
+      const out = (await new ToolNode(await allTools(getRunContext(config))).invoke(state, config)) as { messages: ToolMessage[] };
+      return { messages: await Promise.all(out.messages.map((m) => checkAskedQuestion(m, config))) };
     })
     .addNode("guard_out", guardOutput)
     .addEdge(START, "guard_in")
