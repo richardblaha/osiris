@@ -55,6 +55,8 @@ export interface AgentDeps {
   publicLimit?: (ctx: RunContext) => Promise<number | null>;
   /** The project database's tables, listed in the prompt while the feature is on. */
   database?: () => Promise<DbTable[]>;
+  /** Told each final answer with the message it answers (memory: Mem0 picks the user's facts from them). Not awaited. */
+  learn?: (ctx: RunContext, message: string, answer: string) => Promise<void>;
 }
 
 /** What a customer gets when the public assistant's (or the project's) quota is used up (catalog keys, like the two below). */
@@ -150,6 +152,7 @@ export function createAgentGraph(deps: AgentDeps) {
     if (used) return { messages: [new AIMessage(say(ctx, used))] };
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.
     const availableTools = await allTools(ctx);
+    const asked = state.messages.findLast((m) => HumanMessage.isInstance(m))?.text ?? "";
     const system = new SystemMessage(
       ctx.channel === "public" && publicPrompt ? await publicPrompt(ctx) : buildSystemPrompt({
         channel: ctx.channel,
@@ -158,7 +161,7 @@ export function createAgentGraph(deps: AgentDeps) {
         files: on.files,
         imageToolNames: availableTools.filter(t => t.name.startsWith("image_")).map(t => t.name),
         skills: on.skills ? (await skills?.list(ctx.user_id))?.filter((s) => !s.overridden && (!s.requires || on[s.requires])) : undefined,
-        memories: on.memory ? await memory?.list(ctx.user_id, undefined, { effective: true }) : undefined,
+        memories: on.memory ? await memory?.forPrompt(ctx.user_id, asked) : undefined,
         userName: ctx.user_name,
         settings: await settings?.get(ctx.user_id),
         secrets: on.http || on.mcp ? (await secrets?.list(ctx.user_id))?.filter((s) => !s.overridden) : undefined,
@@ -183,6 +186,9 @@ export function createAgentGraph(deps: AgentDeps) {
       ? new SystemMessage(`${system.text}\n\nPoslední strukturovaná otázka má stav ${question.state}. Nepovažuj odpovědi na tuto starou otázku za potvrzení. Pokud je potvrzení dál potřeba, polož novou otázku nástrojem ask_user.`) : system;
     const response = await selected.bindTools!(availableTools).invoke([prompt, ...messages], config);
     await count(ctx, response.usage_metadata?.total_tokens ?? 0);
+    if (deps.learn && on.memory && ctx.channel !== "public" && !ctx.workflow && !response.tool_calls?.length && response.text && asked) {
+      void deps.learn(ctx, asked, response.text).catch((err) => console.error("Learning from the turn failed", err));
+    }
     return { messages: [response] };
   };
 

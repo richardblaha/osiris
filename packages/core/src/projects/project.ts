@@ -59,6 +59,7 @@ import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
 import { Records } from "./records.ts";
 import { prepareCache } from "./cache.ts";
+import { createMemoryEngine } from "../memory/mem0.ts";
 import { threadIds } from "../repo/threads.ts";
 import { configuredLocale, translate } from "@osiris/platform/i18n.ts";
 
@@ -140,6 +141,8 @@ export interface ProjectDeps {
   gotenbergUrl?: string;
   /** The VitePress builder; without it there is no build_vitepress_site tool. */
   vitepressUrl?: string;
+  /** Lets Mem0 pick the user's facts from every finished turn (costs a few model calls per turn). */
+  learnMemories?: boolean;
   /** Replaces global fetch for the http_request tool (tests). */
   fetch?: typeof fetch;
 }
@@ -154,8 +157,9 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
   const records = new Records(join(root, OSIRIS_DIR));
   const cache = createDb(`file:${join(records.dir, "cache", "index.db")}`);
   const checkpointer = new FileSaver(records);
-  const knowledge = new KnowledgeStore(records, cache, deps.embeddings, deps.embeddingModel);
-  const memory = new MemoryStore(records);
+  const engine = createMemoryEngine({ records, cache, embeddings: deps.embeddings, model: deps.models?.tools ?? deps.model });
+  const knowledge = new KnowledgeStore(records, engine, deps.embeddings, deps.embeddingModel);
+  const memory = new MemoryStore(engine);
   const mcpServers = new McpServerStore(records, deps.secrets);
   const secrets = new SecretVault(records, deps.secrets);
   const mcp = new McpToolset(mcpServers, secrets, new McpOAuthStore(records, deps.secrets), deps.mcp);
@@ -334,6 +338,10 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     settings,
     secrets,
     database: () => data.tables(),
+    learn: deps.learnMemories
+      ? (ctx, message, answer) =>
+          memory.extract(ctx.user_id, [{ role: "user", content: message }, { role: "assistant", content: answer }], (tokens) => void usage.add(tokens, Date.now(), { user: ctx.user_id }))
+      : undefined,
   });
   // The indexes catch up with the files on disk (a restored snapshot, a git pull, a lost cache).
   const init = async () => {
@@ -341,6 +349,7 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     await writeFile(join(records.dir, ".gitignore"), GITIGNORE, { flag: "wx" }).catch((err) => (err.code === "EEXIST" ? undefined : Promise.reject(err)));
     if (!(await records.read("project.json"))) await records.write("project.json", { id });
     await prepareCache(cache);
+    await engine.initialize();
     if (images && deps.comfyApiKey) {
       const name = deps.images?.server ?? "comfy-cloud", keyName = deps.images?.uploadApiKeySecret ?? "COMFY_API_KEY";
       if (!(await secrets.list("")).some(secret => secret.name === keyName)) await secrets.put(keyName, "", { value: deps.comfyApiKey, allowedHosts: ["cloud.comfy.org"], description: "Comfy Cloud runtime credential" });

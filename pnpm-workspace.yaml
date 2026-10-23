@@ -6,3 +6,5 @@ allowBuilds:
   protobufjs: false
   cpu-features: false
   ssh2: false
+  # mem0ai brings it for stores Osiris doesn't use; it is never loaded.
+  better-sqlite3: false

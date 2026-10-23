@@ -1,8 +1,9 @@
 import type { EmbeddingsInterface } from "@langchain/core/embeddings";
 import { RecursiveCharacterTextSplitter } from "@langchain/textsplitters";
-import type { Client } from "@libsql/client";
+import { createHash, randomUUID } from "node:crypto";
 import type { DocumentSummary } from "@osiris/shared";
-import { ftsQuery } from "../files/index.ts";
+import { KNOWLEDGE_AGENT } from "../memory/file-vector-store.ts";
+import type { MemoryEngine } from "../memory/mem0.ts";
 import { formatFrontmatter, parseFrontmatter, userDir, userIds, type Records } from "../projects/records.ts";
 
 /** Chunks of a document are keyed by path `knowledge/<id>`; it was the knowledge base's folder in the files. */
@@ -30,8 +31,6 @@ export interface SearchResult {
 }
 
 const splitter = new RecursiveCharacterTextSplitter({ chunkSize: 1000, chunkOverlap: 150 });
-/** Reciprocal rank fusion: a chunk's score from its rank in each list, so vector and word matches add up. */
-const RRF_K = 60;
 
 /** A document's title: its leading Markdown heading, or the file's name. */
 export const titleOf = (path: string, text = "") => /^#\s+(.+)/.exec(text.trimStart())?.[1]?.trim() || (path.split("/").at(-1) ?? path).replace(/\.[^.]+$/, "");
@@ -41,92 +40,69 @@ const docDir = (owner: string) => (owner ? `${userDir(owner)}/knowledge` : KNOWL
 
 /**
  * The knowledge base: the project's documents (Markdown files under `knowledge/`, a `title` in frontmatter when it
- * isn't the leading heading) with their chunks' vectors and text in the cache database, indexed as a document is
- * saved. Search combines vector similarity with full-text matches.
+ * isn't the leading heading). Their chunks are points of Mem0's collection (scope `knowledge`, kept only in the cache),
+ * indexed as a document is saved, and searched with Mem0 (meaning and words).
  *
  * Chunks record `embeddingModel`, so changing EMBEDDING_MODEL hides old vectors until `reindexStale` (at startup).
  */
 export class KnowledgeStore {
   constructor(
     private readonly records: Records,
-    /** The cache database (chunks, vectors, full text): rebuilt from the documents when lost. */
-    private readonly db: Client,
+    private readonly engine: MemoryEngine,
     private readonly embeddings: EmbeddingsInterface,
     private readonly embeddingModel: string,
   ) {}
 
+  /** The chunks of one owner's documents (`path` = knowledge/<id>), of the current embedding model unless `any`. */
+  private async chunks(owner: string, any = false) {
+    const [found] = await (await this.engine.points()).list({ agent_id: KNOWLEDGE_AGENT, owner, ...(any ? {} : { embedding_model: this.embeddingModel }) }, 1_000_000);
+    return found.map((p) => ({ id: p.id, path: String(p.payload.path), idx: Number(p.payload.idx), content: String(p.payload.data ?? "") }));
+  }
+
   /** (Re)indexes one file of the knowledge base. */
   async indexFile(owner: string, path: string, content: string): Promise<void> {
+    await this.removeFile(owner, path, false);
     const pieces = (await splitter.splitText(content)).filter((p) => p.trim());
-    const vectors = pieces.length ? await this.embeddings.embedDocuments(pieces) : [];
-    await this.db.batch(
-      [
-        ...this.removing(owner, path, false),
-        ...pieces.flatMap((text, idx) => [
-          {
-            sql: `INSERT INTO knowledge_chunks (owner, path, idx, content, embedding_model, embedding) VALUES (?, ?, ?, ?, ?, vector32(?))`,
-            args: [owner, path, idx, text, this.embeddingModel, JSON.stringify(vectors[idx])],
-          },
-          { sql: "INSERT INTO knowledge_text (rowid, content) VALUES (last_insert_rowid(), ?)", args: [text] },
-        ]),
-      ],
-      "write",
+    if (!pieces.length) return;
+    const vectors = await this.embeddings.embedDocuments(pieces);
+    const createdAt = new Date().toISOString();
+    await (await this.engine.points()).insert(
+      vectors,
+      pieces.map(() => randomUUID()),
+      pieces.map((data, idx) => ({ data, hash: createHash("md5").update(data).digest("hex"), createdAt, agent_id: KNOWLEDGE_AGENT, owner, path, idx, embedding_model: this.embeddingModel })),
     );
   }
 
   /** Drops a file's chunks, or those of every file under a folder. */
-  async removeFile(owner: string, path: string): Promise<void> {
-    await this.db.batch(this.removing(owner, path, true), "write");
-  }
-
-  private removing(owner: string, path: string, folder: boolean) {
-    const where = folder ? "owner = ? AND (path = ? OR path LIKE ?)" : "owner = ? AND path = ?";
-    const args = folder ? [owner, path, `${path}/%`] : [owner, path];
-    return [
-      { sql: `DELETE FROM knowledge_text WHERE rowid IN (SELECT id FROM knowledge_chunks WHERE ${where})`, args },
-      { sql: `DELETE FROM knowledge_chunks WHERE ${where}`, args },
-    ];
+  async removeFile(owner: string, path: string, folder = true): Promise<void> {
+    const points = await this.engine.points();
+    for (const c of await this.chunks(owner, true)) if (c.path === path || (folder && c.path.startsWith(`${path}/`))) await points.delete(c.id);
   }
 
   /**
-   * Searches the project's documents plus `userId`'s own, by meaning (vectors) and by words (full text), merged. A
-   * project document the user has their own copy of (same id) is left out: theirs replaces it for them.
+   * Searches the project's documents plus `userId`'s own. A project document the user has their own copy of (same id)
+   * is left out: theirs replaces it for them.
    */
   async search(query: string, userId = "", limit = 5, { under }: { under?: string[] } = {}): Promise<SearchResult[]> {
     // `under`: only the project's files that are these files or in these folders (a public assistant's knowledge).
     if (under && !under.length) return [];
-    const scope = under
-      ? `owner = '' AND (${under.map(() => "path = ? OR substr(path, 1, length(?)) = ?").join(" OR ")})`
-      : "(owner = ? OR (owner = '' AND path NOT IN (SELECT o.path FROM knowledge_chunks o WHERE o.owner = ?)))";
-    const scopeArgs = under ? under.flatMap((p) => [p, `${p}/`, `${p}/`]) : [userId, userId];
-    const vector = await this.embeddings.embedQuery(query);
-    const { rows: near } = await this.db.execute({
-      sql: `SELECT id FROM knowledge_chunks WHERE embedding_model = ? AND ${scope}
-            ORDER BY vector_distance_cos(embedding, vector32(?)) LIMIT 20`,
-      args: [this.embeddingModel, ...scopeArgs, JSON.stringify(vector)],
-    });
-    const match = ftsQuery(query, "OR");
-    const { rows: words } = match
-      ? await this.db.execute({
-          sql: `SELECT c.id FROM knowledge_text t JOIN knowledge_chunks c ON c.id = t.rowid
-                WHERE knowledge_text MATCH ? AND ${scope.replace(/(?<![.\w])(owner|path)\b/g, "c.$1")} ORDER BY bm25(knowledge_text) LIMIT 20`,
-          args: [match, ...scopeArgs],
-        })
-      : { rows: [] };
-    const score = new Map<number, number>();
-    for (const list of [near, words]) list.forEach((r, rank) => score.set(Number(r.id), (score.get(Number(r.id)) ?? 0) + 1 / (RRF_K + rank + 1)));
-    const best = [...score.entries()].sort((a, b) => b[1] - a[1]).slice(0, limit).map(([id]) => id);
-    if (!best.length) return [];
-    const { rows } = await this.db.execute({
-      sql: `SELECT c.id, c.owner, c.path, c.content, (SELECT h.content FROM knowledge_chunks h WHERE h.owner = c.owner AND h.path = c.path AND h.idx = 0) AS head
-            FROM knowledge_chunks c WHERE c.id IN (${best.map(() => "?").join(", ")})`,
-      args: best,
-    });
-    const byId = new Map(rows.map((r) => [Number(r.id), r]));
-    return best.flatMap((id) => {
-      const r = byId.get(id);
-      return r ? [{ owner: String(r.owner), path: String(r.path), title: titleOf(String(r.path), String(r.head ?? "")), content: String(r.content) }] : [];
-    });
+    const own = new Set(userId && !under ? (await this.ids(userId)).map((id) => `${KNOWLEDGE_DIR}/${id}`) : []);
+    // Only the scope goes to Mem0 (it rewrites other filter keys); the embedding model is checked on the results.
+    // No threshold: a word match counts even far in meaning, and the nearest of what the user may see is returned.
+    const { results } = await this.engine.memory.search(query, { filters: { agent_id: KNOWLEDGE_AGENT }, topK: Math.max(limit * 4, 20), threshold: 0 });
+    const fits = (owner: string, path: string) =>
+      under ? owner === "" && under.some((p) => path === p || path.startsWith(`${p}/`)) : owner === userId || (owner === "" && !own.has(path));
+    const hits = results
+      .filter((r) => r.metadata?.embedding_model === this.embeddingModel)
+      .map((r) => ({ owner: String(r.metadata?.owner ?? ""), path: String(r.metadata?.path ?? ""), content: r.memory }))
+      .filter((h) => fits(h.owner, h.path))
+      .slice(0, limit);
+    const heads = new Map<string, string>();
+    for (const h of hits) {
+      const key = `${h.owner}\n${h.path}`;
+      if (!heads.has(key)) heads.set(key, (await this.chunks(h.owner)).find((c) => c.path === h.path && c.idx === 0)?.content ?? "");
+    }
+    return hits.map((h) => ({ ...h, title: titleOf(h.path, heads.get(`${h.owner}\n${h.path}`)) }));
   }
 
   /** The ids of one owner's documents. */
@@ -135,8 +111,9 @@ export class KnowledgeStore {
   }
 
   private async chunkCounts(owner: string): Promise<Map<string, number>> {
-    const { rows } = await this.db.execute({ sql: "SELECT path, COUNT(*) AS n FROM knowledge_chunks WHERE owner = ? GROUP BY path", args: [owner] });
-    return new Map(rows.map((r) => [String(r.path), Number(r.n)]));
+    const counts = new Map<string, number>();
+    for (const c of await this.chunks(owner)) counts.set(c.path, (counts.get(c.path) ?? 0) + 1);
+    return counts;
   }
 
   /** The project's documents and `viewer`'s own, with their chunk counts; a project one the viewer replaced is `overridden`. */
@@ -182,7 +159,7 @@ export class KnowledgeStore {
   async deleteDocument(id: string, owner = ""): Promise<boolean> {
     if (!DOCUMENT_ID.test(id)) return false;
     const existed = await this.records.remove(`${docDir(owner)}/${id}`);
-    await this.db.batch(this.removing(owner, `${KNOWLEDGE_DIR}/${id}`, false), "write");
+    await this.removeFile(owner, `${KNOWLEDGE_DIR}/${id}`, false);
     return existed;
   }
 
@@ -193,8 +170,7 @@ export class KnowledgeStore {
   async reindexStale(): Promise<void> {
     for (const owner of ["", ...(await userIds(this.records))]) {
       const ids = await this.ids(owner);
-      const { rows } = await this.db.execute({ sql: "SELECT DISTINCT path FROM knowledge_chunks WHERE owner = ? AND embedding_model = ?", args: [owner, this.embeddingModel] });
-      const indexed = new Set(rows.map((r) => String(r.path)));
+      const indexed = new Set((await this.chunks(owner)).map((c) => c.path));
       for (const id of ids) {
         if (indexed.delete(`${KNOWLEDGE_DIR}/${id}`)) continue;
         const doc = await this.getDocument(id, owner);

@@ -80,7 +80,7 @@ describe("knowledge base", () => {
     const acme = await projects.get("acme");
     await acme.knowledge.putDocument("a.md", "stará verze");
     await acme.files.write({ scope: "project" }, "poznamky/a.md", text("stará verze"));
-    await acme.cache.batch(["DELETE FROM indexed_files", "DELETE FROM file_text", "DELETE FROM knowledge_chunks", "DELETE FROM knowledge_text"], "write");
+    await acme.cache.batch(["DELETE FROM indexed_files", "DELETE FROM file_text", "DELETE FROM mem0_points", "DELETE FROM mem0_text"], "write");
     await acme.init();
     expect((await acme.knowledge.search("verze")).map((r) => r.path)).toEqual(["knowledge/a.md"]);
     expect((await acme.fileIndex.search("verze", [""])).map((h) => h.path)).toEqual(["poznamky/a.md"]);

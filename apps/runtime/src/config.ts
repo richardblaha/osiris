@@ -42,6 +42,8 @@ const schema = z
     FILES_QUOTA_MB: z.coerce.number().int().positive().default(4096),
     // Gotenberg (HTML and office documents to PDF); without it there is no convert_to_pdf tool.
     COMFY_API_KEY: z.string().optional(),
+    // Mem0 picks the user's facts from every finished conversation turn into their memory (a few model calls per turn).
+    MEMORY_LEARN: z.enum(["true", "false"]).default("true").transform((v) => v === "true"),
     IMAGE_GENERATION_ENABLED: bool,
     IMAGE_MCP_SERVER: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/).default("comfy-cloud"),
     IMAGE_TIMEOUT_MS: z.coerce.number().int().min(1000).max(600_000).default(180_000),

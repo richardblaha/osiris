@@ -13,7 +13,7 @@ const ctx = (user: string, role: "admin" | "member") => ({
 
 describe("MemoryStore", () => {
   it("shows a user their own and shared memories, not other users' personal ones", async () => {
-    const store = new MemoryStore(createTestRecords());
+    const store = (await createTestProjects().projects.get("m")).memory;
     await store.add("alice", "Alice tyká", "personal");
     await store.add("bob", "Bob vyká", "personal");
     const shared = await store.add("alice", "Firma není plátce DPH", "project");
@@ -60,5 +60,29 @@ describe("memory tools", () => {
       ["Bob jezdí autem", "personal"],
       ["Sleva 5 % pro stálé zákazníky", "project"],
     ]);
+  });
+});
+
+describe("memory through Mem0", () => {
+  it("keeps each memory as a file, links entities, and finds them again from the files after the cache is gone", async () => {
+    const { projects } = createTestProjects();
+    const project = await projects.get("m");
+    const novak = await project.memory.add("alice", "Pan Novák platí převodem", "personal");
+    await project.memory.add("alice", "Pan Novák bydlí v Brně", "personal");
+    await project.memory.add("", "Firma nepracuje o víkendu", "project");
+
+    const own = (await project.records.walk("private/users")).filter((p) => p.endsWith(".md"));
+    expect(own.filter((p) => p.includes("/memory/") && !p.includes("/entities/"))).toHaveLength(2);
+    expect(await project.records.readText(`private/users/${own.find((p) => p.endsWith(`/memory/${novak.id}.md`))}`)).toContain("Pan Novák platí převodem");
+    expect((await project.records.list("memory")).filter((n) => n.endsWith(".md"))).toHaveLength(1);
+    // An entity (Mem0's heuristics cut Czech words at diacritics: "Nov") links both of Alice's memories.
+    const entities = own.filter((p) => p.includes("/memory/entities/"));
+    const linked = await Promise.all(entities.map(async (p) => (await project.records.readText(`private/users/${p}`))!));
+    expect(linked.some((t) => t.includes("Nov") && (JSON.parse(t.split("\n")[1]!) as { linkedMemoryIds: string[] }).linkedMemoryIds.length === 2)).toBe(true);
+
+    await project.cache.batch(["DELETE FROM mem0_points", "DELETE FROM mem0_text"], "write");
+    await project.init();
+    expect((await project.memory.search("alice", "Novák převodem")).map((m) => m.content)).toContain("Pan Novák platí převodem");
+    expect((await project.memory.list("alice")).map((m) => m.content).sort()).toEqual(["Firma nepracuje o víkendu", "Pan Novák bydlí v Brně", "Pan Novák platí převodem"]);
   });
 });

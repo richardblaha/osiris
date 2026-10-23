@@ -70,6 +70,7 @@ const project = openProject(config.PROJECT_ID, projectDir(config.DATA_DIR), {
   images: config.IMAGE_GENERATION_ENABLED ? { server: config.IMAGE_MCP_SERVER, maxExecutionTimeMs: config.IMAGE_TIMEOUT_MS, maxAttempts: config.IMAGE_MAX_ATTEMPTS, maxRefinements: config.IMAGE_MAX_REFINEMENTS, maxEstimatedCost: config.IMAGE_MAX_ESTIMATED_COST, maxReadAttempts: config.IMAGE_MAX_READ_ATTEMPTS, maxImages: config.IMAGE_MAX_COUNT, visualEvaluation: config.IMAGE_VISUAL_EVALUATION, apiUploadFallback: config.IMAGE_API_UPLOAD_FALLBACK, uploadApiKeySecret: config.IMAGE_API_KEY_SECRET, retentionDays: config.IMAGE_RETENTION_DAYS, downloadHosts: config.IMAGE_DOWNLOAD_HOSTS } : undefined,
   gotenbergUrl: config.GOTENBERG_URL,
   vitepressUrl: config.VITEPRESS_URL,
+  learnMemories: config.MEMORY_LEARN,
   features,
   extraTools: (store) => controlTools(control, store, config.TIMEZONE),
   notifyAdmins: (subject, text) => control.notifyAdmins(subject, text),
