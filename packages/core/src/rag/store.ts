@@ -99,10 +99,10 @@ export class KnowledgeStore {
       .map((r) => ({ owner: String(r.metadata?.owner ?? ""), path: String(r.metadata?.path ?? ""), content: r.memory }))
       .filter((h) => fits(h.owner, h.path))
       .slice(0, limit);
+    // A document's title is its first piece's heading: each owner's pieces are listed once, not once per hit.
     const heads = new Map<string, string>();
-    for (const h of hits) {
-      const key = `${h.owner}\n${h.path}`;
-      if (!heads.has(key)) heads.set(key, (await this.chunks(h.owner)).find((c) => c.path === h.path && c.idx === 0)?.content ?? "");
+    for (const owner of new Set(hits.map((h) => h.owner))) {
+      for (const c of await this.chunks(owner)) if (c.idx === 0) heads.set(`${owner}\n${c.path}`, c.content);
     }
     return hits.map((h) => ({ ...h, title: titleOf(h.path, heads.get(`${h.owner}\n${h.path}`)) }));
   }
@@ -154,7 +154,9 @@ export class KnowledgeStore {
   /** Saves a document (new or changed) and indexes it; the title defaults to its leading heading or its id. */
   async putDocument(id: string, content: string, title = titleOf(id, content), owner = ""): Promise<void> {
     if (!DOCUMENT_ID.test(id) || id.length > 300) throw new Error(`Invalid document id: ${id}`);
-    await this.records.writeText(`${docDir(owner)}/${id}`, formatFrontmatter({ title: title === titleOf(id, content) ? undefined : title }, content));
+    // A document opening with its own frontmatter gets ours in front, so reading it back peels off only ours.
+    const ours = title !== titleOf(id, content) || content.startsWith("---");
+    await this.records.writeText(`${docDir(owner)}/${id}`, formatFrontmatter({ title: ours ? title : undefined }, content));
     await this.indexFile(owner, `${KNOWLEDGE_DIR}/${id}`, content);
   }
 

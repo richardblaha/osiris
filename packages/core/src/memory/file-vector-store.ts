@@ -69,7 +69,7 @@ function parse(text: string): Payload | undefined {
  * Knowledge chunks are derived from the documents and live only in the cache. Vectors and the keyword index are in the
  * cache (`mem0_points`, `mem0_text`); `initialize` brings them in step with the files.
  */
-// ponytail: search scans the collection's vectors in JS; fine for a project's memories, an ANN index if that grows.
+// shortcut: search scans every vector of the collection (memories and knowledge pieces) in JS, fine to a few thousand; a libSQL vector index beyond.
 export class FileVectorStore implements VectorStore {
   private readonly collection: string;
   private readonly entities: boolean;
@@ -115,8 +115,9 @@ export class FileVectorStore implements VectorStore {
     );
   }
 
-  private async rows(): Promise<{ id: string; file: string | null; payload: Payload; vector: unknown }[]> {
-    const { rows } = await this.cache.execute({ sql: "SELECT id, file, payload, vector FROM mem0_points WHERE collection = ?", args: [this.collection] });
+  /** The collection's points; vectors (4 kB each) only when asked, as only search needs them. */
+  private async rows(vectors = false): Promise<{ id: string; file: string | null; payload: Payload; vector: unknown }[]> {
+    const { rows } = await this.cache.execute({ sql: `SELECT id, file, payload${vectors ? ", vector" : ""} FROM mem0_points WHERE collection = ?`, args: [this.collection] });
     return rows.map((r) => ({ id: String(r.id), file: r.file == null ? null : String(r.file), payload: JSON.parse(String(r.payload)) as Payload, vector: r.vector }));
   }
 
@@ -129,7 +130,7 @@ export class FileVectorStore implements VectorStore {
   }
 
   async search(query: number[], topK = 10, filters?: SearchFilters): Promise<VectorStoreResult[]> {
-    return (await this.rows())
+    return (await this.rows(true))
       .filter((r) => matches(r.payload, filters))
       .map((r) => ({ id: r.id, payload: r.payload, score: cosine(query, fromBlob(r.vector)) }))
       .sort((a, b) => b.score - a.score)

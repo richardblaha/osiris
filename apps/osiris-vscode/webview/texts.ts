@@ -17,6 +17,8 @@ const cs = {
   retry: "Zkusit znovu",
   connectServer: "Připojit k serveru…",
   noProject: "Žádný projekt",
+  notProject: (folder: string) => `Složka ${folder} zatím není projekt Osiris.`,
+  start: "Spustit Osiris v této složce",
 };
 const en: typeof cs = {
   you: "You",
@@ -37,6 +39,8 @@ const en: typeof cs = {
   retry: "Try again",
   connectServer: "Connect to a server…",
   noProject: "No project",
+  notProject: (folder: string) => `${folder} isn't an Osiris project yet.`,
+  start: "Start Osiris in this folder",
 };
 
 /** The panel's texts in VS Code's language (Czech for Czech and Slovak). */

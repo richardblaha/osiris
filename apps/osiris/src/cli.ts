@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { createAdaptorServer } from "@hono/node-server";
@@ -57,12 +57,12 @@ const fail = (err: unknown) => {
 process.on("uncaughtException", fail);
 process.on("unhandledRejection", fail);
 
-// One agent per folder: when one is running, its address is all we need.
-const running = (() => {
+// One agent per folder: a running one's address is all we need, and a second start while one is still starting
+// (models, indexes: seconds) must not run beside it, as records are locked only within one process.
+const running = await (async () => {
   try {
     const info = JSON.parse(readFileSync(infoFile, "utf8")) as AgentInfo;
-    process.kill(info.pid, 0);
-    return info;
+    return (await fetch(`${info.url}/health`, { signal: AbortSignal.timeout(2000) })).ok ? info : undefined;
   } catch {
     return undefined;
   }
@@ -71,6 +71,27 @@ if (running) {
   console.log(`Osiris already runs over ${root}: ${running.url}`);
   process.exit(0);
 }
+const lockFile = join(privateDir, "agent.lock");
+const lock = () => {
+  try {
+    writeFileSync(lockFile, String(process.pid), { flag: "wx", mode: 0o600 });
+    return true;
+  } catch {
+    return false;
+  }
+};
+if (!lock()) {
+  // A lock older than any start is left from a crash.
+  const stale = Date.now() - statSync(lockFile).mtimeMs > 120_000;
+  if (!stale || (rmSync(lockFile, { force: true }), !lock())) {
+    console.log(`Osiris is starting over ${root} already.`);
+    process.exit(0);
+  }
+}
+process.on("exit", () => {
+  rmSync(infoFile, { force: true });
+  rmSync(lockFile, { force: true });
+});
 
 /** A file with a random secret, made once (0600). */
 const secretFile = (file: string, bytes: number) => {
@@ -93,27 +114,20 @@ const config = loadConfig({
 const master = Buffer.from(secretFile(join(configDir, "master.key"), 32), "base64url").toString("base64");
 const token = secretFile(join(privateDir, "local-token"), 32);
 const local = { token, user: localUser(), name };
-const project = await buildProject(config, id, root, { features: new LocalFeatures(), secrets: new SecretBox(deriveProjectKey(master, id)) });
-await project.init();
-
-const agent = createRuntimeApp({
-  project,
-  local,
-  activity: new Activity(),
-  snapshot: async () => {
-    throw new Error("A local agent has no backups: the project folder is yours (and git's).");
-  },
-});
 const web = config.STATIC_DIR ? new Hono().use("*", serveStatic({ root: config.STATIC_DIR })).get("*", serveStatic({ root: config.STATIC_DIR, path: "index.html" })) : undefined;
-const fetch = (req: Request) => {
+// The address is known only once listening, and the project needs it (OAuth sign-ins come back to <PUBLIC_URL>/…):
+// requests wait for the app, and clients find the agent only after agent.json, written when it's ready.
+let ready!: (app: { fetch: (req: Request) => Response | Promise<Response> }) => void;
+const app = new Promise<{ fetch: (req: Request) => Response | Promise<Response> }>((r) => (ready = r));
+const handle = async (req: Request) => {
   const path = new URL(req.url).pathname;
-  return !web || path.startsWith("/api/") || path === "/health" ? agent.fetch(req) : web.fetch(req);
+  return !web || path.startsWith("/api/") || path === "/health" ? (await app).fetch(req) : web.fetch(req);
 };
 
 /** Listens on the port asked for; when the default one is taken, on any free one. */
 const listen = (p: number) =>
   new Promise<number>((done, fail) => {
-    const server = createAdaptorServer({ fetch });
+    const server = createAdaptorServer({ fetch: handle });
     server.once("error", (err: NodeJS.ErrnoException) => (err.code === "EADDRINUSE" && !port && !process.env.OSIRIS_PORT && p !== 0 ? listen(0).then(done, fail) : fail(err)));
     server.listen(p, config.OSIRIS_HOST, () => {
       const address = server.address();
@@ -124,8 +138,20 @@ const listen = (p: number) =>
   });
 const actual = await listen(config.OSIRIS_PORT);
 const url = `http://${config.OSIRIS_HOST === "0.0.0.0" ? "127.0.0.1" : config.OSIRIS_HOST}:${actual}`;
+
+const project = await buildProject({ ...config, PUBLIC_URL: url }, id, root, { features: new LocalFeatures(), secrets: new SecretBox(deriveProjectKey(master, id)) });
+await project.init();
+ready(
+  createRuntimeApp({
+    project,
+    local,
+    activity: new Activity(),
+    snapshot: async () => {
+      throw new Error("A local agent has no backups: the project folder is yours (and git's).");
+    },
+  }),
+);
 writeFileSync(infoFile, JSON.stringify({ pid: process.pid, port: actual, url } satisfies AgentInfo), { mode: 0o600 });
-process.on("exit", () => rmSync(infoFile, { force: true }));
 
 console.log(`Osiris over ${root}`);
 console.log(web ? `Open ${url}/#token=${token}` : `API at ${url}/api (token in .osiris/private/local-token)`);

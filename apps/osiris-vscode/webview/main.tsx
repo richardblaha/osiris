@@ -9,6 +9,8 @@ import { texts } from "./texts.ts";
 interface Boot {
   connection: { mode: "local" | "server"; url: string; label: string; project?: string } | null;
   error: string | null;
+  /** A folder without `.osiris/`: the panel offers to start Osiris there. */
+  startable: string | null;
   language: string;
 }
 declare global {
@@ -29,12 +31,15 @@ window.addEventListener("message", (e) => {
   const m = e.data as { type: string; id?: number; token?: string | null };
   if (m.type === "token") waiting.get(m.id!)?.(m.token ?? null), waiting.delete(m.id!);
 });
-const token = () =>
+const ask = () =>
   new Promise<string | null>((done) => {
     const id = ++asked;
     waiting.set(id, done);
     vscode.postMessage({ type: "token", id });
   });
+// A local agent's token never changes: asked once (and again after a 401). A server's is refreshed by the extension.
+let localToken: Promise<string | null> | undefined;
+const token = () => (boot.connection?.mode === "local" ? (localToken ??= ask()) : ask());
 
 /** The PWA's accent colors on VS Code's own (it marks the theme on <body>). */
 function applyAccents() {
@@ -142,7 +147,15 @@ function App() {
   const loadThreads = () => api.threads().then(setThreads, () => {});
   useEffect(() => {
     if (!boot.connection) return;
-    connect({ url: boot.connection.url, token, signIn: async () => vscode.postMessage({ type: "signIn" }), locale: () => boot.language });
+    connect({
+      url: boot.connection.url,
+      token,
+      signIn: async () => {
+        localToken = undefined;
+        vscode.postMessage({ type: "signIn" });
+      },
+      locale: () => boot.language,
+    });
     void (async () => {
       const me = await api.me();
       const project = me.projects.find((p) => p.id === boot.connection?.project) ?? me.projects[0];
@@ -224,6 +237,16 @@ function App() {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) (e.preventDefault(), submit());
   };
 
+  if (!boot.connection && boot.startable)
+    return (
+      <div className="empty">
+        <p>{t.notProject(boot.startable)}</p>
+        <button className="primary" onClick={() => vscode.postMessage({ type: "start" })}>
+          {t.start}
+        </button>
+        <button onClick={() => vscode.postMessage({ type: "connectServer" })}>{t.connectServer}</button>
+      </div>
+    );
   if (!boot.connection)
     return (
       <div className="empty">

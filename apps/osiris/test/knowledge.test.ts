@@ -32,6 +32,15 @@ describe("knowledge base", () => {
     await expect(acme.knowledge.putDocument("../x.md", "x")).rejects.toThrow();
   });
 
+  it("keeps a document's own frontmatter as it was written", async () => {
+    const acme = await createTestProjects().projects.get("acme");
+    const content = "---\ntitle: Ceník 2026\nlayout: doc\n---\n\n# Ceník\n\nHodina 650 Kč";
+    await acme.knowledge.putDocument("cenik.md", content);
+    expect(await acme.knowledge.getDocument("cenik.md")).toMatchObject({ content, title: "cenik" });
+    await acme.knowledge.putDocument("cenik.md", content, "Ceník");
+    expect(await acme.knowledge.getDocument("cenik.md")).toMatchObject({ content, title: "Ceník" });
+  });
+
   it("gives a user their own documents, which replace the project's of the same id for them alone", async () => {
     const { projects } = createTestProjects();
     const acme = await projects.get("acme");

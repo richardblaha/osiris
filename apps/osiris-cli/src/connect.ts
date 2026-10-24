@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { localAgent } from "@osiris/client/agent.ts";
-import { createHash, randomBytes } from "node:crypto";
+import { freshToken, requestTokens, signInUrl, type OidcTokens } from "@osiris/client/oidc.ts";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
@@ -30,9 +30,7 @@ export async function connectLocal(root: string, log: (line: string) => void = (
 /** The terminal's language for the server's messages: Czech for Czech and Slovak, else English. */
 export const locale = () => (/^(cs|sk)/i.test(process.env.LC_ALL ?? process.env.LC_MESSAGES ?? process.env.LANG ?? "") ? "cs" : "en");
 
-interface Credentials {
-  [server: string]: { accessToken: string; refreshToken: string; expiresAt: number };
-}
+type Credentials = Record<string, OidcTokens>;
 const readCredentials = (): Credentials => {
   try {
     return JSON.parse(readFileSync(credentialsFile(), "utf8")) as Credentials;
@@ -40,22 +38,10 @@ const readCredentials = (): Credentials => {
     return {};
   }
 };
-const saveCredentials = (c: Credentials) => {
+const save = (server: string) => (tokens: OidcTokens) => {
   mkdirSync(configDir(), { recursive: true, mode: 0o700 });
-  writeFileSync(credentialsFile(), JSON.stringify(c, null, 2), { mode: 0o600 });
+  writeFileSync(credentialsFile(), JSON.stringify({ ...readCredentials(), [server]: tokens }, null, 2), { mode: 0o600 });
 };
-
-const discovery = async (server: string) =>
-  (await (await fetch(`${server}/auth/.well-known/openid-configuration`)).json()) as { authorization_endpoint: string; token_endpoint: string };
-
-async function tokenRequest(server: string, params: Record<string, string>) {
-  const res = await fetch((await discovery(server)).token_endpoint, { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: CLIENT_ID, ...params }) });
-  const body = (await res.json()) as { access_token?: string; refresh_token?: string; expires_in?: number; error_description?: string; error?: string };
-  if (!res.ok || !body.access_token) throw new Error(`Sign-in failed: ${body.error_description ?? body.error ?? res.status}`);
-  const c = readCredentials();
-  c[server] = { accessToken: body.access_token, refreshToken: body.refresh_token ?? c[server]?.refreshToken ?? "", expiresAt: Date.now() + (body.expires_in ?? 600) * 1000 };
-  saveCredentials(c);
-}
 
 /** Opens a URL in the user's browser (and prints it, for a terminal without one). */
 function openBrowser(url: string) {
@@ -73,35 +59,23 @@ function openBrowser(url: string) {
  */
 export async function login(server: string, log: (line: string) => void = console.log): Promise<void> {
   server = server.replace(/\/$/, "");
-  const { authorization_endpoint } = await discovery(server);
-  const verifier = randomBytes(32).toString("base64url");
-  const state = randomBytes(16).toString("base64url");
-  const { code, redirect } = await new Promise<{ code: string; redirect: string }>((done, fail) => {
-    const http = createServer((req, res) => {
-      const url = new URL(req.url ?? "/", "http://127.0.0.1");
-      if (url.pathname !== "/callback") return void res.writeHead(404).end();
-      const ok = url.searchParams.get("state") === state && url.searchParams.get("code");
+  const http = createServer();
+  await new Promise<void>((r) => http.listen(0, "127.0.0.1", r));
+  const redirect = `http://127.0.0.1:${(http.address() as { port: number }).port}/callback`;
+  const { url, verifier, state } = await signInUrl(server, CLIENT_ID, redirect);
+  const code = await new Promise<string>((done, fail) => {
+    http.on("request", (req, res) => {
+      const back = new URL(req.url ?? "/", "http://127.0.0.1");
+      if (back.pathname !== "/callback") return void res.writeHead(404).end();
+      const ok = back.searchParams.get("state") === state && back.searchParams.get("code");
       res.writeHead(ok ? 200 : 400, { "content-type": "text/html; charset=utf-8" }).end(ok ? "<p>Osiris: signed in, back to the terminal.</p>" : "<p>Osiris: sign-in failed.</p>");
       http.close();
-      ok ? done({ code: url.searchParams.get("code")!, redirect: `http://127.0.0.1:${port}/callback` }) : fail(new Error(url.searchParams.get("error_description") ?? "Sign-in failed"));
+      ok ? done(back.searchParams.get("code")!) : fail(new Error(back.searchParams.get("error_description") ?? "Sign-in failed"));
     });
-    let port = 0;
-    http.listen(0, "127.0.0.1", () => {
-      port = (http.address() as { port: number }).port;
-      const url = `${authorization_endpoint}?${new URLSearchParams({
-        client_id: CLIENT_ID,
-        redirect_uri: `http://127.0.0.1:${port}/callback`,
-        response_type: "code",
-        scope: "openid profile email",
-        code_challenge: createHash("sha256").update(verifier).digest("base64url"),
-        code_challenge_method: "S256",
-        state,
-      })}`;
-      log(`Sign in in your browser: ${url}`);
-      openBrowser(url);
-    });
+    log(`Sign in in your browser: ${url}`);
+    openBrowser(url);
   });
-  await tokenRequest(server, { grant_type: "authorization_code", code, redirect_uri: redirect, code_verifier: verifier });
+  save(server)(await requestTokens(server, CLIENT_ID, { grant_type: "authorization_code", code, redirect_uri: redirect, code_verifier: verifier }));
   log(`Signed in to ${server}.`);
 }
 
@@ -111,14 +85,7 @@ export function connectServer(server: string): Connection {
   return {
     url: server,
     locale,
-    async token() {
-      const c = readCredentials()[server];
-      if (!c) return null;
-      if (c.expiresAt - 60_000 > Date.now()) return c.accessToken;
-      await tokenRequest(server, { grant_type: "refresh_token", refresh_token: c.refreshToken }).catch(() => undefined);
-      const fresh = readCredentials()[server];
-      return fresh && fresh.expiresAt > Date.now() ? fresh.accessToken : null;
-    },
+    token: () => freshToken(server, CLIENT_ID, readCredentials()[server], save(server)),
     async signIn() {
       throw new Error(`Not signed in to ${server}: run \`osiris-cli login ${server}\`.`);
     },
@@ -128,5 +95,6 @@ export function connectServer(server: string): Connection {
 export function logout(server: string) {
   const c = readCredentials();
   delete c[server.replace(/\/$/, "")];
-  saveCredentials(c);
+  mkdirSync(configDir(), { recursive: true, mode: 0o700 });
+  writeFileSync(credentialsFile(), JSON.stringify(c, null, 2), { mode: 0o600 });
 }
