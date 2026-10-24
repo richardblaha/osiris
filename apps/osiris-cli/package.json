@@ -1,0 +1,28 @@
+{
+  "name": "@osiris/cli",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "osiris-cli": "./bin/osiris-cli.mjs"
+  },
+  "scripts": {
+    "start": "node bin/osiris-cli.mjs",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@osiris/agent": "workspace:*",
+    "@osiris/client": "workspace:*",
+    "@osiris/shared": "workspace:*",
+    "ink": "^8.0.0",
+    "ink-text-input": "^6.0.0",
+    "react": "^19.3.0",
+    "tsx": "^4.23.15"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "typescript": "6.0.3",
+    "vitest": "^5.0.3"
+  }
+}

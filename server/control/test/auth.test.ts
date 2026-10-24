@@ -80,7 +80,7 @@ async function browser(control: Awaited<ReturnType<typeof createTestControl>>, n
   const exchange = (callback: URL) =>
     token({ grant_type: "authorization_code", code: callback.searchParams.get("code")!, redirect_uri: `${PUBLIC_URL}/callback`, code_verifier: verifier });
 
-  return { request, post, follow, authorize, token, exchange, jar };
+  return { request, post, follow, authorize, token, exchange, jar, verifier };
 }
 
 const gateway = new InternalSigner(keys.privateKey, "gateway");
@@ -157,6 +157,23 @@ describe("sign-in", () => {
     expect((await identify(control, again.body.access_token!)).status).toBe(200);
     await control.db.execute([{ sql: "UPDATE users SET disabled = 1 WHERE id = 'alice'" }]);
     expect((await identify(control, again.body.access_token!)).status).toBe(401);
+  });
+
+  it("signs the terminal client in through a loopback port of its own, and the gateway accepts its token", async () => {
+    const control = await createTestControl({ users: [alice] });
+    await control.auth.credentials.setPassword("alice", "správné-heslo-123");
+    const b = await browser(control);
+    const redirect = "http://127.0.0.1:53123/callback";
+    const uid = (await b.authorize({ client_id: "osiris-cli", redirect_uri: redirect })).searchParams.get("uid")!;
+    const ok = await (await b.post(`/auth/interaction/${uid}/password`, { email: "alice@firma.cz", password: "správné-heslo-123" })).json();
+    const callback = await b.follow(ok.redirectTo);
+    expect(`${callback.origin}${callback.pathname}`).toBe(redirect);
+    const tokens = await b.token({ client_id: "osiris-cli", grant_type: "authorization_code", code: callback.searchParams.get("code")!, redirect_uri: redirect, code_verifier: b.verifier });
+    expect(tokens.status).toBe(200);
+    expect(await (await identify(control, tokens.body.access_token!)).json()).toMatchObject({ sub: "alice" });
+    // Another host is no loopback.
+    const evil = await b.request(`/auth/authorize?${new URLSearchParams({ client_id: "osiris-cli", redirect_uri: "http://evil.example/callback", response_type: "code", scope: "openid", code_challenge: "x".repeat(43), code_challenge_method: "S256" })}`);
+    expect(evil.headers.get("location") ?? "").not.toContain("evil.example");
   });
 
   it("asks for the authenticator code after the password, once per code, or takes a recovery code", async () => {

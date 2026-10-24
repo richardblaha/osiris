@@ -7,6 +7,12 @@ import { PHONE_CLAIM } from "../whatsapp/phones.ts";
 
 /** The web app's client; first party, so it never asks for consent. */
 export const WEB_CLIENT_ID = "osiris-web";
+/** The terminal client (osiris-cli): a native app, back to a loopback port of its own (RFC 8252). */
+export const CLI_CLIENT_ID = "osiris-cli";
+/** The VS Code extension: back to VS Code through its URI handler, or a loopback port. */
+export const VSCODE_CLIENT_ID = "osiris-vscode";
+/** Clients whose access tokens the gateway accepts. */
+export const CLIENT_IDS = [WEB_CLIENT_ID, CLI_CLIENT_ID, VSCODE_CLIENT_ID];
 
 /** Paths under the issuer (`/auth`) answered by oidc-provider; the rest of `/auth` is ours (sign-in screens' API). */
 export const OIDC_PATHS = /^\/auth\/(\.well-known\/openid-configuration|authorize|token|userinfo|jwks|logout|revoke)(\/|\?|$)/;
@@ -132,6 +138,17 @@ export function createOidcProvider(options: OidcOptions): Provider {
         post_logout_redirect_uris: options.webOrigins,
         id_token_signed_response_alg: "ES256",
       },
+      ...[
+        { client_id: CLI_CLIENT_ID, client_name: "Osiris CLI", redirect_uris: ["http://127.0.0.1/callback"] },
+        { client_id: VSCODE_CLIENT_ID, client_name: "Osiris for VS Code", redirect_uris: ["vscode://osiris.osiris-vscode/callback", "http://127.0.0.1/callback"] },
+      ].map((c) => ({
+        ...c,
+        application_type: "native" as const,
+        token_endpoint_auth_method: "none" as const,
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code" as const],
+        id_token_signed_response_alg: "ES256" as const,
+      })),
     ],
     jwks: { keys: options.jwks },
     cookies: {

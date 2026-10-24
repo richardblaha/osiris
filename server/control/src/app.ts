@@ -30,7 +30,7 @@ import { z } from "zod";
 import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, PROJECT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, InternalAuthError, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
 import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
-import { WEB_CLIENT_ID } from "./auth/oidc.ts";
+import { CLIENT_IDS } from "./auth/oidc.ts";
 import { authRoutes, securityRoutes, type AuthDeps } from "./auth/routes.ts";
 import type { Backups } from "./backups.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";
@@ -510,7 +510,7 @@ export function createControlApp(deps: ControlDeps) {
     .post("/identify", async (c) => {
       const { token } = parse(z.object({ token: z.string().min(1).max(4096) }), await json(c));
       const access = await deps.auth.provider.AccessToken.find(token);
-      if (!access || access.isExpired || access.clientId !== WEB_CLIENT_ID || !access.accountId) throw new HTTPException(401, { message: "Invalid token" });
+      if (!access || access.isExpired || !CLIENT_IDS.includes(access.clientId ?? "") || !access.accountId) throw new HTTPException(401, { message: "Invalid token" });
       if (access.sessionUid) await deps.auth.activity.touch(access.sessionUid);
       const user = await users.get(access.accountId).catch(() => null);
       if (!user || user.disabled) throw new HTTPException(401, { message: "Invalid token" });
