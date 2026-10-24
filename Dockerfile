@@ -8,6 +8,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json packages/shared/
 COPY packages/platform/package.json packages/platform/
 COPY packages/core/package.json packages/core/
+COPY packages/client/package.json packages/client/
 COPY apps/osiris-pwa/package.json apps/osiris-pwa/
 COPY server/gateway/package.json server/gateway/
 COPY server/control/package.json server/control/
@@ -21,6 +22,7 @@ EXPOSE 8080
 FROM base AS web-build
 RUN NODE_ENV=development pnpm install --frozen-lockfile --filter "@osiris/pwa..."
 COPY packages/shared packages/shared
+COPY packages/client packages/client
 COPY apps/osiris-pwa apps/osiris-pwa
 RUN pnpm --filter @osiris/pwa build
 
