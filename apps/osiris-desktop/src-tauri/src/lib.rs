@@ -90,7 +90,7 @@ fn agent_url(folder: PathBuf, agents: &Agents) -> Result<String, String> {
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
                 .spawn()
-                .map_err(|e| format!("Osiris (the agent) didn't start: {e}. Install it (npm i -g @osiris/agent) or set OSIRIS_AGENT."))?;
+                .map_err(|e| format!("Osiris (the agent) didn't start: {e}. Install it (sudo apt install osiris-cli) or set OSIRIS_AGENT."))?;
             agents.0.lock().unwrap().push(child);
             let started = Instant::now();
             loop {

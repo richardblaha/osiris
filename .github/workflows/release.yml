@@ -1,0 +1,157 @@
+name: Release
+
+# Push a tag `vX.Y.Z` (or `vX.Y.Z-rc.1`, a pre-release) → this builds
+#   - osiris-cli_<version>_amd64.deb: the agent (osiris) and the terminal client (osiris-cli), Node.js bundled
+#   - osiris-desktop: the desktop app (it recommends osiris-cli for local projects)
+#   - osiris-vscode-<version>.vsix: the VS Code extension
+# attaches them to a GitHub Release and, for stable tags, adds the .deb files to the signed APT repository
+# richardblaha/osiris-deb-repo (GitHub Pages), next to the OSIRIS theme's packages.
+#
+# Secrets (the same as osiris-theme's release uses): DEB_REPO_DEPLOY_KEY (a deploy key with write access to
+# osiris-deb-repo) and APT_GPG_PRIVATE_KEY (the repository's signing key).
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  osiris:
+    # The oldest supported runner: the bundled Node and native modules then run on older systems too.
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: packaging/deb/build-osiris-deb.sh "${GITHUB_REF_NAME#v}" dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-osiris
+          path: dist/*.deb
+
+  desktop:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @osiris/desktop exec tauri build --bundles deb --config "{\"version\":\"${GITHUB_REF_NAME#v}\"}"
+      # Tauri names the file after the product ("Osiris Desktop_…"): the package's own name, without a space.
+      - run: mkdir dist && mv apps/osiris-desktop/src-tauri/target/release/bundle/deb/*.deb "dist/osiris-desktop_${GITHUB_REF_NAME#v}_amd64.deb"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-desktop
+          path: dist/*.deb
+
+  vscode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Package
+        working-directory: apps/osiris-vscode
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          npm pkg set version="$version"
+          node build.mjs
+          npx vsce package --no-dependencies -o "osiris-vscode-$version.vsix"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: apps/osiris-vscode/*.vsix
+
+  release:
+    needs: [osiris, desktop, vscode]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Osiris ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            dist/*.deb
+            dist/*.vsix
+          body: |
+            **Debian/Ubuntu** (amd64), also in the APT repository:
+            `curl -fsSL https://richardblaha.github.io/osiris-deb-repo/setup.sh | sudo sh`, then
+            `sudo apt install osiris-cli` (the agent `osiris` and `osiris-cli`) and/or `sudo apt install osiris-desktop`.
+            Model keys go to `~/.config/osiris/agent.env` (e.g. `MISTRAL_API_KEY=…`).
+
+            **VS Code**: `code --install-extension osiris-vscode-*.vsix`.
+
+  apt:
+    # Rebuilds the APT repository from its pool plus this release's .deb files, with osiris-theme's own script, so the
+    # repository stays one (same origin, label and key) for both projects. Stable tags only.
+    needs: release
+    if: ${{ !contains(github.ref_name, '-') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: deb-*
+          path: debs
+          merge-multiple: true
+      - uses: actions/checkout@v4
+        with:
+          repository: richardblaha/osiris-deb-repo
+          ssh-key: ${{ secrets.DEB_REPO_DEPLOY_KEY }}
+          path: deb-repo
+      - uses: actions/checkout@v4
+        with:
+          repository: richardblaha/osiris-theme
+          path: theme
+      - run: sudo apt-get update && sudo apt-get install -y dpkg-dev rsync
+      - name: Import the APT signing key
+        env:
+          KEY: ${{ secrets.APT_GPG_PRIVATE_KEY }}
+        run: |
+          [ -n "${KEY:-}" ] || { echo "::error::APT_GPG_PRIVATE_KEY not set"; exit 1; }
+          export GNUPGHOME="$(mktemp -d)"; chmod 700 "$GNUPGHOME"
+          echo "GNUPGHOME=$GNUPGHOME" >> "$GITHUB_ENV"
+          printf '%s\n' "$KEY" | gpg --batch --import
+          echo "APT_GPG_KEY=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/{print $10; exit}')" >> "$GITHUB_ENV"
+      - name: Rebuild the repository (its pool + this release)
+        run: |
+          set -euo pipefail
+          mkdir all
+          [ ! -d deb-repo/pool ] || find deb-repo/pool -name '*.deb' -exec cp -t all {} +
+          cp debs/*.deb all/
+          theme/packaging/apt/build-apt-repo.sh "$PWD/build/apt" "$PWD/all"
+          rsync -a --delete --exclude .git --exclude README.md build/apt/ deb-repo/
+          touch deb-repo/.nojekyll
+      - name: Push
+        working-directory: deb-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet && { echo "nothing to publish"; exit 0; }
+          git commit -m "osiris $GITHUB_REF_NAME"
+          git push

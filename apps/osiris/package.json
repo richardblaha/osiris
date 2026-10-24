@@ -33,5 +33,10 @@
   },
   "exports": {
     "./bin/*": "./bin/*"
-  }
+  },
+  "files": [
+    "bin",
+    "src",
+    "skills"
+  ]
 }

@@ -37,7 +37,7 @@
       "properties": {
         "osiris.server": { "type": "string", "default": "", "markdownDescription": "Osiris server's address (for example `https://osiris.k6labs.cz`). Empty: the local agent over the workspace folder." },
         "osiris.project": { "type": "string", "default": "", "description": "On a server: the project to open (empty: the first one)." },
-        "osiris.agentPath": { "type": "string", "default": "osiris", "markdownDescription": "The local agent's command (`osiris` from `npm i -g @osiris/agent`), or the path to its `bin/osiris.mjs`." }
+        "osiris.agentPath": { "type": "string", "default": "osiris", "markdownDescription": "The local agent's command (`osiris`, from `sudo apt install osiris-cli`), or the path to its `bin/osiris.mjs`." }
       }
     }
   },
