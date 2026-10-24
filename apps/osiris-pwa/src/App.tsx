@@ -374,6 +374,8 @@ function Workspace() {
   }
   if (!me) return <Splash />;
   const isAdmin = project?.role === "admin";
+  // A local agent (`osiris <folder>`): one project, one user, without the server's parts.
+  const local = me?.mode === "local";
   const sections = project ? SECTIONS.filter((s) => s.enabled(project.features)) : [];
   // Everyone adds their own records; admins also the project's.
   const canAdd = (_section: Section) => true;
@@ -474,7 +476,7 @@ function Workspace() {
             )}
             {project && (
               <NavSection title={t("app:nav.project")}>
-                <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label={t("app:nav.dashboard")} icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
+                {!local && <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label={t("app:nav.dashboard")} icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />}
                 {project.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label={t("app:nav.assistants")} icon="M2 4h12v7H6l-3 3V4z" />}
                 {project.features.database && (
                   <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label={t("app:nav.database")} icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
@@ -482,16 +484,18 @@ function Workspace() {
                 {project.features.scheduler && (
                   <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label={t("app:nav.schedules")} icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
                 )}
-                <NavLink
-                  active={view.kind === "users"}
-                  onClick={() => (me.systemAdmin && void refreshProjects(), setView({ kind: "users" }))}
-                  label={t("app:nav.users")}
-                  icon="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M11 2.5a2.5 2.5 0 0 1 0 4.5M12.5 9.7c1.2.6 2 2 2 3.8"
-                />
+                {!local && (
+                  <NavLink
+                    active={view.kind === "users"}
+                    onClick={() => (me.systemAdmin && void refreshProjects(), setView({ kind: "users" }))}
+                    label={t("app:nav.users")}
+                    icon="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M11 2.5a2.5 2.5 0 0 1 0 4.5M12.5 9.7c1.2.6 2 2 2 3.8"
+                  />
+                )}
                 {project.features.sites && (
                   <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label={t("app:nav.sites")} icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
                 )}
-                {project.features.sites && (
+                {project.features.sites && !local && (
                   <NavLink active={view.kind === "analytics"} onClick={() => setView({ kind: "analytics" })} label={t("app:nav.analytics")} icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
                 )}
               </NavSection>

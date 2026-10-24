@@ -22,7 +22,8 @@
   "loadingApp": "Načítám Osiris",
   "selectItem": "Vyber položku ze seznamu.",
   "auth": {
-    "unavailable": "Přihlášení není k dispozici"
+    "unavailable": "Přihlášení není k dispozici",
+    "localTokenRefused": "Lokální agent nepřijal token tohoto prohlížeče. Otevřete znovu odkaz, který vypsal příkaz osiris."
   },
   "delete": "Smazat",
   "close": "Zavřít",

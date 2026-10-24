@@ -42,23 +42,30 @@ type Part = "account" | SecurityPart | "personalization" | "activity";
  * (personalization), each a part of its own; signing out at the end.
  */
 export function Profile({ me, notice, features }: { me: MeResponse; notice?: { linked?: string; error?: string }; features?: ProjectFeatures }) {
+  // A local agent has no account of its own (the computer's user): only personalization and connected accounts.
+  const local = me.mode === "local";
   // Back from linking an account: its part.
-  const [part, setPart] = useState<Part>(notice ? "linked" : "account");
+  const [part, setPart] = useState<Part>(notice ? "linked" : local ? "personalization" : "account");
   return (
     <MasterDetail
       title={me.user.name ?? me.user.email ?? t("profile:title")}
       groups={[
         {
-          items: [
-            { key: "account", label: t("profile:parts.account") },
-            { key: "passkeys", label: t("profile:parts.passkeys") },
-            { key: "password", label: t("profile:parts.password") },
-            { key: "totp", label: t("profile:parts.totp") },
-            { key: "linked", label: t("profile:parts.linked") },
-            { key: "personalization", label: t("profile:parts.personalization") },
-            { key: "activity", label: t("profile:parts.activity") },
-            { key: "logout", label: <span className="text-error">{t("app:signOut")}</span> },
-          ],
+          items: local
+            ? [
+                { key: "personalization", label: t("profile:parts.personalization") },
+                ...(features?.integrations ? [{ key: "linked", label: t("profile:parts.linked") }] : []),
+              ]
+            : [
+                { key: "account", label: t("profile:parts.account") },
+                { key: "passkeys", label: t("profile:parts.passkeys") },
+                { key: "password", label: t("profile:parts.password") },
+                { key: "totp", label: t("profile:parts.totp") },
+                { key: "linked", label: t("profile:parts.linked") },
+                { key: "personalization", label: t("profile:parts.personalization") },
+                { key: "activity", label: t("profile:parts.activity") },
+                { key: "logout", label: <span className="text-error">{t("app:signOut")}</span> },
+              ],
         },
       ]}
       selected={part}
@@ -79,9 +86,9 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
           <Personalization />
         ) : (
           <>
-            <Security key={part} part={part} notice={part === "linked" ? notice : undefined} />
+            {!local && <Security key={part} part={part} notice={part === "linked" ? notice : undefined} />}
             {part === "linked" && features?.integrations && (
-              <div className="mt-8">
+              <div className={local ? "" : "mt-8"}>
                 <Integrations />
               </div>
             )}

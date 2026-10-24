@@ -22,7 +22,8 @@
   "loadingApp": "Loading Osiris",
   "selectItem": "Select an item from the list.",
   "auth": {
-    "unavailable": "Sign-in isn't available."
+    "unavailable": "Sign-in isn't available.",
+    "localTokenRefused": "The local agent didn't accept this browser's token. Open the link that the osiris command printed again."
   },
   "delete": "Delete",
   "close": "Close",

@@ -4,7 +4,25 @@ import { t } from "i18next";
 
 const devUser = (import.meta.env.VITE_DEV_USER as string | undefined) || undefined;
 
-const manager = devUser
+/**
+ * A local agent (`osiris <folder>`) serves the PWA itself and opens it as `/#token=<its token>`: that token is the
+ * sign-in, kept for this origin (the agent's address), and there's no OpenID Connect.
+ */
+const LOCAL_TOKEN = "osiris.localToken";
+export const localToken: string | undefined = (() => {
+  const fromLink = /(?:^#|&)token=([A-Za-z0-9_-]+)/.exec(location.hash)?.[1];
+  try {
+    if (fromLink) {
+      localStorage.setItem(LOCAL_TOKEN, fromLink);
+      history.replaceState(null, "", location.pathname + location.search);
+    }
+    return localStorage.getItem(LOCAL_TOKEN) ?? undefined;
+  } catch {
+    return fromLink;
+  }
+})();
+
+const manager = devUser || localToken
   ? undefined
   : new UserManager({
       // Control's OpenID Connect provider, on this origin behind the gateway.
@@ -44,12 +62,22 @@ export async function handleCallback(): Promise<void> {
 /** Current access token, or undefined when logged out or expired. */
 export async function getAccessToken(): Promise<string | undefined> {
   if (devUser) return devUser;
+  if (localToken) return localToken;
   if (!manager) return undefined;
   const user = await manager.getUser();
   return user && !user.expired ? user.access_token : undefined;
 }
 
 export const login = async () => {
+  // A local agent refused its token (a new one after a reset): only a fresh link from `osiris` helps.
+  if (localToken) {
+    try {
+      localStorage.removeItem(LOCAL_TOKEN);
+    } catch {
+      // Nothing kept.
+    }
+    throw new Error(t("auth.localTokenRefused"));
+  }
   if (!manager) throw new Error(t("auth.unavailable"));
   await manager.signinRedirect({ state: { path: `${location.pathname}${location.search}` } satisfies ReturnState });
 };
