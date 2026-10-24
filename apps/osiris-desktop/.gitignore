@@ -1,0 +1,5 @@
+src/theme.css
+src/fonts/
+src/logo.svg
+src-tauri/target/
+src-tauri/gen/

@@ -1,0 +1,93 @@
+/* The connection page in the PWA's tokens (theme.css), light or dark with the system. */
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg-editor);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+}
+main {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 48px 16px;
+}
+.logo {
+  width: 48px;
+  display: block;
+  margin: 0 auto;
+}
+h1 {
+  text-align: center;
+  letter-spacing: 0.4em;
+  font-size: 22px;
+  margin: 12px 0 32px;
+}
+h2 {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+}
+section {
+  margin-bottom: 28px;
+}
+.hint {
+  color: var(--text-secondary);
+  font-size: 13px;
+  margin: 0 0 10px;
+}
+form {
+  display: flex;
+  gap: 8px;
+}
+input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+}
+input:focus {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -1px;
+}
+button {
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-sidebar);
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+button.primary {
+  width: 100%;
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--text-inverse);
+}
+ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+li button {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border-color: transparent;
+}
+li button:hover {
+  background: var(--bg-hover);
+}
+li small {
+  color: var(--text-muted);
+}
+#status.error {
+  color: var(--state-error);
+}

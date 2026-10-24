@@ -1,7 +1,8 @@
 import { render } from "ink";
 import { connect } from "@osiris/client/api.ts";
 import { App } from "./App.tsx";
-import { connectLocal, connectServer, login, logout, projectRoot } from "./connect.ts";
+import { projectRoot } from "@osiris/client/agent.ts";
+import { connectLocal, connectServer, login, logout } from "./connect.ts";
 import { pickTheme } from "./theme.ts";
 
 const HELP = `osiris-cli [folder]            Osiris over a project folder (starts its local agent when none runs)

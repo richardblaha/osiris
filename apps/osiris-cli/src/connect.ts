@@ -1,47 +1,16 @@
 import { spawn } from "node:child_process";
+import { localAgent } from "@osiris/client/agent.ts";
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join } from "node:path";
 import type { Connection } from "@osiris/client/api.ts";
 
 export const CLIENT_ID = "osiris-cli";
 const configDir = () => join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "osiris");
 const credentialsFile = () => join(configDir(), "credentials.json");
-
-interface AgentInfo {
-  pid: number;
-  port: number;
-  url: string;
-}
-
-/** The project folder: the nearest one up from `dir` that has `.osiris/`, else `dir` itself (a new project). */
-export function projectRoot(dir: string): string {
-  for (let d = resolve(dir); ; d = dirname(d)) {
-    if (existsSync(join(d, ".osiris"))) return d;
-    if (dirname(d) === d) return resolve(dir);
-  }
-}
-
-const alive = (info: AgentInfo) => {
-  try {
-    process.kill(info.pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const readAgent = (root: string): AgentInfo | undefined => {
-  try {
-    const info = JSON.parse(readFileSync(join(root, ".osiris/private/agent.json"), "utf8")) as AgentInfo;
-    return alive(info) ? info : undefined;
-  } catch {
-    return undefined;
-  }
-};
 
 /** The local agent's command: the workspace's `osiris` next to this client, or one on PATH. */
 function agentCommand(): string[] {
@@ -52,25 +21,10 @@ function agentCommand(): string[] {
   }
 }
 
-/**
- * Connects to the agent over `root`: the one running there, else a new one started in the background (it outlives the
- * terminal, like a server, and the next `osiris-cli` finds it).
- */
+/** Connects to the agent over `root` (the one running there, else a new one in the background). */
 export async function connectLocal(root: string, log: (line: string) => void = () => {}): Promise<{ connection: Connection; url: string }> {
-  let info = readAgent(root);
-  if (!info) {
-    const [cmd, ...args] = agentCommand();
-    log(`Starting Osiris over ${root}…`);
-    const child = spawn(cmd!, [...args, root], { detached: true, stdio: "ignore", env: process.env });
-    child.unref();
-    for (let i = 0; i < 120 && !info; i++) {
-      await new Promise((r) => setTimeout(r, 250));
-      info = readAgent(root);
-    }
-    if (!info) throw new Error(`Osiris didn't start over ${root} (run \`osiris ${root}\` to see why).`);
-  }
-  const token = readFileSync(join(root, ".osiris/private/local-token"), "utf8").trim();
-  return { url: info.url, connection: { url: info.url, token: async () => token, locale: () => locale() } };
+  const agent = await localAgent(root, agentCommand(), { log });
+  return { url: agent.url, connection: { url: agent.url, token: async () => agent.token, locale: () => locale() } };
 }
 
 /** The terminal's language for the server's messages: Czech for Czech and Slovak, else English. */

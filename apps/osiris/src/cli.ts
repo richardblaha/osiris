@@ -43,7 +43,19 @@ const id = name.toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "").replace(
 const configDir = join(process.env.XDG_CONFIG_HOME ?? join(homedir(), ".config"), "osiris");
 const privateDir = join(root, ".osiris", "private");
 const infoFile = join(privateDir, "agent.json");
+/** Why the agent couldn't start, for the clients that started it (the desktop app, VS Code, osiris-cli) to show. */
+const errorFile = join(privateDir, "agent-error");
 mkdirSync(privateDir, { recursive: true, mode: 0o700 });
+rmSync(errorFile, { force: true });
+const fail = (err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  const hint = /API key|api.?key/i.test(message) ? ` Set it in ${join(configDir, "agent.env")} (e.g. MISTRAL_API_KEY=…).` : "";
+  writeFileSync(errorFile, `${message}${hint}`, { mode: 0o600 });
+  console.error(`Osiris didn't start: ${message}${hint}`);
+  process.exit(1);
+};
+process.on("uncaughtException", fail);
+process.on("unhandledRejection", fail);
 
 // One agent per folder: when one is running, its address is all we need.
 const running = (() => {

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { connect } from "@osiris/client/api.ts";
 import { THEME } from "@osiris/shared/theme.ts";
 import { App } from "../src/App.tsx";
-import { fieldValue, visible } from "../src/Chat.tsx";
+import { fieldValue, visible } from "@osiris/client/chat.ts";
 
 /** A terminal of a given size that keeps what was drawn last. */
 class Terminal extends EventEmitter {

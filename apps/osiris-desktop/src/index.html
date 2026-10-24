@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="cs">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Osiris</title>
+    <link rel="stylesheet" href="theme.css" />
+    <link rel="stylesheet" href="connect.css" />
+  </head>
+  <body>
+    <main>
+      <img src="logo.svg" alt="" class="logo" />
+      <h1>OSIRIS</h1>
+      <section>
+        <h2 data-t="folder">Projekt ve složce</h2>
+        <p class="hint" data-t="folderHint">Osiris poběží na tomto počítači nad složkou projektu.</p>
+        <button id="folder" class="primary" data-t="chooseFolder">Otevřít složku…</button>
+      </section>
+      <section>
+        <h2 data-t="server">Osiris server</h2>
+        <form id="server">
+          <input id="url" type="url" required placeholder="https://osiris.k6labs.cz" />
+          <button data-t="connect">Připojit</button>
+        </form>
+      </section>
+      <section id="recentSection" hidden>
+        <h2 data-t="recent">Naposledy</h2>
+        <ul id="recent"></ul>
+      </section>
+      <p id="status" class="hint"></p>
+    </main>
+    <script src="connect.js"></script>
+  </body>
+</html>
