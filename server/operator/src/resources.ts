@@ -3,7 +3,6 @@ import { PROJECT_NAMESPACE_PREFIX, RUNTIME_AUDIENCE } from "@osiris/platform/run
 import type { KubeObject } from "./kube.ts";
 
 export const PROJECT_LABEL = "osiris.k6labs.cz/project";
-export const SITE_LABEL = "osiris.k6labs.cz/site";
 export const RUNTIME_PORT = 8080;
 
 export interface ProjectResource extends KubeObject {
@@ -13,7 +12,6 @@ export interface ProjectResource extends KubeObject {
     suspended?: boolean;
     idleMinutes?: number;
     storageGi?: number;
-    domains?: string[];
     wakeRequestedAt?: string;
   };
   status?: {
@@ -29,7 +27,7 @@ export interface ProjectResource extends KubeObject {
 export const TELEMETRY_NAMESPACE = "observability";
 
 export interface OperatorSettings {
-  /** Namespace of the shared services (gateway, control, operator, sites, gotenberg, vitepress). */
+  /** Namespace of the shared services (gateway, control, operator, gotenberg, vitepress). */
   namespace: string;
   runtimeImage: string;
   imagePullSecret?: { dockerconfigjson: string };
@@ -44,7 +42,6 @@ export interface OperatorSettings {
   runtimeSecrets: Record<string, string>;
   /** The project's own key for sealing secrets. */
   projectSecretsKey: (project: string) => string;
-  sites: { service: string; port: number; clusterIssuer: string; ingressClass: string; middleware?: string };
 }
 
 export const namespaceOf = (project: string) => `${PROJECT_NAMESPACE_PREFIX}${project}`;
@@ -224,28 +221,4 @@ export function projectResources(t: ProjectResource, s: OperatorSettings, replic
     },
   ];
   return objects;
-}
-
-/** Ingresses (in the shared namespace, in front of the sites service) for the project's verified domains. */
-export function siteIngresses(t: ProjectResource, s: OperatorSettings): KubeObject[] {
-  const id = t.metadata.name;
-  return (t.spec.domains ?? []).map((domain) => ({
-    apiVersion: "networking.k8s.io/v1",
-    kind: "Ingress",
-    metadata: {
-      name: `site-${id}-${short(domain)}`,
-      namespace: s.namespace,
-      labels: { [PROJECT_LABEL]: id, [SITE_LABEL]: "true", "app.kubernetes.io/managed-by": "osiris-operator" },
-      annotations: {
-        "cert-manager.io/cluster-issuer": s.sites.clusterIssuer,
-        "traefik.ingress.kubernetes.io/router.entrypoints": "web,websecure",
-        ...(s.sites.middleware ? { "traefik.ingress.kubernetes.io/router.middlewares": s.sites.middleware } : {}),
-      },
-    },
-    spec: {
-      ingressClassName: s.sites.ingressClass,
-      rules: [{ host: domain, http: { paths: [{ path: "/", pathType: "Prefix", backend: { service: { name: s.sites.service, port: { number: s.sites.port } } } }] } }],
-      tls: [{ hosts: [domain], secretName: `site-tls-${short(domain)}` }],
-    },
-  }));
 }

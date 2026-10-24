@@ -52,7 +52,6 @@ const settings: OperatorSettings = {
   runtimeEnv: { LLM_MODEL: "mistralai:x" },
   runtimeSecrets: { MISTRAL_API_KEY: "k" },
   projectSecretsKey: (t) => `key-${t}`,
-  sites: { service: "sites", port: 8080, clusterIssuer: "letsencrypt", ingressClass: "traefik" },
 };
 
 const T0 = Date.parse("2026-10-19T08:00:00Z");
@@ -145,21 +144,9 @@ describe("reconciler", () => {
     expect((await kube.get<ProjectResource>("Project", "osiris", "acme"))!.status?.phase).toBe("Suspended");
   });
 
-  it("serves verified domains through ingresses and removes the ones that went away", async () => {
-    const { kube, project, reconcile } = setup();
-    await project({ domains: ["www.acme.cz", "acme.cz"] });
-    await reconcile(T0);
-    const ingresses = await kube.list<KubeObject & { spec: any }>("Ingress", "osiris", "osiris.k6labs.cz/project=acme");
-    expect(ingresses.map((i) => i.spec.rules[0].host).sort()).toEqual(["acme.cz", "www.acme.cz"]);
-    expect(ingresses[0]!.metadata.annotations!["cert-manager.io/cluster-issuer"]).toBe("letsencrypt");
-    await project({ domains: ["acme.cz"] });
-    await reconcile(T0 + 1000);
-    expect((await kube.list<KubeObject & { spec: any }>("Ingress", "osiris", "osiris.k6labs.cz/project=acme")).map((i) => i.spec.rules[0].host)).toEqual(["acme.cz"]);
-  });
-
   it("takes a last snapshot and removes the namespace when a Project is deleted", async () => {
     const { kube, probe, project, reconcile } = setup();
-    await project({ idleMinutes: 0, domains: ["acme.cz"] });
+    await project({ idleMinutes: 0 });
     await reconcile(T0);
     kube.ready("acme");
     const t = (await kube.get<ProjectResource>("Project", "osiris", "acme"))!;
@@ -167,7 +154,6 @@ describe("reconciler", () => {
     await reconcile(T0 + 2000);
     expect(probe.snapshots).toBe(1);
     expect(await kube.get("Namespace", undefined, "osiris-p-acme")).toBeNull();
-    expect(await kube.list("Ingress", "osiris", "osiris.k6labs.cz/project=acme")).toEqual([]);
     expect((await kube.get<ProjectResource>("Project", "osiris", "acme"))!.metadata.finalizers).toEqual([]);
   });
 });

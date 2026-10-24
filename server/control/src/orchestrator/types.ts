@@ -7,8 +7,6 @@ export interface ProjectSpec {
   /** Minutes without activity before the runtime sleeps; 0 = always on. */
   idleMinutes: number;
   storageGb: number;
-  /** Verified custom domains of the project's sites (the operator creates their ingresses). */
-  domains: string[];
 }
 
 /** Runs project runtimes: the operator through `Project` resources in the cluster, child processes locally. */

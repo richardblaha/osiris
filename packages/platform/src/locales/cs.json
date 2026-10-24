@@ -106,28 +106,6 @@
       "selfLockout": "Sám sobě účet nezablokuješ ani neodebereš správu systému",
       "disabled": "Účet je zablokovaný"
     },
-    "domain": {
-      "invalid": "Neplatná doména (např. www.mojefirma.cz)",
-      "reserved": "Tuto doménu nelze použít",
-      "limit_one": "Projekt může mít nejvýš {{count}} doménu",
-      "limit_few": "Projekt může mít nejvýš {{count}} domény",
-      "limit_many": "Projekt může mít nejvýš {{count}} domény",
-      "limit_other": "Projekt může mít nejvýš {{count}} domén",
-      "taken": "Doménu už používá jiný projekt",
-      "notFound": "Doména nenalezena"
-    },
-    "publish": {
-      "foreignDomain": "Doména nepatří projektu",
-      "unverified": "Doména ještě není ověřená",
-      "noIndex": "Web musí mít v kořeni soubor index.html",
-      "releaseNotFound": "Vydání nenalezeno",
-      "entryType": "Nepovolený typ položky: {{path}}",
-      "path": "Nepovolená cesta: {{path}}",
-      "fileType": "Nepovolený typ souboru: {{path}}",
-      "fileTooLarge": "Soubor je příliš velký: {{path}}",
-      "tooManyFiles": "Web má víc než {{count}} souborů",
-      "tooLarge": "Web je příliš velký"
-    },
     "quota": {
       "members_one": "Projekt může mít nejvýš {{count}} uživatele",
       "members_few": "Projekt může mít nejvýš {{count}} uživatele",
@@ -178,7 +156,6 @@
     },
     "featureOff": "Tato funkce není pro projekt povolená",
     "sites": {
-      "featureOff": "Weby nejsou pro projekt povolené",
       "exists": "Projekt už web má.",
       "missing": "Projekt zatím nemá web."
     },
@@ -456,15 +433,6 @@
       "title": "Chyba přihlášení",
       "heading": "Přihlášení se nepovedlo",
       "retry": "Zkusit znovu"
-    }
-  },
-  "domains": {
-    "notes": {
-      "txtMissing": "Chybí TXT záznam {{record}} s hodnotou {{token}}",
-      "aRecord": "A záznam na {{ips}}",
-      "cname": "CNAME na {{target}}",
-      "askAdmin": "záznam podle správce",
-      "notPointing": "Doména nemíří na Osiris: nastav {{records}}"
     }
   },
   "dashboard": {

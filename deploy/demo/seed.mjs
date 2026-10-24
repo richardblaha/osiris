@@ -396,10 +396,10 @@ await api("PUT", "/public-assistants/web", {
 await api("PUT", `/guards/assistant/${PUBLIC_GUARD.name}?assistant=web`, { description: PUBLIC_GUARD.description, rule: PUBLIC_GUARD.rule });
 
 step(`web ${SITE}`);
-await api("POST", "/vitepress-sites", { name: SITE }, { ok: [400, 409] });
-await api("PUT", `/files/content?scope=project&path=${encodeURIComponent(`vitepress/${SITE}/index.md`)}&overwrite=true`, SITE_INDEX);
+await api("POST", "/site", { title: SITE }, { ok: [400, 409] });
+await api("PUT", `/files/content?scope=project&path=${encodeURIComponent("web/index.md")}&overwrite=true`, SITE_INDEX);
 for (const [page, text] of Object.entries(SITE_PAGES)) {
-  await api("PUT", `/files/content?scope=project&path=${encodeURIComponent(`vitepress/${SITE}/${page}`)}&overwrite=true`, text);
+  await api("PUT", `/files/content?scope=project&path=${encodeURIComponent(`web/${page}`)}&overwrite=true`, text);
 }
 
 step("plánovaná úloha");

@@ -38,9 +38,9 @@ describe("service messages", () => {
   });
 
   it("keeps English in an error's message and renders it per reader, with the key as a stable code", () => {
-    const err = new HttpError(404, "errors.domain.notFound");
-    expect(err.message).toBe("Domain not found.");
-    expect(errorBody(err, "cs")).toEqual({ error: "Doména nenalezena", code: "errors.domain.notFound" });
+    const err = new HttpError(404, "errors.project.notFound");
+    expect(err.message).toBe("Project not found.");
+    expect(errorBody(err, "cs")).toEqual({ error: "Projekt nenalezen", code: "errors.project.notFound" });
     // Any other LocalizedError is a 400, also when wrapped as a cause.
     const wrapped = new Error("wrapper", { cause: new LocalizedError("errors.url.private") });
     expect(errorResponse(wrapped, "cs")).toEqual({ status: 400, body: { error: "URL míří do privátní sítě", code: "errors.url.private" } });

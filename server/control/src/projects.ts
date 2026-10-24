@@ -20,7 +20,7 @@ export interface ProjectRow {
   /** Built-in tools switched off for the project, by name. */
   disabledTools: string[];
   quotas: ProjectQuotas;
-  /** Web analytics sites the project sees besides those of its domains (system admins choose). */
+  /** Web analytics sites the project sees (system admins choose). */
   webSites: string[];
   /** What its runtime last reported of its use, and when (epoch ms). */
   usage: (ReportedUsage & { at: number }) | null;
@@ -237,12 +237,9 @@ export class ProjectStore {
     await this.db.execute([run("UPDATE projects SET usage = ?, usage_at = ? WHERE id = ?", JSON.stringify(usage), Date.now(), id)]);
   }
 
-  /** Each project's analytics sites: the ones a system admin gave it and those of its domains (without www.). */
+  /** Each project's analytics sites, as a system admin gave them. */
   async webSites(): Promise<Map<string, string[]>> {
-    const [projects, domains] = await Promise.all([this.list(), this.db.query<{ domain: string; project_id: string }>("SELECT domain, project_id FROM domains")]);
-    const by = new Map(projects.map((t) => [t.id, new Set(t.webSites)]));
-    for (const d of domains) by.get(d.project_id)?.add(d.domain.replace(/^www\./, ""));
-    return new Map([...by].map(([id, sites]) => [id, [...sites].sort()]));
+    return new Map((await this.list()).map((t) => [t.id, t.webSites]));
   }
 
   async archive(id: string) {
@@ -253,18 +250,12 @@ export class ProjectStore {
   async spec(id: string): Promise<ProjectSpec> {
     const project = await this.get(id, { fresh: true });
     if (!project) throw new ProjectNotFoundError(`Project ${id} not found`);
-    const domains = await this.db.query<{ domain: string }>(
-      "SELECT domain FROM domains WHERE project_id = ? AND status = 'verified' ORDER BY domain",
-      [id],
-      { fresh: true },
-    );
     return {
       id,
       name: project.name,
       suspended: project.status === "archived",
       idleMinutes: project.idleMinutes,
       storageGb: project.storageGb,
-      domains: domains.map((d) => d.domain),
     };
   }
 }

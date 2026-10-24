@@ -1,4 +1,4 @@
-# One Dockerfile, one image per service: docker build --target <gateway|control|runtime|operator|sites|vitepress|web-events> .
+# One Dockerfile, one image per service: docker build --target <gateway|control|runtime|operator|vitepress|web-events> .
 # Every service runs TypeScript with tsx as the unprivileged node user, read-only root filesystem (tsx caches in /tmp).
 
 FROM node:24-slim AS base
@@ -13,7 +13,6 @@ COPY server/gateway/package.json server/gateway/
 COPY server/control/package.json server/control/
 COPY apps/osiris/package.json apps/osiris/
 COPY server/operator/package.json server/operator/
-COPY server/sites/package.json server/sites/
 COPY server/vitepress/package.json server/vitepress/
 COPY server/web-events/package.json server/web-events/
 ENV NODE_ENV=production
@@ -71,16 +70,6 @@ COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src
 COPY server/operator/src server/operator/src
 WORKDIR /app/server/operator
-USER node
-CMD ["node_modules/.bin/tsx", "src/index.ts"]
-
-FROM base AS sites
-RUN pnpm install --frozen-lockfile --prod --filter "@osiris/sites..." && pnpm store prune
-COPY packages/shared/src packages/shared/src
-COPY packages/platform/src packages/platform/src
-COPY server/sites/src server/sites/src
-ENV PORT=8080
-WORKDIR /app/server/sites
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
 

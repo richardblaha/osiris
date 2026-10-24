@@ -80,7 +80,7 @@ const schema = z
     // Development only: runtimes authenticate with `dev-runtime:<project>` instead of ServiceAccount tokens.
     DEV_RUNTIME_AUTH: bool,
 
-    // Object storage (sites, backups). Without S3 settings, a local folder.
+    // Object storage (logos, pictures, backups). Without S3 settings, a local folder.
     S3_ENDPOINT: z.url().optional(),
     S3_REGION: z.string().default("fra1"),
     S3_BUCKET: z.string().optional(),
@@ -96,13 +96,6 @@ const schema = z
     // Shown to users who verify their number ("send the code to …").
     WHATSAPP_DISPLAY_NUMBER: z.string().optional(),
 
-    // Project sites: custom domains must resolve to these addresses (A/AAAA) or CNAME to SITES_CNAME_TARGET.
-    SITES_INGRESS_IPS: z
-      .string()
-      .default("")
-      .transform((v) => v.split(",").map((s) => s.trim()).filter(Boolean)),
-    SITES_CNAME_TARGET: z.string().optional(),
-    MAX_DOMAINS_PER_PROJECT: z.coerce.number().int().positive().default(5),
   })
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";

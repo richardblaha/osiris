@@ -10,8 +10,6 @@ import {
   type MeResponse,
   type Role,
   type Schedule,
-  type SiteDomain,
-  type SiteRelease,
   type ProjectDetail,
   type ProjectFeatures,
   type ProjectInfo,
@@ -35,8 +33,6 @@ import { authRoutes, securityRoutes, type AuthDeps } from "./auth/routes.ts";
 import type { Backups } from "./backups.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";
 import { ScheduleNotFoundError, type ScheduleStore } from "./scheduler.ts";
-import type { DomainStore } from "./sites/domains.ts";
-import { SITE_LIMITS, type SitePublisher } from "./sites/publisher.ts";
 import { ProjectExistsError, ProjectNotFoundError, type ProjectDirectory, type ProjectRow } from "./projects.ts";
 import { UserNotFoundError, type UserDirectory } from "./users.ts";
 import { PHONE_CLAIM, type PhoneVerification } from "./whatsapp/phones.ts";
@@ -51,8 +47,6 @@ export interface ControlDeps {
   users: UserDirectory;
   orchestrator: Orchestrator;
   schedules: ScheduleStore;
-  domains: DomainStore;
-  sites: SitePublisher;
   backups: Backups;
   phones: PhoneVerification;
   whatsapp?: WhatsAppWebhookOptions & { displayNumber?: string };
@@ -135,7 +129,6 @@ const scheduleBody = z.object({
   enabled: z.boolean().optional(),
 });
 const runtimeScheduleBody = scheduleBody.extend({ owner: z.object({ id: z.string().min(1), name: z.string().nullable() }) });
-const domainBody = z.object({ domain: z.string().trim().min(4).max(253) });
 
 const PICTURE_TYPES: Record<string, number[]> = { "image/png": [0x89, 0x50, 0x4e, 0x47], "image/jpeg": [0xff, 0xd8, 0xff] };
 
@@ -149,7 +142,7 @@ const json = async (c: Context) => c.req.json().catch(() => {
 });
 
 /**
- * Maps errors of the stores to HTTP errors. The stores' own input errors (`ScheduleError`, `DomainError`, …) are
+ * Maps errors of the stores to HTTP errors. The stores' own input errors (`ScheduleError`, …) are
  * `LocalizedError`s and answer 400 in `onError`.
  */
 function errors(err: unknown): Error | null {
@@ -168,12 +161,12 @@ const tooLarge = (key: string, params?: Params) => (c: Context) => c.json({ erro
 
 /**
  * Control: sign-in (the OIDC provider's screens; the provider itself is mounted next to this app, see server.ts),
- * projects, users and their access, schedules, domains and sites, backups, WhatsApp. User calls come from the gateway
+ * projects, users and their access, schedules, backups, WhatsApp. User calls come from the gateway
  * with an internal token naming the user and their memberships, runtimes prove their project with their ServiceAccount
  * token, and Meta signs the WhatsApp webhook.
  */
 export function createControlApp(deps: ControlDeps) {
-  const { verifier, runtimeIdentity, directory, users, orchestrator, schedules, domains, sites, backups, phones } = deps;
+  const { verifier, runtimeIdentity, directory, users, orchestrator, schedules, backups, phones } = deps;
   const projects = directory.store;
   const dashboardDeps = { store: deps.dashboards, projects, directory, schedules, backups, orchestrator, telemetry: deps.telemetry };
 
@@ -356,41 +349,6 @@ export function createControlApp(deps: ControlDeps) {
     .delete("/schedules/:id", async (c) => {
       const s = await ownSchedule(c);
       await schedules.delete(c.get("project").id, s.id);
-      return c.body(null, 204);
-    })
-
-    // Custom domains and site releases: members see them, admins change them.
-    .use("/domains/*", requireFeature("sites"))
-    .use("/domains", requireFeature("sites"))
-    .use("/sites/*", requireFeature("sites"))
-    .get("/domains", async (c) => c.json<SiteDomain[]>(await domains.list(c.get("project").id)))
-    .post("/domains", async (c) => {
-      requireProjectAdmin(c);
-      const { domain } = parse(domainBody, await json(c));
-      return c.json<SiteDomain>(await domains.add(c.get("project").id, domain), 201);
-    })
-    .post("/domains/:domain/verify", async (c) => {
-      requireProjectAdmin(c);
-      const id = c.get("project").id;
-      const result = await domains.verify(id, c.req.param("domain"));
-      // The ingress and certificate follow the verified set.
-      await directory.sync(id);
-      return c.json<SiteDomain>(result);
-    })
-    .delete("/domains/:domain", async (c) => {
-      requireProjectAdmin(c);
-      const id = c.get("project").id;
-      const domain = c.req.param("domain");
-      await domains.remove(id, domain);
-      await directory.sync(id);
-      await sites.removeDomain(id, domain);
-      return c.body(null, 204);
-    })
-    .get("/sites/releases", async (c) => c.json<SiteRelease[]>(await sites.releases(c.get("project").id, c.req.query("domain"))))
-    .post("/sites/releases/:id/activate", async (c) => {
-      requireProjectAdmin(c);
-      const { domain } = parse(domainBody, await json(c));
-      await sites.activate(c.get("project").id, domain, c.req.param("id"));
       return c.body(null, 204);
     });
 
@@ -605,20 +563,7 @@ export function createControlApp(deps: ControlDeps) {
       if (owner && s.ownerId !== owner) throw new HttpError(404, "errors.schedule.notFound");
       await schedules.delete(c.get("runtimeProject"), s.id);
       return c.body(null, 204);
-    })
-    .get("/domains", async (c) => c.json<SiteDomain[]>(await domains.list(c.get("runtimeProject"))))
-    .post(
-      "/sites/publish",
-      bodyLimit({ maxSize: SITE_LIMITS.uploadBytes, onError: tooLarge("errors.publish.tooLarge") }),
-      async (c) => {
-        if (!c.get("project").features.sites) throw new HttpError(403, "errors.sites.featureOff");
-        const domain = c.req.query("domain") ?? "";
-        const body = c.req.raw.body;
-        if (!body) throw new HTTPException(400, { message: "Missing body" });
-        const release = await sites.publish(c.get("runtimeProject"), domain, Readable.fromWeb(body as never), c.req.query("user") ?? null);
-        return c.json<SiteRelease>(release, 201);
-      },
-    );
+    });
 
   const app = new Hono()
     .use(telemetryMiddleware())

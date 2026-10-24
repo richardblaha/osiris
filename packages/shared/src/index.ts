@@ -440,29 +440,6 @@ export interface ScheduleInput {
   enabled?: boolean;
 }
 
-/** A custom domain for the project's site (`/api/domains`); served once DNS proves it's the project's. */
-export interface SiteDomain {
-  domain: string;
-  status: "pending" | "verified" | "failed";
-  /** TXT record `_osiris-challenge.<domain>` must hold this value. */
-  token: string;
-  error: string | null;
-  releaseId: string | null;
-  verifiedAt: string | null;
-  /** What the domain must point to: A records to these IPs, or a CNAME to `cname`. */
-  target: { ips: string[]; cname: string | null };
-}
-
-export interface SiteRelease {
-  id: string;
-  domain: string;
-  files: number;
-  bytes: number;
-  createdBy: string | null;
-  createdAt: string;
-  current: boolean;
-}
-
 /** The user's account profile (`/api/me/profile`). */
 export interface UserProfile {
   firstName: string;

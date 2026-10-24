@@ -18,8 +18,6 @@ import { LocalOrchestrator } from "./orchestrator/local.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";
 import { ScheduleStore, SchedulerWorker } from "./scheduler.ts";
 import { controlListener } from "./server.ts";
-import { DomainStore, publicDns } from "./sites/domains.ts";
-import { SitePublisher } from "./sites/publisher.ts";
 import { ProjectDirectory, ProjectStore } from "./projects.ts";
 import { dbUsers } from "./users.ts";
 import { WhatsAppClient } from "./whatsapp/cloud-api.ts";
@@ -73,13 +71,6 @@ const store = new ProjectStore(db, { objects, publicUrl: config.PUBLIC_URL });
 await store.migrateSystemGuards();
 const directory = new ProjectDirectory(store, users, orchestrator);
 const schedules = new ScheduleStore(db, config.TIMEZONE);
-const domains = new DomainStore(db, publicDns(), {
-  ingressIps: config.SITES_INGRESS_IPS,
-  cnameTarget: config.SITES_CNAME_TARGET,
-  maxPerProject: config.MAX_DOMAINS_PER_PROJECT,
-  reserved: ["k6labs.cz", "localhost"],
-});
-const sites = new SitePublisher(db, objects);
 const backups = new Backups(db, objects, config.BACKUP_RETENTION_DAYS);
 const phones = new PhoneVerification(db, users);
 const inbox = new Inbox(db);
@@ -107,8 +98,6 @@ const app = createControlApp({
   users,
   orchestrator,
   schedules,
-  domains,
-  sites,
   backups,
   phones,
   snapshot,
@@ -132,10 +121,6 @@ const loops = [
         return () => router.step();
       })())]
     : []),
-  startLoop("Domain re-check", 10 * 60_000, async () => {
-    for (const project of await domains.recheck()) await directory.sync(project);
-    return false;
-  }),
   startLoop("Cleanup", 6 * 60 * 60_000, async () => {
     await backups.prune();
     await inbox.cleanup();

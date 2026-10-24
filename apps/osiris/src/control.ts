@@ -1,5 +1,5 @@
 import { Readable } from "node:stream";
-import { NO_QUOTAS, type ReportedUsage, type Feature, type Guard, type UserDefaults, type Schedule, type ScheduleInput, type SiteDomain, type SiteRelease, type ProjectFeatures, type ProjectQuotas } from "@osiris/shared";
+import { NO_QUOTAS, type ReportedUsage, type Feature, type Guard, type UserDefaults, type Schedule, type ScheduleInput, type ProjectFeatures, type ProjectQuotas } from "@osiris/shared";
 import type { FeatureSource } from "@osiris/core/projects/features.ts";
 import { callJson, ServiceError } from "@osiris/platform/http.ts";
 
@@ -88,28 +88,6 @@ export class ControlClient {
 
   deleteSchedule(ownerId: string, id: string) {
     return this.json<void>(`/schedules/${encodeURIComponent(id)}?owner=${encodeURIComponent(ownerId)}`, { method: "DELETE" });
-  }
-
-  domains() {
-    return this.json<SiteDomain[]>("/domains");
-  }
-
-  async publishSite(domain: string, archive: Readable, userId: string): Promise<SiteRelease> {
-    const res = await this.fetchFn(
-      `${this.baseUrl}/internal/runtime/sites/publish?domain=${encodeURIComponent(domain)}&user=${encodeURIComponent(userId)}`,
-      {
-        method: "POST",
-        headers: await this.headers({ "content-type": "application/gzip" }),
-        body: Readable.toWeb(archive) as ReadableStream,
-        duplex: "half",
-        signal: AbortSignal.timeout(5 * 60_000),
-      } as RequestInit,
-    );
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      throw new ServiceError(body?.error ?? `Publishing failed: ${res.status}`, res.status);
-    }
-    return (await res.json()) as SiteRelease;
   }
 }
 

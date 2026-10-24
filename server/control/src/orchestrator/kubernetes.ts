@@ -44,7 +44,6 @@ export class KubernetesOrchestrator implements Orchestrator {
       suspended: spec.suspended,
       idleMinutes: spec.idleMinutes,
       storageGi: spec.storageGb,
-      domains: spec.domains,
     });
   }
 

@@ -1,6 +1,6 @@
 import { projectAudience, type InternalSigner } from "@osiris/platform/internal-auth.ts";
 import { KubeError, type Kube, type KubeObject } from "./kube.ts";
-import { namespaceOf, RUNTIME_PORT, SITE_LABEL, siteIngresses, PROJECT_LABEL, projectResources, type OperatorSettings, type ProjectResource } from "./resources.ts";
+import { namespaceOf, RUNTIME_PORT, PROJECT_LABEL, projectResources, type OperatorSettings, type ProjectResource } from "./resources.ts";
 
 export const FINALIZER = "osiris.k6labs.cz/cleanup";
 
@@ -91,28 +91,12 @@ export class Reconciler {
     }
 
     for (const obj of projectResources(t, this.settings, replicas)) await this.kube.apply(obj);
-    await this.syncIngresses(t);
     if (JSON.stringify(status) !== JSON.stringify(t.status)) {
       await this.kube.mergePatch("Project", ns, id, { status }, "/status");
     }
   }
 
-  /** Creates ingresses for the verified domains and removes the rest (with their certificates). */
-  private async syncIngresses(t: ProjectResource) {
-    const id = t.metadata.name;
-    const ns = this.settings.namespace;
-    const desired = t.spec.suspended ? [] : siteIngresses(t, this.settings);
-    for (const ing of desired) await this.kube.apply(ing);
-    const existing = await this.kube.list<KubeObject>("Ingress", ns, `${PROJECT_LABEL}=${id},${SITE_LABEL}=true`);
-    for (const ing of existing) {
-      if (desired.some((d) => d.metadata.name === ing.metadata.name)) continue;
-      await this.kube.delete("Ingress", ns, ing.metadata.name);
-      const tls = (ing as { spec?: { tls?: { secretName?: string }[] } }).spec?.tls?.[0]?.secretName;
-      if (tls) await this.kube.delete("Secret", ns, tls);
-    }
-  }
-
-  /** A deleted Project: a last snapshot if the runtime is up, then the namespace (volume included) and the ingresses. */
+  /** A deleted Project: a last snapshot if the runtime is up, then the namespace (volume included). */
   private async finalize(t: ProjectResource) {
     const id = t.metadata.name;
     if (!t.metadata.finalizers?.includes(FINALIZER)) return;
@@ -120,7 +104,6 @@ export class Reconciler {
     if ((sts?.status?.readyReplicas ?? 0) > 0) {
       await this.runtime.prepareSleep(id).catch((err) => this.log(`Project ${id}: final snapshot failed`, err));
     }
-    await this.syncIngresses({ ...t, spec: { ...t.spec, suspended: true } });
     await this.kube.delete("Namespace", undefined, namespaceOf(id));
     await this.kube.mergePatch("Project", this.settings.namespace, id, {
       metadata: { finalizers: (t.metadata.finalizers ?? []).filter((f) => f !== FINALIZER) },

@@ -13,8 +13,6 @@ import { createControlApp } from "../src/app.ts";
 import { Backups } from "../src/backups.ts";
 import type { Orchestrator, ProjectSpec, ProjectStatus } from "../src/orchestrator/types.ts";
 import { ScheduleStore } from "../src/scheduler.ts";
-import { DomainStore, type DnsLookup } from "../src/sites/domains.ts";
-import { SitePublisher } from "../src/sites/publisher.ts";
 import { ProjectDirectory, ProjectStore } from "../src/projects.ts";
 import { createAuthDeps } from "../src/auth/index.ts";
 import type { Mailer } from "../src/auth/mail.ts";
@@ -54,25 +52,12 @@ export class FakeOrchestrator implements Orchestrator {
   }
 }
 
-/** DNS answers for tests: name → TXT records, A records, CNAMEs. */
-export function fakeDns(zone: Record<string, { txt?: string[]; a?: string[]; cname?: string[] }>): DnsLookup {
-  const get = (name: string) => zone[name] ?? {};
-  const fail = () => Promise.reject(Object.assign(new Error("ENOTFOUND"), { code: "ENOTFOUND" }));
-  return {
-    resolveTxt: async (n) => (get(n).txt ? get(n).txt!.map((t) => [t]) : fail()),
-    resolve4: async (n) => get(n).a ?? fail(),
-    resolve6: () => fail(),
-    resolveCname: async (n) => get(n).cname ?? fail(),
-  };
-}
-
 export type RuntimeHandler = (project: string, path: string, init: RequestInit) => Response | Promise<Response>;
 
-/** All of control over a temp database and folder, with fakes for the cluster, runtimes, DNS and WhatsApp. */
+/** All of control over a temp database and folder, with fakes for the cluster, runtimes and WhatsApp. */
 export async function createTestControl(
   options: {
     users?: Partial<UserRecord>[];
-    dns?: DnsLookup;
     runtime?: RuntimeHandler;
     social?: Partial<Record<SocialProviderId, SocialClient>>;
     socialFetch?: typeof fetch;
@@ -110,8 +95,6 @@ export async function createTestControl(
   }) as unknown as typeof fetch;
   const runtimes = new RuntimeClient({ endpoint: async (t) => orchestrator.endpoint(t), wake: (t) => orchestrator.wake(t) }, { fetchFn: runtimeFetch, wakeTimeoutMs: 2000 });
   const schedules = new ScheduleStore(db, "Europe/Prague");
-  const domains = new DomainStore(db, options.dns ?? fakeDns({}), { ingressIps: ["203.0.113.10"], maxPerProject: 3, reserved: ["k6labs.cz"] });
-  const sites = new SitePublisher(db, objects);
   const backups = new Backups(db, objects, 30);
   const phones = new PhoneVerification(db, users);
   const inbox = new Inbox(db);
@@ -132,8 +115,6 @@ export async function createTestControl(
     users,
     orchestrator,
     schedules,
-    domains,
-    sites,
     backups,
     phones,
     snapshot: async (t) => void snapshots.push(t),
@@ -170,8 +151,6 @@ export async function createTestControl(
     store,
     directory,
     schedules,
-    domains,
-    sites,
     backups,
     phones,
     inbox,

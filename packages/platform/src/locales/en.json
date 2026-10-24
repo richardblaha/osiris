@@ -98,26 +98,6 @@
       "selfLockout": "You can't block your own account or remove your own system administration.",
       "disabled": "The account is blocked."
     },
-    "domain": {
-      "invalid": "Invalid domain (for example www.mycompany.com).",
-      "reserved": "This domain can't be used.",
-      "limit_one": "A project can have at most {{count}} domain.",
-      "limit_other": "A project can have at most {{count}} domains.",
-      "taken": "Another project already uses this domain.",
-      "notFound": "Domain not found."
-    },
-    "publish": {
-      "foreignDomain": "The domain doesn't belong to the project.",
-      "unverified": "The domain isn't verified yet.",
-      "noIndex": "The site needs an index.html file at its root.",
-      "releaseNotFound": "Release not found.",
-      "entryType": "Entry type not allowed: {{path}}",
-      "path": "Path not allowed: {{path}}",
-      "fileType": "File type not allowed: {{path}}",
-      "fileTooLarge": "File too large: {{path}}",
-      "tooManyFiles": "The site has more than {{count}} files.",
-      "tooLarge": "The site is too large."
-    },
     "quota": {
       "members_one": "A project can have at most {{count}} user.",
       "members_other": "A project can have at most {{count}} users.",
@@ -164,7 +144,6 @@
     },
     "featureOff": "This feature is not enabled for the project.",
     "sites": {
-      "featureOff": "Sites are not enabled for the project.",
       "exists": "The project already has a website.",
       "missing": "The project has no website yet."
     },
@@ -438,15 +417,6 @@
       "title": "Sign-in error",
       "heading": "Sign-in failed",
       "retry": "Try again"
-    }
-  },
-  "domains": {
-    "notes": {
-      "txtMissing": "The TXT record {{record}} with the value {{token}} is missing.",
-      "aRecord": "an A record to {{ips}}",
-      "cname": "a CNAME to {{target}}",
-      "askAdmin": "the record your administrator gives you",
-      "notPointing": "The domain doesn't point to Osiris: set {{records}}."
     }
   },
   "dashboard": {

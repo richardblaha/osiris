@@ -12,7 +12,7 @@ describe("project directory", () => {
     await directory.create("acme", "ACME s.r.o.");
     await directory.create("novak", "Novák stavby", { mcp: false });
     await expect(directory.create("acme", "Dup")).rejects.toThrow("already exists");
-    expect(orchestrator.applied.get("novak")).toEqual({ id: "novak", name: "Novák stavby", suspended: false, idleMinutes: 30, storageGb: 5, domains: [] });
+    expect(orchestrator.applied.get("novak")).toEqual({ id: "novak", name: "Novák stavby", suspended: false, idleMinutes: 30, storageGb: 5 });
     expect((await store.get("novak"))!.features).toMatchObject({ mcp: false, knowledge: true, scheduler: true });
 
     await directory.setRole("novak", "bob", "admin");

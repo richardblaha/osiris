@@ -1,5 +1,5 @@
 # Central database: rqlite (SQLite replicated with Raft), 3 nodes, so it survives losing one. Users and their
-# permissions (control: all, sites: query only, nodes: join) and the automatic backup to S3 come from the
+# permissions (control: all, nodes: join) and the automatic backup to S3 come from the
 # rqlite-config secret (deploy/README.md).
 apiVersion: v1
 kind: Service

@@ -8,14 +8,14 @@ spec:
   podSelector: {}
   policyTypes: [Ingress]
 ---
-# The internet comes in through Traefik: to the gateway (osiris.k6labs.cz) and to sites (project domains).
+# The internet comes in through Traefik: to the gateway (osiris.k6labs.cz).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: from-ingress
 spec:
   podSelector:
-    matchExpressions: [{ key: app, operator: In, values: [gateway, sites] }]
+    matchExpressions: [{ key: app, operator: In, values: [gateway] }]
   policyTypes: [Ingress]
   ingress:
     - from:
@@ -37,7 +37,7 @@ spec:
           podSelector: { matchLabels: { app: runtime } }
       ports: [{ port: 3002, protocol: TCP }]
 ---
-# rqlite: its own nodes (Raft and joins), control (read/write) and sites (read-only user).
+# rqlite: its own nodes (Raft and joins) and control (read/write).
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -47,7 +47,7 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        - podSelector: { matchExpressions: [{ key: app, operator: In, values: [rqlite, control, sites] }] }
+        - podSelector: { matchExpressions: [{ key: app, operator: In, values: [rqlite, control] }] }
       ports: [{ port: 4001, protocol: TCP }, { port: 4002, protocol: TCP }]
 ---
 # cert-manager's HTTP-01 solvers (certificates for osiris.k6labs.cz and project domains) answer Traefik.

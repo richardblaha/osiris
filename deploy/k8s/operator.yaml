@@ -1,4 +1,4 @@
-# Runs projects: reconciles Project objects into namespaces with the runtime, sleeps idle runtimes, site ingresses.
+# Runs projects: reconciles Project objects into namespaces with the runtime, sleeps idle runtimes.
 # One replica (Recreate), so two operators never act at once.
 # Secret osiris-operator: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, SECRETS_MASTER_KEY,
 # RUNTIME_SECRET_MISTRAL_API_KEY (passed to every runtime as MISTRAL_API_KEY).
@@ -39,8 +39,6 @@ spec:
             - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
             - { name: GOTENBERG_URL, value: http://gotenberg.osiris.svc.cluster.local:3000 }
             - { name: VITEPRESS_URL, value: http://vitepress.osiris.svc.cluster.local:3000 }
-            - { name: CLUSTER_ISSUER, value: letsencrypt }
-            - { name: SITES_MIDDLEWARE, value: osiris-redirect-https@kubernetescrd }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
             - { name: RUNTIME_ENV_TIMEZONE, value: Europe/Prague }

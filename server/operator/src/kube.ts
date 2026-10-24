@@ -27,7 +27,6 @@ const RESOURCES: Record<string, { group: string; plural: string; namespaced: boo
   LimitRange: { group: "api/v1", plural: "limitranges", namespaced: true },
   StatefulSet: { group: "apis/apps/v1", plural: "statefulsets", namespaced: true },
   NetworkPolicy: { group: "apis/networking.k8s.io/v1", plural: "networkpolicies", namespaced: true },
-  Ingress: { group: "apis/networking.k8s.io/v1", plural: "ingresses", namespaced: true },
   Project: { group: "apis/osiris.k6labs.cz/v1alpha1", plural: "projects", namespaced: true },
 };
 

@@ -46,7 +46,7 @@ interface Authenticated {
 type Env = { Variables: { auth: Authenticated } };
 
 /** API paths answered by control; everything else under /api belongs to the active project's runtime. */
-const CONTROL_PATHS = /^\/api\/(me|admin|project|members|schedules|domains|sites|dashboards|analytics)(\/|$)/;
+const CONTROL_PATHS = /^\/api\/(me|admin|project|members|schedules|dashboards|analytics)(\/|$)/;
 
 /** Request headers passed on to the services; credentials and hop-by-hop headers are not. */
 const FORWARD_REQUEST = ["content-type", "accept", "accept-language", "x-project-id", "x-hub-signature-256"];
@@ -84,7 +84,7 @@ const plainUser = (u: Identity): InternalUser => ({ sub: u.sub, name: u.name, em
 /**
  * The only entry point from the internet for osiris.k6labs.cz. Passes sign-in (`/auth`) to control, which is the
  * OpenID Connect provider. For the API it has control identify the access token, works out the user's projects from
- * their claims, and passes each call on with a short internal token: account, administration, schedules and sites to
+ * their claims, and passes each call on with a short internal token: account, administration, schedules and dashboards to
  * control; the rest to the active project's runtime, which is woken up first if it sleeps. Services behind it never see
  * an access token, and network policies let only the gateway reach them.
  */

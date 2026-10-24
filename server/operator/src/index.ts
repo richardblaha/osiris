@@ -22,11 +22,6 @@ const env = z
     INTERNAL_JWT_PRIVATE_KEY: pem,
     INTERNAL_JWT_PUBLIC_KEY: pem,
     SECRETS_MASTER_KEY: z.string().min(1),
-    SITES_SERVICE: z.string().default("sites"),
-    SITES_PORT: z.coerce.number().int().default(8080),
-    CLUSTER_ISSUER: z.string().default("letsencrypt"),
-    INGRESS_CLASS: z.string().default("traefik"),
-    SITES_MIDDLEWARE: z.string().optional(),
     RESYNC_SECONDS: z.coerce.number().int().positive().default(60),
     HEALTH_PORT: z.coerce.number().int().default(8081),
   })
@@ -60,7 +55,6 @@ const reconciler = new Reconciler(
     runtimeEnv,
     runtimeSecrets,
     projectSecretsKey: (project) => deriveProjectKey(env.SECRETS_MASTER_KEY, project),
-    sites: { service: env.SITES_SERVICE, port: env.SITES_PORT, clusterIssuer: env.CLUSTER_ISSUER, ingressClass: env.INGRESS_CLASS, middleware: env.SITES_MIDDLEWARE },
   },
   httpRuntimeProbe(signer, runtimeUrl),
 );

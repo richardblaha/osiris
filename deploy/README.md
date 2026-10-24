@@ -6,15 +6,14 @@ Osiris runs in the `abydos` k3s cluster (Civo) at https://osiris.k6labs.cz. Shar
 namespace; each project gets its own namespace `osiris-p-<slug>`, created by the operator.
 
 ```
-Internet ─ Traefik ─┬─ osiris.k6labs.cz ──▶ gateway ──┬─▶ control ──▶ rqlite (3 nodes) ─▶ S3 (rqlite backups)
-                    │                                 │      │  └──▶ WhatsApp, S3, Emailit, Google/Facebook/Microsoft/Seznam (sign-in)
-                    │                                 │      └──▶ Project objects ◀── operator ──▶ project namespaces
-                    │                                 └─▶ runtime (osiris-p-<slug>, 0–1 pod, own volume) ─▶ gotenberg
-                    └─ project domains ──▶ sites ──▶ rqlite (read-only user), S3
+Internet ─ Traefik ─── osiris.k6labs.cz ──▶ gateway ──┬─▶ control ──▶ rqlite (3 nodes) ─▶ S3 (rqlite backups)
+                                                      │      │  └──▶ WhatsApp, S3, Emailit, Google/Facebook/Microsoft/Seznam (sign-in)
+                                                      │      └──▶ Project objects ◀── operator ──▶ project namespaces
+                                                      └─▶ runtime (osiris-p-<slug>, 0–1 pod, own volume) ─▶ gotenberg
 ```
 
 - **Images:** GitHub Actions (`.github/workflows/ci.yml`) runs the tests and, on `main`, pushes one image per service:
-  `ghcr.io/richardblaha/osiris-{gateway,control,runtime,operator,sites}` with the tags `main` and `sha-<commit>`.
+  `ghcr.io/richardblaha/osiris-{gateway,control,runtime,operator,vitepress,web-events}` with the tags `main` and `sha-<commit>`.
   Runtimes pull `:main` whenever they wake, so a new runtime version reaches a project on its next wake-up.
 - **Projects sleep:** a runtime idle for `idleMinutes` (30 by default, 0 = always on) is snapshotted to S3 and scaled to
   zero; the next request, WhatsApp message or scheduled task wakes it (the gateway waits for it, usually 10–30 s).
@@ -154,7 +153,7 @@ then adds its `count.js` to the page and the site to the CSP; the app counts eac
 
 Create an object store and a bucket (`osiris`), and credentials for it. Put into `.env`: `OSIRIS_S3_ENDPOINT`
 (e.g. `https://objectstore.fra1.civo.com`), `OSIRIS_S3_REGION`, `OSIRIS_S3_BUCKET`, `OSIRIS_S3_ACCESS_KEY_ID`,
-`OSIRIS_S3_SECRET_ACCESS_KEY`. Prefixes: `sites/` (published sites), `backups/` (project snapshots), `rqlite/` (central DB).
+`OSIRIS_S3_SECRET_ACCESS_KEY`. Prefixes: `backups/` (project snapshots), `rqlite/` (central DB).
 
 ## Secrets
 
@@ -165,7 +164,7 @@ unreadable; changing the JWT keys only needs a restart of all services):
 pnpm --filter @osiris/platform gen-keys   # → OSIRIS_INTERNAL_JWT_PRIVATE_KEY, OSIRIS_INTERNAL_JWT_PUBLIC_KEY, OSIRIS_SECRETS_MASTER_KEY,
                                           #   OSIRIS_AUTH_SIGNING_KEY, OSIRIS_AUTH_SECRET
                                           #   (put the PEM values in single quotes in .env: they contain spaces)
-openssl rand -hex 24                      # → OSIRIS_RQLITE_CONTROL_PASSWORD, OSIRIS_RQLITE_SITES_PASSWORD, OSIRIS_RQLITE_NODE_PASSWORD
+openssl rand -hex 24                      # → OSIRIS_RQLITE_CONTROL_PASSWORD, OSIRIS_RQLITE_NODE_PASSWORD
 ```
 
 ```bash
@@ -190,7 +189,6 @@ apply osiris-control \
   --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY" \
   --from-literal=WHATSAPP_VERIFY_TOKEN="$OSIRIS_WHATSAPP_VERIFY_TOKEN" --from-literal=WHATSAPP_APP_SECRET="$OSIRIS_WHATSAPP_APP_SECRET" \
   --from-literal=WHATSAPP_ACCESS_TOKEN="$OSIRIS_WHATSAPP_ACCESS_TOKEN" --from-literal=WHATSAPP_DISPLAY_NUMBER="$OSIRIS_WHATSAPP_DISPLAY_NUMBER" \
-  --from-literal=SITES_INGRESS_IPS="$(kubectl -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[*].ip}')"
 
 apply osiris-operator \
   --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")" \
@@ -202,13 +200,9 @@ apply osiris-operator \
   --from-literal=RUNTIME_SECRET_MICROSOFT_INTEGRATION_CLIENT_ID="$OSIRIS_MICROSOFT_INTEGRATION_CLIENT_ID" \
   --from-literal=RUNTIME_SECRET_MICROSOFT_INTEGRATION_CLIENT_SECRET="$OSIRIS_MICROSOFT_INTEGRATION_CLIENT_SECRET"
 
-apply osiris-sites --from-literal=RQLITE_USERNAME=sites --from-literal=RQLITE_PASSWORD="$OSIRIS_RQLITE_SITES_PASSWORD" \
-  --from-literal=S3_ENDPOINT="$OSIRIS_S3_ENDPOINT" --from-literal=S3_REGION="$OSIRIS_S3_REGION" --from-literal=S3_BUCKET="$OSIRIS_S3_BUCKET" \
-  --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY"
-
-# rqlite: users and permissions (control all, sites read-only, nodes join), automatic backup to S3 every 5 minutes.
+# rqlite: users and permissions (control all, nodes join), automatic backup to S3 every 5 minutes.
 apply rqlite-config \
-  --from-literal=users.json="[{\"username\":\"control\",\"password\":\"$OSIRIS_RQLITE_CONTROL_PASSWORD\",\"perms\":[\"all\"]},{\"username\":\"sites\",\"password\":\"$OSIRIS_RQLITE_SITES_PASSWORD\",\"perms\":[\"query\"]},{\"username\":\"node\",\"password\":\"$OSIRIS_RQLITE_NODE_PASSWORD\",\"perms\":[\"join\",\"remove\"]},{\"username\":\"*\",\"perms\":[\"status\",\"ready\"]}]" \
+  --from-literal=users.json="[{\"username\":\"control\",\"password\":\"$OSIRIS_RQLITE_CONTROL_PASSWORD\",\"perms\":[\"all\"]},{\"username\":\"node\",\"password\":\"$OSIRIS_RQLITE_NODE_PASSWORD\",\"perms\":[\"join\",\"remove\"]},{\"username\":\"*\",\"perms\":[\"status\",\"ready\"]}]" \
   --from-literal=backup.json="{\"version\":1,\"type\":\"s3\",\"interval\":\"5m\",\"vacuum\":false,\"sub\":{\"access_key_id\":\"\$S3_ACCESS_KEY_ID\",\"secret_access_key\":\"\$S3_SECRET_ACCESS_KEY\",\"endpoint\":\"$OSIRIS_S3_ENDPOINT\",\"region\":\"$OSIRIS_S3_REGION\",\"bucket\":\"$OSIRIS_S3_BUCKET\",\"path\":\"rqlite/osiris.sqlite3.gz\",\"force_path_style\":true}}" \
   --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY"
 # (Nodes join as `node`; rqlite takes its password from users.json.)
@@ -226,7 +220,7 @@ keys from the operator, which restarts them by itself).
 ```bash
 kubectl apply -k deploy/k8s
 kubectl -n osiris rollout status statefulset/rqlite
-kubectl -n osiris rollout status deploy/control deploy/gateway deploy/operator deploy/sites
+kubectl -n osiris rollout status deploy/control deploy/gateway deploy/operator
 kubectl -n osiris get projects
 ```
 
