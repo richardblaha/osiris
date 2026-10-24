@@ -54,8 +54,8 @@ spec:
           resources:
             # A build reads most of node_modules: with less memory on a full node the page cache thrashes, the
             # build times out and the node's other pods stall. The request keeps it on a node with room.
-            # shortcut: 384Mi (was 768Mi) while node owwgq is cordoned and the other two have no room; back to 768Mi
-            # once it returns or the nodes grow.
+            # shortcut: 384Mi (was 768Mi): no node of the three (2.3 GB allocatable each) has 768Mi left unrequested;
+            # back to 768Mi when the nodes grow or other requests shrink.
             requests:
               cpu: 100m
               memory: 384Mi
