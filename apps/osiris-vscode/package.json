@@ -1,0 +1,65 @@
+{
+  "name": "osiris-vscode",
+  "displayName": "Osiris",
+  "description": "Osiris, the assistant for your project: its agent runs over the workspace folder (in the devcontainer when there is one), or on an Osiris server.",
+  "version": "0.1.0",
+  "publisher": "osiris",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": ["AI", "Chat"],
+  "extensionKind": ["workspace"],
+  "main": "./dist/extension.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "viewsContainers": {
+      "secondarySidebar": [{ "id": "osiris", "title": "Osiris", "icon": "media/osiris.svg" }]
+    },
+    "views": {
+      "osiris": [{ "type": "webview", "id": "osiris.chat", "name": "Osiris" }]
+    },
+    "commands": [
+      { "command": "osiris.open", "title": "Open", "category": "Osiris" },
+      { "command": "osiris.newChat", "title": "New Conversation", "category": "Osiris", "icon": "$(add)" },
+      { "command": "osiris.askSelection", "title": "Ask about Selection", "category": "Osiris" },
+      { "command": "osiris.connectServer", "title": "Connect to Server…", "category": "Osiris" },
+      { "command": "osiris.useLocal", "title": "Use the Local Agent", "category": "Osiris" }
+    ],
+    "menus": {
+      "view/title": [{ "command": "osiris.newChat", "when": "view == osiris.chat", "group": "navigation" }],
+      "editor/context": [{ "command": "osiris.askSelection", "when": "editorHasSelection", "group": "osiris" }]
+    },
+    "keybindings": [{ "command": "osiris.open", "key": "ctrl+alt+o", "mac": "cmd+alt+o" }],
+    "configuration": {
+      "title": "Osiris",
+      "properties": {
+        "osiris.server": { "type": "string", "default": "", "markdownDescription": "Osiris server's address (for example `https://osiris.k6labs.cz`). Empty: the local agent over the workspace folder." },
+        "osiris.project": { "type": "string", "default": "", "description": "On a server: the project to open (empty: the first one)." },
+        "osiris.agentPath": { "type": "string", "default": "osiris", "markdownDescription": "The local agent's command (`osiris` from `npm i -g @osiris/agent`), or the path to its `bin/osiris.mjs`." }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch",
+    "package": "node build.mjs && vsce package --no-dependencies -o osiris-vscode.vsix",
+    "typecheck": "tsc -p .",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@osiris/client": "workspace:*",
+    "@osiris/shared": "workspace:*",
+    "@types/node": "^26.6.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/vscode": "~1.105.0",
+    "@vscode/vsce": "^3.6.0",
+    "esbuild": "^0.28.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "typescript": "6.0.3",
+    "vitest": "^5.0.3"
+  }
+}

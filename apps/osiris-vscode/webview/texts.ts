@@ -1,0 +1,43 @@
+const cs = {
+  you: "Ty",
+  newChat: "Nový chat",
+  conversations: "Konverzace",
+  empty: "S čím ti můžu pomoct?",
+  connecting: "Připojuji…",
+  placeholder: "Napiš zprávu… (Enter odešle, Shift+Enter nový řádek)",
+  send: "Odeslat",
+  stop: "Zastavit",
+  cancel: "Zrušit",
+  yes: "Ano",
+  no: "Ne",
+  loading: "Načítám…",
+  thinking: "Přemýšlím…",
+  tools: "Pracuji s nástroji…",
+  checking: "Kontroluji pravidla…",
+  retry: "Zkusit znovu",
+  connectServer: "Připojit k serveru…",
+  noProject: "Žádný projekt",
+};
+const en: typeof cs = {
+  you: "You",
+  newChat: "New chat",
+  conversations: "Conversations",
+  empty: "How can I help?",
+  connecting: "Connecting…",
+  placeholder: "Write a message… (Enter sends, Shift+Enter new line)",
+  send: "Send",
+  stop: "Stop",
+  cancel: "Cancel",
+  yes: "Yes",
+  no: "No",
+  loading: "Loading…",
+  thinking: "Thinking…",
+  tools: "Working with tools…",
+  checking: "Checking the rules…",
+  retry: "Try again",
+  connectServer: "Connect to a server…",
+  noProject: "No project",
+};
+
+/** The panel's texts in VS Code's language (Czech for Czech and Slovak). */
+export const texts = (language: string) => (/^(cs|sk)/i.test(language) ? cs : en);

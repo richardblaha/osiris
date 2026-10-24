@@ -35,3 +35,19 @@ jobs:
             apps/osiris-desktop/src-tauri/target/release/bundle/**/*.dmg
             apps/osiris-desktop/src-tauri/target/release/bundle/**/*.msi
             apps/osiris-desktop/src-tauri/target/release/bundle/**/*.exe
+
+  vscode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter osiris-vscode package
+      - uses: actions/upload-artifact@v4
+        with:
+          name: osiris-vscode
+          path: apps/osiris-vscode/osiris-vscode.vsix

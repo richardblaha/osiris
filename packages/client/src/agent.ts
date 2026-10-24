@@ -37,6 +37,8 @@ export function runningAgent(root: string): AgentInfo | undefined {
  */
 export async function localAgent(root: string, command: string[], { log = () => {}, args = [] }: { log?: (line: string) => void; args?: string[] } = {}): Promise<AgentInfo & { token: string }> {
   let info = runningAgent(root);
+  // A process of that id may be another one (a restarted container reuses ids): the agent must answer.
+  if (info && !(await fetch(`${info.url}/health`, { signal: AbortSignal.timeout(2000) }).then((r) => r.ok, () => false))) info = undefined;
   if (!info) {
     const errorFile = join(root, ".osiris/private/agent-error");
     rmSync(errorFile, { force: true });

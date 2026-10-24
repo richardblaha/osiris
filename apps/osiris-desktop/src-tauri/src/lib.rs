@@ -44,7 +44,14 @@ fn alive(pid: u32) -> bool {
 fn running_agent(folder: &Path) -> Option<AgentInfo> {
     let text = std::fs::read_to_string(folder.join(".osiris/private/agent.json")).ok()?;
     let info: AgentInfo = serde_json::from_str(&text).ok()?;
-    alive(info.pid).then_some(info)
+    // The process must live and its port answer (a reused process id is someone else).
+    let answers = Url::parse(&info.url)
+        .ok()
+        .and_then(|u| u.socket_addrs(|| None).ok())
+        .and_then(|addrs| addrs.into_iter().next())
+        .map(|addr| std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(500)).is_ok())
+        .unwrap_or(false);
+    (alive(info.pid) && answers).then_some(info)
 }
 
 /// The `osiris` command: `OSIRIS_AGENT` (a path), else the one on PATH.
