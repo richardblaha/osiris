@@ -9,3 +9,6 @@ allowBuilds:
   ssh2: false
   # mem0ai brings it for stores Osiris doesn't use; it is never loaded.
   better-sqlite3: false
+  # @vscode/vsce brings them for the Marketplace (sign-in, signing); packaging a .vsix needs neither.
+  keytar: false
+  "@vscode/vsce-sign": false
