@@ -1,12 +1,11 @@
-import { AccountActivity } from "./AccountActivity.tsx";
+import { WhatsAppDeliveries } from "./AccountActivity.tsx";
 import type { MeResponse, ProjectFeatures, UserProfile, UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { AssistantSettings } from "./Assistant.tsx";
 import { Integrations } from "./Integrations.tsx";
 import { api } from "./api.ts";
-import { logout } from "./auth.ts";
+import { accountUrl, logout } from "./auth.ts";
 import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
-import { Security, type SecurityPart } from "./Security.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
 import { t } from "i18next";
 import { Trans } from "react-i18next";
@@ -35,17 +34,16 @@ export function Avatar({ user, size = 32 }: { user: MeResponse["user"]; size?: n
   );
 }
 
-type Part = "account" | SecurityPart | "personalization" | "activity";
+type Part = "account" | "linked" | "personalization" | "activity";
 
 /**
- * The user's own: their account, each sign-in method, linked accounts and how the assistant treats them
- * (personalization), each a part of its own; signing out at the end.
+ * The user's own: their account, connected accounts and how the assistant treats them (personalization), each a part
+ * of its own; sign-in methods and sessions are on osiris-auth's account page; signing out at the end.
  */
-export function Profile({ me, notice, features }: { me: MeResponse; notice?: { linked?: string; error?: string }; features?: ProjectFeatures }) {
+export function Profile({ me, features }: { me: MeResponse; notice?: { linked?: string; error?: string }; features?: ProjectFeatures }) {
   // A local agent has no account of its own (the computer's user): only personalization and connected accounts.
   const local = me.mode === "local";
-  // Back from linking an account: its part.
-  const [part, setPart] = useState<Part>(notice ? "linked" : local ? "personalization" : "account");
+  const [part, setPart] = useState<Part>(local ? "personalization" : "account");
   return (
     <MasterDetail
       title={me.user.name ?? me.user.email ?? t("profile:title")}
@@ -58,18 +56,16 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
               ]
             : [
                 { key: "account", label: t("profile:parts.account") },
-                { key: "passkeys", label: t("profile:parts.passkeys") },
-                { key: "password", label: t("profile:parts.password") },
-                { key: "totp", label: t("profile:parts.totp") },
-                { key: "linked", label: t("profile:parts.linked") },
+                ...(accountUrl ? [{ key: "security", label: <span>{t("profile:parts.security")} ↗</span> }] : []),
+                ...(features?.integrations ? [{ key: "linked", label: t("profile:parts.linked") }] : []),
                 { key: "personalization", label: t("profile:parts.personalization") },
-                { key: "activity", label: t("profile:parts.activity") },
+                { key: "activity", label: t("profile:parts.whatsapp") },
                 { key: "logout", label: <span className="text-error">{t("app:signOut")}</span> },
               ],
         },
       ]}
       selected={part}
-      onSelect={(k) => (k === "logout" ? void logout() : setPart(k as Part))}
+      onSelect={(k) => (k === "logout" ? void logout() : k === "security" ? window.location.assign(accountUrl!) : setPart(k as Part))}
     >
       <div className="detail">
         {part === "account" ? (
@@ -81,18 +77,11 @@ export function Profile({ me, notice, features }: { me: MeResponse; notice?: { l
             <Account />
           </>
         ) : part === "activity" ? (
-          <AccountActivity />
+          <WhatsAppDeliveries />
         ) : part === "personalization" ? (
           <Personalization />
         ) : (
-          <>
-            {!local && <Security key={part} part={part} notice={part === "linked" ? notice : undefined} />}
-            {part === "linked" && features?.integrations && (
-              <div className={local ? "" : "mt-8"}>
-                <Integrations />
-              </div>
-            )}
-          </>
+          features?.integrations && <Integrations />
         )}
       </div>
     </MasterDetail>

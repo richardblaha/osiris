@@ -61,7 +61,7 @@ const toProject = (r: Row, publicUrl = ""): ProjectRow => ({
   idleMinutes: Number(r.idle_minutes),
   storageGb: Number(r.storage_gb),
   createdAt: Number(r.created_at),
-  logo: r.logo ? `${publicUrl}/auth/project-logos/${r.id}/${r.logo}` : null,
+  logo: r.logo ? `${publicUrl}/project-logos/${r.id}/${r.logo}` : null,
   disabledTools: JSON.parse(r.disabled_tools ?? "[]") as string[],
   quotas: { ...NO_QUOTAS, ...(JSON.parse(r.quotas ?? "{}") as Partial<ProjectQuotas>) },
   webSites: JSON.parse(r.web_sites ?? "[]") as string[],

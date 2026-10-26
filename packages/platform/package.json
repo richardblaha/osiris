@@ -27,10 +27,12 @@
     "i18next": "26.4.2",
     "jose": "6.2.12",
     "mmdb-lib": "^3.0.3",
+    "nodemailer": "10.0.13",
     "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/node": "26.6.4",
+    "@types/nodemailer": "8.0.2",
     "tsx": "4.23.15",
     "typescript": "6.0.3"
   }

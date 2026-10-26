@@ -3,12 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { GeoIp, EMPTY_GEO } from "@osiris/platform/geoip.ts";
-import { AuthActivity } from "../src/auth/activity.ts";
-import { createTestControl } from "./helpers.ts";
+import { AuthActivity } from "../src/activity.ts";
+import { createTestAuth } from "./helpers.ts";
 
 describe("authentication audit metadata", () => {
   it("enriches only the selected user's history and deletes expired data without idle writes", async () => {
-    const control = await createTestControl({ users: [{ id: "alice", email: "alice@example.cz" }] });
+    const control = await createTestAuth({ users: [{ id: "alice", email: "alice@example.cz", firstName: "Alice", lastName: "" }] });
     const geo = vi.fn(() => ({ country: "CZ", region: "Prague", city: "Prague", asn: "AS123", network: "Example ISP" }));
     const audit = new AuthActivity(control.db, geo);
     await audit.record("alice", true, "pwd", "8.8.8.8", "Mozilla/5.0 (Windows) Chrome/123.0");

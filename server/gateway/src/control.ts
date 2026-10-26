@@ -1,11 +1,10 @@
 import { callJson } from "@osiris/platform/http.ts";
 import { CONTROL_AUDIENCE, type InternalSigner } from "@osiris/platform/internal-auth.ts";
 import type { RuntimeLocator } from "@osiris/platform/runtime-client.ts";
-import type { TokenOwner } from "./oidc.ts";
 
 const PROJECTS_TTL_MS = 30_000;
 
-/** The gateway's own questions to control: whose a token is, which projects exist, where a project's runtime is, and wake it up. */
+/** The gateway's own questions to control: which projects exist, where a project's runtime is, and wake it up. */
 export class ControlDirectory implements RuntimeLocator {
   private projects?: { at: number; list: Promise<{ id: string; name: string }[]> };
   private lastForced = 0;
@@ -41,9 +40,6 @@ export class ControlDirectory implements RuntimeLocator {
     }
     return this.projects.list;
   }
-
-  /** The user an access token belongs to; `ServiceError` 401 for an unknown or expired token. */
-  identify = (token: string) => this.call<TokenOwner>("/identify", { method: "POST", body: JSON.stringify({ token }), timeoutMs: 10_000 });
 
   async endpoint(project: string) {
     let url = this.endpoints.get(project);

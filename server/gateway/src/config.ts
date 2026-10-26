@@ -18,8 +18,11 @@ const schema = z
     // A GoatCounter site (e.g. https://osiris.stats.k6labs.cz) the web app counts its visits to; unset = no counting.
     GOATCOUNTER_URL: z.url().optional().transform((v) => v?.replace(/\/$/, "")),
 
-    // Development only: the bearer token itself is the user (see CLAUDE.md). Otherwise control identifies tokens.
+    // Development only: the bearer token itself is the user (see CLAUDE.md). Otherwise osiris-auth introspects tokens.
     AUTH_DEV_BYPASS: bool,
+    // osiris-auth (the OpenID Connect issuer) and the gateway's client secret for introspection there.
+    AUTH_URL: z.url().default("http://localhost:3003").transform((v) => v.replace(/\/$/, "")),
+    GATEWAY_CLIENT_SECRET: z.string().optional(),
 
     CONTROL_URL: z.url().default("http://127.0.0.1:3002"),
     // Signs the internal tokens that carry the verified user to control and the runtimes.
@@ -32,6 +35,9 @@ const schema = z
     RUN_LIMIT_PER_MINUTE: z.coerce.number().int().positive().default(20),
   })
   .superRefine((env, ctx) => {
+    if (!env.AUTH_DEV_BYPASS && !env.GATEWAY_CLIENT_SECRET) {
+      ctx.addIssue({ code: "custom", path: ["GATEWAY_CLIENT_SECRET"], message: "is required unless AUTH_DEV_BYPASS is on" });
+    }
     if (env.AUTH_DEV_BYPASS && env.NODE_ENV === "production") {
       ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
     }

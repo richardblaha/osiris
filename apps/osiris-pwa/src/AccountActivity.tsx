@@ -1,7 +1,6 @@
 import type { AccountActivity as Activity, LoginEvent, LoginSession } from "@osiris/shared";
 import { useEffect, useState } from "react";
-import { api } from "./api.ts";
-import { logout } from "./auth.ts";
+import { api } from "@osiris/client/api.ts";
 import { attempt, ErrorNotice, Pending } from "./Scope.tsx";
 import { t } from "i18next";
 import { Trans } from "react-i18next";
@@ -15,16 +14,29 @@ const method = (m: string) => ((METHODS as readonly string[]).includes(m) ? t(`a
 const DELIVERY = ["accepted", "sent", "delivered", "read", "failed"] as const;
 const delivery = (s: string) => ((DELIVERY as readonly string[]).includes(s) ? t(`activity:delivery.${s as (typeof DELIVERY)[number]}`) : s);
 
+/** WhatsApp's delivery reports for the user's verified number (control keeps them; the PWA's Profile > Activity). */
+export function WhatsAppDeliveries() {
+  const [deliveries, setDeliveries] = useState<{ status: string; at: number }[]>();
+  const [error, setError] = useState<string>();
+  useEffect(() => void api.security.whatsappDeliveries().then(setDeliveries, (e: Error) => setError(e.message)), []);
+  return <section className="space-y-3">
+    <h2 className="section-header">{t("activity:deliveries")}</h2>
+    <ErrorNotice error={error} />
+    {!deliveries && !error && <Pending />}
+    <ul className="divide-y divide-line">{deliveries?.map((d, i) => <li key={i} className="py-2 text-sm">{time(d.at)} · {delivery(d.status)}</li>)}</ul>
+  </section>;
+}
+
+/** Sign-ins and sessions, on osiris-auth's account page (its session cookie says who). */
 export function AccountActivity() {
   const [data, setData] = useState<Activity>();
-  const [deliveries, setDeliveries] = useState<{ status: string; at: number }[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const load = async () => { const [activity, sent] = await Promise.all([api.security.activity(), api.security.whatsappDeliveries()]); setData(activity); setDeliveries(sent); };
+  const load = async () => setData(await api.security.activity());
   useEffect(() => { void load().catch((e: Error) => setError(e.message)); }, []);
   const revoke = (session: LoginSession) => attempt(setBusy, setError, async () => {
     await api.security.revokeSession(session.id);
-    if (session.current) await logout();
+    if (session.current) window.location.assign("/logout?client_id=osiris-account");
     else await load();
   });
   return <section className="space-y-6">
@@ -60,10 +72,6 @@ export function AccountActivity() {
         </ul>
       </section>
     </>}
-    {!!deliveries.length && <section>
-      <h2 className="section-header">{t("activity:deliveries")}</h2>
-      <ul className="mt-2 divide-y divide-line">{deliveries.map((d, i) => <li key={i} className="py-2 text-sm">{time(d.at)} · {delivery(d.status)}</li>)}</ul>
-    </section>}
     <p className="text-xs text-fg-muted"><Trans ns="activity" i18nKey="footer" components={{ a: <a className="btn-link" href="https://db-ip.com" target="_blank" rel="noreferrer" /> }} /></p>
   </section>;
 }

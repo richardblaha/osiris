@@ -1,4 +1,3 @@
-import { userByPhone } from "../whatsapp/phones.ts";
 import type { AuthActivity } from "./activity.ts";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SecurityOverview, SignInState, SocialProvider } from "@osiris/shared";
@@ -10,10 +9,10 @@ import { z } from "zod";
 import { HttpError, requestLocale, translate, ValidationError } from "@osiris/platform/i18n.ts";
 import { readAll } from "@osiris/platform/objects.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
-import type { UserDirectory } from "../users.ts";
+import type { Users } from "./users.ts";
 import { CredentialError, type Credentials } from "./credentials.ts";
 import type { AttemptLimiter } from "./limiter.ts";
-import type { Mailer } from "./mail.ts";
+import type { Mailer } from "@osiris/platform/mail.ts";
 import type { Passkeys } from "./passkeys.ts";
 import { newToken, passwordProblem, PASSWORD_MAX } from "./secrets.ts";
 import { SOCIAL_PROVIDERS, SocialLoginError, type SocialLogin, type SocialProviderId } from "./social.ts";
@@ -22,12 +21,16 @@ export interface AuthDeps {
   db: Db;
   activity: AuthActivity;
   provider: Provider;
-  users: UserDirectory;
+  users: Users;
   credentials: Credentials;
   passkeys: Passkeys;
   social: SocialLogin;
   mailer?: Mailer;
   limiter: AttemptLimiter;
+  /** Where the Osiris web app runs: one-time links go on there to start a sign-in. */
+  webOrigin: string;
+  /** The gateway's client secret for token introspection. */
+  gatewaySecret?: string;
 }
 
 /** A sign-in waiting for its second factor (authenticator app or recovery code). */
@@ -47,7 +50,7 @@ interface SocialState {
 
 const STEP_TTL_MS = 10 * 60_000;
 const LINK_COOKIE = "osiris_link";
-const LINK_COOKIE_PATH = "/auth/interaction";
+const LINK_COOKIE_PATH = "/interaction";
 const EMAIL_LINK_HOURS = 1;
 
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
@@ -75,13 +78,13 @@ const relative = (url: string) => {
 };
 
 /** The first address of X-Forwarded-For (set by Traefik, passed on by the gateway). */
-const clientIp = (c: Context) => c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+export const clientIp = (c: Context) => c.req.header("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 
 /**
  * oidc-provider reads its cookies from Node's request; ours arrive through Hono. It only needs the headers, so a
  * request stand-in carries them (the response is never written: results go back as our own response).
  */
-const nodePair = (c: Context) => {
+export const nodePair = (c: Context) => {
   const url = new URL(c.req.url);
   const req = { headers: Object.fromEntries(c.req.raw.headers), url: url.pathname + url.search, method: c.req.method, socket: {} };
   const res = { getHeader: () => undefined, setHeader: () => {}, removeHeader: () => {}, headersSent: false };
@@ -96,7 +99,7 @@ export class SignInError extends HttpError {}
 const say = (c: Context, key: string) => translate(requestLocale(c.req.header("accept-language")), key);
 
 /**
- * The sign-in screens' API under `/auth` (the web app's `/login` page calls it), plus the redirects of social
+ * The sign-in API (our `/login` page calls it), plus the redirects of social
  * sign-in, one-time links and profile pictures. Every step is bound to the browser's interaction cookie, which
  * oidc-provider set when the sign-in started.
  */
@@ -256,7 +259,7 @@ export function authRoutes(deps: AuthDeps) {
         return c.json({ sent: true });
       })
 
-      // Social sign-in: off to the provider, then back through /auth/social/:provider/callback.
+      // Social sign-in: off to the provider, then back through /social/:provider/callback.
       .get("/interaction/:uid/social/:provider", async (c) => {
         const details = await interaction(c);
         const providerId = c.req.param("provider");
@@ -304,8 +307,8 @@ export function authRoutes(deps: AuthDeps) {
         const stateId = c.req.query("state") ?? "";
         const s = await credentials.peekChallenge<SocialState>(`social:${stateId}`);
         const query = new URL(c.req.url).search;
-        if (s?.uid) return c.redirect(`/auth/interaction/${encodeURIComponent(s.uid)}/social-callback${query}`, 303);
-        const back = (params: Record<string, string>) => c.redirect(`/?${new URLSearchParams({ profile: "security", ...params })}`, 303);
+        if (s?.uid) return c.redirect(`/interaction/${encodeURIComponent(s.uid)}/social-callback${query}`, 303);
+        const back = (params: Record<string, string>) => c.redirect(`/account?${new URLSearchParams(params)}`, 303);
         const taken = await credentials.takeChallenge<SocialState>(`social:${stateId}`);
         if (!taken?.linkUser || taken.provider !== c.req.param("provider")) return back({ error: say(c, "errors.link.expired") });
         if (c.req.query("error")) return back({ error: say(c, "errors.link.cancelled") });
@@ -335,7 +338,7 @@ export function authRoutes(deps: AuthDeps) {
           secure: c.req.header("x-forwarded-proto") === "https",
           maxAge: 15 * 60,
         });
-        return c.redirect("/?signin=link", 302);
+        return c.redirect(`${deps.webOrigin}/?signin=link`, 302);
       })
 
       .get("/pictures/:userId/:version", async (c) => {
@@ -351,13 +354,13 @@ export function authRoutes(deps: AuthDeps) {
         });
       })
 
-      .get("/assets/logout.js", (c) =>
+      .get("/static/logout.js", (c) =>
         c.body('document.getElementById("op.logoutForm")?.requestSubmit?.(document.querySelector("button[name=logout]"));\n', 200, {
           "content-type": "text/javascript",
           "cache-control": "public, max-age=3600",
         }),
       )
-      .get("/assets/page.css", (c) =>
+      .get("/static/page.css", (c) =>
         c.body(
           "body{font-family:system-ui,sans-serif;background:#f7f6f2;color:#1f1d1a;display:flex;min-height:100vh;margin:0;align-items:center;justify-content:center}main{max-width:28rem;padding:2rem;text-align:center}h1{font-size:1.25rem}a,button{color:#7a4b12}button{font:inherit;padding:.5rem 1rem;border-radius:.5rem;border:1px solid currentColor;background:none;cursor:pointer}@media (prefers-color-scheme:dark){body{background:#1b1a18;color:#ecebe7}a,button{color:#f0b46a}}\n",
           200,
@@ -367,7 +370,7 @@ export function authRoutes(deps: AuthDeps) {
   );
 }
 
-/** The signed-in user's sign-in methods (`/api/me/security`, behind the gateway). */
+/** The signed-in user's sign-in methods (`/api/me/security`, for the account page; the browser's session cookie says who). */
 export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessionUid: (c: Context) => string | undefined = () => undefined) {
   const { users, credentials, passkeys, social } = deps;
   const iso = (ms: number) => new Date(ms).toISOString();
@@ -393,13 +396,6 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessi
 
   return new Hono()
     .get("/", async (c) => c.json(await overview(me(c))))
-    .get("/whatsapp-deliveries", async (c) => {
-      const user = await users.get(me(c));
-      const phone = user.claims.phone_number;
-      if (typeof phone !== "string" || (await userByPhone(users, phone))?.sub !== user.id) return c.json([]);
-      const rows = await deps.db.query<{ status: string; status_at: number; error_code: string | null }>("SELECT status,status_at,error_code FROM wa_deliveries WHERE recipient=? ORDER BY status_at DESC LIMIT 50", [phone.replace(/\D/g, "")]);
-      return c.json(rows.map(r => ({ status: r.status, at: Number(r.status_at), errorCode: r.error_code })));
-    })
     .get("/activity", async (c) => c.json({ events: await deps.activity.history(me(c)), sessions: await deps.activity.sessions(me(c), sessionUid(c)) }))
     .delete("/sessions/:id", async (c) => {
       const id = parse(z.string().min(1).max(200), c.req.param("id"));
@@ -472,7 +468,7 @@ export function securityRoutes(deps: AuthDeps, me: (c: Context) => string, sessi
       return c.json({ recoveryCodes: await credentials.newRecoveryCodes(userId), security: await overview(userId) });
     })
 
-    // Linking a social account: the browser goes to the provider and comes back to /auth/social/:provider/callback.
+    // Linking a social account: the browser goes to the provider and comes back to /social/:provider/callback.
     .post("/social/:provider", async (c) => {
       const providerId = c.req.param("provider");
       if (!isProvider(providerId) || !social.enabled().includes(providerId)) throw new HttpError(404, "errors.signIn.unknownProvider");

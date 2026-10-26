@@ -30,7 +30,6 @@ import { INTEGRATION_RETURN } from "./Integrations.tsx";
 import { MemoryDetail, memoryKey } from "./Memories.tsx";
 import { Avatar, Profile } from "./Profile.tsx";
 import { Loading, OverriddenBadge, Pending, ScopeBadge, Splash } from "./Scope.tsx";
-import { SignIn } from "./SignIn.tsx";
 import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
 import { Members, roleLabel, ProjectInfo } from "./ProjectInfo.tsx";
@@ -47,7 +46,6 @@ import { fromPath, LAST_PATH, toPath, type Section, type View } from "./routes.t
 
 export function App() {
   // The sign-in screen, where the identity provider (/auth) sends the browser.
-  if (location.pathname === "/login") return <SignIn />;
   // A project's public assistant for its customers, without signing in (also inside widget.js).
   const publicChat = /^\/c\/([a-z0-9-]+)(?:\/([a-z0-9-]+))?\/?$/.exec(location.pathname);
   if (publicChat) return <PublicChat project={publicChat[1]!} assistant={publicChat[2]} />;

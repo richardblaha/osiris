@@ -38,3 +38,10 @@ export const consoleMailer: Mailer = {
     console.log(`[mail] To: ${to}\nSubject: ${subject}\n\n${text}\n`);
   },
 };
+
+/** Emailit when its key is set, else SMTP, else (outside production) the log; undefined means no email. */
+export function configuredMailer(env: { EMAILIT_API_KEY?: string; SMTP_URL?: string; MAIL_FROM: string; NODE_ENV: string }): Mailer | undefined {
+  if (env.EMAILIT_API_KEY) return emailitMailer(env.EMAILIT_API_KEY, env.MAIL_FROM);
+  if (env.SMTP_URL) return smtpMailer(env.SMTP_URL, env.MAIL_FROM);
+  return env.NODE_ENV === "production" ? undefined : consoleMailer;
+}

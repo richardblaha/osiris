@@ -1,17 +1,17 @@
-import { randomUUID } from "node:crypto";
-import type { ObjectStore } from "@osiris/platform/objects.ts";
-import { DbError, run, type Db } from "@osiris/platform/rqlite.ts";
-import { newToken, sha256 } from "./auth/secrets.ts";
+import { accessFromClaims, accessFromGroups, CLAIMS, groupsFromAccess } from "@osiris/platform/claims.ts";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
 
-/** A user with their claims (`phone_number`, `role`, `project`, `project-admin`, ...). */
+/**
+ * A user as control sees them: profile and the claims that grant access (`role`, `project`, `project-admin`) plus
+ * `phone_number`. osiris-auth keeps users and their groups; control reads and changes them over SCIM, and these
+ * claims are its groups (`osiris-user`, `project:<slug>`, ...) and phone number in the shape control always used.
+ */
 export interface UserRecord {
   id: string;
   name: string | null;
   firstName: string;
   lastName: string;
   email: string | null;
-  emailVerified: boolean;
   disabled: boolean;
   claims: Record<string, string>;
   /** Public URL of the profile picture, or null. */
@@ -22,10 +22,6 @@ export interface NewUser {
   email: string | null;
   firstName: string;
   lastName: string;
-  /** Kept when importing from PocketID, so the user's data in the projects stays theirs; new users get a UUID. */
-  id?: string;
-  emailVerified?: boolean;
-  disabled?: boolean;
   claims?: Record<string, string>;
 }
 
@@ -35,10 +31,10 @@ export interface ProfileChanges {
   email?: string;
 }
 
-/** What a one-time sign-in link is for; shown nowhere, kept for the audit trail. */
-export type LinkPurpose = "invite" | "admin" | "email";
+/** What a one-time sign-in link is for. */
+export type LinkPurpose = "invite" | "admin";
 
-/** The users behind the tokens: project members, roles, profiles and lookup by phone. Only control has it. */
+/** The users behind the tokens: project members, roles, profiles and lookup by phone. */
 export interface UserDirectory {
   list(): Promise<UserRecord[]>;
   get(userId: string): Promise<UserRecord>;
@@ -48,34 +44,54 @@ export interface UserDirectory {
   create(user: NewUser): Promise<UserRecord>;
   updateProfile(userId: string, changes: ProfileChanges): Promise<UserRecord>;
   setPicture(userId: string, image: Uint8Array, mime: string): Promise<void>;
-  /** The stored picture of a user, if `version` is the current one. */
-  picture(userId: string, version: string): ReturnType<ObjectStore["get"]>;
-  markEmailVerified(userId: string): Promise<void>;
   /** A disabled user can't sign in, and the gateway refuses their tokens. */
   setDisabled(userId: string, disabled: boolean): Promise<void>;
   /** A one-time sign-in link for the user, e.g. for a new user who has no way to sign in yet. */
   loginLink(userId: string, ttlHours: number, purpose?: LinkPurpose): Promise<string>;
+  /** For a user who lost both their authenticator and recovery codes. */
+  resetSecondFactor(userId: string): Promise<void>;
 }
 
 export class UserNotFoundError extends Error {}
 /** The data was refused, e.g. the email is taken; the message can be shown. */
 export class UserInputError extends LocalizedError {}
 
-interface Row {
+export const PHONE_CLAIM = "phone_number";
+const PATCH = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
+const PAGE = 1000;
+
+type Resource = {
   id: string;
-  email: string | null;
-  email_verified: number;
-  first_name: string;
-  last_name: string;
-  claims: string;
-  claims_version: number;
-  disabled: number;
-  picture: string | null;
-}
+  name?: { givenName?: string; familyName?: string };
+  active?: boolean;
+  emails?: { value: string }[];
+  phoneNumbers?: { value: string }[];
+  photos?: { value: string }[];
+  groups?: { value: string }[];
+};
 
-const COLUMNS = "id, email, email_verified, first_name, last_name, claims, claims_version, disabled, picture";
-
-export const normalizeEmail = (email: string) => email.trim().toLowerCase();
+const record = (r: Resource): UserRecord & { groups: string[] } => {
+  const firstName = r.name?.givenName ?? "";
+  const lastName = r.name?.familyName ?? "";
+  const groups = (r.groups ?? []).map((g) => g.value);
+  const access = accessFromGroups(groups);
+  const claims: Record<string, string> = {};
+  if (access.roles.length) claims[CLAIMS.role] = access.roles.join(",");
+  if (access.projects.length) claims[CLAIMS.project] = access.projects.join(",");
+  if (access.adminProjects.length) claims[CLAIMS.projectAdmin] = access.adminProjects.join(",");
+  if (r.phoneNumbers?.[0]?.value) claims[PHONE_CLAIM] = r.phoneNumbers[0].value;
+  return {
+    id: r.id,
+    name: `${firstName} ${lastName}`.trim() || null,
+    firstName,
+    lastName,
+    email: r.emails?.[0]?.value ?? null,
+    disabled: r.active === false,
+    claims,
+    picture: r.photos?.[0]?.value ?? null,
+    groups,
+  };
+};
 
 const apply = (claims: Record<string, string>, changes: Record<string, string | null>) => {
   const next = { ...claims };
@@ -86,157 +102,111 @@ const apply = (claims: Record<string, string>, changes: Record<string, string | 
   return next;
 };
 
-/** Object keys take a limited alphabet; user ids may be anything (`dev:alice`, UUIDs from PocketID). */
-const pictureKey = (userId: string, version: string) => `pictures/${Buffer.from(userId).toString("base64url")}/${version}`;
+/** Users in osiris-auth, over SCIM 2.0 with control's service token. */
+export function scimUsers(options: { url: string; token: string; fetchFn?: typeof fetch }): UserDirectory {
+  const base = `${options.url.replace(/\/$/, "")}/scim/v2`;
+  const fetchFn = options.fetchFn ?? fetch;
 
-const isUniqueViolation = (err: unknown) => err instanceof DbError && /UNIQUE constraint failed: users\.email/i.test(err.message);
+  const call = async (path: string, init: RequestInit = {}): Promise<Response> => {
+    const res = await fetchFn(`${base}${path}`, {
+      ...init,
+      headers: { authorization: `Bearer ${options.token}`, accept: "application/scim+json", "content-type": "application/scim+json", ...(init.headers as Record<string, string>) },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (res.ok) return res;
+    const detail = ((await res.json().catch(() => ({}))) as { detail?: string }).detail ?? "";
+    if (res.status === 404) throw new UserNotFoundError(detail || `Not found: ${path}`);
+    if (res.status === 409) throw new UserInputError("errors.user.emailTaken");
+    throw new Error(`osiris-auth answered ${res.status} for ${init.method ?? "GET"} ${path}: ${detail}`);
+  };
+  const json = async <T>(path: string, init?: RequestInit) => (await (await call(path, init)).json()) as T;
+  const patch = (path: string, Operations: unknown[]) => call(path, { method: "PATCH", body: JSON.stringify({ schemas: [PATCH], Operations }) });
+  const user = async (id: string) => record(await json<Resource>(`/Users/${encodeURIComponent(id)}`));
 
-/**
- * Users in the central database. `publicUrl` is where the browser reaches Osiris (picture and sign-in link URLs);
- * pictures live in object storage.
- */
-export function dbUsers(db: Db, options: { objects: ObjectStore; publicUrl: string }): UserDirectory {
-  const base = options.publicUrl.replace(/\/$/, "");
-  const record = (r: Row): UserRecord => {
-    const firstName = r.first_name ?? "";
-    const lastName = r.last_name ?? "";
-    return {
-      id: r.id,
-      name: `${firstName} ${lastName}`.trim() || null,
-      firstName,
-      lastName,
-      email: r.email,
-      emailVerified: !!r.email_verified,
-      disabled: !!r.disabled,
-      claims: JSON.parse(r.claims) as Record<string, string>,
-      picture: r.picture ? `${base}/auth/pictures/${encodeURIComponent(r.id)}/${r.picture}` : null,
-    };
+  const join = async (group: string, userId: string) => {
+    const path = `/Groups/${encodeURIComponent(group)}`;
+    const add = () => patch(path, [{ op: "add", path: "members", value: [{ value: userId }] }]);
+    await add().catch(async (err) => {
+      if (!(err instanceof UserNotFoundError)) throw err;
+      // A group nobody was in yet; another call may create it at the same time.
+      await call("/Groups", { method: "POST", body: JSON.stringify({ displayName: group, members: [{ value: userId }] }) }).catch((e) => (e instanceof UserInputError ? add() : Promise.reject(e)));
+    });
   };
-  const row = async (userId: string) => {
-    const [r] = await db.query<Row>(`SELECT ${COLUMNS} FROM users WHERE id = ?`, [userId], { fresh: true });
-    if (!r) throw new UserNotFoundError(`User ${userId} not found`);
-    return r;
-  };
-  const write = async (statement: ReturnType<typeof run>) => {
-    try {
-      return (await db.execute([statement]))[0]!.rowsAffected;
-    } catch (err) {
-      if (isUniqueViolation(err)) throw new UserInputError("errors.user.emailTaken");
-      throw err;
-    }
-  };
+  const leave = (group: string, userId: string) =>
+    patch(`/Groups/${encodeURIComponent(group)}`, [{ op: "remove", path: `members[value eq ${JSON.stringify(userId)}]` }]).catch((err) => {
+      if (!(err instanceof UserNotFoundError)) throw err;
+    });
 
   const directory: UserDirectory = {
     async list() {
-      return (await db.query<Row>(`SELECT ${COLUMNS} FROM users ORDER BY created_at`)).map(record);
-    },
-
-    async get(userId) {
-      return record(await row(userId));
-    },
-
-    async findByEmail(email) {
-      const [r] = await db.query<Row>(`SELECT ${COLUMNS} FROM users WHERE email = ?`, [normalizeEmail(email)], { fresh: true });
-      return r ? record(r) : null;
-    },
-
-    async setClaims(userId, changes) {
-      // Compare and swap on the version, so a concurrent change (another replica, another admin) isn't lost.
-      for (let attempt = 0; ; attempt++) {
-        const current = await row(userId);
-        const claims = apply(JSON.parse(current.claims) as Record<string, string>, changes);
-        const updated = await write(
-          run(
-            "UPDATE users SET claims = ?, claims_version = claims_version + 1, updated_at = ? WHERE id = ? AND claims_version = ?",
-            JSON.stringify(claims),
-            Date.now(),
-            userId,
-            current.claims_version,
-          ),
-        );
-        if (updated) return;
-        if (attempt >= 5) throw new Error(`Claims of ${userId} keep changing`);
+      const out: UserRecord[] = [];
+      for (let start = 1; ; start += PAGE) {
+        const page = await json<{ totalResults: number; Resources?: Resource[] }>(`/Users?startIndex=${start}&count=${PAGE}`);
+        out.push(...(page.Resources ?? []).map(record));
+        if (!page.Resources?.length || out.length >= page.totalResults) return out;
       }
     },
 
-    async create(user) {
-      const id = user.id ?? randomUUID();
-      const now = Date.now();
-      await write(
-        run(
-          `INSERT INTO users (id, email, email_verified, first_name, last_name, claims, disabled, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          id,
-          user.email ? normalizeEmail(user.email) : null,
-          user.emailVerified ? 1 : 0,
-          user.firstName.trim(),
-          user.lastName.trim(),
-          JSON.stringify(user.claims ?? {}),
-          user.disabled ? 1 : 0,
-          now,
-          now,
-        ),
-      ).catch((err) => {
-        if (err instanceof DbError && /UNIQUE constraint failed: users\.id/i.test(err.message)) throw new UserInputError("errors.user.exists");
-        throw err;
-      });
-      return directory.get(id);
+    get: user,
+
+    async findByEmail(email) {
+      const page = await json<{ Resources?: Resource[] }>(`/Users?filter=${encodeURIComponent(`userName eq ${JSON.stringify(email.trim().toLowerCase())}`)}`);
+      return page.Resources?.[0] ? record(page.Resources[0]) : null;
+    },
+
+    // Two admins changing one user at once can't lose each other's change: each membership is its own add or remove.
+    async setClaims(userId, changes) {
+      const current = await user(userId);
+      const next = apply(current.claims, changes);
+      const wanted = groupsFromAccess(accessFromClaims((k) => next[k]));
+      for (const g of wanted.filter((g) => !current.groups.includes(g))) await join(g, userId);
+      for (const g of current.groups.filter((g) => !wanted.includes(g))) await leave(g, userId);
+      if (PHONE_CLAIM in changes && (next[PHONE_CLAIM] ?? null) !== (current.claims[PHONE_CLAIM] ?? null)) {
+        await patch(`/Users/${encodeURIComponent(userId)}`, [
+          next[PHONE_CLAIM] ? { op: "replace", path: "phoneNumbers", value: [{ value: next[PHONE_CLAIM], type: "mobile" }] } : { op: "remove", path: "phoneNumbers" },
+        ]);
+      }
+    },
+
+    async create(u) {
+      const created = record(
+        await json<Resource>("/Users", {
+          method: "POST",
+          body: JSON.stringify({
+            schemas: ["urn:ietf:params:scim:schemas:core:2.0:User"],
+            userName: u.email ?? undefined,
+            emails: u.email ? [{ value: u.email, primary: true }] : [],
+            name: { givenName: u.firstName.trim(), familyName: u.lastName.trim() },
+          }),
+        }),
+      );
+      if (u.claims) await directory.setClaims(created.id, u.claims);
+      return u.claims ? user(created.id) : created;
     },
 
     async updateProfile(userId, changes) {
-      const current = await row(userId);
-      const email = changes.email !== undefined ? normalizeEmail(changes.email) : current.email;
-      await write(
-        run(
-          "UPDATE users SET first_name = ?, last_name = ?, email = ?, email_verified = ?, updated_at = ? WHERE id = ?",
-          (changes.firstName ?? current.first_name).trim(),
-          (changes.lastName ?? current.last_name).trim(),
-          email,
-          // A new address isn't verified until the user proves it (an emailed link, a social account).
-          email === current.email ? current.email_verified : 0,
-          Date.now(),
-          userId,
-        ),
-      );
-      return directory.get(userId);
+      const name = { ...(changes.firstName !== undefined ? { givenName: changes.firstName.trim() } : {}), ...(changes.lastName !== undefined ? { familyName: changes.lastName.trim() } : {}) };
+      const value = {
+        ...(Object.keys(name).length ? { name } : {}),
+        ...(changes.email !== undefined ? { userName: changes.email, emails: [{ value: changes.email, primary: true }] } : {}),
+      };
+      return record(await (await patch(`/Users/${encodeURIComponent(userId)}`, [{ op: "replace", value }])).json());
     },
 
     async setPicture(userId, image, mime) {
-      const current = await row(userId);
-      const version = newToken().slice(0, 16);
-      await options.objects.put(pictureKey(userId, version), image, mime);
-      await write(run("UPDATE users SET picture = ?, updated_at = ? WHERE id = ?", version, Date.now(), userId));
-      if (current.picture) await options.objects.delete([pictureKey(userId, current.picture)]).catch(() => {});
-    },
-
-    async picture(userId, version) {
-      const [r] = await db.query<{ picture: string | null }>("SELECT picture FROM users WHERE id = ?", [userId]);
-      if (!r?.picture || r.picture !== version) return null;
-      return options.objects.get(pictureKey(userId, version));
+      await call(`/Users/${encodeURIComponent(userId)}/photo`, { method: "PUT", body: new Uint8Array(image), headers: { "content-type": mime } });
     },
 
     async setDisabled(userId, disabled) {
-      await row(userId);
-      await write(run("UPDATE users SET disabled = ?, updated_at = ? WHERE id = ?", disabled ? 1 : 0, Date.now(), userId));
-    },
-
-    async markEmailVerified(userId) {
-      await write(run("UPDATE users SET email_verified = 1, updated_at = ? WHERE id = ? AND email_verified = 0", Date.now(), userId));
+      await patch(`/Users/${encodeURIComponent(userId)}`, [{ op: "replace", path: "active", value: !disabled }]);
     },
 
     async loginLink(userId, ttlHours, purpose = "admin") {
-      await row(userId);
-      const token = newToken();
-      await db.execute([
-        run(
-          "INSERT INTO login_links (token_hash, user_id, purpose, expires_at) VALUES (?, ?, ?, ?)",
-          sha256(token),
-          userId,
-          purpose,
-          Date.now() + ttlHours * 3_600_000,
-        ),
-      ]);
-      return `${base}/auth/link/${token}`;
+      return (await json<{ link: string }>(`/Users/${encodeURIComponent(userId)}/signInLink`, { method: "POST", body: JSON.stringify({ ttlHours, purpose }) })).link;
+    },
+
+    async resetSecondFactor(userId) {
+      await call(`/Users/${encodeURIComponent(userId)}/secondFactor`, { method: "DELETE" });
     },
   };
   return directory;

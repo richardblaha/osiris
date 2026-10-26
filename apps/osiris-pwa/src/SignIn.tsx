@@ -3,14 +3,13 @@ import { browserSupportsWebAuthn, startAuthentication } from "@simplewebauthn/br
 import { useEffect, useState, type FormEvent } from "react";
 import { t } from "i18next";
 import { Trans } from "react-i18next";
-import { login } from "./auth.ts";
 import { currentLocale } from "./i18n.ts";
 
 export const SOCIAL_LABELS: Record<SocialProvider, string> = { google: "Google", facebook: "Facebook", microsoft: "Microsoft", seznam: "Seznam" };
 
-/** A call to the sign-in API (`/auth/interaction/:uid/...`); the interaction cookie goes along. */
+/** A call to osiris-auth's sign-in API (`/interaction/:uid/...`); the interaction cookie goes along. */
 async function step<T>(uid: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`/auth/interaction/${encodeURIComponent(uid)}${path}`, {
+  const res = await fetch(`/interaction/${encodeURIComponent(uid)}${path}`, {
     method: body === undefined ? "GET" : "POST",
     headers: { "accept-language": currentLocale(), ...(body === undefined ? {} : { "content-type": "application/json" }) },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -37,9 +36,10 @@ export function SignIn() {
   const [error, setError] = useState(params.get("error") ?? undefined);
 
   useEffect(() => {
-    // Opened directly, not from a sign-in in progress: start one.
-    if (!uid) void login();
-    else step<SignInState>(uid, "/state").then(setState, () => void login());
+    // Opened directly, not from a sign-in in progress (or one that expired): start one, for the account page.
+    const start = () => location.assign("/account/signin");
+    if (!uid) start();
+    else step<SignInState>(uid, "/state").then(setState, start);
   }, [uid]);
 
   if (!uid || !state) return null;

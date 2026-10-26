@@ -7,10 +7,6 @@ const bool = z
 // Sent in HTTP headers, which take printable ASCII only.
 const headerToken = z.string().regex(/^[\x21-\x7e]+$/, "must be printable ASCII without spaces").optional();
 const pem = z.string().transform((v) => v.replace(/\\n/g, "\n"));
-const list = z
-  .string()
-  .default("")
-  .transform((v) => v.split(",").map((s) => s.trim().replace(/\/$/, "")).filter(Boolean));
 
 const schema = z
   .object({
@@ -34,38 +30,21 @@ const schema = z
     INTERNAL_JWT_PRIVATE_KEY: pem,
     INTERNAL_JWT_PUBLIC_KEY: pem,
 
-    // Sign-in: control is the OpenID Connect provider at <PUBLIC_URL>/auth; the web app runs at PUBLIC_URL.
+    // Where the web app runs: links in WhatsApp replies and project logo URLs.
     PUBLIC_URL: z.url().default("http://localhost:5173").transform((v) => v.replace(/\/$/, "")),
-    // More origins the web app may run at (comma-separated), e.g. a preview; each gets <origin>/callback.
-    AUTH_EXTRA_ORIGINS: list,
-    // Signs ID tokens: an EC P-256 private key (PEM). `pnpm --filter @osiris/platform gen-keys` makes one.
-    AUTH_SIGNING_KEY: pem.optional(),
-    // 32 bytes, base64: signs the provider's cookies and seals TOTP secrets.
-    AUTH_SECRET: z.string().optional(),
-    // Social sign-in, each on when its client ID and secret are set. Redirect URI <PUBLIC_URL>/auth/social/<name>/callback.
-    GOOGLE_CLIENT_ID: z.string().optional(),
-    GOOGLE_CLIENT_SECRET: z.string().optional(),
-    FACEBOOK_CLIENT_ID: z.string().optional(),
-    FACEBOOK_CLIENT_SECRET: z.string().optional(),
-    MICROSOFT_CLIENT_ID: z.string().optional(),
-    MICROSOFT_CLIENT_SECRET: z.string().optional(),
-    // common (personal and work accounts), consumers, organizations, or one directory's id.
-    MICROSOFT_TENANT: z.string().default("common"),
-    SEZNAM_CLIENT_ID: z.string().optional(),
-    SEZNAM_CLIENT_SECRET: z.string().optional(),
-    // Email (sign-in links): smtp(s)://user:pass@host:port. Without it there are no links by email (development prints them).
+    // osiris-auth (users and groups, SCIM 2.0) and control's service token there (`pnpm --filter @osiris/auth cli token control`).
+    AUTH_URL: z.url().default("http://localhost:3003").transform((v) => v.replace(/\/$/, "")),
+    AUTH_SCIM_TOKEN: z.string().min(20),
+    // Email (notices to project admins): smtp(s)://user:pass@host:port. Without it, development prints them.
     SMTP_URL: z.string().optional(),
     // Or Emailit's HTTP API (https://emailit.com), which wins over SMTP_URL: the cluster's provider blocks outgoing SMTP.
     EMAILIT_API_KEY: z.string().optional(),
     MAIL_FROM: z.string().default("Osiris <auth@k6labs.cz>"),
 
-    // PocketID admin API, only for the one-off import of its users (`pnpm users import-pocketid`).
-    POCKETID_URL: z.url().optional(),
     // The cluster's telemetry (System > Logy, Metriky, Trasy): ClickHouse's HTTP interface with a read-only user.
     CLICKHOUSE_URL: z.url().optional(),
     CLICKHOUSE_USER: z.string().default("osiris"),
     CLICKHOUSE_PASSWORD: z.string().optional(),
-    POCKETID_API_KEY: headerToken,
 
     // How project runtimes run: Kubernetes (Project custom resources, operator) or local child processes (development).
     ORCHESTRATOR: z.enum(["kubernetes", "local"]).default("local"),
@@ -100,17 +79,8 @@ const schema = z
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";
     if (prod && !env.RQLITE_URL) ctx.addIssue({ code: "custom", path: ["RQLITE_URL"], message: "is required in production" });
-    if (prod && !env.AUTH_SIGNING_KEY) ctx.addIssue({ code: "custom", path: ["AUTH_SIGNING_KEY"], message: "is required in production" });
-    if (prod && !env.AUTH_SECRET) ctx.addIssue({ code: "custom", path: ["AUTH_SECRET"], message: "is required in production" });
-    if (env.AUTH_SECRET && Buffer.from(env.AUTH_SECRET, "base64").length !== 32) {
-      ctx.addIssue({ code: "custom", path: ["AUTH_SECRET"], message: "must be 32 bytes, base64-encoded" });
-    }
+    if (prod && !env.AUTH_URL.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["AUTH_URL"], message: "must be https in production" });
     if (prod && !env.PUBLIC_URL.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["PUBLIC_URL"], message: "must be https in production" });
-    for (const p of ["GOOGLE", "FACEBOOK", "MICROSOFT", "SEZNAM"] as const) {
-      if (!env[`${p}_CLIENT_ID`] !== !env[`${p}_CLIENT_SECRET`]) {
-        ctx.addIssue({ code: "custom", path: [`${p}_CLIENT_SECRET`], message: `${p}_CLIENT_ID and ${p}_CLIENT_SECRET go together` });
-      }
-    }
     if (prod && !env.S3_BUCKET) ctx.addIssue({ code: "custom", path: ["S3_BUCKET"], message: "is required in production" });
     if (prod && env.DEV_RUNTIME_AUTH) ctx.addIssue({ code: "custom", path: ["DEV_RUNTIME_AUTH"], message: "must not be enabled in production" });
     if (prod && env.ORCHESTRATOR !== "kubernetes") ctx.addIssue({ code: "custom", path: ["ORCHESTRATOR"], message: "must be kubernetes in production" });

@@ -1,0 +1,57 @@
+# A daily consistent copy of the database (SQLite's VACUUM INTO) next to it on the volume, the last 7 kept.
+# shortcut: same volume as the database (ceph-rbd is replicated, but a lost volume takes the copies along);
+# move them to object storage (ceph-bucket) once there's a bucket for it.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: auth-backup
+spec:
+  schedule: "17 3 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          imagePullSecrets: [{ name: ghcr-pull }]
+          # The volume is ReadWriteOnce: run next to the auth pod.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector: { matchLabels: { app: auth } }
+                  topologyKey: kubernetes.io/hostname
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: backup
+              image: ghcr.io/richardblaha/osiris-auth:main
+              command:
+                - node
+                - -e
+                - |
+                  const { createClient } = require("/app/server/auth/node_modules/@libsql/client");
+                  const fs = require("fs");
+                  const dir = "/data/backups";
+                  fs.mkdirSync(dir, { recursive: true });
+                  const file = `${dir}/auth-${new Date().toISOString().slice(0, 10)}.db`;
+                  fs.rmSync(file, { force: true });
+                  createClient({ url: "file:/data/auth.db" }).execute(`VACUUM INTO '${file}'`).then(() => {
+                    const all = fs.readdirSync(dir).filter((f) => f.endsWith(".db")).sort();
+                    for (const old of all.slice(0, -7)) fs.rmSync(`${dir}/${old}`);
+                    console.log(`Backed up to ${file}; kept ${Math.min(all.length, 7)}`);
+                  });
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              volumeMounts:
+                - { name: data, mountPath: /data }
+          volumes:
+            - name: data
+              persistentVolumeClaim: { claimName: auth-data }

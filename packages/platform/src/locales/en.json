@@ -348,6 +348,11 @@
     },
     "local": {
       "serverOnly": "This needs Osiris server; a local agent doesn't have it."
+    },
+    "group": {
+      "name": "A group name is lowercase letters, digits and : . _ -, at most 100 characters.",
+      "exists": "That group already exists.",
+      "unknownMember": "User {{id}} doesn't exist."
     }
   },
   "schedules": {

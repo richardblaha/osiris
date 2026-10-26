@@ -13,34 +13,36 @@ Internet ─ Traefik ─── osiris.k6labs.cz ──▶ gateway ──┬─�
 ```
 
 - **Images:** GitHub Actions (`.github/workflows/ci.yml`) runs the tests and, on `main`, pushes one image per service:
-  `ghcr.io/richardblaha/osiris-{gateway,control,runtime,operator,vitepress,web-events}` with the tags `main` and `sha-<commit>`.
+  `ghcr.io/richardblaha/osiris-{gateway,auth,control,runtime,operator,vitepress,web-events}` with the tags `main` and `sha-<commit>`.
   Runtimes pull `:main` whenever they wake, so a new runtime version reaches a project on its next wake-up.
 - **Projects sleep:** a runtime idle for `idleMinutes` (30 by default, 0 = always on) is snapshotted to S3 and scaled to
   zero; the next request, WhatsApp message or scheduled task wakes it (the gateway waits for it, usually 10–30 s).
 - **Data:** project database and files on the project's volume (`civo-volume`), snapshots in S3 (before every sleep and
   daily); the central database in rqlite with automatic backups to S3.
 - **TLS:** cert-manager (`letsencrypt` ClusterIssuer); project domains get their certificates through HTTP-01.
-- **Sign-in:** control is the OpenID Connect provider at `https://osiris.k6labs.cz/auth` (the gateway passes `/auth` to
-  it). PocketID at auth.k6labs.cz stays for other services; Osiris no longer uses it.
+- **Sign-in:** osiris-auth at `https://auth.k6labs.cz`, on the **busiris** cluster (`.kubeconfig.busiris`, namespace
+  `osiris-auth`, `deploy/auth`): the OpenID Connect provider, the account page, users and groups (SCIM 2.0).
 
 Commands below use `KUBECONFIG=.kubeconfig` and read keys from the gitignored root `.env`.
 
-## Sign-in
+## Sign-in (osiris-auth on busiris)
 
-Users sign in on `https://osiris.k6labs.cz/login` with a passkey, email and password, Google, Facebook, Microsoft or Seznam,
-or a one-time link; an authenticator app (TOTP) is an optional second factor after a password or social sign-in.
-Users, credentials and the provider's sessions and tokens live in rqlite (tables `users`, `passkeys`,
-`user_identities`, `recovery_codes`, `login_links`, `auth_challenges`, `oidc_store`).
+Users sign in on `https://auth.k6labs.cz/login` with a passkey, email and password, Google, Facebook, Microsoft or
+Seznam, or a one-time link; an authenticator app (TOTP) is an optional second factor after a password or social sign-in.
+They manage those at `https://auth.k6labs.cz/account` (Osiris's Profile → Sign-in and security links there). Users,
+groups, credentials and the provider's sessions and tokens live in osiris-auth's SQLite (`/data/auth.db` on the
+`auth-data` volume, `ceph-rbd`), copied daily to `/data/backups/` (last 7; CronJob `auth-backup`).
 
-- **Keys:** `gen-keys` (below) prints `AUTH_SIGNING_KEY` (signs ID tokens; changing it signs everyone out) and
-  `AUTH_SECRET` (signs the provider's cookies and seals TOTP secrets; changing it signs everyone out and turns off
-  everyone's authenticator app). Keep both in `.env` as `OSIRIS_AUTH_SIGNING_KEY` and `OSIRIS_AUTH_SECRET`.
-- **Email** (sign-in links, "forgot password"; without it the login screen doesn't offer them): Civo blocks outgoing
-  SMTP (ports 25, 465 and 587 time out from the cluster), so production sends through Emailit's HTTP API: `.env`
-  `EMAILIT_API_KEY` (a sending key), with `k6labs.cz` verified at Emailit (SPF, DKIM, DMARC) and the sender `MAIL_FROM`
-  in `control.yaml`. `SMTP_URL` (`smtps://user:password@host:465`) still works where SMTP isn't blocked.
+- **Network:** `auth.k6labs.cz` goes through Cloudflare to busiris's Traefik (`192.168.0.50`); the certificate comes
+  from cert-manager (`letsencrypt`, HTTP-01). Only Traefik reaches the pod. osiris.k6labs.cz's gateway introspects
+  tokens and control calls SCIM over `https://auth.k6labs.cz`.
+- **Keys** (secret `osiris-auth` in `osiris-auth`): `AUTH_SIGNING_KEY` (signs ID tokens; changing it signs everyone out),
+  `AUTH_SECRET` (cookies and the TOTP sealing key: it is the one control had, so authenticator apps kept working when
+  the users moved; changing it turns off everyone's authenticator app), `GATEWAY_CLIENT_SECRET` (`openssl rand -hex
+  32`, also in the gateway's secret), `EMAILIT_API_KEY` and the social keys.
+- **Email** (sign-in links): Emailit's HTTP API (`EMAILIT_API_KEY`, `k6labs.cz` verified there, sender `MAIL_FROM`).
 - **Social sign-in** (each optional, on when its ID and secret are set). Redirect URIs are
-  `https://osiris.k6labs.cz/auth/social/<google|facebook|microsoft|seznam>/callback`:
+  `https://auth.k6labs.cz/social/<google|facebook|microsoft|seznam>/callback`:
   - Google Cloud Console → APIs & Services → Credentials → OAuth client ID (Web application); consent screen with
     scopes `openid email profile`. `.env`: `OSIRIS_GOOGLE_CLIENT_ID`, `OSIRIS_GOOGLE_CLIENT_SECRET`.
   - Meta for Developers → app with Facebook Login, permissions `email`, `public_profile`; Valid OAuth Redirect URIs as
@@ -53,31 +55,36 @@ Users, credentials and the provider's sessions and tokens live in rqlite (tables
 
   A Google or Facebook account whose verified email matches an Osiris user signs straight into that user (so invited
   people can use it at once), as does a Seznam account with a Seznam mailbox (@seznam.cz, @email.cz, @post.cz, …).
-  Microsoft doesn't verify emails and a Seznam account can carry an outside address, so those must be linked in
-  My profile → Connected accounts first.
-- **People:** the first system admin comes from the command line:
-  `kubectl -n osiris exec deploy/control -- node_modules/.bin/tsx src/auth/users-cli.ts add-admin you@example.com First Last`
-  prints a one-time sign-in link. System admins create projects and add people in the web app (System → Projects); project admins
-  add people to their own project (Project → Users). New people get a one-time sign-in link (3 days) and
-  set up a passkey or password in their profile. Membership is stored in the user's claims: `project` / `project-admin`
-  = `<slug>` (comma-separated for several) plus `role` = `osiris-user`.
-- **Lost second factor:** a system admin turns it off in the project detail (Turn off 2FA next to the person).
+  Microsoft doesn't verify emails and a Seznam account can carry an outside address, so those must be linked on the
+  account page first.
+- **Passkeys** belong to `osiris.k6labs.cz` (`PASSKEY_RP_ID`), where they were made; its gateway lists
+  `https://auth.k6labs.cz` at `/.well-known/webauthn` (WebAuthn related origins), so browsers that support it (Chrome,
+  Edge, Safari) use them on auth.k6labs.cz. Elsewhere people sign in another way.
+- **SCIM tokens:** `kubectl --kubeconfig .kubeconfig.busiris -n osiris-auth exec deploy/auth -- node_modules/.bin/tsx
+  src/cli.ts token control` prints control's token (`AUTH_SCIM_TOKEN` in `osiris-control`); running it again replaces it.
+- **People:** the first system admin: `… exec deploy/auth -- node_modules/.bin/tsx src/cli.ts add-admin you@example.com
+  First Last` prints a one-time sign-in link. System admins create projects and add people in the web app (System →
+  Projects, Users); project admins add people to their own project (Project → Users). New people get a one-time
+  sign-in link (3 days). Access is groups: `osiris-user`, `osiris-admin`, `project:<slug>`, `project-admin:<slug>`.
+- **Lost second factor:** a system admin turns it off in the web app (Users → the person).
 
-Users verify their phone number for WhatsApp themselves (My profile → Account → Phone for WhatsApp): they send `VERIFY <code>` or `OVERENI <code>` from the phone
-to the business number, which sets the claim `phone_number`.
+Users verify their phone number for WhatsApp themselves (My profile → Account → Phone for WhatsApp): they send `VERIFY
+<code>` or `OVERENI <code>` from the phone to the business number; control writes it to osiris-auth.
 
-### From PocketID (one-off)
+### From control (one-off, 2026-10)
 
-1. Roll out the new images with the secrets below (`AUTH_*`, `EMAILIT_API_KEY`, social keys).
-2. Copy the users, keeping their ids (project data is keyed by them), names, emails and claims:
-   ```bash
-   kubectl -n osiris exec deploy/control -- env POCKETID_URL=http://pocket-id.pocket-id.svc.cluster.local:1411 POCKETID_API_KEY="$POCKETID_API_KEY" \
-     node_modules/.bin/tsx src/auth/users-cli.ts import-pocketid --links
-   ```
-   Passkeys can't move (they belong to auth.k6labs.cz), so people sign in once with Google/Facebook, a link by email
-   ("I forgot my password") or the printed 72-hour link, and add a new passkey in their profile. Running it again
-   skips users already imported.
-3. Remove the Osiris client and API key in PocketID.
+Before osiris-auth, control was the provider and kept users in rqlite. `cli.ts import-control <rqlite-url>` copies every
+user with the same id, password, authenticator, recovery codes, passkeys and linked accounts, turning claims into
+groups (sessions don't move: everyone signs in again). With a port-forward to rqlite on abydos:
+
+```bash
+kubectl -n osiris port-forward svc/rqlite 4001 &
+kubectl --kubeconfig .kubeconfig.busiris -n osiris-auth exec -i deploy/auth -- env RQLITE_USERNAME=control RQLITE_PASSWORD=… \
+  node_modules/.bin/tsx src/cli.ts import-control http://<reachable rqlite>:4001
+```
+
+(or run the CLI locally with `DATA_DIR` on a copy, then copy `auth.db` into the volume). Control's migration
+`013_no_auth.sql` then drops its auth tables.
 
 ## WhatsApp
 
@@ -162,7 +169,7 @@ unreadable; changing the JWT keys only needs a restart of all services):
 
 ```bash
 pnpm --filter @osiris/platform gen-keys   # → OSIRIS_INTERNAL_JWT_PRIVATE_KEY, OSIRIS_INTERNAL_JWT_PUBLIC_KEY, OSIRIS_SECRETS_MASTER_KEY,
-                                          #   OSIRIS_AUTH_SIGNING_KEY, OSIRIS_AUTH_SECRET
+                                          #   OSIRIS_AUTH_SIGNING_KEY, OSIRIS_AUTH_SECRET (osiris-auth's)
                                           #   (put the PEM values in single quotes in .env: they contain spaces)
 openssl rand -hex 24                      # → OSIRIS_RQLITE_CONTROL_PASSWORD, OSIRIS_RQLITE_NODE_PASSWORD
 ```
@@ -173,17 +180,13 @@ K="kubectl -n osiris"
 apply() { $K create secret generic "$@" --dry-run=client -o yaml | $K apply -f -; }
 key() { printf '%s' "$1" | sed 's/\\n/\n/g'; }   # .env keeps PEM keys on one line
 
-apply osiris-gateway --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")"
+apply osiris-gateway --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")" \
+  --from-literal=GATEWAY_CLIENT_SECRET="$OSIRIS_GATEWAY_CLIENT_SECRET"
 
 apply osiris-control \
   --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")" \
   --from-literal=INTERNAL_JWT_PUBLIC_KEY="$(key "$OSIRIS_INTERNAL_JWT_PUBLIC_KEY")" \
-  --from-literal=AUTH_SIGNING_KEY="$(key "$OSIRIS_AUTH_SIGNING_KEY")" --from-literal=AUTH_SECRET="$OSIRIS_AUTH_SECRET" \
-  --from-literal=EMAILIT_API_KEY="$EMAILIT_API_KEY" \
-  --from-literal=GOOGLE_CLIENT_ID="$OSIRIS_GOOGLE_CLIENT_ID" --from-literal=GOOGLE_CLIENT_SECRET="$OSIRIS_GOOGLE_CLIENT_SECRET" \
-  --from-literal=FACEBOOK_CLIENT_ID="$OSIRIS_FACEBOOK_CLIENT_ID" --from-literal=FACEBOOK_CLIENT_SECRET="$OSIRIS_FACEBOOK_CLIENT_SECRET" \
-  --from-literal=MICROSOFT_CLIENT_ID="$OSIRIS_MICROSOFT_CLIENT_ID" --from-literal=MICROSOFT_CLIENT_SECRET="$OSIRIS_MICROSOFT_CLIENT_SECRET" \
-  --from-literal=SEZNAM_CLIENT_ID="$OSIRIS_SEZNAM_CLIENT_ID" --from-literal=SEZNAM_CLIENT_SECRET="$OSIRIS_SEZNAM_CLIENT_SECRET" \
+  --from-literal=AUTH_SCIM_TOKEN="$OSIRIS_AUTH_SCIM_TOKEN" --from-literal=EMAILIT_API_KEY="$EMAILIT_API_KEY" \
   --from-literal=RQLITE_USERNAME=control --from-literal=RQLITE_PASSWORD="$OSIRIS_RQLITE_CONTROL_PASSWORD" \
   --from-literal=S3_ENDPOINT="$OSIRIS_S3_ENDPOINT" --from-literal=S3_REGION="$OSIRIS_S3_REGION" --from-literal=S3_BUCKET="$OSIRIS_S3_BUCKET" \
   --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY" \
@@ -210,6 +213,19 @@ apply rqlite-config \
 # Pull access to the private images (read:packages only); the operator copies it into project namespaces.
 $K create secret docker-registry ghcr-pull --docker-server=ghcr.io --docker-username=richardblaha \
   --docker-password="$GITHUB_API_KEY" --dry-run=client -o yaml | $K apply -f -
+
+# osiris-auth on busiris (its own cluster and namespace).
+B="kubectl --kubeconfig .kubeconfig.busiris -n osiris-auth"
+bapply() { $B create secret generic "$@" --dry-run=client -o yaml | $B apply -f -; }
+bapply osiris-auth \
+  --from-literal=AUTH_SIGNING_KEY="$(key "$OSIRIS_AUTH_SIGNING_KEY")" --from-literal=AUTH_SECRET="$OSIRIS_AUTH_SECRET" \
+  --from-literal=GATEWAY_CLIENT_SECRET="$OSIRIS_GATEWAY_CLIENT_SECRET" --from-literal=EMAILIT_API_KEY="$EMAILIT_API_KEY" \
+  --from-literal=GOOGLE_CLIENT_ID="$OSIRIS_GOOGLE_CLIENT_ID" --from-literal=GOOGLE_CLIENT_SECRET="$OSIRIS_GOOGLE_CLIENT_SECRET" \
+  --from-literal=FACEBOOK_CLIENT_ID="$OSIRIS_FACEBOOK_CLIENT_ID" --from-literal=FACEBOOK_CLIENT_SECRET="$OSIRIS_FACEBOOK_CLIENT_SECRET" \
+  --from-literal=MICROSOFT_CLIENT_ID="$OSIRIS_MICROSOFT_CLIENT_ID" --from-literal=MICROSOFT_CLIENT_SECRET="$OSIRIS_MICROSOFT_CLIENT_SECRET" \
+  --from-literal=SEZNAM_CLIENT_ID="$OSIRIS_SEZNAM_CLIENT_ID" --from-literal=SEZNAM_CLIENT_SECRET="$OSIRIS_SEZNAM_CLIENT_SECRET"
+$B create secret docker-registry ghcr-pull --docker-server=ghcr.io --docker-username=richardblaha \
+  --docker-password="$GITHUB_API_KEY" --dry-run=client -o yaml | $B apply -f -
 ```
 
 After changing a secret, restart what uses it: `kubectl -n osiris rollout restart deploy/<service>` (runtimes get new

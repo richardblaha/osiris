@@ -37,7 +37,7 @@ describe("project directory", () => {
     await directory.create("acme", "ACME");
     expect(await directory.invite("acme", { email: "EVA@firma.cz", firstName: "Eva", lastName: "" }, "member")).toEqual({ userId: "eva", created: false });
     const created = await directory.invite("acme", { email: "eva@jinde.cz", firstName: "Eva", lastName: "Nová" }, "admin");
-    expect(created).toMatchObject({ created: true, loginLink: expect.stringMatching(/^http:\/\/osiris\.test\/auth\/link\/[\w-]{43}$/) });
+    expect(created).toMatchObject({ created: true, loginLink: expect.stringMatching(/^http:\/\/auth\.test\/link\/[\w-]{43}$/) });
     expect(await users.get(created.userId)).toMatchObject({ email: "eva@jinde.cz", name: "Eva Nová", claims: { "project-admin": "acme", role: "osiris-user" } });
   });
 });
@@ -128,7 +128,7 @@ describe("control API", () => {
     expect((await root("/admin/users", { method: "POST", ...json({ email: "BOB@acme.cz", firstName: "B", lastName: "" }) })).status).toBe(409);
     const created = await root("/admin/users", { method: "POST", ...json({ email: "eva@firma.cz", firstName: "Eva", lastName: "Nová" }) });
     const { userId, loginLink } = await created.json();
-    expect([created.status, loginLink]).toEqual([201, expect.stringMatching(/^http:\/\/osiris\.test\/auth\/link\//)]);
+    expect([created.status, loginLink]).toEqual([201, expect.stringMatching(/^http:\/\/auth\.test\/link\//)]);
     expect(await users.get(userId)).toMatchObject({ name: "Eva Nová", claims: { role: "osiris-user" } });
 
     expect((await root("/admin/users/bob", { method: "PATCH", ...json({ lastName: "Novák", systemAdmin: true, disabled: true }) })).status).toBe(204);
@@ -136,7 +136,7 @@ describe("control API", () => {
     expect((await root("/admin/users/bob/login-link", { method: "POST" })).status).toBe(400);
     expect((await root("/admin/users/bob", { method: "PATCH", ...json({ systemAdmin: false, disabled: false }) })).status).toBe(204);
     expect((await users.get("bob")).claims.role).toBe("osiris-user");
-    expect((await (await root("/admin/users/bob/login-link", { method: "POST" })).json()).loginLink).toMatch(/\/auth\/link\//);
+    expect((await (await root("/admin/users/bob/login-link", { method: "POST" })).json()).loginLink).toMatch(/^http:\/\/auth\.test\/link\//);
     // A system admin can't lock themselves out.
     expect((await root("/admin/users/root", { method: "PATCH", ...json({ systemAdmin: false }) })).status).toBe(400);
     expect((await root("/admin/users/root", { method: "PATCH", ...json({ disabled: true }) })).status).toBe(400);
@@ -209,7 +209,7 @@ describe("control API", () => {
     expect((await put(alice, png)).status).toBe(204);
 
     const logo = (await (await bob("/project")).json()).logo as string;
-    expect(logo).toMatch(/^http:\/\/osiris\.test\/auth\/project-logos\/acme\/[\w-]{36}$/);
+    expect(logo).toMatch(/^http:\/\/osiris\.test\/project-logos\/acme\/[\w-]{36}$/);
     expect((await (await bob("/me")).json()).projects).toMatchObject([{ id: "acme", logo }]);
     const served = await app.request(new URL(logo).pathname);
     expect([served.status, served.headers.get("content-type"), new Uint8Array(await served.arrayBuffer())]).toEqual([200, "image/png", png]);
@@ -219,7 +219,7 @@ describe("control API", () => {
   });
 
   it("edits the user's profile and checks the picture type", async () => {
-    const { app, asUser, users } = await createTestControl({ users: [{ id: "alice", firstName: "Alice", lastName: "A", email: "a@x.cz", claims: {} }] });
+    const { auth, asUser, users } = await createTestControl({ users: [{ id: "alice", firstName: "Alice", lastName: "A", email: "a@x.cz", claims: {} }] });
     const alice = asUser("alice");
     expect(await (await alice("/me/profile", { method: "PATCH", body: JSON.stringify({ lastName: "Nováková" }) })).json()).toMatchObject({
       firstName: "Alice",
@@ -230,12 +230,12 @@ describe("control API", () => {
     expect((await alice("/me/picture", { method: "PUT", body: "<svg/>", headers: { "content-type": "image/svg+xml" } })).status).toBe(415);
     const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0, 0]);
     expect((await alice("/me/picture", { method: "PUT", body: png, headers: { "content-type": "image/png" } })).status).toBe(204);
-    // The picture is served at a URL that changes with every new one.
+    // osiris-auth keeps the picture and serves it at a URL that changes with every new one.
     const picture = (await users.get("alice")).picture!;
-    expect(picture).toMatch(/^http:\/\/osiris\.test\/auth\/pictures\/alice\/[\w-]{16}$/);
-    const served = await app.request(new URL(picture).pathname);
+    expect(picture).toMatch(/^http:\/\/auth\.test\/pictures\/alice\/[\w-]{16}$/);
+    const served = await auth.app.request(new URL(picture).pathname);
     expect([served.status, served.headers.get("content-type"), Buffer.from(await served.arrayBuffer())]).toEqual([200, "image/png", png]);
-    expect((await app.request("/auth/pictures/alice/old")).status).toBe(404);
+    expect((await auth.app.request("/pictures/alice/old")).status).toBe(404);
   });
 
   it("serves runtimes their own project only, as their token says", async () => {
@@ -262,16 +262,14 @@ describe("control API", () => {
 });
 
 describe("users", () => {
-  it("keeps other claims, refuses taken emails and unverifies a changed one", async () => {
+  it("keeps other claims as osiris-auth's groups and refuses taken emails", async () => {
     const { users } = await createTestControl({ users: [{ id: "bob", firstName: "Bob", lastName: "Novák", email: "b@x.cz", claims: { phone_number: "+420777123456", project: "acme" } }] });
     await Promise.all([users.setClaims("bob", { "project-admin": "beta" }), users.setClaims("bob", { phone_number: null })]);
     expect((await users.get("bob")).claims).toEqual({ project: "acme", "project-admin": "beta" });
     await expect(users.create({ email: "B@X.cz", firstName: "Jiný", lastName: "" })).rejects.toThrow("email already exists");
     expect((await users.findByEmail(" B@x.CZ "))?.id).toBe("bob");
 
-    await users.markEmailVerified("bob");
-    expect((await users.get("bob")).emailVerified).toBe(true);
-    expect(await users.updateProfile("bob", { email: "Nova@X.cz" })).toMatchObject({ email: "nova@x.cz", emailVerified: false, name: "Bob Novák" });
+    expect(await users.updateProfile("bob", { email: "Nova@X.cz" })).toMatchObject({ email: "nova@x.cz", name: "Bob Novák" });
     await expect(users.setClaims("nobody", { project: "x" })).rejects.toThrow("not found");
   });
 });

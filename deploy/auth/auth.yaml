@@ -1,0 +1,125 @@
+# osiris-auth at https://auth.k6labs.cz: sign-in (OpenID Connect), the account page, users and groups (SCIM 2.0) and
+# token introspection for osiris.k6labs.cz's gateway. One replica with its SQLite on a volume.
+# Secret osiris-auth: AUTH_SIGNING_KEY, AUTH_SECRET (control's, which sealed the TOTP secrets), GATEWAY_CLIENT_SECRET,
+# EMAILIT_API_KEY, GOOGLE_*/FACEBOOK_*/MICROSOFT_*/SEZNAM_* (optional). Secret ghcr-pull: the image registry.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: auth-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ceph-rbd
+  resources:
+    requests: { storage: 2Gi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth
+  labels: { app: auth }
+spec:
+  # SQLite has one writer: never two pods on the volume.
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: auth }
+  template:
+    metadata:
+      labels: { app: auth }
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: auth
+          image: ghcr.io/richardblaha/osiris-auth:main
+          imagePullPolicy: Always
+          ports:
+            - { name: http, containerPort: 3003 }
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: DEFAULT_LOCALE, value: cs }
+            - { name: PUBLIC_URL, value: https://auth.k6labs.cz }
+            - { name: WEB_ORIGINS, value: https://osiris.k6labs.cz }
+            # Passkeys made on osiris.k6labs.cz keep working: it lists this origin at /.well-known/webauthn.
+            - { name: PASSKEY_RP_ID, value: osiris.k6labs.cz }
+            - { name: MAIL_FROM, value: "Osiris <auth@k6labs.cz>" }
+            - { name: GEOIP_AUTO_UPDATE, value: "false" }
+            # Traefik (pods) is the trusted proxy. Its service SNATs (externalTrafficPolicy: Cluster), so the last hop is
+            # a node or pod address and the client only shows in Cloudflare's CF-Connecting-IP.
+            # shortcut: trusted from any cluster/LAN address, so a request reaching the origin around Cloudflare can
+            # name its own address; list Cloudflare's ranges instead once the service keeps client addresses (Local).
+            - { name: TRUSTED_PROXIES, value: 10.0.0.0/8 }
+            - { name: CDN_PROXIES, value: "10.0.0.0/8,192.168.0.0/16" }
+          envFrom:
+            - secretRef: { name: osiris-auth }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /health, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 50m, memory: 192Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: data, mountPath: /data }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: data
+          persistentVolumeClaim: { claimName: auth-data }
+        - name: tmp
+          emptyDir: { sizeLimit: 512Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth
+spec:
+  selector: { app: auth }
+  ports:
+    - { name: http, port: 80, targetPort: http }
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: redirect-https
+spec:
+  redirectScheme:
+    scheme: https
+    permanent: true
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: auth
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    traefik.ingress.kubernetes.io/router.middlewares: osiris-auth-redirect-https@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: auth.k6labs.cz
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: auth
+                port: { name: http }
+  tls:
+    - hosts: [auth.k6labs.cz]
+      secretName: auth-k6labs-cz-tls

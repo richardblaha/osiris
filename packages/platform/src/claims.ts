@@ -39,6 +39,22 @@ export const accessFromClaims = (claim: (key: string) => unknown): Access => ({
   adminProjects: claimList(claim(CLAIMS.projectAdmin)),
 });
 
+/**
+ * The same access as osiris-auth's groups: `osiris-user`, `osiris-admin`, `project:<slug>` and `project-admin:<slug>`.
+ * Tokens carry them in the `groups` claim; control turns its claim changes into memberships of these groups.
+ */
+export const groupsFromAccess = (access: Access): string[] => [
+  ...access.roles.filter((r) => r === USER_ROLE || r === SYSTEM_ADMIN_ROLE),
+  ...access.projects.map((p) => `project:${p}`),
+  ...access.adminProjects.map((p) => `project-admin:${p}`),
+];
+
+export const accessFromGroups = (groups: unknown): Access => {
+  const list = claimList(groups);
+  const after = (prefix: string) => list.flatMap((g) => (g.startsWith(prefix) ? [g.slice(prefix.length)] : []));
+  return { roles: list.filter((g) => g === USER_ROLE || g === SYSTEM_ADMIN_ROLE), projects: after("project:"), adminProjects: after("project-admin:") };
+};
+
 export const isSystemAdmin = (access: Access) => access.roles.includes(SYSTEM_ADMIN_ROLE);
 export const isAuthorized = (access: Access) => access.roles.includes(USER_ROLE) || isSystemAdmin(access);
 

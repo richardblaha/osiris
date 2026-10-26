@@ -8,7 +8,7 @@ import {
   type PublicKeyCredentialRequestOptionsJSON,
   type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
-import type { UserRecord } from "../users.ts";
+import type { UserRecord } from "./users.ts";
 import { CredentialError, type Credentials } from "./credentials.ts";
 
 export interface RelyingParty {

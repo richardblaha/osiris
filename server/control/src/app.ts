@@ -28,8 +28,9 @@ import { z } from "zod";
 import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, PROJECT_SLUG, USER_ROLE } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, InternalAuthError, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
 import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
-import { CLIENT_IDS } from "./auth/oidc.ts";
-import { authRoutes, securityRoutes, type AuthDeps } from "./auth/routes.ts";
+import type { Mailer } from "@osiris/platform/mail.ts";
+import type { Db } from "@osiris/platform/rqlite.ts";
+import { userByPhone } from "./whatsapp/phones.ts";
 import type { Backups } from "./backups.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";
 import { ScheduleNotFoundError, type ScheduleStore } from "./scheduler.ts";
@@ -41,6 +42,7 @@ import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
 import { errorResponse, HttpError, requestLocale, translate, ValidationError, type Params } from "@osiris/platform/i18n.ts";
 
 export interface ControlDeps {
+  db: Db;
   verifier: InternalVerifier;
   runtimeIdentity: RuntimeIdentityVerifier;
   directory: ProjectDirectory;
@@ -52,8 +54,8 @@ export interface ControlDeps {
   whatsapp?: WhatsAppWebhookOptions & { displayNumber?: string };
   /** Asks a project's runtime for a snapshot now (admin "back up now"). */
   snapshot: (project: string) => Promise<void>;
-  /** Sign-in: the OIDC provider's state, credentials and the sign-in screens' API. */
-  auth: AuthDeps;
+  /** Emails project admins (a runtime's notice); without it nothing is sent. */
+  mailer?: Mailer;
   /** The cluster's telemetry in ClickHouse, for system admins; without it those pages say it isn't set up. */
   telemetry?: Telemetry;
   dashboards: DashboardStore;
@@ -160,8 +162,8 @@ const iso = (ms: number) => new Date(ms).toISOString();
 const tooLarge = (key: string, params?: Params) => (c: Context) => c.json({ error: translate(requestLocale(c.req.header("accept-language")), key, params), code: key }, 413);
 
 /**
- * Control: sign-in (the OIDC provider's screens; the provider itself is mounted next to this app, see server.ts),
- * projects, users and their access, schedules, backups, WhatsApp. User calls come from the gateway
+ * Control: projects, their members and access (users live in osiris-auth, reached over SCIM), schedules, backups,
+ * WhatsApp. User calls come from the gateway
  * with an internal token naming the user and their memberships, runtimes prove their project with their ServiceAccount
  * token, and Meta signs the WhatsApp webhook.
  */
@@ -261,7 +263,17 @@ export function createControlApp(deps: ControlDeps) {
       await phones.remove(c.get("call").user.sub);
       return c.body(null, 204);
     })
-    .route("/security", securityRoutes(deps.auth, (c) => (c as Context<Env>).get("call").user.sub, (c) => (c as Context<Env>).get("call").sessionUid));
+    // WhatsApp's delivery reports for the user's verified number (Profile > Activity); sign-in history is osiris-auth's.
+    .get("/security/whatsapp-deliveries", async (c) => {
+      const user = await users.get(c.get("call").user.sub);
+      const phone = user.claims[PHONE_CLAIM];
+      if (!phone || (await userByPhone(users, phone))?.sub !== user.id) return c.json([]);
+      const rows = await deps.db.query<{ status: string; status_at: number; error_code: string | null }>(
+        "SELECT status, status_at, error_code FROM wa_deliveries WHERE recipient = ? ORDER BY status_at DESC LIMIT 50",
+        [phone.replace(/\D/g, "")],
+      );
+      return c.json(rows.map((r) => ({ status: r.status, at: Number(r.status_at), errorCode: r.error_code })));
+    });
 
   // --- the active project --------------------------------------------------------------------------------------------
   const project = new Hono<Env>()
@@ -452,7 +464,7 @@ export function createControlApp(deps: ControlDeps) {
     // A user who lost both their authenticator and recovery codes gets in again with password or passkey alone.
     .delete("/users/:id/second-factor", async (c) => {
       await users.get(c.req.param("id"));
-      await deps.auth.credentials.disableTotp(c.req.param("id"));
+      await users.resetSecondFactor(c.req.param("id"));
       return c.body(null, 204);
     });
 
@@ -464,25 +476,6 @@ export function createControlApp(deps: ControlDeps) {
       await next();
     })
     .get("/projects", async (c) => c.json((await projects.list()).map((t) => ({ id: t.id, name: t.name }))))
-    // Who an access token belongs to: the gateway asks for every token it hasn't seen in the last minute.
-    .post("/identify", async (c) => {
-      const { token } = parse(z.object({ token: z.string().min(1).max(4096) }), await json(c));
-      const access = await deps.auth.provider.AccessToken.find(token);
-      if (!access || access.isExpired || !CLIENT_IDS.includes(access.clientId ?? "") || !access.accountId) throw new HTTPException(401, { message: "Invalid token" });
-      if (access.sessionUid) await deps.auth.activity.touch(access.sessionUid);
-      const user = await users.get(access.accountId).catch(() => null);
-      if (!user || user.disabled) throw new HTTPException(401, { message: "Invalid token" });
-      return c.json({
-        sub: user.id,
-        email: user.email,
-        name: user.name,
-        phone: user.claims[PHONE_CLAIM] ?? null,
-        picture: user.picture,
-        claims: { [CLAIMS.role]: user.claims[CLAIMS.role], [CLAIMS.project]: user.claims[CLAIMS.project], [CLAIMS.projectAdmin]: user.claims[CLAIMS.projectAdmin] },
-        expiresAt: (access.exp ?? 0) * 1000,
-        sessionUid: access.sessionUid,
-      });
-    })
     .get("/projects/:id/endpoint", async (c) => {
       await projects.active(c.req.param("id"));
       return c.json({ url: orchestrator.endpoint(c.req.param("id")) });
@@ -508,7 +501,7 @@ export function createControlApp(deps: ControlDeps) {
     // A runtime telling its project's admins something (a new inquiry from the public assistant), by email.
     .post("/notify-admins", async (c) => {
       const { subject, text } = parse(z.object({ subject: z.string().trim().min(1).max(200), text: z.string().max(10_000) }), await json(c));
-      const mailer = deps.auth.mailer;
+      const mailer = deps.mailer;
       if (!mailer) return c.json({ sent: 0 });
       const admins = (await directory.members(c.get("runtimeProject"))).filter((m) => m.role === "admin" && m.email);
       await Promise.all(admins.map((m) => mailer.send({ to: m.email!, subject: `Osiris: ${subject}`, text })));
@@ -569,7 +562,7 @@ export function createControlApp(deps: ControlDeps) {
     .use(telemetryMiddleware())
     .get("/health", (c) => c.json({ ok: true }))
     // Project logos, public like profile pictures (an <img> sends no token); the version in the URL is unguessable.
-    .get("/auth/project-logos/:id/:version", async (c) => {
+    .get("/project-logos/:id/:version", async (c) => {
       const logo = await projects.logo(c.req.param("id"), c.req.param("version"));
       if (!logo) return c.body(null, 404);
       const data = await readAll(logo.body);
@@ -579,7 +572,6 @@ export function createControlApp(deps: ControlDeps) {
         "x-content-type-options": "nosniff",
       });
     })
-    .route("/auth", authRoutes(deps.auth))
     .route("/internal/gateway", forGateway)
     .route("/internal/runtime", forRuntime)
     .route("/webhooks/whatsapp", deps.whatsapp ? whatsappWebhook(deps.whatsapp) : new Hono().all("/", (c) => c.text("WhatsApp is not configured", 404)))

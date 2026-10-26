@@ -9,8 +9,17 @@ export interface OidcTokens {
   expiresAt: number;
 }
 
-const discover = async (server: string) =>
-  (await (await fetch(`${server}/auth/.well-known/openid-configuration`)).json()) as { authorization_endpoint: string; token_endpoint: string };
+const json = async <T>(url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} answered ${res.status}`);
+  return (await res.json()) as T;
+};
+
+/** The server names its sign-in service (`/auth-config.json`), which describes itself (OpenID Connect discovery). */
+const discover = async (server: string) => {
+  const { issuer } = await json<{ issuer: string }>(`${server}/auth-config.json`);
+  return json<{ authorization_endpoint: string; token_endpoint: string }>(`${issuer.replace(/\/$/, "")}/.well-known/openid-configuration`);
+};
 
 /** Where to send the browser, with the verifier and state to keep until it comes back. */
 export async function signInUrl(server: string, clientId: string, redirect: string) {

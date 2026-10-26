@@ -1,8 +1,7 @@
-# Sign-in (the OpenID Connect provider at https://osiris.k6labs.cz/auth), users, projects, schedules, WhatsApp and backups.
+# Projects and their members, schedules, WhatsApp and backups; users and groups are osiris-auth's (SCIM, deploy/auth).
 # Writes Project objects only.
-# Secret osiris-control: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, AUTH_SIGNING_KEY, AUTH_SECRET, EMAILIT_API_KEY,
-# GOOGLE_*/FACEBOOK_*/MICROSOFT_*/SEZNAM_* (optional), RQLITE_USERNAME, RQLITE_PASSWORD, S3_*, WHATSAPP_*,
-# CLICKHOUSE_PASSWORD (the read-only user osiris; see deploy/README.md).
+# Secret osiris-control: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, AUTH_SCIM_TOKEN, EMAILIT_API_KEY,
+# RQLITE_USERNAME, RQLITE_PASSWORD, S3_*, WHATSAPP_*, CLICKHOUSE_PASSWORD (the read-only user osiris; see deploy/README.md).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -37,8 +36,6 @@ spec:
           ports:
             - { name: http, containerPort: 3002 }
           env:
-            # Use bundled GeoIP data; automatic refresh temporarily exceeds the memory budget.
-            - { name: GEOIP_AUTO_UPDATE, value: "false" }
             - { name: NODE_ENV, value: production }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
@@ -46,6 +43,7 @@ spec:
             - { name: K8S_NAMESPACE, value: osiris }
             - { name: RQLITE_URL, value: http://rqlite.osiris.svc.cluster.local:4001 }
             - { name: PUBLIC_URL, value: https://osiris.k6labs.cz }
+            - { name: AUTH_URL, value: https://auth.k6labs.cz }
             - { name: MAIL_FROM, value: "Osiris <auth@k6labs.cz>" }
             - { name: TIMEZONE, value: Europe/Prague }
             - { name: DEFAULT_LOCALE, value: cs }

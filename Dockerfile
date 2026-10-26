@@ -1,4 +1,4 @@
-# One Dockerfile, one image per service: docker build --target <gateway|control|runtime|operator|vitepress|web-events> .
+# One Dockerfile, one image per service: docker build --target <gateway|auth|control|runtime|operator|vitepress|web-events> .
 # Every service runs TypeScript with tsx as the unprivileged node user, read-only root filesystem (tsx caches in /tmp).
 
 FROM node:24-slim AS base
@@ -11,6 +11,7 @@ COPY packages/core/package.json packages/core/
 COPY packages/client/package.json packages/client/
 COPY apps/osiris-pwa/package.json apps/osiris-pwa/
 COPY server/gateway/package.json server/gateway/
+COPY server/auth/package.json server/auth/
 COPY server/control/package.json server/control/
 COPY apps/osiris/package.json apps/osiris/
 COPY server/operator/package.json server/operator/
@@ -37,12 +38,25 @@ WORKDIR /app/server/gateway
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
 
-# Local GeoIP databases shared by control and analytics; lookups never send client IPs out.
+# Local GeoIP databases shared by osiris-auth (sign-in history) and analytics; lookups never send client IPs out.
 FROM base AS geo-data
 RUN node -e 'const z=require("zlib"),fs=require("fs");(async()=>{fs.mkdirSync("/app/geo",{recursive:true});for(const kind of ["city","asn"]){let ok=false;for(const d of [new Date(),new Date(new Date().getUTCFullYear(),new Date().getUTCMonth()-1,1)]){const url=`https://download.db-ip.com/free/dbip-${kind}-lite-${d.toISOString().slice(0,7)}.mmdb.gz`;const r=await fetch(url);if(r.ok){fs.writeFileSync(`/app/geo/${kind}.mmdb`,z.gunzipSync(Buffer.from(await r.arrayBuffer())));ok=true;break}}if(!ok)throw new Error(`Missing GeoIP ${kind}`)}})()'
 
-FROM base AS control
+# osiris-auth: sign-in, users and groups (SCIM), with its own SQLite on a volume (DATA_DIR); serves the PWA build's
+# account.html (sign-in and account pages).
+FROM base AS auth
 COPY --from=geo-data /app/geo /app/geo
+RUN pnpm install --frozen-lockfile --prod --filter "@osiris/auth..." && pnpm store prune
+COPY packages/shared/src packages/shared/src
+COPY packages/platform/src packages/platform/src
+COPY server/auth/src server/auth/src
+COPY --from=web-build /app/apps/osiris-pwa/dist apps/osiris-pwa/dist
+ENV PORT=3003 STATIC_DIR=/app/apps/osiris-pwa/dist DATA_DIR=/data
+WORKDIR /app/server/auth
+USER node
+CMD ["node_modules/.bin/tsx", "src/index.ts"]
+
+FROM base AS control
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/control..." && pnpm store prune
 COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src

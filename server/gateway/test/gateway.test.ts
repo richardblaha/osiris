@@ -8,7 +8,7 @@ import { CONTROL_AUDIENCE, generateInternalKeys, InternalSigner, InternalVerifie
 import { RuntimeClient, SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
 import { createGatewayApp } from "../src/app.ts";
 import { ControlDirectory } from "../src/control.ts";
-import { createControlVerifier, createDevVerifier } from "../src/oidc.ts";
+import { createDevVerifier, createTokenVerifier, introspection } from "../src/oidc.ts";
 import { RateLimiter } from "../src/rate-limit.ts";
 
 const keys = await generateInternalKeys();
@@ -32,13 +32,7 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
       }
       const endpoint = /^\/internal\/gateway\/projects\/([^/]+)\/endpoint$/.exec(u.pathname);
       if (endpoint) return Response.json({ url: `http://runtime-${endpoint[1]}` });
-      if (u.pathname.startsWith("/auth/")) {
-        calls.push({ service: "auth", path: u.pathname + u.search, method: init.method ?? "GET", auth: headers.get("cookie"), projectHeader: headers.get("x-forwarded-host") });
-        const res = new Response(null, { status: 303, headers: { location: "/login?uid=1", "x-internal": "secret" } });
-        res.headers.append("set-cookie", "a=1; path=/auth/interaction/1; httponly");
-        res.headers.append("set-cookie", "b=2; path=/; httponly");
-        return res;
-      }
+      if (u.pathname.startsWith("/project-logos/")) return new Response("png", { headers: { "content-type": "image/png", "set-cookie": "x=1", "x-internal": "secret" } });
     }
     const service = u.host === "control" ? "control" : u.host.replace("runtime-", "");
     // What Cilium answers for a Service without endpoints.
@@ -66,6 +60,7 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
     maxBodyBytes: 1024,
     limits: { requestsPerMinute: 100, runsPerMinute: options.runsPerMinute ?? 10 },
     web: options.web,
+    auth: { issuer: "https://auth.example.cz" },
     fetchFn,
   });
   const as = (token: string, project?: string) => (path: string, init: RequestInit = {}) =>
@@ -93,20 +88,21 @@ describe("access from claims", () => {
     expect(accessibleProjects(admin, ["x"])).toEqual([{ projectId: "x", role: "admin" }]);
   });
 
-  it("asks control whose a token is and reuses the answer for a minute", async () => {
+  it("has osiris-auth introspect a token (RFC 7662) and reuses the answer for a minute", async () => {
     const asked: string[] = [];
-    const verifier = createControlVerifier(async (token) => {
+    let status = 200;
+    const fetchFn = (async (url: string, init: RequestInit) => {
+      expect(url).toBe("https://auth.example.cz/introspect");
+      expect(new Headers(init.headers).get("authorization")).toBe(`Basic ${Buffer.from("osiris-gateway:s%3Acret").toString("base64")}`);
+      const token = new URLSearchParams(String(init.body)).get("token")!;
       asked.push(token);
-      return {
-        sub: "s",
-        email: "a@b.cz",
-        name: "A",
-        phone: "+420777123456",
-        picture: null,
-        claims: { role: "osiris-user", project: "a", "project-admin": undefined },
-        expiresAt: Date.now() + 3_600_000,
-      };
-    });
+      if (token === "dead") return Response.json({ active: false }, { status });
+      return Response.json(
+        { active: true, sub: "s", email: "a@b.cz", name: "A", phone_number: "+420777123456", picture: null, groups: ["project:a", "osiris-user"], exp: Math.floor(Date.now() / 1000) + 3600 },
+        { status },
+      );
+    }) as unknown as typeof fetch;
+    const verifier = createTokenVerifier(introspection({ url: "https://auth.example.cz", clientSecret: "s:cret", fetchFn }));
     const identity = await verifier.identify("t1");
     expect(identity).toEqual({
       sub: "s",
@@ -115,10 +111,14 @@ describe("access from claims", () => {
       phone: "+420777123456",
       picture: null,
       access: { roles: ["osiris-user"], projects: ["a"], adminProjects: [] },
-      claimKeys: ["project", "role"],
+      claimKeys: ["osiris-user", "project:a"],
     });
     await verifier.identify("t1");
     expect(asked).toEqual(["t1"]);
+    await expect(verifier.identify("dead")).rejects.toMatchObject({ status: 401 });
+    // osiris-auth refusing the gateway is no bad token: the browser mustn't sign in again.
+    status = 401;
+    await expect(verifier.identify("t2")).rejects.toMatchObject({ status: 502 });
   });
 
   it("dev verifier gives a user their own project unless claims are given", async () => {
@@ -203,16 +203,12 @@ describe("gateway", () => {
     expect(calls[0]).toMatchObject({ service: "control", path: "/webhooks/whatsapp", body, auth: null });
   });
 
-  it("passes sign-in to control with its cookies and hands back redirects and cookies", async () => {
-    const { app, calls } = setup();
-    const res = await app.request("https://osiris.example.cz/auth/authorize?client_id=osiris-web", {
-      headers: { cookie: "osiris_session=x", authorization: "Bearer should-pass", "x-forwarded-for": "198.51.100.7, 10.0.0.1" },
-    });
-    expect([res.status, res.headers.get("location"), res.headers.get("x-internal")]).toEqual([303, "/login?uid=1", null]);
-    expect(res.headers.getSetCookie()).toEqual(["a=1; path=/auth/interaction/1; httponly", "b=2; path=/; httponly"]);
-    expect(calls).toEqual([
-      { service: "auth", path: "/auth/authorize?client_id=osiris-web", method: "GET", auth: "osiris_session=x", projectHeader: "osiris.example.cz" },
-    ]);
+  it("tells clients where to sign in, lets osiris-auth use this host's passkeys and passes project logos on", async () => {
+    const { app } = setup();
+    expect(await (await app.request("/auth-config.json")).json()).toEqual({ issuer: "https://auth.example.cz", clientId: "osiris-web" });
+    expect(await (await app.request("/.well-known/webauthn")).json()).toEqual({ origins: ["https://auth.example.cz"] });
+    const logo = await app.request("/project-logos/acme/v1");
+    expect([logo.status, logo.headers.get("content-type"), logo.headers.get("set-cookie"), logo.headers.get("x-internal"), await logo.text()]).toEqual([200, "image/png", null, null, "png"]);
   });
 
   it("serves the web app with a strict CSP and an SPA fallback", async () => {
@@ -222,7 +218,7 @@ describe("gateway", () => {
     const page = await app.request("/callback?code=x");
     expect(await page.text()).toBe("<!doctype html>app");
     expect(page.headers.get("content-security-policy")).toContain("script-src 'self'");
-    expect(page.headers.get("content-security-policy")).toContain("connect-src 'self';");
+    expect(page.headers.get("content-security-policy")).toContain("connect-src 'self' https://auth.example.cz;");
     expect(page.headers.get("x-frame-options")).toBe("DENY");
   });
 
@@ -261,8 +257,8 @@ describe("gateway", () => {
       expect(await page.text()).toContain('<script data-goatcounter="https://osiris.stats.example.cz/count" async src="https://osiris.stats.example.cz/count.js"></script>');
       const csp = page.headers.get("content-security-policy")!;
       expect(csp).toContain("script-src 'self' https://osiris.stats.example.cz;");
-      expect(csp).toContain("img-src 'self' data: blob: https://osiris.stats.example.cz;");
-      expect(csp).toContain("connect-src 'self' https://osiris.stats.example.cz;");
+      expect(csp).toContain("img-src 'self' data: blob: https://auth.example.cz https://osiris.stats.example.cz;");
+      expect(csp).toContain("connect-src 'self' https://auth.example.cz https://osiris.stats.example.cz;");
     }
   });
 });

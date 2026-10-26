@@ -1,9 +1,7 @@
 import Provider, { type Adapter, type AdapterPayload, type Configuration, type JWK, type KoaContextWithOIDC } from "oidc-provider";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
-import { CLAIMS } from "@osiris/platform/claims.ts";
 import { requestLocale, translate } from "@osiris/platform/i18n.ts";
-import type { UserDirectory, UserRecord } from "../users.ts";
-import { PHONE_CLAIM } from "../whatsapp/phones.ts";
+import type { Users, UserRecord } from "./users.ts";
 
 /** The web app's client; first party, so it never asks for consent. */
 export const WEB_CLIENT_ID = "osiris-web";
@@ -11,11 +9,13 @@ export const WEB_CLIENT_ID = "osiris-web";
 export const CLI_CLIENT_ID = "osiris-cli";
 /** The VS Code extension: back to VS Code through its URI handler, or a loopback port. */
 export const VSCODE_CLIENT_ID = "osiris-vscode";
+/** osiris-auth's own account pages: signing in there only starts the browser's session. */
+export const ACCOUNT_CLIENT_ID = "osiris-account";
 /** Clients whose access tokens the gateway accepts. */
 export const CLIENT_IDS = [WEB_CLIENT_ID, CLI_CLIENT_ID, VSCODE_CLIENT_ID];
 
-/** Paths under the issuer (`/auth`) answered by oidc-provider; the rest of `/auth` is ours (sign-in screens' API). */
-export const OIDC_PATHS = /^\/auth\/(\.well-known\/openid-configuration|authorize|token|userinfo|jwks|logout|revoke)(\/|\?|$)/;
+/** Paths answered by oidc-provider; the rest is ours (sign-in screens' API, account pages, SCIM, introspection). */
+export const OIDC_PATHS = /^\/(\.well-known\/openid-configuration|authorize|token|userinfo|jwks|logout|revoke)(\/|\?|$)/;
 
 /** oidc-provider's models in the central database, one table for all of them (`oidc_store`). */
 class DbAdapter implements Adapter {
@@ -78,7 +78,7 @@ class DbAdapter implements Adapter {
   }
 }
 
-/** The claims Osiris puts in ID tokens and userinfo: profile, email, and the custom claims that grant access. */
+/** The claims Osiris puts in ID tokens and userinfo: profile, email, phone and the groups that grant access. */
 export function userClaims(user: UserRecord) {
   return {
     sub: user.id,
@@ -88,10 +88,8 @@ export function userClaims(user: UserRecord) {
     picture: user.picture ?? undefined,
     email: user.email ?? undefined,
     email_verified: user.email ? user.emailVerified : undefined,
-    phone_number: user.claims[PHONE_CLAIM],
-    [CLAIMS.role]: user.claims[CLAIMS.role],
-    [CLAIMS.project]: user.claims[CLAIMS.project],
-    [CLAIMS.projectAdmin]: user.claims[CLAIMS.projectAdmin],
+    phone_number: user.phone ?? undefined,
+    groups: user.groups,
   };
 }
 
@@ -101,7 +99,7 @@ const page = (ctx: KoaContextWithOIDC, titleKey: string, body: (t: (key: string)
   const t = (key: string) => escapeHtml(translate(locale, key));
   return `<!doctype html>
 <html lang="${locale}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${t(titleKey)}</title><link rel="stylesheet" href="/auth/assets/page.css"></head>
+<title>${t(titleKey)}</title><link rel="stylesheet" href="/static/page.css"></head>
 <body><main>${body(t)}</main></body></html>`;
 };
 
@@ -110,7 +108,7 @@ const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 export interface OidcOptions {
   issuer: string;
   db: Db;
-  users: UserDirectory;
+  users: Users;
   /** Private signing keys (JWK with `kid`); the first signs. */
   jwks: JWK[];
   cookieKeys: string[];
@@ -119,9 +117,9 @@ export interface OidcOptions {
 }
 
 /**
- * The OpenID Connect provider at `<origin>/auth`: authorization code with PKCE, refresh tokens (rotated), userinfo,
- * RP-initiated logout. Users sign in on the web app's screens (`/login`), which talk to our interaction API; this
- * object holds sessions, grants and tokens.
+ * The OpenID Connect provider at osiris-auth's origin: authorization code with PKCE, refresh tokens (rotated),
+ * userinfo, RP-initiated logout. Users sign in on our `/login` page, which talks to our interaction API; this object
+ * holds sessions, grants and tokens.
  */
 export function createOidcProvider(options: OidcOptions): Provider {
   const configuration: Configuration = {
@@ -149,6 +147,16 @@ export function createOidcProvider(options: OidcOptions): Provider {
         response_types: ["code" as const],
         id_token_signed_response_alg: "ES256" as const,
       })),
+      {
+        client_id: ACCOUNT_CLIENT_ID,
+        client_name: "Osiris account",
+        application_type: "web",
+        token_endpoint_auth_method: "none",
+        grant_types: ["authorization_code"],
+        response_types: ["code"],
+        redirect_uris: [`${options.issuer}/account/callback`],
+        id_token_signed_response_alg: "ES256",
+      },
     ],
     jwks: { keys: options.jwks },
     cookies: {
@@ -160,7 +168,7 @@ export function createOidcProvider(options: OidcOptions): Provider {
     scopes: ["openid", "profile", "email"],
     claims: {
       openid: ["sub"],
-      profile: ["name", "given_name", "family_name", "picture", "phone_number", CLAIMS.role, CLAIMS.project, CLAIMS.projectAdmin],
+      profile: ["name", "given_name", "family_name", "picture", "phone_number", "groups"],
       email: ["email", "email_verified"],
     },
     routes: {
@@ -182,7 +190,7 @@ export function createOidcProvider(options: OidcOptions): Provider {
         enabled: true,
         // Signing out of Osiris needs no confirmation; the form submits itself (script, as CSP forbids inline ones).
         logoutSource: async (ctx, form) => {
-          ctx.body = page(ctx, "pages.logout.title", (t) => `<p>${t("pages.logout.progress")}</p>${form}<button type="submit" form="op.logoutForm" name="logout" value="yes">${t("pages.logout.button")}</button><script src="/auth/assets/logout.js"></script>`);
+          ctx.body = page(ctx, "pages.logout.title", (t) => `<p>${t("pages.logout.progress")}</p>${form}<button type="submit" form="op.logoutForm" name="logout" value="yes">${t("pages.logout.button")}</button><script src="/static/logout.js"></script>`);
         },
         postLogoutSuccessSource: async (ctx) => {
           ctx.body = page(ctx, "pages.loggedOut.title", (t) => `<h1>${t("pages.loggedOut.title")}</h1><p><a href="/">${t("pages.loggedOut.back")}</a></p>`);
@@ -194,7 +202,7 @@ export function createOidcProvider(options: OidcOptions): Provider {
       if (!user || user.disabled) return undefined;
       return { accountId: sub, claims: () => userClaims(user) };
     },
-    interactions: { url: (_ctx, interaction) => `/auth/interaction/${interaction.uid}` },
+    interactions: { url: (_ctx, interaction) => `/interaction/${interaction.uid}` },
     // The web app is ours: whatever it asks for is granted without a consent screen.
     loadExistingGrant: async (ctx: KoaContextWithOIDC) => {
       const { client, session, params } = ctx.oidc;

@@ -22,15 +22,21 @@ export const localToken: string | undefined = (() => {
   }
 })();
 
-const manager = devUser || localToken
+/** Where users sign in: osiris-auth, named by the server (`/auth-config.json`). */
+const authConfig =
+  devUser || localToken ? undefined : await fetch("/auth-config.json").then((r) => (r.ok ? (r.json() as Promise<{ issuer: string; clientId: string }>) : undefined)).catch(() => undefined);
+
+/** The user's own account at osiris-auth: password, passkeys, authenticator, linked accounts, sign-ins. */
+export const accountUrl = authConfig && `${authConfig.issuer}/account`;
+
+const manager = !authConfig
   ? undefined
   : new UserManager({
-      // Control's OpenID Connect provider, on this origin behind the gateway.
-      authority: `${location.origin}/auth`,
-      client_id: "osiris-web",
+      authority: authConfig.issuer,
+      client_id: authConfig.clientId,
       redirect_uri: `${location.origin}/callback`,
       post_logout_redirect_uri: location.origin,
-      // profile carries the claims role, project, project-admin and phone_number.
+      // profile carries the groups and phone_number.
       scope: "openid profile email",
       userStore: new WebStorageStateStore({ store: localStorage }),
       // Renews with the refresh token, which lives as long as the sign-in session.

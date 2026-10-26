@@ -1,0 +1,13 @@
+# Only Traefik reaches osiris-auth (browsers, osiris.k6labs.cz's gateway and control come through the ingress).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: from-ingress
+spec:
+  podSelector: { matchLabels: { app: auth } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress } }
+          podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+      ports: [{ port: 3003, protocol: TCP }]

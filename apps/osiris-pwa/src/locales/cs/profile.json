@@ -2,12 +2,14 @@
   "title": "Můj profil",
   "parts": {
     "account": "Účet",
+    "security": "Přihlášení a zabezpečení",
     "passkeys": "Klíče (passkeys)",
     "password": "Změnit heslo",
     "totp": "Dvoufázové přihlašování",
     "linked": "Propojené účty",
     "personalization": "Personalizace",
-    "activity": "Aktivita a relace"
+    "activity": "Aktivita a relace",
+    "whatsapp": "Doručení na WhatsApp"
   },
   "personalizationIntro": "Jak s tebou má asistent jednat. Platí jen pro tebe, ve všech tvých projektech zvlášť. Jazyk nastaví i jazyk aplikace.",
   "address": "Oslovení",

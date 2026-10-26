@@ -1,18 +1,18 @@
-import { accessFromClaims, type Access } from "@osiris/platform/claims.ts";
+import { accessFromClaims, accessFromGroups, type Access } from "@osiris/platform/claims.ts";
+import { ServiceError } from "@osiris/platform/http.ts";
 
-/** Everything we know about a user, as control (the identity provider) has it. */
+/** Everything we know about a user, as osiris-auth (the identity provider) has it. */
 export interface Identity {
-  sessionUid?: string;
   sub: string;
   email: string | null;
   name: string | null;
-  /** Claim `phone_number` (E.164), verified over WhatsApp. */
+  /** E.164, verified over WhatsApp. */
   phone: string | null;
   /** Profile picture URL. */
   picture: string | null;
-  /** Claims `role`, `project` and `project-admin`: whether the user may use Osiris and in which projects. */
+  /** From the groups `osiris-user`, `osiris-admin`, `project:<slug>` and `project-admin:<slug>`. */
   access: Access;
-  /** Names of the claims the user has, to tell a missing claim from a wrong value when access is refused. */
+  /** The user's groups, to tell a missing group from a wrong one when access is refused. */
   claimKeys?: string[];
 }
 
@@ -21,28 +21,47 @@ export interface TokenVerifier {
   identify(token: string): Promise<Identity>;
 }
 
-/** What control answers for a token: the user and the claims that grant access. */
+/** What osiris-auth's token introspection (RFC 7662) answers for an active token. */
 export interface TokenOwner {
-  sessionUid?: string;
   sub: string;
   email: string | null;
   name: string | null;
-  phone: string | null;
+  phone_number: string | null;
   picture: string | null;
-  claims: Record<string, unknown>;
-  /** When the token expires (epoch ms). */
-  expiresAt: number;
+  groups: string[];
+  /** When the token expires (epoch seconds). */
+  exp: number;
 }
 
-/** How long a token's owner is reused, so role and project changes apply within this time. */
+/** How long a token's owner is reused, so group changes apply within this time. */
 const IDENTITY_TTL_MS = 60_000;
 const IDENTITY_CACHE_MAX = 1000;
 
 /**
- * Access tokens are opaque and issued by control's OIDC provider; control says whose a token is (and whether it is
- * still valid), and the answer is cached briefly per token. `identify` throws `ServiceError` 401 for a bad token.
+ * Asks osiris-auth whose an access token is (RFC 7662, as client `osiris-gateway`). An inactive token is a
+ * `ServiceError` 401; osiris-auth refusing the gateway itself is a 502, so browsers don't start signing in again.
  */
-export function createControlVerifier(lookup: (token: string) => Promise<TokenOwner>): TokenVerifier {
+export function introspection(options: { url: string; clientSecret: string; fetchFn?: typeof fetch }) {
+  const authorization = `Basic ${Buffer.from(`osiris-gateway:${encodeURIComponent(options.clientSecret)}`).toString("base64")}`;
+  return async (token: string): Promise<TokenOwner> => {
+    const res = await (options.fetchFn ?? fetch)(`${options.url}/introspect`, {
+      method: "POST",
+      headers: { authorization, "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+      body: new URLSearchParams({ token }),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) throw new ServiceError(`osiris-auth refused the introspection: ${res.status}`, 502);
+    const answer = (await res.json()) as Partial<TokenOwner> & { active?: boolean };
+    if (!answer.active || !answer.sub) throw new ServiceError("Inactive token", 401);
+    return answer as TokenOwner;
+  };
+}
+
+/**
+ * Access tokens are opaque and issued by osiris-auth; it says whose a token is (and whether it is still valid), and
+ * the answer is cached briefly per token. `identify` throws `ServiceError` 401 for a bad token.
+ */
+export function createTokenVerifier(lookup: (token: string) => Promise<TokenOwner>): TokenVerifier {
   const cache = new Map<string, { identity: Identity; expires: number }>();
   return {
     async identify(token) {
@@ -52,19 +71,18 @@ export function createControlVerifier(lookup: (token: string) => Promise<TokenOw
       const owner = await lookup(token);
       const identity: Identity = {
         sub: owner.sub,
-        sessionUid: owner.sessionUid,
-        email: owner.email,
-        name: owner.name,
-        phone: owner.phone,
-        picture: owner.picture,
-        access: accessFromClaims((key) => owner.claims[key]),
-        claimKeys: Object.keys(owner.claims).filter((k) => owner.claims[k] !== undefined && owner.claims[k] !== null).sort(),
+        email: owner.email ?? null,
+        name: owner.name ?? null,
+        phone: owner.phone_number ?? null,
+        picture: owner.picture ?? null,
+        access: accessFromGroups(owner.groups),
+        claimKeys: [...(owner.groups ?? [])].sort(),
       };
       if (cache.size >= IDENTITY_CACHE_MAX) {
         for (const [k, v] of cache) if (v.expires <= now) cache.delete(k);
         if (cache.size >= IDENTITY_CACHE_MAX) cache.delete(cache.keys().next().value!);
       }
-      cache.set(token, { identity, expires: Math.min(now + IDENTITY_TTL_MS, owner.expiresAt) });
+      cache.set(token, { identity, expires: Math.min(now + IDENTITY_TTL_MS, owner.exp * 1000) });
       return identity;
     },
   };

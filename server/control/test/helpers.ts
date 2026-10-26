@@ -1,4 +1,3 @@
-import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { DashboardStore } from "../src/dashboards.ts";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -14,10 +13,10 @@ import { Backups } from "../src/backups.ts";
 import type { Orchestrator, ProjectSpec, ProjectStatus } from "../src/orchestrator/types.ts";
 import { ScheduleStore } from "../src/scheduler.ts";
 import { ProjectDirectory, ProjectStore } from "../src/projects.ts";
-import { createAuthDeps } from "../src/auth/index.ts";
-import type { Mailer } from "../src/auth/mail.ts";
-import type { SocialClient, SocialProviderId } from "../src/auth/social.ts";
-import { dbUsers, type UserRecord } from "../src/users.ts";
+import { createTestAuth } from "@osiris/auth/test/helpers.ts";
+import { accessFromClaims, groupsFromAccess } from "@osiris/platform/claims.ts";
+import type { Mailer } from "@osiris/platform/mail.ts";
+import { scimUsers, type UserRecord } from "../src/users.ts";
 import { WhatsAppClient } from "../src/whatsapp/cloud-api.ts";
 import { Inbox } from "../src/whatsapp/inbox.ts";
 import { PhoneVerification } from "../src/whatsapp/phones.ts";
@@ -25,7 +24,6 @@ import { PhoneVerification } from "../src/whatsapp/phones.ts";
 export const tempDir = (prefix = "osiris-control-") => mkdtempSync(join(tmpdir(), prefix));
 export const keys = await generateInternalKeys();
 export const MIGRATIONS = join(import.meta.dirname, "../src/db/migrations");
-export const SIGNING_KEY = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ format: "pem", type: "pkcs8" }).toString();
 export const PUBLIC_URL = "http://osiris.test";
 
 export async function createTestDb() {
@@ -59,29 +57,28 @@ export async function createTestControl(
   options: {
     users?: Partial<UserRecord>[];
     runtime?: RuntimeHandler;
-    social?: Partial<Record<SocialProviderId, SocialClient>>;
-    socialFetch?: typeof fetch;
   } = {},
 ) {
   const db = await createTestDb();
   const orchestrator = new FakeOrchestrator();
   const objects = new FsObjectStore(tempDir("osiris-objects-"));
-  const users = dbUsers(db, { objects, publicUrl: PUBLIC_URL });
+  // osiris-auth in process: control reaches it over SCIM as in the cluster.
+  const auth = await createTestAuth();
   for (const u of options.users ?? []) {
-    await users.create({ id: u.id, email: u.email ?? null, firstName: u.firstName ?? u.name ?? "", lastName: u.lastName ?? "", claims: u.claims, disabled: u.disabled });
+    const claims = u.claims ?? {};
+    await auth.users.create({
+      id: u.id,
+      email: u.email ?? null,
+      firstName: u.firstName ?? u.name ?? "",
+      lastName: u.lastName ?? "",
+      disabled: u.disabled,
+      phone: claims.phone_number ?? null,
+      groups: groupsFromAccess(accessFromClaims((k) => claims[k])),
+    });
   }
+  const users = scimUsers({ url: "http://auth.test", token: auth.scimToken, fetchFn: ((url: string, init?: RequestInit) => auth.app.request(url, init)) as typeof fetch });
   const mail: { to: string; subject: string; text: string }[] = [];
   const mailer: Mailer = { send: async (m) => void mail.push(m) };
-  const auth = await createAuthDeps({
-    db,
-    users,
-    publicUrl: PUBLIC_URL,
-    secret: randomBytes(32).toString("base64"),
-    signingKeyPem: SIGNING_KEY,
-    socialClients: options.social,
-    fetchFn: options.socialFetch,
-    mailer,
-  });
   const store = new ProjectStore(db, { objects, publicUrl: PUBLIC_URL });
   const directory = new ProjectDirectory(store, users, orchestrator);
   const runtimeCalls: { project: string; path: string; init: RequestInit }[] = [];
@@ -118,7 +115,8 @@ export async function createTestControl(
     backups,
     phones,
     snapshot: async (t) => void snapshots.push(t),
-    auth,
+    db,
+    mailer,
     dashboards: new DashboardStore(db),
     whatsapp: { inbox, verifyToken: "verify-me", appSecret: "app-secret", displayNumber: "+420 600 000 000" },
   });

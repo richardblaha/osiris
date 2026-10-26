@@ -362,6 +362,11 @@
     },
     "local": {
       "serverOnly": "Tohle potřebuje Osiris server; lokální agent to nemá."
+    },
+    "group": {
+      "name": "Název skupiny smí mít jen malá písmena, číslice a : . _ -, nejvýš 100 znaků.",
+      "exists": "Taková skupina už existuje.",
+      "unknownMember": "Uživatel {{id}} neexistuje."
     }
   },
   "schedules": {

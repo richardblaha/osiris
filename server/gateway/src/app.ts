@@ -34,6 +34,8 @@ export interface GatewayDeps {
    * URL, e.g. https://osiris.stats.k6labs.cz) the page loads its count.js, allowed by the CSP.
    */
   web?: { dir: string; goatcounter?: string };
+  /** osiris-auth, where users sign in; the web app's pages may talk to it and show its pictures. */
+  auth: { issuer: string };
   fetchFn?: typeof fetch;
 }
 
@@ -52,10 +54,6 @@ const CONTROL_PATHS = /^\/api\/(me|admin|project|members|schedules|dashboards|an
 const FORWARD_REQUEST = ["content-type", "accept", "accept-language", "x-project-id", "x-hub-signature-256"];
 /** Response headers passed back to the browser. */
 const FORWARD_RESPONSE = ["content-type", "content-disposition", "cache-control", "content-security-policy", "x-content-type-options", "retry-after"];
-/** Sign-in (`/auth`, control's OIDC provider and the sign-in screens' API) takes cookies and answers with redirects. */
-const AUTH_REQUEST = ["content-type", "accept", "accept-language", "cookie", "user-agent", "origin", "authorization", "dpop"];
-const AUTH_RESPONSE = [...FORWARD_RESPONSE, "location", "pragma", "www-authenticate", "dpop-nonce", "access-control-allow-origin", "vary"];
-const AUTH_BODY_BYTES = 64 * 1024;
 
 /** A 403 that tells the user who they are signed in as and which claims arrived, so a misconfigured account is easy to fix. */
 class AccessDeniedError extends HttpError {
@@ -82,9 +80,9 @@ const tooLarge = (key: string) => (c: Context) => c.json({ error: translate(requ
 const plainUser = (u: Identity): InternalUser => ({ sub: u.sub, name: u.name, email: u.email, phone: u.phone, picture: u.picture });
 
 /**
- * The only entry point from the internet for osiris.k6labs.cz. Passes sign-in (`/auth`) to control, which is the
- * OpenID Connect provider. For the API it has control identify the access token, works out the user's projects from
- * their claims, and passes each call on with a short internal token: account, administration, schedules and dashboards to
+ * The only entry point from the internet for osiris.k6labs.cz. Users sign in at osiris-auth (its own origin); for the
+ * API the gateway has osiris-auth introspect the access token, works out the user's projects from
+ * their groups, and passes each call on with a short internal token: account, administration, schedules and dashboards to
  * control; the rest to the active project's runtime, which is woken up first if it sleeps. Services behind it never see
  * an access token, and network policies let only the gateway reach them.
  */
@@ -102,8 +100,8 @@ export function createGatewayApp(deps: GatewayDeps) {
     "default-src 'self'",
     `script-src 'self'${stats ? ` ${stats}` : ""}`,
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' data: blob:${stats ? ` ${stats}` : ""}`,
-    `connect-src 'self'${stats ? ` ${stats}` : ""}`,
+    `img-src 'self' data: blob: ${deps.auth.issuer}${stats ? ` ${stats}` : ""}`,
+    `connect-src 'self' ${deps.auth.issuer}${stats ? ` ${stats}` : ""}`,
     "frame-src 'none'",
     "frame-ancestors 'none'",
     "base-uri 'none'",
@@ -111,7 +109,6 @@ export function createGatewayApp(deps: GatewayDeps) {
   ].join("; ");
   const fetchFn = deps.fetchFn ?? fetch;
   const requests = new RateLimiter(deps.limits.requestsPerMinute);
-  const signIns = new RateLimiter(deps.limits.requestsPerMinute);
   const runs = new RateLimiter(deps.limits.runsPerMinute);
   // The public chat (anonymous customers): per address, tighter for messages.
   const publicRequests = new RateLimiter(60);
@@ -171,7 +168,7 @@ export function createGatewayApp(deps: GatewayDeps) {
 
   const toControl = async (c: Context<Env>) => {
     const { user, memberships, systemAdmin } = c.get("auth");
-    const authorization = await signer.header(CONTROL_AUDIENCE, { user: plainUser(user), memberships, systemAdmin, claimKeys: user.claimKeys, sessionUid: user.sessionUid });
+    const authorization = await signer.header(CONTROL_AUDIENCE, { user: plainUser(user), memberships, systemAdmin, claimKeys: user.claimKeys });
     const url = new URL(c.req.url);
     const res = await fetchFn(`${deps.controlUrl}${url.pathname}${url.search}`, {
       method: c.req.method,
@@ -207,36 +204,6 @@ export function createGatewayApp(deps: GatewayDeps) {
       signal: c.req.raw.signal,
     });
     return relay(res);
-  };
-
-  /** Sign-in goes to control as it came, cookies and all; redirects go back to the browser. */
-  const toAuth = async (c: Context) => {
-    const url = new URL(c.req.url);
-    if (!signIns.take(clientIp(c))) throw new HttpError(429, "errors.tooManyRequests");
-    const headers: Record<string, string> = {
-      // Control builds its URLs and cookie flags from these (the gateway sits behind Traefik, which sets them).
-      "x-forwarded-proto": c.req.header("x-forwarded-proto") ?? url.protocol.slice(0, -1),
-      "x-forwarded-host": c.req.header("x-forwarded-host") ?? url.host,
-      "x-forwarded-for": clientIp(c),
-    };
-    for (const h of AUTH_REQUEST) {
-      const v = c.req.header(h);
-      if (v) headers[h] = v;
-    }
-    const res = await fetchFn(`${deps.controlUrl}${url.pathname}${url.search}`, {
-      method: c.req.method,
-      headers,
-      body: await body(c),
-      redirect: "manual",
-      signal: c.req.raw.signal,
-    });
-    const out = new Headers();
-    for (const h of AUTH_RESPONSE) {
-      const v = res.headers.get(h);
-      if (v) out.set(h, v);
-    }
-    for (const cookie of res.headers.getSetCookie()) out.append("set-cookie", cookie);
-    return new Response(res.body, { status: res.status, headers: out });
   };
 
   const api = new Hono<Env>()
@@ -283,7 +250,15 @@ export function createGatewayApp(deps: GatewayDeps) {
       });
       return relay(res);
     })
-    .all("/auth/*", bodyLimit({ maxSize: AUTH_BODY_BYTES, onError: tooLarge("errors.requestTooLarge") }), toAuth)
+    // Where clients sign in (the PWA, osiris-cli, VS Code): osiris-auth, an OpenID Connect provider of its own.
+    .get("/auth-config.json", (c) => c.json({ issuer: deps.auth.issuer, clientId: "osiris-web" }, 200, { "cache-control": "public, max-age=300" }))
+    // Passkeys belong to this host (WebAuthn's relying party); osiris-auth's pages may use them (related origins).
+    .get("/.well-known/webauthn", (c) => c.json({ origins: [deps.auth.issuer] }, 200, { "cache-control": "public, max-age=3600" }))
+    // Project logos are public like the pictures (an <img> sends no token); the version in the URL is unguessable.
+    .get("/project-logos/:id/:version", async (c) => {
+      const res = await fetchFn(`${deps.controlUrl}${new URL(c.req.url).pathname}`, { signal: c.req.raw.signal });
+      return new Response(res.body, { status: res.status, headers: Object.fromEntries(["content-type", "cache-control", "x-content-type-options"].flatMap((h) => (res.headers.get(h) ? [[h, res.headers.get(h)!]] : []))) });
+    })
     .route("/api", api)
     // Meta's webhook goes to control as it came; control checks Meta's signature.
     .all("/webhooks/whatsapp", bodyLimit({ maxSize: 1024 * 1024 }), async (c) => {

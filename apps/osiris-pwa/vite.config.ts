@@ -4,12 +4,14 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // Two pages: the app, and osiris-auth's sign-in and account page (served by osiris-auth on its own origin).
+  build: { rollupOptions: { input: { main: "index.html", account: "account.html" } } },
   server: {
     // Bind all interfaces so devcontainer port forwarding reaches it; fail instead of silently moving to another port.
     host: true,
     port: 5173,
     strictPort: true,
-    // Same origin as in production: the API and sign-in (control's OIDC provider) through the gateway.
-    proxy: { "/api": "http://localhost:3001", "/auth": "http://localhost:3001", "/public": "http://localhost:3001" },
+    // Same origin as in production: the API through the gateway (sign-in is osiris-auth's, on :3003).
+    proxy: Object.fromEntries(["/api", "/public", "/auth-config.json", "/project-logos"].map((p) => [p, "http://localhost:3001"])),
   },
 });

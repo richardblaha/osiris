@@ -1,6 +1,6 @@
 import type { SecretBox } from "@osiris/platform/secrets.ts";
 import { DbError, run, type Db } from "@osiris/platform/rqlite.ts";
-import { normalizeEmail, type LinkPurpose } from "../users.ts";
+import { normalizeEmail, type LinkPurpose } from "./users.ts";
 import {
   hashPassword,
   matchTotp,

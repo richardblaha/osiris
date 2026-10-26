@@ -1,6 +1,6 @@
-# The only way in for osiris.k6labs.cz: sign-in (/auth, to control), API calls with access tokens (identified by
-# control) routed to control or the project's runtime, the web app.
-# Secret osiris-gateway: INTERNAL_JWT_PRIVATE_KEY.
+# The only way in for osiris.k6labs.cz: API calls with access tokens (introspected by osiris-auth at auth.k6labs.cz)
+# routed to control or the project's runtime, the web app.
+# Secret osiris-gateway: INTERNAL_JWT_PRIVATE_KEY, GATEWAY_CLIENT_SECRET (the same as osiris-auth's).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -39,6 +39,7 @@ spec:
             # - { name: GOATCOUNTER_URL, value: https://osiris.stats.k6labs.cz }
             - { name: CORS_ORIGIN, value: https://osiris.k6labs.cz }
             - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
+            - { name: AUTH_URL, value: https://auth.k6labs.cz }
           envFrom:
             - secretRef: { name: osiris-gateway }
           securityContext:
