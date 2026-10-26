@@ -252,8 +252,6 @@ export function createGatewayApp(deps: GatewayDeps) {
     })
     // Where clients sign in (the PWA, osiris-cli, VS Code): osiris-auth, an OpenID Connect provider of its own.
     .get("/auth-config.json", (c) => c.json({ issuer: deps.auth.issuer, clientId: "osiris-web" }, 200, { "cache-control": "public, max-age=300" }))
-    // Passkeys belong to this host (WebAuthn's relying party); osiris-auth's pages may use them (related origins).
-    .get("/.well-known/webauthn", (c) => c.json({ origins: [deps.auth.issuer] }, 200, { "cache-control": "public, max-age=3600" }))
     // Project logos are public like the pictures (an <img> sends no token); the version in the URL is unguessable.
     .get("/project-logos/:id/:version", async (c) => {
       const res = await fetchFn(`${deps.controlUrl}${new URL(c.req.url).pathname}`, { signal: c.req.raw.signal });

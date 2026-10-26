@@ -51,8 +51,6 @@ spec:
             - { name: ADMIN_GROUP, value: admin }
             # Osiris's apps (osiris-web/-cli/-vscode/-gateway), registered at startup when missing; edited at /admin after.
             - { name: WEB_ORIGINS, value: https://osiris.k6labs.cz }
-            # Passkeys made on osiris.k6labs.cz keep working: it lists this origin at /.well-known/webauthn.
-            - { name: PASSKEY_RP_ID, value: osiris.k6labs.cz }
             - { name: MAIL_FROM, value: "Osiris <auth@k6labs.cz>" }
             - { name: GEOIP_AUTO_UPDATE, value: "false" }
             # Traefik (pods) is the trusted proxy. Its service SNATs (externalTrafficPolicy: Cluster), so the last hop is

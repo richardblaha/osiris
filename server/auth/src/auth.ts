@@ -47,8 +47,6 @@ export interface AuthOptions {
   appName?: string;
   /** Members of this group administer the identity provider. */
   adminGroup?: string;
-  /** The passkeys' host; default the issuer's. */
-  passkeyRpId?: string;
   /** 32 bytes, base64: cookie keys and the TOTP sealing key are derived from it. */
   secret: string;
   signingKeyPem: string;
@@ -88,7 +86,7 @@ export async function createAuthDeps(o: AuthOptions): Promise<AuthDeps> {
     provider,
     users: o.users,
     credentials,
-    passkeys: new Passkeys(credentials, { id: o.passkeyRpId ?? new URL(origin).hostname, name: appName, origin }),
+    passkeys: new Passkeys(credentials, { id: new URL(origin).hostname, name: appName, origin }),
     social: new SocialLogin(o.socialClients ?? {}, `${origin}/social`, o.fetchFn),
     clients,
     issuer: origin,
@@ -118,7 +116,6 @@ export async function createAuth(config: Config, db: Db, users: Users): Promise<
     publicUrl: config.PUBLIC_URL,
     appName: config.APP_NAME,
     adminGroup: config.ADMIN_GROUP,
-    passkeyRpId: config.PASSKEY_RP_ID,
     secret: config.AUTH_SECRET ?? createHash("sha256").update("osiris-dev-auth").digest("base64"),
     signingKeyPem: config.AUTH_SIGNING_KEY ?? devSigningKey(config.DATA_DIR),
     socialClients,

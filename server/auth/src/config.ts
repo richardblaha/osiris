@@ -25,9 +25,6 @@ const schema = z
     // <origin>/callback for each of these origins (comma-separated), osiris-cli, osiris-vscode, and osiris-gateway
     // (introspects their tokens) with GATEWAY_CLIENT_SECRET. Empty = none.
     WEB_ORIGINS: list,
-    // The passkeys' relying party: the host they were registered on. Kept `osiris.k6labs.cz` in production, so the
-    // passkeys made there keep working (it lists this origin at /.well-known/webauthn). Default: PUBLIC_URL's host.
-    PASSKEY_RP_ID: z.string().optional(),
     GATEWAY_CLIENT_SECRET: z.string().min(32).optional(),
 
     // Signs ID tokens: an EC P-256 private key (PEM). `pnpm --filter @osiris/platform gen-keys` makes one.

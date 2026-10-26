@@ -71,9 +71,8 @@ It is an identity provider for any application, not only Osiris. Admins (group `
   people can use it at once), as does a Seznam account with a Seznam mailbox (@seznam.cz, @email.cz, @post.cz, …).
   Microsoft doesn't verify emails and a Seznam account can carry an outside address, so those must be linked on the
   account page first.
-- **Passkeys** belong to `osiris.k6labs.cz` (`PASSKEY_RP_ID`), where they were made; its gateway lists
-  `https://auth.k6labs.cz` at `/.well-known/webauthn` (WebAuthn related origins), so browsers that support it (Chrome,
-  Edge, Safari) use them on auth.k6labs.cz. Elsewhere people sign in another way.
+- **Passkeys** belong to `auth.k6labs.cz` (the provider's own host). Ones made on osiris.k6labs.cz before the move
+  don't work there: people sign in another way (a link by email) and add a new one at /account.
 - **SCIM tokens:** `kubectl --kubeconfig .kubeconfig.busiris -n osiris-auth exec deploy/auth -- node_modules/.bin/tsx
   src/cli.ts token control` prints control's token (`AUTH_SCIM_TOKEN` in `osiris-control`); running it again replaces it.
 - **People:** the first system admin: `… exec deploy/auth -- node_modules/.bin/tsx src/cli.ts add-admin you@example.com

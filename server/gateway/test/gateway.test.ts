@@ -203,10 +203,9 @@ describe("gateway", () => {
     expect(calls[0]).toMatchObject({ service: "control", path: "/webhooks/whatsapp", body, auth: null });
   });
 
-  it("tells clients where to sign in, lets osiris-auth use this host's passkeys and passes project logos on", async () => {
+  it("tells clients where to sign in and passes project logos on", async () => {
     const { app } = setup();
     expect(await (await app.request("/auth-config.json")).json()).toEqual({ issuer: "https://auth.example.cz", clientId: "osiris-web" });
-    expect(await (await app.request("/.well-known/webauthn")).json()).toEqual({ origins: ["https://auth.example.cz"] });
     const logo = await app.request("/project-logos/acme/v1");
     expect([logo.status, logo.headers.get("content-type"), logo.headers.get("set-cookie"), logo.headers.get("x-internal"), await logo.text()]).toEqual([200, "image/png", null, null, "png"]);
   });
