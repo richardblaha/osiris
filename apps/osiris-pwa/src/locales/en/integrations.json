@@ -26,5 +26,7 @@
   "password": "Password or app password",
   "connect": "Connect account",
   "server": "Server",
-  "port": "Port"
+  "port": "Port",
+  "link": "Link",
+  "unlink": "Unlink"
 }

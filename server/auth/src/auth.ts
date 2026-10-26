@@ -9,6 +9,7 @@ import type { Db } from "@osiris/platform/rqlite.ts";
 import { SecretBox } from "@osiris/platform/secrets.ts";
 import type { Config } from "./config.ts";
 import type { Users } from "./users.ts";
+import { Clients } from "./clients.ts";
 import { Credentials } from "./credentials.ts";
 import { AttemptLimiter } from "./limiter.ts";
 import { configuredMailer, type Mailer } from "@osiris/platform/mail.ts";
@@ -42,12 +43,12 @@ export interface AuthOptions {
   users: Users;
   /** Where browsers reach osiris-auth: the issuer. */
   publicUrl: string;
-  /** Where the Osiris web app runs; the first is home after a one-time link. */
-  webOrigins: string[];
+  /** The name users see (pages, emails, passkeys, authenticator apps). */
+  appName?: string;
+  /** Members of this group administer the identity provider. */
+  adminGroup?: string;
   /** The passkeys' host; default the issuer's. */
   passkeyRpId?: string;
-  /** The gateway's secret for token introspection; without it introspection is off. */
-  gatewaySecret?: string;
   /** 32 bytes, base64: cookie keys and the TOTP sealing key are derived from it. */
   secret: string;
   signingKeyPem: string;
@@ -57,17 +58,21 @@ export interface AuthOptions {
   geo?: (ip: string) => GeoLocation;
 }
 
-/** Sign-in for Osiris: the OIDC provider and everything its pages need. */
+/** The identity provider: the OIDC provider, registered apps and everything its pages need. */
 export async function createAuthDeps(o: AuthOptions): Promise<AuthDeps> {
   const origin = new URL(o.publicUrl).origin;
-  const credentials = new Credentials(o.db, new SecretBox(derive(o.secret, "osiris-totp")));
+  const appName = o.appName ?? "Auth";
+  const credentials = new Credentials(o.db, new SecretBox(derive(o.secret, "osiris-totp")), appName);
+  // oidc-provider validates a client's metadata as it would use it; the provider is made just below.
+  const clients = new Clients(o.db, new SecretBox(derive(o.secret, "osiris-clients")), (metadata) => provider.Client.validate(metadata as never));
   const provider = createOidcProvider({
     issuer: origin,
+    appName,
     db: o.db,
     users: o.users,
+    clients,
     jwks: [await signingJwk(o.signingKeyPem)],
     cookieKeys: [derive(o.secret, "osiris-oidc-cookies")],
-    webOrigins: o.webOrigins,
   });
   const activity = new AuthActivity(o.db, o.geo);
   provider.use(async (ctx, next) => {
@@ -83,10 +88,12 @@ export async function createAuthDeps(o: AuthOptions): Promise<AuthDeps> {
     provider,
     users: o.users,
     credentials,
-    passkeys: new Passkeys(credentials, { id: o.passkeyRpId ?? new URL(origin).hostname, name: "Osiris", origin }),
+    passkeys: new Passkeys(credentials, { id: o.passkeyRpId ?? new URL(origin).hostname, name: appName, origin }),
     social: new SocialLogin(o.socialClients ?? {}, `${origin}/social`, o.fetchFn),
-    webOrigin: o.webOrigins[0] ?? origin,
-    gatewaySecret: o.gatewaySecret,
+    clients,
+    issuer: origin,
+    appName,
+    adminGroup: o.adminGroup ?? "admin",
     mailer: o.mailer,
     // 10 failures per 15 minutes per account, address or sign-in.
     limiter: new AttemptLimiter(10, 15 * 60_000),
@@ -109,9 +116,9 @@ export async function createAuth(config: Config, db: Db, users: Users): Promise<
     users,
     geo: createGeoIp().lookup,
     publicUrl: config.PUBLIC_URL,
-    webOrigins: config.WEB_ORIGINS,
+    appName: config.APP_NAME,
+    adminGroup: config.ADMIN_GROUP,
     passkeyRpId: config.PASSKEY_RP_ID,
-    gatewaySecret: config.GATEWAY_CLIENT_SECRET,
     secret: config.AUTH_SECRET ?? createHash("sha256").update("osiris-dev-auth").digest("base64"),
     signingKeyPem: config.AUTH_SIGNING_KEY ?? devSigningKey(config.DATA_DIR),
     socialClients,

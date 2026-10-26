@@ -1,0 +1,58 @@
+{
+  "title": "Administration",
+  "search": "Search",
+  "select": "Select an item from the list.",
+  "sections": {
+    "users": "Users",
+    "groups": "Groups",
+    "apps": "Applications",
+    "keys": "API keys"
+  },
+  "users": {
+    "add": "Add user",
+    "create": "Create and get a sign-in link",
+    "blocked": "blocked",
+    "linkHint": "A one-time sign-in link, valid for 3 days. Send it to the user; they set up a password or passkey in their account.",
+    "link": "Sign-in link",
+    "resetSecondFactor": "Turn off two-step sign-in",
+    "secondFactorReset": "Two-step sign-in is off for this user.",
+    "block": "Block",
+    "unblock": "Unblock",
+    "deleteConfirm": "Delete {{name}} with their sign-in methods? This can't be undone.",
+    "phone": "Phone: {{phone}}"
+  },
+  "groups": {
+    "name": "new-group",
+    "none": "No groups yet.",
+    "members_one": "{{count}} member",
+    "members_other": "{{count}} members",
+    "addMember": "Add a member…",
+    "deleteConfirm": "Delete the group {{name}}? Its members lose what it grants."
+  },
+  "apps": {
+    "add": "Add application",
+    "issuer": "Issuer",
+    "id": "Client ID",
+    "name": "Name",
+    "logo": "Logo URL",
+    "web": "Web application",
+    "native": "Desktop or mobile app",
+    "confidential": "Has a client secret (server-side app)",
+    "redirectUris": "Redirect URIs (one per line)",
+    "logoutUris": "After sign-out URIs (one per line)",
+    "allowedGroups": "Who may sign in",
+    "allowedGroupsHint": "Members of the checked groups; none checked = every user.",
+    "acceptsTokensOf": "Accepts tokens of (token introspection)",
+    "acceptsTokensOfHint": "For an API: it may check access tokens issued to these apps at /introspect.",
+    "secretHint": "The client secret, shown only now. Store it in the app's configuration.",
+    "rotate": "New secret",
+    "rotateConfirm": "Make a new secret? The current one stops working at once.",
+    "deleteConfirm": "Delete {{name}}? Its users are signed out of it."
+  },
+  "keys": {
+    "intro": "API keys let other services manage users and groups over SCIM 2.0 (/scim/v2).",
+    "name": "service-name",
+    "tokenHint": "The API key, shown only now. Use it as a Bearer token.",
+    "deleteConfirm": "Delete the key {{name}}? The service loses access at once."
+  }
+}

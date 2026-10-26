@@ -10,5 +10,6 @@
   "email": "e-mail",
   "password": "heslo",
   "signIn": "Přihlásit",
-  "forgot": "Zapomněl(a) jsem heslo, pošlete mi odkaz e-mailem"
+  "forgot": "Zapomněl(a) jsem heslo, pošlete mi odkaz e-mailem",
+  "to": "Přihlášení – {{app}}"
 }

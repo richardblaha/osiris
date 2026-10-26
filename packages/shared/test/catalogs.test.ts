@@ -111,16 +111,17 @@ function serverCatalog(): Catalog {
   };
 }
 
-function webCatalog(): Catalog {
-  const dir = join(ROOT, "apps/osiris-pwa/src/locales");
+/** A React app's catalogs, `<src>/locales/<lang>/<namespace>.json`. */
+function webCatalog(name: string, src: string): Catalog {
+  const dir = join(ROOT, src, "locales");
   const languages = readdirSync(dir);
-  const refs = references(["apps/osiris-pwa/src"]);
+  const refs = references([src]);
   // <Trans ns="x" i18nKey="y">: the key alone, with its namespace beside it.
   const trans = new Set([...refs.files.values()].flatMap((code) => [...code.matchAll(/ns="(\w+)"\s+i18nKey=(?:"([\w.]+)"|\{[^}]*?"([\w.]+)"\s*:\s*"([\w.]+)"\})/g)].flatMap((m) => [m[2], m[3], m[4]].filter(Boolean).map((k) => `${m[1]}:${k}`))));
   return {
-    name: "web app (apps/osiris-pwa/src/locales)",
+    name: `${name} (${src}/locales)`,
     languages,
-    sources: ["apps/osiris-pwa/src"],
+    sources: [src],
     files: (lang) => {
       const out: Messages = {};
       for (const file of readdirSync(join(dir, lang))) {
@@ -135,7 +136,7 @@ function webCatalog(): Catalog {
   };
 }
 
-describe.each([serverCatalog(), webCatalog()])("$name", (catalog) => {
+describe.each([serverCatalog(), webCatalog("web app", "apps/osiris-pwa/src"), webCatalog("identity provider's pages", "server/auth/web/src")])("$name", (catalog) => {
   const source = groups(catalog.files(SOURCE));
 
   it("has a catalog for every supported language, named by its BCP 47 tag", () => {

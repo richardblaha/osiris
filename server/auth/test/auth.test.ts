@@ -30,6 +30,7 @@ describe("sign-in", () => {
     expect(await (await b.request(`/interaction/${uid}/state`)).json()).toEqual({
       step: "login",
       methods: { passkey: true, emailLink: true, social: [] },
+      client: { name: "Osiris", logo: null },
     });
     // Without the browser's interaction cookie the step is refused.
     expect((await auth.app.request(`/interaction/${uid}/state`)).status).toBe(400);
@@ -92,7 +93,7 @@ describe("sign-in", () => {
     const ok = await (await b.post(`/interaction/${uid}/password`, { email: "alice@firma.cz", password: "správné-heslo-123" })).json();
     const callback = await b.follow(ok.redirectTo);
     expect(`${callback.origin}${callback.pathname}`).toBe(redirect);
-    const tokens = await b.token({ client_id: "osiris-cli", grant_type: "authorization_code", code: callback.searchParams.get("code")!, redirect_uri: redirect, code_verifier: b.verifier });
+    const tokens = await b.token({ client_id: "osiris-cli", grant_type: "authorization_code", code: callback.searchParams.get("code")!, redirect_uri: redirect, code_verifier: b.verifier }, null);
     expect(tokens.status).toBe(200);
     expect(await (await auth.introspect(tokens.body.access_token!)).json()).toMatchObject({ active: true, sub: "alice" });
     // Another host is no loopback.
@@ -132,12 +133,15 @@ describe("sign-in", () => {
 
   it("signs in with a one-time link opened in the browser, which works once", async () => {
     const auth = await createTestAuth({ users: [alice] });
-    const link = new URL(await auth.users.loginLink("alice", 1, "invite"));
+    const link = new URL(await auth.users.loginLink("alice", 1, "invite", `${WEB}/?signin=link`));
     expect(link.origin).toBe(ISSUER);
     const b = await browser(auth);
-    const opened = await b.request(link.pathname);
-    // Opening it only remembers it; the web app then starts a sign-in.
+    const opened = await b.request(`${link.pathname}${link.search}`);
+    // Opening it only remembers it; the app it names (a registered one) then starts a sign-in.
     expect([opened.status, opened.headers.get("location")]).toEqual([302, `${WEB}/?signin=link`]);
+    // Anywhere else is no return address: the account page signs in instead.
+    const elsewhere = await b.request(`${link.pathname}?to=${encodeURIComponent("https://evil.example/")}`);
+    expect(elsewhere.headers.get("location")).toBe("/account/signin");
     expect((await b.authorize({ prompt: "login consent" })).pathname).toBe("/callback");
 
     const other = await browser(auth);

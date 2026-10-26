@@ -7,6 +7,7 @@ import { startTelemetry } from "@osiris/platform/telemetry.ts";
 import { startLoop } from "@osiris/platform/worker.ts";
 import { createAuthApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
+import { osirisClients } from "./clients.ts";
 import { loadConfig } from "./config.ts";
 import { authListener } from "./server.ts";
 import { Users } from "./users.ts";
@@ -22,7 +23,11 @@ if (applied.length) console.log(`Applied migrations ${applied.join(", ")}`);
 
 const users = new Users(db, { objects: new FsObjectStore(join(config.DATA_DIR, "objects")), publicUrl: config.PUBLIC_URL });
 const auth = await createAuth(config, db, users);
-const app = createAuthApp(auth, { staticDir: config.STATIC_DIR });
+const app = createAuthApp(auth, { staticDir: config.STATIC_DIR, logo: config.APP_LOGO_URL });
+
+// Osiris's apps, when its origins are configured and they aren't registered yet.
+const added = await auth.clients.ensure(osirisClients(config.WEB_ORIGINS, config.GATEWAY_CLIENT_SECRET));
+if (added.length) console.log(`Registered ${added.join(", ")}`);
 
 const cleanup = startLoop("Cleanup", 6 * 60 * 60_000, async () => {
   await auth.credentials.cleanup();

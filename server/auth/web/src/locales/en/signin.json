@@ -10,5 +10,6 @@
   "email": "email",
   "password": "password",
   "signIn": "Sign in",
-  "forgot": "I forgot my password, send me a link by email"
+  "forgot": "I forgot my password, send me a link by email",
+  "to": "Sign in to {{app}}"
 }

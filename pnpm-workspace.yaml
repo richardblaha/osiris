@@ -1,6 +1,7 @@
 packages:
   - apps/*
   - server/*
+  - server/auth/web
   - packages/*
 allowBuilds:
   esbuild: true

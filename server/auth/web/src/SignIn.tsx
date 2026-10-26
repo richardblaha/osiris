@@ -89,8 +89,8 @@ export function SignIn() {
     <div className="flex min-h-full flex-col items-center justify-center bg-canvas px-4 py-10">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-3">
-          <img src="/logo.svg" alt="" className="h-20 w-20" />
-          <h1 className="text-3xl font-semibold tracking-[0.2em]">OSIRIS</h1>
+          <img src={state.client.logo ?? "/favicon.svg"} alt="" className="h-16 w-16" />
+          <h1 className="text-2xl font-semibold">{t("signin:to", { app: state.client.name })}</h1>
         </div>
 
         {state.step === "second-factor" ? (

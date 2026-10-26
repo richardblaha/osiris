@@ -33,6 +33,20 @@ They manage those at `https://auth.k6labs.cz/account` (Osiris's Profile → Sign
 groups, credentials and the provider's sessions and tokens live in osiris-auth's SQLite (`/data/auth.db` on the
 `auth-data` volume, `ceph-rbd`), copied daily to `/data/backups/` (last 7; CronJob `auth-backup`).
 
+It is an identity provider for any application, not only Osiris. Admins (group `admin`, `ADMIN_GROUP`) work at
+`https://auth.k6labs.cz/admin`: users, groups, applications and API keys.
+
+- **A new application:** Admin → Applications → Add. Give a client id, a name, web or native, whether it has a secret
+  (server-side apps; shown once), its redirect URIs and who may sign in (groups; none = everyone). The app then uses
+  the issuer `https://auth.k6labs.cz` (discovery at `/.well-known/openid-configuration`), authorization code with
+  PKCE, scopes `openid profile email groups`; the ID token and userinfo carry `groups`.
+- **An API that checks tokens:** register it as an application with a secret and "Accepts tokens of" the apps whose
+  tokens it receives; it calls `POST /introspect` (RFC 7662, HTTP Basic with its id and secret). Tokens of other apps
+  are inactive to it.
+- **A service that manages users:** Admin → API keys gives a SCIM 2.0 token (`/scim/v2`).
+- Osiris's own apps (`osiris-web`, `osiris-cli`, `osiris-vscode`, `osiris-gateway`) were registered at the first start
+  from `WEB_ORIGINS` and `GATEWAY_CLIENT_SECRET`; they are edited at /admin like any other.
+
 - **Network:** `auth.k6labs.cz` goes through Cloudflare to busiris's Traefik (`192.168.0.50`); the certificate comes
   from cert-manager (`letsencrypt`, HTTP-01). Only Traefik reaches the pod. osiris.k6labs.cz's gateway introspects
   tokens and control calls SCIM over `https://auth.k6labs.cz`.

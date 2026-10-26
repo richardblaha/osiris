@@ -2,8 +2,8 @@ import type { SecurityOverview, SocialProvider } from "@osiris/shared";
 import { browserSupportsWebAuthn, startRegistration } from "@simplewebauthn/browser";
 import { useEffect, useState, type FormEvent } from "react";
 import { encode } from "uqr";
-import { api } from "@osiris/client/api.ts";
-import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
+import { api } from "./api.ts";
+import { attempt, ErrorNotice, Field, Pending } from "./ui.tsx";
 import { SOCIAL_LABELS } from "./SignIn.tsx";
 import { t } from "i18next";
 import { Trans } from "react-i18next";
@@ -221,7 +221,7 @@ export function Security({ part, notice }: { part: SecurityPart; notice?: { link
                   void act(async () => {
                     setS(await api.security.disableTotp(code));
                     setCode("");
-                  }, t("users:twoFactorOff"))
+                  }, t("security:twoFactorOff"))
                 }
                 disabled={busy || !code}
                 className="btn-danger"

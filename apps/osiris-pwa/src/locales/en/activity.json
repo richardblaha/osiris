@@ -1,34 +1,11 @@
 {
   "unknownTime": "unknown time",
-  "unknownLocation": "unknown location",
-  "unknownIp": "unknown IP",
-  "methods": {
-    "pwd": "Password",
-    "otp": "Verification code",
-    "kba": "Recovery code",
-    "hwk": "Passkey",
-    "user": "User verification",
-    "email": "Email link",
-    "link": "One-time link",
-    "ext": "Linked account"
-  },
+  "deliveries": "WhatsApp message delivery",
   "delivery": {
     "accepted": "Accepted for sending",
     "sent": "Sent",
     "delivered": "Delivered",
     "read": "Read",
     "failed": "Sending failed"
-  },
-  "intro": "Sign-in history for the last {{days}} days. The location is approximate; mobile networks and VPNs can skew it.",
-  "sessions": "Active sessions",
-  "thisSession": "This session",
-  "sessionTimes": "Signed in {{signedIn}} · Last activity {{lastSeen}}",
-  "signOutThis": "Sign out this session",
-  "noSessions": "No active sessions.",
-  "history": "Sign-in history",
-  "success": "Successful",
-  "failure": "Failed",
-  "noEvents": "No records yet.",
-  "deliveries": "WhatsApp message delivery",
-  "footer": "Geolocation: <a>DB-IP</a>. Signing out a session takes effect on other devices at the latest when their access is next checked (within a minute)."
+  }
 }

@@ -46,5 +46,7 @@
   "cancel": "Zrušit",
   "download": "Stáhnout",
   "nothingFound": "Nic nenalezeno.",
-  "loadingEditor": "Načítám editor…"
+  "loadingEditor": "Načítám editor…",
+  "email": "e-mail",
+  "password": "heslo"
 }

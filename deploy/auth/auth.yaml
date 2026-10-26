@@ -1,5 +1,5 @@
-# osiris-auth at https://auth.k6labs.cz: sign-in (OpenID Connect), the account page, users and groups (SCIM 2.0) and
-# token introspection for osiris.k6labs.cz's gateway. One replica with its SQLite on a volume.
+# osiris-auth at https://auth.k6labs.cz: an identity provider for any app (OpenID Connect; apps, users and groups
+# managed at /admin; SCIM 2.0; token introspection for registered APIs). One replica with its SQLite on a volume.
 # Secret osiris-auth: AUTH_SIGNING_KEY, AUTH_SECRET (control's, which sealed the TOTP secrets), GATEWAY_CLIENT_SECRET,
 # EMAILIT_API_KEY, GOOGLE_*/FACEBOOK_*/MICROSOFT_*/SEZNAM_* (optional). Secret ghcr-pull: the image registry.
 apiVersion: v1
@@ -46,6 +46,10 @@ spec:
             - { name: NODE_ENV, value: production }
             - { name: DEFAULT_LOCALE, value: cs }
             - { name: PUBLIC_URL, value: https://auth.k6labs.cz }
+            - { name: APP_NAME, value: K6 Labs }
+            # Members of this group administer the provider (/admin).
+            - { name: ADMIN_GROUP, value: admin }
+            # Osiris's apps (osiris-web/-cli/-vscode/-gateway), registered at startup when missing; edited at /admin after.
             - { name: WEB_ORIGINS, value: https://osiris.k6labs.cz }
             # Passkeys made on osiris.k6labs.cz keep working: it lists this origin at /.well-known/webauthn.
             - { name: PASSKEY_RP_ID, value: osiris.k6labs.cz }

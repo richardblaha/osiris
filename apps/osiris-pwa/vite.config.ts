@@ -4,8 +4,6 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
-  // Two pages: the app, and osiris-auth's sign-in and account page (served by osiris-auth on its own origin).
-  build: { rollupOptions: { input: { main: "index.html", account: "account.html" } } },
   server: {
     // Bind all interfaces so devcontainer port forwarding reaches it; fail instead of silently moving to another port.
     host: true,

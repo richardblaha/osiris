@@ -1,4 +1,4 @@
-import { WhatsAppDeliveries } from "./AccountActivity.tsx";
+import { WhatsAppDeliveries } from "./WhatsAppDeliveries.tsx";
 import type { MeResponse, ProjectFeatures, UserProfile, UserSettings } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
 import { AssistantSettings } from "./Assistant.tsx";

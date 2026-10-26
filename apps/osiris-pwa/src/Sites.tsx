@@ -255,10 +255,10 @@ function TargetForm({ target, onDone }: { target?: SiteTarget; onDone: (name: st
       <Field label={t("mcp:auth")}>
         <select value={auth} onChange={(e) => setAuth(e.target.value as SiteTarget["auth"])} className="field w-auto">
           <option value="key">{t("sites:sshKey")}</option>
-          <option value="password">{t("signin:password")}</option>
+          <option value="password">{t("password")}</option>
         </select>
       </Field>
-      <Field label={auth === "key" ? t("sites:privateKey") : t("security:password")}>
+      <Field label={auth === "key" ? t("sites:privateKey") : t("password")}>
         {auth === "key" ? (
           <textarea
             value={secret}

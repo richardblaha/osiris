@@ -12,6 +12,7 @@ COPY packages/client/package.json packages/client/
 COPY apps/osiris-pwa/package.json apps/osiris-pwa/
 COPY server/gateway/package.json server/gateway/
 COPY server/auth/package.json server/auth/
+COPY server/auth/web/package.json server/auth/web/
 COPY server/control/package.json server/control/
 COPY apps/osiris/package.json apps/osiris/
 COPY server/operator/package.json server/operator/
@@ -42,16 +43,25 @@ CMD ["node_modules/.bin/tsx", "src/index.ts"]
 FROM base AS geo-data
 RUN node -e 'const z=require("zlib"),fs=require("fs");(async()=>{fs.mkdirSync("/app/geo",{recursive:true});for(const kind of ["city","asn"]){let ok=false;for(const d of [new Date(),new Date(new Date().getUTCFullYear(),new Date().getUTCMonth()-1,1)]){const url=`https://download.db-ip.com/free/dbip-${kind}-lite-${d.toISOString().slice(0,7)}.mmdb.gz`;const r=await fetch(url);if(r.ok){fs.writeFileSync(`/app/geo/${kind}.mmdb`,z.gunzipSync(Buffer.from(await r.arrayBuffer())));ok=true;break}}if(!ok)throw new Error(`Missing GeoIP ${kind}`)}})()'
 
-# osiris-auth: sign-in, users and groups (SCIM), with its own SQLite on a volume (DATA_DIR); serves the PWA build's
-# account.html (sign-in and account pages).
+# The identity provider's pages (sign-in, account, administration), in the PWA's design system.
+FROM base AS auth-web-build
+RUN NODE_ENV=development pnpm install --frozen-lockfile --filter "@osiris/auth-web..."
+COPY packages/shared packages/shared
+COPY apps/osiris-pwa/src/index.css apps/osiris-pwa/src/theme.css apps/osiris-pwa/src/
+COPY apps/osiris-pwa/src/fonts apps/osiris-pwa/src/fonts
+COPY server/auth/web server/auth/web
+RUN pnpm --filter @osiris/auth-web build
+
+# osiris-auth: the identity provider (OpenID Connect, users, groups, apps, SCIM), with its own SQLite on a volume
+# (DATA_DIR), serving its pages.
 FROM base AS auth
 COPY --from=geo-data /app/geo /app/geo
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/auth..." && pnpm store prune
 COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src
 COPY server/auth/src server/auth/src
-COPY --from=web-build /app/apps/osiris-pwa/dist apps/osiris-pwa/dist
-ENV PORT=3003 STATIC_DIR=/app/apps/osiris-pwa/dist DATA_DIR=/data
+COPY --from=auth-web-build /app/server/auth/web/dist server/auth/web/dist
+ENV PORT=3003 STATIC_DIR=/app/server/auth/web/dist DATA_DIR=/data
 WORKDIR /app/server/auth
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]

@@ -353,6 +353,21 @@
       "name": "A group name is lowercase letters, digits and : . _ -, at most 100 characters.",
       "exists": "That group already exists.",
       "unknownMember": "User {{id}} doesn't exist."
+    },
+    "client": {
+      "nothing": "An app needs redirect URIs (to sign users in) or apps whose tokens it accepts.",
+      "invalid": "The app's settings aren't valid: {{detail}}",
+      "id": "An app's id is lowercase letters, digits and . _ -, 2 to 64 characters.",
+      "exists": "An app with this id already exists.",
+      "notFound": "No such app.",
+      "public": "A public app has no secret."
+    },
+    "token": {
+      "notFound": "No such API key."
+    },
+    "picture": {
+      "type": "The picture must be a PNG or JPEG.",
+      "tooLarge": "The picture can be at most 2 MB."
     }
   },
   "schedules": {
@@ -398,9 +413,9 @@
   },
   "email": {
     "signInLink": {
-      "subject": "Sign in to Osiris",
-      "text_one": "Hello,\n\nopen this link to sign in to Osiris (it is valid for {{count}} hour and only once):\n\n{{link}}\n\nIf you didn't ask to sign in, ignore this email.\n",
-      "text_other": "Hello,\n\nopen this link to sign in to Osiris (it is valid for {{count}} hours and only once):\n\n{{link}}\n\nIf you didn't ask to sign in, ignore this email.\n"
+      "subject": "Sign in to {{app}}",
+      "text_one": "Hello,\n\nopen this link to sign in to {{app}} (it is valid for {{count}} hour and only once):\n\n{{link}}\n\nIf you didn't ask to sign in, ignore this email.\n",
+      "text_other": "Hello,\n\nopen this link to sign in to {{app}} (it is valid for {{count}} hours and only once):\n\n{{link}}\n\nIf you didn't ask to sign in, ignore this email.\n"
     },
     "inquiry": {
       "subject": "New inquiry: {{name}}",
@@ -416,7 +431,7 @@
     },
     "loggedOut": {
       "title": "Signed out",
-      "back": "Back to Osiris"
+      "back": "Back to my account"
     },
     "signInError": {
       "title": "Sign-in error",

@@ -1,18 +1,11 @@
-import Provider, { type Adapter, type AdapterPayload, type Configuration, type JWK, type KoaContextWithOIDC } from "oidc-provider";
+import Provider, { errors, type Adapter, type AdapterPayload, type Configuration, type JWK, type KoaContextWithOIDC } from "oidc-provider";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
 import { requestLocale, translate } from "@osiris/platform/i18n.ts";
+import type { Clients } from "./clients.ts";
 import type { Users, UserRecord } from "./users.ts";
 
-/** The web app's client; first party, so it never asks for consent. */
-export const WEB_CLIENT_ID = "osiris-web";
-/** The terminal client (osiris-cli): a native app, back to a loopback port of its own (RFC 8252). */
-export const CLI_CLIENT_ID = "osiris-cli";
-/** The VS Code extension: back to VS Code through its URI handler, or a loopback port. */
-export const VSCODE_CLIENT_ID = "osiris-vscode";
-/** osiris-auth's own account pages: signing in there only starts the browser's session. */
+/** The identity provider's own account pages: signing in there only starts the browser's session. */
 export const ACCOUNT_CLIENT_ID = "osiris-account";
-/** Clients whose access tokens the gateway accepts. */
-export const CLIENT_IDS = [WEB_CLIENT_ID, CLI_CLIENT_ID, VSCODE_CLIENT_ID];
 
 /** Paths answered by oidc-provider; the rest is ours (sign-in screens' API, account pages, SCIM, introspection). */
 export const OIDC_PATHS = /^\/(\.well-known\/openid-configuration|authorize|token|userinfo|jwks|logout|revoke)(\/|\?|$)/;
@@ -107,13 +100,15 @@ const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 
 export interface OidcOptions {
   issuer: string;
+  /** The name of the account page's client. */
+  appName: string;
   db: Db;
   users: Users;
+  /** Registered applications; oidc-provider finds every client but its own account page here. */
+  clients: Clients;
   /** Private signing keys (JWK with `kid`); the first signs. */
   jwks: JWK[];
   cookieKeys: string[];
-  /** Where the web app runs: redirect URI `<origin>/callback`, after logout `<origin>`. */
-  webOrigins: string[];
 }
 
 /**
@@ -123,33 +118,12 @@ export interface OidcOptions {
  */
 export function createOidcProvider(options: OidcOptions): Provider {
   const configuration: Configuration = {
-    adapter: (model: string) => new DbAdapter(options.db, model),
+    adapter: (model: string) =>
+      model === "Client" ? ({ find: (id: string) => options.clients.providerMetadata(id) } as unknown as Adapter) : new DbAdapter(options.db, model),
     clients: [
       {
-        client_id: WEB_CLIENT_ID,
-        client_name: "Osiris",
-        application_type: "web",
-        token_endpoint_auth_method: "none",
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        redirect_uris: options.webOrigins.map((o) => `${o}/callback`),
-        post_logout_redirect_uris: options.webOrigins,
-        id_token_signed_response_alg: "ES256",
-      },
-      ...[
-        { client_id: CLI_CLIENT_ID, client_name: "Osiris CLI", redirect_uris: ["http://127.0.0.1/callback"] },
-        { client_id: VSCODE_CLIENT_ID, client_name: "Osiris for VS Code", redirect_uris: ["vscode://osiris.osiris-vscode/callback", "http://127.0.0.1/callback"] },
-      ].map((c) => ({
-        ...c,
-        application_type: "native" as const,
-        token_endpoint_auth_method: "none" as const,
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code" as const],
-        id_token_signed_response_alg: "ES256" as const,
-      })),
-      {
         client_id: ACCOUNT_CLIENT_ID,
-        client_name: "Osiris account",
+        client_name: options.appName,
         application_type: "web",
         token_endpoint_auth_method: "none",
         grant_types: ["authorization_code"],
@@ -165,11 +139,13 @@ export function createOidcProvider(options: OidcOptions): Provider {
       long: { httpOnly: true, sameSite: "lax" },
       short: { httpOnly: true, sameSite: "lax" },
     },
-    scopes: ["openid", "profile", "email"],
+    scopes: ["openid", "profile", "email", "groups"],
     claims: {
       openid: ["sub"],
       profile: ["name", "given_name", "family_name", "picture", "phone_number", "groups"],
       email: ["email", "email_verified"],
+      // Apps that only need the groups ask for them alone; Osiris reads them from `profile`.
+      groups: ["groups"],
     },
     routes: {
       authorization: "/authorize",
@@ -180,8 +156,9 @@ export function createOidcProvider(options: OidcOptions): Provider {
       revocation: "/revoke",
     },
     pkce: { required: () => true },
-    // Browsers send Origin with every POST, same-origin ones too, so the web app's token requests carry it.
-    clientBasedCORS: (_ctx, origin) => options.webOrigins.includes(origin),
+    // Browsers send Origin with every POST, same-origin ones too: a web app's token requests come from the origin of
+    // its redirect URIs.
+    clientBasedCORS: (_ctx, origin, client) => client.redirectUris?.some((u) => URL.canParse(u) && new URL(u).origin === origin) ?? false,
     features: {
       devInteractions: { enabled: false },
       revocation: { enabled: true },
@@ -203,10 +180,16 @@ export function createOidcProvider(options: OidcOptions): Provider {
       return { accountId: sub, claims: () => userClaims(user) };
     },
     interactions: { url: (_ctx, interaction) => `/interaction/${interaction.uid}` },
-    // The web app is ours: whatever it asks for is granted without a consent screen.
+    // Every app is registered by an admin: whatever it asks for is granted without a consent screen, to the members
+    // of its allowed groups (checked on every authorization, so also for a browser that's already signed in).
     loadExistingGrant: async (ctx: KoaContextWithOIDC) => {
       const { client, session, params } = ctx.oidc;
       if (!client || !session?.accountId) return undefined;
+      const allowed = (await options.clients.get(client.clientId))?.allowedGroups ?? [];
+      if (allowed.length) {
+        const groups = (await options.users.get(session.accountId).catch(() => null))?.groups ?? [];
+        if (!groups.some((g) => allowed.includes(g))) throw new errors.AccessDenied("This account may not sign in to this application");
+      }
       const grantId = ctx.oidc.result?.consent?.grantId ?? session.grantIdFor(client.clientId);
       const grant = (grantId && (await ctx.oidc.provider.Grant.find(grantId))) || new ctx.oidc.provider.Grant({ clientId: client.clientId, accountId: session.accountId });
       grant.addOIDCScope(String(params?.scope ?? "openid"));

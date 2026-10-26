@@ -47,5 +47,6 @@
   "totpScan": "Naskenuj kód v ověřovací aplikaci. Na telefonu můžeš <a>otevřít aplikaci přímo</a>, nebo opsat klíč:",
   "appCode": "kód z aplikace",
   "turnOn": "Zapnout",
-  "enableTotp": "Zapnout ověřovací aplikaci"
+  "enableTotp": "Zapnout ověřovací aplikaci",
+  "twoFactorOff": "Dvoufázové ověření je vypnuté."
 }

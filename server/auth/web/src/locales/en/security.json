@@ -45,5 +45,6 @@
   "totpScan": "Scan the code in your authenticator app. On your phone you can <a>open the app directly</a>, or type in the key:",
   "appCode": "app code",
   "turnOn": "Turn on",
-  "enableTotp": "Turn on the authenticator app"
+  "enableTotp": "Turn on the authenticator app",
+  "twoFactorOff": "Two-step verification is off."
 }

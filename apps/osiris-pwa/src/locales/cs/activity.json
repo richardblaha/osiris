@@ -1,34 +1,11 @@
 {
   "unknownTime": "neznámý čas",
-  "unknownLocation": "neznámá lokalita",
-  "unknownIp": "neznámá IP",
-  "methods": {
-    "pwd": "Heslo",
-    "otp": "Ověřovací kód",
-    "kba": "Záložní kód",
-    "hwk": "Passkey",
-    "user": "Ověření uživatele",
-    "email": "E-mailový odkaz",
-    "link": "Jednorázový odkaz",
-    "ext": "Propojený účet"
-  },
+  "deliveries": "Doručení zpráv na WhatsApp",
   "delivery": {
     "accepted": "Přijato k odeslání",
     "sent": "Odesláno",
     "delivered": "Doručeno",
     "read": "Přečteno",
     "failed": "Odeslání selhalo"
-  },
-  "intro": "Historie přihlášení za posledních {{days}} dní. Lokalita je přibližná; mobilní sítě a VPN ji mohou zkreslit.",
-  "sessions": "Aktivní relace",
-  "thisSession": "Tato relace",
-  "sessionTimes": "Přihlášení {{signedIn}} · Poslední aktivita {{lastSeen}}",
-  "signOutThis": "Odhlásit tuto relaci",
-  "noSessions": "Žádné aktivní relace.",
-  "history": "Historie přihlášení",
-  "success": "Úspěšné",
-  "failure": "Neúspěšné",
-  "noEvents": "Zatím žádné záznamy.",
-  "deliveries": "Doručení zpráv na WhatsApp",
-  "footer": "Geolokace: <a>DB-IP</a>. Odhlášení relace se na ostatních zařízeních projeví nejpozději po obnovení ověření přístupu (do jedné minuty)."
+  }
 }

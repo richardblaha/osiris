@@ -9,6 +9,7 @@ import { z } from "zod";
 import { HttpError, requestLocale, translate, ValidationError } from "@osiris/platform/i18n.ts";
 import { readAll } from "@osiris/platform/objects.ts";
 import { run, type Db } from "@osiris/platform/rqlite.ts";
+import type { Clients } from "./clients.ts";
 import type { Users } from "./users.ts";
 import { CredentialError, type Credentials } from "./credentials.ts";
 import type { AttemptLimiter } from "./limiter.ts";
@@ -27,10 +28,14 @@ export interface AuthDeps {
   social: SocialLogin;
   mailer?: Mailer;
   limiter: AttemptLimiter;
-  /** Where the Osiris web app runs: one-time links go on there to start a sign-in. */
-  webOrigin: string;
-  /** The gateway's client secret for token introspection. */
-  gatewaySecret?: string;
+  /** Registered applications. */
+  clients: Clients;
+  /** The identity provider's origin. */
+  issuer: string;
+  /** The name users see. */
+  appName: string;
+  /** Members administer the identity provider. */
+  adminGroup: string;
 }
 
 /** A sign-in waiting for its second factor (authenticator app or recovery code). */
@@ -177,9 +182,11 @@ export function authRoutes(deps: AuthDeps) {
       .get("/interaction/:uid/state", async (c) => {
         const details = await interaction(c);
         const pending = await credentials.peekChallenge<PendingSecondFactor>(`second-factor:${details.uid}`);
+        const app = await deps.clients.get(String(details.params.client_id));
         return c.json<SignInState>({
           step: pending ? "second-factor" : "login",
           methods: { passkey: true, emailLink: !!deps.mailer, social: social.enabled() },
+          client: { name: app?.name ?? deps.appName, logo: app?.logo ?? null },
         });
       })
 
@@ -240,7 +247,7 @@ export function authRoutes(deps: AuthDeps) {
 
       // Sends a sign-in link; the answer is the same whether the address is known or not.
       .post("/interaction/:uid/email-link", async (c) => {
-        await interaction(c);
+        const details = await interaction(c);
         if (!deps.mailer) throw new SignInError(404, "errors.signIn.mailOff");
         const input = await body(c, z.object({ email }));
         const keys = [`mail-ip:${clientIp(c)}`, `mail:${input.email.toLowerCase()}`];
@@ -248,12 +255,14 @@ export function authRoutes(deps: AuthDeps) {
         limiter.fail(keys);
         const user = await users.findByEmail(input.email);
         if (user && !user.disabled && user.email) {
-          const link = await users.loginLink(user.id, EMAIL_LINK_HOURS, "email");
+          // The link brings the browser back to this same authorization, so it ends in the app that asked.
+          const again = `${deps.issuer}/authorize?${new URLSearchParams(Object.entries(details.params).flatMap(([k, v]) => (typeof v === "string" ? [[k, v]] : [])))}`;
+          const link = await users.loginLink(user.id, EMAIL_LINK_HOURS, "email", again);
           const locale = requestLocale(c.req.header("accept-language"));
           await deps.mailer.send({
             to: user.email,
-            subject: translate(locale, "email.signInLink.subject"),
-            text: translate(locale, "email.signInLink.text", { link, count: EMAIL_LINK_HOURS }),
+            subject: translate(locale, "email.signInLink.subject", { app: deps.appName }),
+            text: translate(locale, "email.signInLink.text", { link, count: EMAIL_LINK_HOURS, app: deps.appName }),
           });
         }
         return c.json({ sent: true });
@@ -329,8 +338,9 @@ export function authRoutes(deps: AuthDeps) {
       })
 
       // One-time links. Opening one only remembers it in this browser and starts a sign-in; it is used up when the
-      // sign-in reaches us, so mail scanners that fetch links don't burn it.
-      .get("/link/:token", (c) => {
+      // sign-in reaches us, so mail scanners that fetch links don't burn it. `to` (set when the link was made) is where
+      // that sign-in starts: an app's page or this provider's authorization; anything else goes to the account page.
+      .get("/link/:token", async (c) => {
         setCookie(c, LINK_COOKIE, c.req.param("token"), {
           path: LINK_COOKIE_PATH,
           httpOnly: true,
@@ -338,7 +348,8 @@ export function authRoutes(deps: AuthDeps) {
           secure: c.req.header("x-forwarded-proto") === "https",
           maxAge: 15 * 60,
         });
-        return c.redirect(`${deps.webOrigin}/?signin=link`, 302);
+        const to = c.req.query("to");
+        return c.redirect(to && (await deps.clients.trustedReturn(to, deps.issuer)) ? to : "/account/signin", 302);
       })
 
       .get("/pictures/:userId/:version", async (c) => {

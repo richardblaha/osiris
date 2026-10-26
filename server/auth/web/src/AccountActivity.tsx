@@ -1,7 +1,7 @@
 import type { AccountActivity as Activity, LoginEvent, LoginSession } from "@osiris/shared";
 import { useEffect, useState } from "react";
-import { api } from "@osiris/client/api.ts";
-import { attempt, ErrorNotice, Pending } from "./Scope.tsx";
+import { api } from "./api.ts";
+import { attempt, ErrorNotice, Pending } from "./ui.tsx";
 import { t } from "i18next";
 import { Trans } from "react-i18next";
 import { formatDateTime } from "./i18n.ts";
@@ -11,22 +11,6 @@ const location = (row: LoginEvent | LoginSession) => [row.city, row.region, row.
 /** Sign-in methods (OIDC `amr` values) by name. */
 const METHODS = ["pwd", "otp", "kba", "hwk", "user", "email", "link", "ext"] as const;
 const method = (m: string) => ((METHODS as readonly string[]).includes(m) ? t(`activity:methods.${m as (typeof METHODS)[number]}`) : m);
-const DELIVERY = ["accepted", "sent", "delivered", "read", "failed"] as const;
-const delivery = (s: string) => ((DELIVERY as readonly string[]).includes(s) ? t(`activity:delivery.${s as (typeof DELIVERY)[number]}`) : s);
-
-/** WhatsApp's delivery reports for the user's verified number (control keeps them; the PWA's Profile > Activity). */
-export function WhatsAppDeliveries() {
-  const [deliveries, setDeliveries] = useState<{ status: string; at: number }[]>();
-  const [error, setError] = useState<string>();
-  useEffect(() => void api.security.whatsappDeliveries().then(setDeliveries, (e: Error) => setError(e.message)), []);
-  return <section className="space-y-3">
-    <h2 className="section-header">{t("activity:deliveries")}</h2>
-    <ErrorNotice error={error} />
-    {!deliveries && !error && <Pending />}
-    <ul className="divide-y divide-line">{deliveries?.map((d, i) => <li key={i} className="py-2 text-sm">{time(d.at)} · {delivery(d.status)}</li>)}</ul>
-  </section>;
-}
-
 /** Sign-ins and sessions, on osiris-auth's account page (its session cookie says who). */
 export function AccountActivity() {
   const [data, setData] = useState<Activity>();
@@ -40,7 +24,7 @@ export function AccountActivity() {
     else await load();
   });
   return <section className="space-y-6">
-    <h1 className="text-lg font-semibold">{t("profile:parts.activity")}</h1>
+    <h1 className="text-lg font-semibold">{t("activity:title")}</h1>
     <p className="text-sm text-fg-secondary">{t("activity:intro", { days: 90 })}</p>
     <ErrorNotice error={error} />
     {!data && !error && <Pending />}
@@ -55,7 +39,7 @@ export function AccountActivity() {
               <p className="text-xs text-fg-muted">{[session.asn, session.network].filter(Boolean).join(" · ")}</p>
               <p className="text-xs text-fg-secondary">{t("activity:sessionTimes", { signedIn: time(session.at), lastSeen: time(session.lastSeenAt) })}</p>
             </div>
-            <button className="btn-danger text-sm" disabled={busy} onClick={() => void revoke(session)}>{session.current ? t("activity:signOutThis") : t("app:signOut")}</button>
+            <button className="btn-danger text-sm" disabled={busy} onClick={() => void revoke(session)}>{session.current ? t("activity:signOutThis") : t("signOut")}</button>
           </li>)}
           {!data.sessions.length && <li className="py-3 text-sm text-fg-muted">{t("activity:noSessions")}</li>}
         </ul>

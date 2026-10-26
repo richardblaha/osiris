@@ -16,12 +16,18 @@ const schema = z
 
     // Where browsers reach osiris-auth; also the OpenID Connect issuer.
     PUBLIC_URL: url.default("http://localhost:3003"),
-    // Where the Osiris web app runs (comma-separated); each gets <origin>/callback. The first is home after a link.
-    WEB_ORIGINS: list.default(["http://localhost:5173"]),
+    // The name users see (pages, emails, passkeys, authenticator apps), and an optional logo URL for the pages.
+    APP_NAME: z.string().trim().min(1).max(60).default("Auth"),
+    APP_LOGO_URL: z.url().optional(),
+    // Members of this group administer the identity provider (/admin, SCIM from the browser).
+    ADMIN_GROUP: z.string().regex(/^[a-z0-9][a-z0-9:._-]{0,99}$/).default("admin"),
+    // Osiris's apps, registered at startup when missing (never changed afterwards; admins own them): osiris-web with
+    // <origin>/callback for each of these origins (comma-separated), osiris-cli, osiris-vscode, and osiris-gateway
+    // (introspects their tokens) with GATEWAY_CLIENT_SECRET. Empty = none.
+    WEB_ORIGINS: list,
     // The passkeys' relying party: the host they were registered on. Kept `osiris.k6labs.cz` in production, so the
     // passkeys made there keep working (it lists this origin at /.well-known/webauthn). Default: PUBLIC_URL's host.
     PASSKEY_RP_ID: z.string().optional(),
-    // The gateway's client secret for token introspection (RFC 7662, client `osiris-gateway`).
     GATEWAY_CLIENT_SECRET: z.string().min(32).optional(),
 
     // Signs ID tokens: an EC P-256 private key (PEM). `pnpm --filter @osiris/platform gen-keys` makes one.
@@ -46,12 +52,12 @@ const schema = z
     // Forwarded client addresses are taken only from these (the ingress), CF-Connecting-IP only behind CDN_PROXIES.
     TRUSTED_PROXIES: z.string().default("10.0.0.0/8,127.0.0.1/32,::1/128"),
     CDN_PROXIES: z.string().default(""),
-    // Built account pages (`apps/osiris-pwa` build: account.html and its assets).
-    STATIC_DIR: z.string().default("../../apps/osiris-pwa/dist"),
+    // The built pages (`server/auth/web`: sign-in, account, admin).
+    STATIC_DIR: z.string().default("./web/dist"),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV !== "production") return;
-    for (const key of ["AUTH_SIGNING_KEY", "AUTH_SECRET", "GATEWAY_CLIENT_SECRET"] as const) {
+    for (const key of ["AUTH_SIGNING_KEY", "AUTH_SECRET"] as const) {
       if (!env[key]) ctx.addIssue({ code: "custom", path: [key], message: "is required in production" });
     }
     if (!env.PUBLIC_URL.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["PUBLIC_URL"], message: "must be https in production" });

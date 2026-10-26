@@ -46,5 +46,7 @@
   "cancel": "Cancel",
   "download": "Download",
   "nothingFound": "Nothing found.",
-  "loadingEditor": "Loading the editor…"
+  "loadingEditor": "Loading the editor…",
+  "email": "email",
+  "password": "password"
 }

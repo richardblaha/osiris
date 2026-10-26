@@ -18,7 +18,7 @@ export function InviteForm({ onInvite }: { onInvite: (body: Invite) => Promise<v
   };
   return (
     <form onSubmit={submit} className="mt-3 flex flex-wrap gap-2">
-      <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t("signin:email")} required className="field min-w-0 flex-[2]" />
+      <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t("email")} required className="field min-w-0 flex-[2]" />
       <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} placeholder={t("invite:firstName")} required className="field min-w-0 flex-1" />
       <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} placeholder={t("invite:lastName")} className="field min-w-0 flex-1" />
       <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Invite["role"] })} className="field w-auto">

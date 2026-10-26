@@ -112,7 +112,7 @@ export function matchTotp(secret: string, code: string, lastStep: number, now = 
   return null;
 }
 
-export const otpauthUrl = (secret: string, account: string, issuer = "Osiris") =>
+export const otpauthUrl = (secret: string, account: string, issuer: string) =>
   `otpauth://totp/${encodeURIComponent(`${issuer}:${account}`)}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&algorithm=SHA1&digits=6&period=${STEP_S}`;
 
 // --- recovery codes and tokens --------------------------------------------------------------------------------------

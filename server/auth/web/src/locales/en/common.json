@@ -1,0 +1,24 @@
+{
+  "loading": "Loading…",
+  "copy": "Copy",
+  "remove": "Remove",
+  "cancel": "Cancel",
+  "save": "Save",
+  "saved": "Saved.",
+  "delete": "Delete",
+  "add": "Add",
+  "signOut": "Sign out",
+  "account": "My account",
+  "picture": "Change picture",
+  "firstName": "First name",
+  "lastName": "Last name",
+  "email": "Email",
+  "parts": {
+    "profile": "Profile",
+    "passkeys": "Passkeys",
+    "password": "Password",
+    "totp": "Two-step sign-in",
+    "linked": "Linked accounts",
+    "activity": "Sign-ins and sessions"
+  }
+}

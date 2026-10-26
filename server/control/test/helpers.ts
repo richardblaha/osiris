@@ -76,7 +76,7 @@ export async function createTestControl(
       groups: groupsFromAccess(accessFromClaims((k) => claims[k])),
     });
   }
-  const users = scimUsers({ url: "http://auth.test", token: auth.scimToken, fetchFn: ((url: string, init?: RequestInit) => auth.app.request(url, init)) as typeof fetch });
+  const users = scimUsers({ url: "http://auth.test", token: auth.scimToken, signInReturn: "http://osiris.test/?signin=link", fetchFn: ((url: string, init?: RequestInit) => auth.app.request(url, init)) as typeof fetch });
   const mail: { to: string; subject: string; text: string }[] = [];
   const mailer: Mailer = { send: async (m) => void mail.push(m) };
   const store = new ProjectStore(db, { objects, publicUrl: PUBLIC_URL });

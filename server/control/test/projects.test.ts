@@ -37,7 +37,7 @@ describe("project directory", () => {
     await directory.create("acme", "ACME");
     expect(await directory.invite("acme", { email: "EVA@firma.cz", firstName: "Eva", lastName: "" }, "member")).toEqual({ userId: "eva", created: false });
     const created = await directory.invite("acme", { email: "eva@jinde.cz", firstName: "Eva", lastName: "Nová" }, "admin");
-    expect(created).toMatchObject({ created: true, loginLink: expect.stringMatching(/^http:\/\/auth\.test\/link\/[\w-]{43}$/) });
+    expect(created).toMatchObject({ created: true, loginLink: expect.stringMatching(/^http:\/\/auth\.test\/link\/[\w-]{43}\?to=http%3A%2F%2Fosiris\.test%2F%3Fsignin%3Dlink$/) });
     expect(await users.get(created.userId)).toMatchObject({ email: "eva@jinde.cz", name: "Eva Nová", claims: { "project-admin": "acme", role: "osiris-user" } });
   });
 });

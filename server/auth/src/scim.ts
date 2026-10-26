@@ -43,6 +43,12 @@ export async function createServiceToken(db: Db, name: string): Promise<string> 
   return token;
 }
 
+/** Services with a SCIM token (names and when made; the tokens themselves are only hashes). */
+export const serviceTokens = async (db: Db) =>
+  (await db.query<{ name: string; created_at: number }>("SELECT name, created_at FROM service_tokens ORDER BY name")).map((r) => ({ name: r.name, createdAt: Number(r.created_at) }));
+
+export const deleteServiceToken = async (db: Db, name: string) => (await db.execute([run("DELETE FROM service_tokens WHERE name = ?", name)]))[0]!.rowsAffected > 0;
+
 const iso = (ms: number) => new Date(ms).toISOString();
 
 export function userResource(u: UserRecord, base: string): Json {
@@ -176,10 +182,12 @@ export interface ScimDeps {
   credentials: Credentials;
   /** Where SCIM is reached: `<issuer>/scim/v2`. */
   base: string;
+  /** Whether the call comes from an admin's browser (the admin pages), besides service tokens. */
+  admin?: (c: Context) => Promise<boolean>;
 }
 
-/** The SCIM API at `/scim/v2`, plus three Osiris endpoints SCIM has no standard for (sign-in link, photo, second factor). */
-export function scimRoutes({ db, users, credentials, base }: ScimDeps) {
+/** The SCIM API at `/scim/v2`, plus three endpoints SCIM has no standard for (sign-in link, photo, second factor). */
+export function scimRoutes({ db, users, credentials, base, admin }: ScimDeps) {
   const json = async (c: Context): Promise<Json> => {
     const body = await c.req.json().catch(() => null);
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new ScimError(400, "Invalid JSON", "invalidSyntax");
@@ -208,7 +216,7 @@ export function scimRoutes({ db, users, credentials, base }: ScimDeps) {
     .use(async (c, next) => {
       const token = /^Bearer (.+)$/i.exec(c.req.header("authorization") ?? "")?.[1];
       const [known] = token ? await db.query("SELECT name FROM service_tokens WHERE token_hash = ?", [sha256(token)]) : [];
-      if (!known) throw new ScimError(401, "A service token is required");
+      if (!known && !(admin && !token && (await admin(c)))) throw new ScimError(401, "A service token is required");
       await next();
     })
     .get("/ServiceProviderConfig", (c) =>
@@ -267,16 +275,18 @@ export function scimRoutes({ db, users, credentials, base }: ScimDeps) {
       return c.body(null, 204);
     })
 
-    // Osiris: a one-time sign-in link (an invitation, or a link an admin passes on).
+    // Extension: a one-time sign-in link (an invitation, or a link an admin passes on).
     .post("/Users/:id/signInLink", async (c) => {
       const u = await user(c.req.param("id"));
       const r = await json(c);
       const purpose = (["invite", "admin"] as LinkPurpose[]).find((p) => p === r.purpose) ?? "admin";
       const hours = Math.min(168, Math.max(1, Number(r.ttlHours) || 72));
       if (u.disabled) throw new ScimError(400, "The user is disabled", "invalidValue");
-      return scim(c, { link: await users.loginLink(u.id, hours, purpose) }, 201);
+      // Where the browser goes once the link is opened (the app's page that starts its sign-in); checked then.
+      const returnTo = typeof r.returnTo === "string" && r.returnTo.length <= 500 ? r.returnTo : undefined;
+      return scim(c, { link: await users.loginLink(u.id, hours, purpose, returnTo) }, 201);
     })
-    // Osiris: the profile picture (PNG or JPEG, at most 2 MB), served at the user's `photos` URL.
+    // Extension: the profile picture (PNG or JPEG, at most 2 MB), served at the user's `photos` URL.
     .put("/Users/:id/photo", async (c) => {
       await user(c.req.param("id"));
       const data = new Uint8Array(await c.req.arrayBuffer());
@@ -285,7 +295,7 @@ export function scimRoutes({ db, users, credentials, base }: ScimDeps) {
       await users.setPicture(c.req.param("id"), data, mime);
       return c.body(null, 204);
     })
-    // Osiris: for a user who lost both their authenticator and recovery codes.
+    // Extension: for a user who lost both their authenticator and recovery codes.
     .delete("/Users/:id/secondFactor", async (c) => {
       await user(c.req.param("id"));
       await credentials.disableTotp(c.req.param("id"));

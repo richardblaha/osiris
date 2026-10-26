@@ -63,7 +63,8 @@ const orchestrator: Orchestrator =
       });
 const runtimes = new RuntimeClient({ endpoint: async (t) => orchestrator.endpoint(t), wake: (t) => orchestrator.wake(t) });
 
-const users = scimUsers({ url: config.AUTH_URL, token: config.AUTH_SCIM_TOKEN });
+// A sign-in link (invitation) brings the browser back to Osiris, which starts its sign-in.
+const users = scimUsers({ url: config.AUTH_URL, token: config.AUTH_SCIM_TOKEN, signInReturn: `${config.PUBLIC_URL}/?signin=link` });
 
 const store = new ProjectStore(db, { objects, publicUrl: config.PUBLIC_URL });
 await store.migrateSystemGuards();

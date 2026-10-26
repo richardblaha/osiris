@@ -1,14 +1,18 @@
 import { join } from "node:path";
 import { FsObjectStore } from "@osiris/platform/objects.ts";
 import { LocalDb, migrate, RqliteDb } from "@osiris/platform/rqlite.ts";
+import { createAuth } from "./auth.ts";
 import { loadConfig } from "./config.ts";
 import { importFromControl } from "./import.ts";
 import { createServiceToken } from "./scim.ts";
 import { Users } from "./users.ts";
 
 // Administration from the command line (`pnpm --filter @osiris/auth cli <command>`):
-//   add-admin <email> [first] [last]   creates (or promotes) a system admin and prints a sign-in link
+//   add-admin <email> [first] [last]   creates (or promotes) an admin (ADMIN_GROUP) and prints a sign-in link
 //   token <name>                       makes (or replaces) a service's SCIM token and prints it once
+//   client list                        the registered apps
+//   client add <id> <json>             registers an app ({"name":…,"redirectUris":[…],"confidential":true,…}); prints its secret
+//   client remove <id>
 //   import-control <rqlite-url>        copies control's users once (RQLITE_USERNAME, RQLITE_PASSWORD for the source)
 const config = loadConfig();
 const [command, ...args] = process.argv.slice(2);
@@ -21,13 +25,22 @@ if (command === "add-admin") {
   const [email, firstName = "", lastName = ""] = args;
   if (!email?.includes("@")) throw new Error("Usage: add-admin <email> [first name] [last name]");
   const user = (await users.findByEmail(email)) ?? (await users.create({ email, firstName, lastName }));
-  if (!(await users.group("osiris-admin"))) await users.createGroup("osiris-admin");
-  await users.changeMembers("osiris-admin", [user.id], []);
-  console.log(`${user.email} is a system admin. Sign-in link (72 h): ${await users.loginLink(user.id, 72, "admin")}`);
+  if (!(await users.group(config.ADMIN_GROUP))) await users.createGroup(config.ADMIN_GROUP);
+  await users.changeMembers(config.ADMIN_GROUP, [user.id], []);
+  console.log(`${user.email} is an admin. Sign-in link (72 h): ${await users.loginLink(user.id, 72, "admin")}`);
 } else if (command === "token") {
   const [name] = args;
   if (!name || !/^[a-z0-9-]{1,40}$/.test(name)) throw new Error("Usage: token <name>");
   console.log(await createServiceToken(db, name));
+} else if (command === "client") {
+  const { clients } = await createAuth(config, db, users);
+  const [action, id, raw] = args;
+  if (action === "list") for (const c of await clients.list()) console.log(`${c.id}\t${c.name}\t${c.confidential ? "confidential" : "public"}\t${c.redirectUris.join(" ")}`);
+  else if (action === "add" && id && raw) {
+    const { secret } = await clients.create(id, JSON.parse(raw));
+    console.log(secret ? `Registered ${id}. Secret (shown once): ${secret}` : `Registered ${id}.`);
+  } else if (action === "remove" && id) console.log((await clients.remove(id)) ? `Removed ${id}.` : `No app ${id}.`);
+  else throw new Error("Usage: client list | client add <id> <json> | client remove <id>");
 } else if (command === "import-control") {
   const [url] = args;
   if (!url) throw new Error("Usage: import-control <rqlite-url>");
@@ -36,7 +49,7 @@ if (command === "add-admin") {
   console.log(`Imported ${imported.length} users, skipped ${skipped.length} already here.`);
   await source.close();
 } else {
-  console.error("Commands: add-admin <email> [first name] [last name] | token <name> | import-control <rqlite-url>");
+  console.error("Commands: add-admin <email> [first] [last] | token <name> | client list|add|remove | import-control <rqlite-url>");
   process.exitCode = 1;
 }
 await db.close();

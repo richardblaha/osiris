@@ -469,6 +469,8 @@ export interface SecurityOverview {
 export interface SignInState {
   step: "login" | "second-factor";
   methods: { passkey: boolean; emailLink: boolean; social: SocialProvider[] };
+  /** The application the user is signing in to, as its admin registered it. */
+  client: { name: string; logo: string | null };
 }
 
 /** Result of adding someone to a project by email (`POST /api/members`). */

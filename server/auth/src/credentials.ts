@@ -76,6 +76,8 @@ export class Credentials {
     private readonly db: Db,
     /** Seals TOTP secrets at rest. */
     private readonly box: SecretBox,
+    /** Shown in authenticator apps next to the account. */
+    private readonly issuer = "Auth",
   ) {}
 
   // --- password ---------------------------------------------------------------------------------------------------
@@ -112,7 +114,7 @@ export class Credentials {
   async startTotp(userId: string, account: string) {
     const secret = newTotpSecret();
     await this.db.execute([run("UPDATE users SET totp_pending = ?, updated_at = ? WHERE id = ?", this.box.seal(secret), Date.now(), userId)]);
-    return { secret, url: otpauthUrl(secret, account) };
+    return { secret, url: otpauthUrl(secret, account, this.issuer) };
   }
 
   /** Turns on the pending secret if the code matches; returns fresh recovery codes, shown to the user once. */

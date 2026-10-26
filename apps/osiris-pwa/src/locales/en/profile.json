@@ -3,12 +3,8 @@
   "parts": {
     "account": "Account",
     "security": "Sign-in and security",
-    "passkeys": "Passkeys",
-    "password": "Change password",
-    "totp": "Two-step sign-in",
     "linked": "Connected accounts",
     "personalization": "Personalization",
-    "activity": "Activity and sessions",
     "whatsapp": "WhatsApp deliveries"
   },
   "personalizationIntro": "How the assistant should treat you. Applies to you only, separately in each of your projects. The language also sets the app's language.",

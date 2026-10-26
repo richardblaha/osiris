@@ -225,13 +225,14 @@ export class Users {
   }
 
   /** A one-time sign-in link for the user, e.g. for a new user who has no way to sign in yet. */
-  async loginLink(userId: string, ttlHours: number, purpose: LinkPurpose = "admin"): Promise<string> {
+  /** `returnTo` is where the browser goes once the link is remembered (checked when it's opened). */
+  async loginLink(userId: string, ttlHours: number, purpose: LinkPurpose = "admin", returnTo?: string): Promise<string> {
     await this.get(userId);
     const token = newToken();
     await this.db.execute([
       run("INSERT INTO login_links (token_hash, user_id, purpose, expires_at) VALUES (?, ?, ?, ?)", sha256(token), userId, purpose, Date.now() + ttlHours * 3_600_000),
     ]);
-    return `${this.base}/link/${token}`;
+    return `${this.base}/link/${token}${returnTo ? `?${new URLSearchParams({ to: returnTo })}` : ""}`;
   }
 
   // --- groups ---------------------------------------------------------------------------------------------------------

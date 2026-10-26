@@ -49,11 +49,11 @@ export function Integrations() {
               <span className="block text-xs text-fg-muted">{i.connected ? t("integrations:connected", { account: i.account ?? t("integrations:account") }) : t(`integrations:what.${i.provider}`)}</span>
             </span>
             <button disabled={busy} onClick={() => void connect(i.provider)} className="btn-secondary text-sm">
-              {i.connected ? t("integrations:reconnect") : t("security:link")}
+              {i.connected ? t("integrations:reconnect") : t("integrations:link")}
             </button>
             {i.connected && (
               <button disabled={busy} onClick={() => void attempt(setBusy, setError, async () => (await api.disconnectIntegration(i.provider), await load()))} className="btn-danger text-sm">
-                {t("security:unlink")}
+                {t("integrations:unlink")}
               </button>
             )}
           </li>
@@ -78,7 +78,7 @@ function StandardIntegrations() {
     <ErrorNotice error={error} />
     {accounts.map(a => <div key={a.name} className="flex items-center justify-between gap-3 text-sm">
       <span>{a.name} ({a.kind})</span>
-      <button className="btn-danger" disabled={busy} onClick={() => void attempt(setBusy, setError, async () => { await api.deleteStandardAccount(a.name); await load(); })}>{t("security:unlink")}</button>
+      <button className="btn-danger" disabled={busy} onClick={() => void attempt(setBusy, setError, async () => { await api.deleteStandardAccount(a.name); await load(); })}>{t("integrations:unlink")}</button>
     </div>)}
     <form className="space-y-3" onSubmit={event => {
       event.preventDefault();

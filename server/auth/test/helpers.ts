@@ -7,8 +7,9 @@ import { join } from "node:path";
 import type { Mailer } from "@osiris/platform/mail.ts";
 import { FsObjectStore } from "@osiris/platform/objects.ts";
 import { LocalDb, migrate } from "@osiris/platform/rqlite.ts";
-import { createAuthApp, GATEWAY_CLIENT_ID } from "../src/app.ts";
+import { createAuthApp } from "../src/app.ts";
 import { createAuthDeps } from "../src/auth.ts";
+import { osirisClients } from "../src/clients.ts";
 import { createServiceToken } from "../src/scim.ts";
 import { authListener } from "../src/server.ts";
 import type { SocialClient, SocialProviderId } from "../src/social.ts";
@@ -39,21 +40,21 @@ export async function createTestAuth(options: { users?: NewUser[]; social?: Part
     db,
     users,
     publicUrl: ISSUER,
-    webOrigins: [WEB],
-    gatewaySecret: GATEWAY_SECRET,
+    appName: "Test",
     secret: randomBytes(32).toString("base64"),
     signingKeyPem: SIGNING_KEY,
     socialClients: options.social,
     fetchFn: options.socialFetch,
     mailer,
   });
+  await auth.clients.ensure(osirisClients([WEB], GATEWAY_SECRET));
   const app = createAuthApp(auth);
   const scimToken = await createServiceToken(db, "control");
   /** The gateway asking who a token belongs to (RFC 7662). */
-  const introspect = async (token: string, secret = GATEWAY_SECRET) =>
+  const introspect = async (token: string, secret = GATEWAY_SECRET, client = "osiris-gateway") =>
     app.request("/introspect", {
       method: "POST",
-      headers: { authorization: `Basic ${Buffer.from(`${GATEWAY_CLIENT_ID}:${secret}`).toString("base64")}`, "content-type": "application/x-www-form-urlencoded" },
+      headers: { authorization: `Basic ${Buffer.from(`${client}:${secret}`).toString("base64")}`, "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ token }),
     });
   const scim = (path: string, init: RequestInit = {}) =>
@@ -124,11 +125,11 @@ export async function browser(service: Awaited<ReturnType<typeof createTestAuth>
         ...extra,
       })}`,
     );
-  const token = async (params: Record<string, string>) => {
+  const token = async (params: Record<string, string>, origin: string | null = WEB) => {
     const res = await request("/token", {
       method: "POST",
       // As the browser sends it: the token endpoint must accept the web app's origin.
-      headers: { "content-type": "application/x-www-form-urlencoded", origin: WEB },
+      headers: { "content-type": "application/x-www-form-urlencoded", ...(origin ? { origin } : {}) },
       body: new URLSearchParams({ client_id: "osiris-web", ...params }),
     });
     return { status: res.status, body: (await res.json()) as Record<string, string> };

@@ -26,5 +26,7 @@
   "password": "Heslo nebo heslo aplikace",
   "connect": "Připojit účet",
   "server": "Server",
-  "port": "Port"
+  "port": "Port",
+  "link": "Propojit",
+  "unlink": "Odpojit"
 }

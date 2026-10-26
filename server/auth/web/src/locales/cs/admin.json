@@ -1,0 +1,60 @@
+{
+  "title": "Správa",
+  "search": "Hledat",
+  "select": "Vyberte položku ze seznamu.",
+  "sections": {
+    "users": "Uživatelé",
+    "groups": "Skupiny",
+    "apps": "Aplikace",
+    "keys": "API klíče"
+  },
+  "users": {
+    "add": "Přidat uživatele",
+    "create": "Vytvořit a získat odkaz k přihlášení",
+    "blocked": "zablokovaný",
+    "linkHint": "Jednorázový odkaz k přihlášení, platí 3 dny. Pošlete ho uživateli; heslo nebo passkey si nastaví ve svém účtu.",
+    "link": "Odkaz k přihlášení",
+    "resetSecondFactor": "Vypnout dvoufázové přihlášení",
+    "secondFactorReset": "Dvoufázové přihlášení je u uživatele vypnuté.",
+    "block": "Zablokovat",
+    "unblock": "Odblokovat",
+    "deleteConfirm": "Smazat uživatele {{name}} i s jeho způsoby přihlášení? Nelze vrátit.",
+    "phone": "Telefon: {{phone}}"
+  },
+  "groups": {
+    "name": "nova-skupina",
+    "none": "Zatím žádné skupiny.",
+    "members_one": "{{count}} člen",
+    "members_few": "{{count}} členové",
+    "members_many": "{{count}} člena",
+    "members_other": "{{count}} členů",
+    "addMember": "Přidat člena…",
+    "deleteConfirm": "Smazat skupinu {{name}}? Její členové přijdou o to, co jim dává."
+  },
+  "apps": {
+    "add": "Přidat aplikaci",
+    "issuer": "Vydavatel (issuer)",
+    "id": "Client ID",
+    "name": "Název",
+    "logo": "URL loga",
+    "web": "Webová aplikace",
+    "native": "Desktopová nebo mobilní aplikace",
+    "confidential": "Má tajný klíč klienta (aplikace na serveru)",
+    "redirectUris": "Adresy pro návrat (jedna na řádek)",
+    "logoutUris": "Adresy po odhlášení (jedna na řádek)",
+    "allowedGroups": "Kdo se smí přihlásit",
+    "allowedGroupsHint": "Členové zaškrtnutých skupin; nic nezaškrtnuto = všichni uživatelé.",
+    "acceptsTokensOf": "Přijímá tokeny aplikací (introspekce)",
+    "acceptsTokensOfHint": "Pro API: smí ověřovat přístupové tokeny vydané těmto aplikacím na /introspect.",
+    "secretHint": "Tajný klíč klienta, zobrazený jen teď. Uložte ho do nastavení aplikace.",
+    "rotate": "Nový tajný klíč",
+    "rotateConfirm": "Vytvořit nový tajný klíč? Současný hned přestane platit.",
+    "deleteConfirm": "Smazat aplikaci {{name}}? Její uživatelé se z ní odhlásí."
+  },
+  "keys": {
+    "intro": "API klíče dovolují jiným službám spravovat uživatele a skupiny přes SCIM 2.0 (/scim/v2).",
+    "name": "nazev-sluzby",
+    "tokenHint": "API klíč, zobrazený jen teď. Použijte ho jako Bearer token.",
+    "deleteConfirm": "Smazat klíč {{name}}? Služba hned ztratí přístup."
+  }
+}

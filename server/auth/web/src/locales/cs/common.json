@@ -1,0 +1,24 @@
+{
+  "loading": "Načítám…",
+  "copy": "Kopírovat",
+  "remove": "Odebrat",
+  "cancel": "Zrušit",
+  "save": "Uložit",
+  "saved": "Uloženo.",
+  "delete": "Smazat",
+  "add": "Přidat",
+  "signOut": "Odhlásit",
+  "account": "Můj účet",
+  "picture": "Změnit obrázek",
+  "firstName": "Jméno",
+  "lastName": "Příjmení",
+  "email": "E-mail",
+  "parts": {
+    "profile": "Profil",
+    "passkeys": "Passkeys",
+    "password": "Heslo",
+    "totp": "Dvoufázové přihlášení",
+    "linked": "Propojené účty",
+    "activity": "Přihlášení a relace"
+  }
+}

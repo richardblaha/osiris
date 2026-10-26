@@ -367,6 +367,21 @@
       "name": "Název skupiny smí mít jen malá písmena, číslice a : . _ -, nejvýš 100 znaků.",
       "exists": "Taková skupina už existuje.",
       "unknownMember": "Uživatel {{id}} neexistuje."
+    },
+    "client": {
+      "nothing": "Aplikace potřebuje adresy pro návrat (přihlašuje uživatele) nebo aplikace, jejichž tokeny přijímá.",
+      "invalid": "Nastavení aplikace není platné: {{detail}}",
+      "id": "Id aplikace smí mít malá písmena, číslice a . _ -, 2 až 64 znaků.",
+      "exists": "Aplikace s tímto id už existuje.",
+      "notFound": "Taková aplikace neexistuje.",
+      "public": "Veřejná aplikace nemá tajný klíč."
+    },
+    "token": {
+      "notFound": "Takový API klíč neexistuje."
+    },
+    "picture": {
+      "type": "Obrázek musí být PNG nebo JPEG.",
+      "tooLarge": "Obrázek smí mít nejvýš 2 MB."
     }
   },
   "schedules": {
@@ -412,11 +427,11 @@
   },
   "email": {
     "signInLink": {
-      "subject": "Přihlášení do Osirisu",
-      "text_one": "Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí {{count}} hodinu a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
-      "text_few": "Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí {{count}} hodiny a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
-      "text_many": "Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí {{count}} hodiny a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
-      "text_other": "Dobrý den,\n\npro přihlášení do Osirisu otevřete tento odkaz (platí {{count}} hodin a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n"
+      "subject": "Přihlášení – {{app}}",
+      "text_one": "Dobrý den,\n\npro přihlášení ({{app}}) otevřete tento odkaz (platí {{count}} hodinu a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
+      "text_few": "Dobrý den,\n\npro přihlášení ({{app}}) otevřete tento odkaz (platí {{count}} hodiny a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
+      "text_many": "Dobrý den,\n\npro přihlášení ({{app}}) otevřete tento odkaz (platí {{count}} hodiny a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n",
+      "text_other": "Dobrý den,\n\npro přihlášení ({{app}}) otevřete tento odkaz (platí {{count}} hodin a jen jednou):\n\n{{link}}\n\nPokud jste o přihlášení nežádali, e-mail ignorujte.\n"
     },
     "inquiry": {
       "subject": "Nová poptávka: {{name}}",
@@ -432,7 +447,7 @@
     },
     "loggedOut": {
       "title": "Odhlášeno",
-      "back": "Zpět do Osirisu"
+      "back": "Zpět na můj účet"
     },
     "signInError": {
       "title": "Chyba přihlášení",

@@ -103,7 +103,7 @@ const apply = (claims: Record<string, string>, changes: Record<string, string | 
 };
 
 /** Users in osiris-auth, over SCIM 2.0 with control's service token. */
-export function scimUsers(options: { url: string; token: string; fetchFn?: typeof fetch }): UserDirectory {
+export function scimUsers(options: { url: string; token: string; fetchFn?: typeof fetch; signInReturn?: string }): UserDirectory {
   const base = `${options.url.replace(/\/$/, "")}/scim/v2`;
   const fetchFn = options.fetchFn ?? fetch;
 
@@ -202,7 +202,7 @@ export function scimUsers(options: { url: string; token: string; fetchFn?: typeo
     },
 
     async loginLink(userId, ttlHours, purpose = "admin") {
-      return (await json<{ link: string }>(`/Users/${encodeURIComponent(userId)}/signInLink`, { method: "POST", body: JSON.stringify({ ttlHours, purpose }) })).link;
+      return (await json<{ link: string }>(`/Users/${encodeURIComponent(userId)}/signInLink`, { method: "POST", body: JSON.stringify({ ttlHours, purpose, returnTo: options.signInReturn }) })).link;
     },
 
     async resetSecondFactor(userId) {
