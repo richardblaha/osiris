@@ -116,7 +116,6 @@
     },
     "telemetryOff": "Telemetry (ClickHouse) is not configured here.",
     "telemetry": {
-      "traceId": "Invalid trace id.",
       "queryFailed": "The ClickHouse query failed: {{detail}}"
     },
     "validation": {

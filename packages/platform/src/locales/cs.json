@@ -128,7 +128,6 @@
     },
     "telemetryOff": "Telemetrie (ClickHouse) tu není nastavená",
     "telemetry": {
-      "traceId": "Neplatné id trasy",
       "queryFailed": "Dotaz do ClickHouse selhal: {{detail}}"
     },
     "validation": {
