@@ -123,7 +123,7 @@ spec:
     - metadata: { name: data }
       spec:
         accessModes: [ReadWriteOnce]
-        storageClassName: civo-volume
+        storageClassName: ceph-rbd
         resources: { requests: { storage: 20Gi } }
 ---
 apiVersion: v1
