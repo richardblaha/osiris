@@ -122,9 +122,11 @@ Collector. `otel-collector` takes OTLP from applications (`otel-collector.observ
 node and sends them to the collector (port 4319, without a second pod lookup). The collector alone writes to ClickHouse
 (database `otel`, tables `otel_logs`, `otel_traces`, `otel_metrics_*`, created by its exporter, 30 days TTL). Osiris
 services and runtimes send traces, metrics and logs over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set
-(`@osiris/platform/telemetry.ts`; the manifests set it), so their pod logs are not collected a second time. System
-admins read it all in Osiris: System > Logy, Metriky, Trasy (control queries ClickHouse as the read-only user `osiris`;
-the NetworkPolicy lets only the collector write and control read).
+(`@osiris/platform/telemetry.ts`; the manifests set it), so their pod logs are not collected a second time. Admins
+read it all at **https://dashboard.k6labs.cz** (Logy, Metriky, Trasy; signed in through auth.k6labs.cz, group `admin`):
+its telemetry API queries ClickHouse as the read-only user `osiris` — Osiris's Dashboards panels use the same user
+through control (`/api/admin/telemetry/logs` and `/series`); the NetworkPolicy lets only the collector write and
+control read.
 
 1. `.env`: `OSIRIS_CLICKHOUSE_OTEL_PASSWORD`, `OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD` (`openssl rand -hex 24` each), then:
    ```bash

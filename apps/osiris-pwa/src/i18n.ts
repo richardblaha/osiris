@@ -24,7 +24,6 @@ import type en_secrets from "./locales/en/secrets.json";
 import type en_settings from "./locales/en/settings.json";
 import type en_sites from "./locales/en/sites.json";
 import type en_skills from "./locales/en/skills.json";
-import type en_telemetry from "./locales/en/telemetry.json";
 import type en_projectInfo from "./locales/en/projectInfo.json";
 import type en_projects from "./locales/en/projects.json";
 import type en_tools from "./locales/en/tools.json";
@@ -121,6 +120,6 @@ export default i18n;
 declare module "i18next" {
   interface CustomTypeOptions {
     defaultNS: "common";
-    resources: { activity: typeof en_activity, analytics: typeof en_analytics, app: typeof en_app, assistant: typeof en_assistant, chat: typeof en_chat, common: typeof en_common, dashboards: typeof en_dashboards, database: typeof en_database, files: typeof en_files, guards: typeof en_guards, integrations: typeof en_integrations, invite: typeof en_invite, knowledge: typeof en_knowledge, mcp: typeof en_mcp, memory: typeof en_memory, profile: typeof en_profile, public: typeof en_public, quotas: typeof en_quotas, schedules: typeof en_schedules, secrets: typeof en_secrets, settings: typeof en_settings, sites: typeof en_sites, skills: typeof en_skills, telemetry: typeof en_telemetry, projectInfo: typeof en_projectInfo, projects: typeof en_projects, tools: typeof en_tools, users: typeof en_users };
+    resources: { activity: typeof en_activity, analytics: typeof en_analytics, app: typeof en_app, assistant: typeof en_assistant, chat: typeof en_chat, common: typeof en_common, dashboards: typeof en_dashboards, database: typeof en_database, files: typeof en_files, guards: typeof en_guards, integrations: typeof en_integrations, invite: typeof en_invite, knowledge: typeof en_knowledge, mcp: typeof en_mcp, memory: typeof en_memory, profile: typeof en_profile, public: typeof en_public, quotas: typeof en_quotas, schedules: typeof en_schedules, secrets: typeof en_secrets, settings: typeof en_settings, sites: typeof en_sites, skills: typeof en_skills, projectInfo: typeof en_projectInfo, projects: typeof en_projects, tools: typeof en_tools, users: typeof en_users };
   }
 }

@@ -2,7 +2,7 @@ import type { WebStats, WebTopRow } from "@osiris/shared";
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice, Loading } from "./Scope.tsx";
-import { LineChart } from "./Telemetry.tsx";
+import { LineChart } from "./Chart.tsx";
 import { t } from "i18next";
 import { currentLocale, formatNumber } from "./i18n.ts";
 

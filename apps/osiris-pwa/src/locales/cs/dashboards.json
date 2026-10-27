@@ -78,5 +78,7 @@
   "confirmDelete": "Smazat dashboard {{name}}?",
   "editTitle": "Upravit dashboard",
   "definition": "Definice",
-  "definitionHelp": "range: {{ranges}}. Panel: title, kind (stat, line, bar, table, meters), width 1–4 (ze 4 sloupců), source:"
+  "definitionHelp": "range: {{ranges}}. Panel: title, kind (stat, line, bar, table, meters), width 1–4 (ze 4 sloupců), source:",
+  "chart": "Časová řada ({{count}})",
+  "topSeries": "Zobrazeno {{shown}} nejaktivnějších z {{count}}"
 }

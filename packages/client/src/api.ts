@@ -23,9 +23,6 @@ import type {
   LogRecord,
   MetricInfo,
   MetricSeries,
-  SpanRecord,
-  TelemetryFacets,
-  TraceSummary,
   SystemDefaults,
   PublicAssistantSettings,
   PublishResult,
@@ -372,15 +369,10 @@ export const api = {
       request(`/admin/projects/${id}/members/${encodeURIComponent(userId)}`, { method: "PUT", body: JSON.stringify({ role }) }),
     removeMember: (id: string, userId: string) =>
       request(`/admin/projects/${id}/members/${encodeURIComponent(userId)}`, { method: "DELETE" }),
-    /** The cluster's telemetry in ClickHouse; times in epoch ms. */
+    /** Dashboard panel data: logs and metric series from the cluster's telemetry in ClickHouse; times in epoch ms. */
     telemetry: {
-      facets: (q: { from: number; to: number }) => json<TelemetryFacets>(`/admin/telemetry/facets?${query(strings(q))}`),
       logs: (q: { from: number; to: number; service?: string; namespace?: string; severity?: string; q?: string; traceId?: string; limit?: number }) =>
         json<LogRecord[]>(`/admin/telemetry/logs?${query(strings(q))}`),
-      traces: (q: { from: number; to: number; service?: string; q?: string; minMs?: number; errors?: boolean }) =>
-        json<TraceSummary[]>(`/admin/telemetry/traces?${query(strings(q))}`),
-      trace: (id: string) => json<SpanRecord[]>(`/admin/telemetry/traces/${id}`),
-      metrics: (q: { from: number; to: number; q?: string }) => json<MetricInfo[]>(`/admin/telemetry/metrics?${query(strings(q))}`),
       series: (q: { from: number; to: number; name: string; type: MetricInfo["type"]; groupBy?: string; service?: string }) =>
         json<{ step: number; series: MetricSeries[] }>(`/admin/telemetry/series?${query(strings(q))}`),
     },

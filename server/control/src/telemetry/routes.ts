@@ -1,9 +1,9 @@
-import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, WebStats } from "@osiris/shared";
+import type { LogRecord, MetricSeries } from "@osiris/shared";
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { HttpError, ValidationError } from "@osiris/platform/i18n.ts";
-import type { Telemetry } from "./clickhouse.ts";
+import type { MetricType, Telemetry } from "./clickhouse.ts";
 
 const HOUR = 3_600_000;
 /** At most 31 days back (the data's retention is 30). */
@@ -20,7 +20,7 @@ const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   return r.data;
 };
 
-/** System > Logy, Metriky, Trasy: the cluster's telemetry, read from ClickHouse (system admins, under /api/admin). */
+/** The data of the Dashboards feature's panels (a system dashboard's logs and metric sources; under /api/admin). */
 export function telemetryRoutes(telemetry?: Telemetry) {
   const t = () => {
     if (!telemetry) throw new HttpError(503, "errors.telemetryOff");
@@ -36,7 +36,6 @@ export function telemetryRoutes(telemetry?: Telemetry) {
     }
   };
   return new Hono()
-    .get("/facets", async (c) => c.json<TelemetryFacets>(await failing(() => t().facets(parse(rangeQuery, c.req.query())))))
     .get("/logs", async (c) => {
       const q = c.req.query();
       const f = parse(
@@ -54,30 +53,6 @@ export function telemetryRoutes(telemetry?: Telemetry) {
       );
       return c.json<LogRecord[]>(await failing(() => t().logs(f)));
     })
-    .get("/traces", async (c) => {
-      const f = parse(
-        rangeQuery.and(
-          z.object({
-            service: text,
-            q: text,
-            minMs: z.coerce.number().min(0).max(3_600_000).optional(),
-            errors: z.enum(["true", "false"]).transform((v) => v === "true").optional(),
-            limit: z.coerce.number().int().min(1).max(500).default(100),
-          }),
-        ),
-        c.req.query(),
-      );
-      return c.json<TraceSummary[]>(await failing(() => t().traces(f)));
-    })
-    .get("/traces/:id", async (c) => {
-      const id = c.req.param("id");
-      if (!/^[0-9a-f]{32}$/.test(id)) throw new HttpError(400, "errors.telemetry.traceId");
-      return c.json<SpanRecord[]>(await failing(() => t().trace(id)));
-    })
-    .get("/metrics", async (c) => {
-      const r = parse(rangeQuery, c.req.query());
-      return c.json<MetricInfo[]>(await failing(() => t().metrics(r, c.req.query("q")?.slice(0, 200))));
-    })
     .get("/series", async (c) => {
       const f = parse(
         rangeQuery.and(
@@ -92,6 +67,6 @@ export function telemetryRoutes(telemetry?: Telemetry) {
       );
       // About 120 points across the range, at least a minute apart.
       const step = Math.max(60, Math.round((f.to - f.from) / 1000 / 120 / 60) * 60);
-      return c.json<{ step: number; series: MetricSeries[] }>({ step, series: await failing(() => t().series({ ...f, step })) });
+      return c.json<{ step: number; series: MetricSeries[] }>({ step, series: await failing(() => t().series({ ...f, type: f.type as MetricType, step })) });
     });
 }

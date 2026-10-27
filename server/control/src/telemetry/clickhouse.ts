@@ -1,4 +1,4 @@
-import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, WebStats, WebSummary, WebTopRow } from "@osiris/shared";
+import type { LogRecord, MetricInfo, MetricSeries, WebStats, WebSummary, WebTopRow } from "@osiris/shared";
 
 /** ClickHouse's HTTP interface with a read-only user; values go in as query parameters (`{name:Type}`), never as SQL. */
 export class ClickHouse {
@@ -42,25 +42,6 @@ export class Telemetry {
 
   constructor(readonly ch: ClickHouse) {
     this.web = new WebAnalytics(ch);
-  }
-
-  /** Services and namespaces seen in the range, for the filters. */
-  async facets(r: Range): Promise<TelemetryFacets> {
-    const p = range(r);
-    const [services, namespaces] = await Promise.all([
-      this.ch.query<{ s: string }>(
-        `SELECT DISTINCT ServiceName AS s FROM (
-           SELECT ServiceName FROM otel_logs WHERE Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)
-           UNION ALL SELECT ServiceName FROM otel_traces WHERE Timestamp BETWEEN toDateTime({from:UInt32}) AND toDateTime({to:UInt32}))
-         WHERE s <> '' ORDER BY s LIMIT 500`,
-        p,
-      ),
-      this.ch.query<{ s: string }>(
-        `SELECT DISTINCT ${NS} AS s FROM otel_logs WHERE Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9) AND s <> '' ORDER BY s LIMIT 500`,
-        p,
-      ),
-    ]);
-    return { services: services.map((x) => x.s), namespaces: namespaces.map((x) => x.s) };
   }
 
   /** The newest log records matching the filters (`before`: older than that, for the next page). */
@@ -136,67 +117,6 @@ export class Telemetry {
       range(r),
     );
     return rows.map((x) => ({ ...x, ts: Number(x.ts), count: Number(x.count) }));
-  }
-
-  /** Root spans (one per trace) matching the filters, newest first, with how many spans their trace has. */
-  async traces(f: Range & { service?: string; q?: string; minMs?: number; errors?: boolean; limit: number }): Promise<TraceSummary[]> {
-    const where = ["Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)", "ParentSpanId = ''"];
-    const params: Record<string, string | number> = { ...range(f), limit: f.limit };
-    if (f.service) (where.push("ServiceName = {service:String}"), (params.service = f.service));
-    if (f.q) (where.push("positionCaseInsensitiveUTF8(SpanName, {q:String}) > 0"), (params.q = f.q));
-    if (f.minMs) (where.push("Duration >= {minNs:UInt64}"), (params.minNs = Math.round(f.minMs * 1e6)));
-    if (f.errors) where.push("StatusCode = 'Error'");
-    const rows = await this.ch.query<{ ts: string; traceId: string; service: string; name: string; durationNs: string; status: string; spans: string }>(
-      `SELECT toUnixTimestamp64Milli(r.Timestamp) AS ts, r.TraceId AS traceId, r.ServiceName AS service, r.SpanName AS name,
-              r.Duration AS durationNs, r.StatusCode AS status,
-              (SELECT count() FROM otel_traces t WHERE t.TraceId = r.TraceId) AS spans
-       FROM (SELECT * FROM otel_traces WHERE ${where.join(" AND ")} ORDER BY Timestamp DESC LIMIT {limit:UInt32}) AS r
-       ORDER BY r.Timestamp DESC`,
-      params,
-    );
-    return rows.map((r) => ({ ts: Number(r.ts), traceId: r.traceId, service: r.service, name: r.name, durationMs: Number(r.durationNs) / 1e6, error: r.status === "Error", spans: Number(r.spans) }));
-  }
-
-  /** Every span of a trace, in start order. */
-  async trace(traceId: string): Promise<SpanRecord[]> {
-    const rows = await this.ch.query<{
-      ts: string;
-      spanId: string;
-      parentSpanId: string;
-      service: string;
-      name: string;
-      kind: string;
-      durationNs: string;
-      status: string;
-      statusMessage: string;
-      attributes: Record<string, string>;
-      resource: Record<string, string>;
-    }>(
-      `SELECT toUnixTimestamp64Nano(Timestamp) AS ts, SpanId AS spanId, ParentSpanId AS parentSpanId, ServiceName AS service, SpanName AS name,
-              SpanKind AS kind, Duration AS durationNs, StatusCode AS status, StatusMessage AS statusMessage, SpanAttributes AS attributes,
-              ResourceAttributes AS resource
-       FROM otel_traces WHERE TraceId = {traceId:String} ORDER BY Timestamp LIMIT 2000`,
-      { traceId },
-    );
-    return rows.map((r) => ({
-      ...r,
-      startMs: Number(BigInt(r.ts) / 1000n) / 1000,
-      durationMs: Number(r.durationNs) / 1e6,
-      error: r.status === "Error",
-    }));
-  }
-
-  /** Metrics seen in the range, by name (and type), with their unit and description. */
-  async metrics(r: Range, q?: string): Promise<MetricInfo[]> {
-    const params: Record<string, string | number> = { ...range(r), q: q ?? "" };
-    const parts = Object.entries(METRIC_TABLES).map(
-      ([type, table]) =>
-        `SELECT MetricName AS name, '${type}' AS type, any(MetricUnit) AS unit, any(MetricDescription) AS description, uniqExact(ServiceName) AS services
-         FROM ${table} WHERE TimeUnix BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)
-           AND positionCaseInsensitiveUTF8(MetricName, {q:String}) > 0 GROUP BY MetricName`,
-    );
-    const rows = await this.ch.query<MetricInfo & { services: string }>(`${parts.join(" UNION ALL ")} ORDER BY name LIMIT 1000`, params);
-    return rows.map(({ services: _, ...m }) => m);
   }
 
   /**

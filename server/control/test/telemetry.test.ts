@@ -23,7 +23,6 @@ describe("telemetry from ClickHouse", () => {
     expect((await telemetryRoutes().request("/logs")).status).toBe(503);
     const t = new Telemetry(new ClickHouse("http://x", "u", "p", (async () => Response.json({ data: [] })) as typeof fetch));
     const app = telemetryRoutes(t);
-    expect((await app.request("/traces/not-an-id")).status).toBe(400);
     expect((await app.request("/series?name=m&type=nope")).status).toBe(400);
     expect((await app.request("/series?name=m&type=gauge&groupBy=a';b")).status).toBe(400);
     expect(await (await app.request("/series?name=m&type=gauge")).json()).toEqual({ step: 60, series: [] });

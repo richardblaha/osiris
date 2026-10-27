@@ -14,11 +14,8 @@ test("every view survives a round trip through its URL", () => {
     [{ kind: "profile" }, undefined],
     [{ kind: "projects", initial: null }, undefined],
     [{ kind: "projects", initial: "acme" }, undefined],
-    [{ kind: "traces", traceId: "abc" }, undefined],
     [{ kind: "settings" }, undefined],
     ...SETTINGS_PARTS.map((part): [View, undefined] => [{ kind: "settings", part }, undefined]),
-    [{ kind: "logs", traceId: "abc" }, undefined],
-    [{ kind: "metrics" }, undefined],
   ];
   for (const [view, project] of views) deepEqual(fromPath(toPath(view, project)!), project ? { project, view } : { view });
 });

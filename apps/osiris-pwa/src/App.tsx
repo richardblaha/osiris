@@ -34,7 +34,6 @@ import { SecretDetail, secretKey } from "./Secrets.tsx";
 import { loadSkills, SkillDetail, skillKey } from "./Skills.tsx";
 import { Members, roleLabel, ProjectInfo } from "./ProjectInfo.tsx";
 import { SystemSettings } from "./SystemSettings.tsx";
-import { Diagnostics } from "./Telemetry.tsx";
 import { WebAnalytics } from "./WebAnalytics.tsx";
 import { ProjectAdmin, ProjectLogo } from "./Projects.tsx";
 import { StatusBar } from "./Quotas.tsx";
@@ -501,7 +500,6 @@ function Workspace() {
             {me.systemAdmin && (
               <NavSection title={t("app:nav.system")}>
                 <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label={t("app:nav.dashboard")} icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
-                <NavLink active={view.kind === "logs" || view.kind === "metrics" || view.kind === "traces"} onClick={() => setView({ kind: "logs" })} label={t("app:nav.diagnostics")} icon="M2 13.5h12M3 11l3-4 3 2 4-6" />
                 <NavLink active={view.kind === "projects"} onClick={() => setView({ kind: "projects" })} label={t("app:nav.projects")} icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
                 <NavLink
                   active={view.kind === "settings"}
@@ -543,8 +541,6 @@ function Workspace() {
             me.systemAdmin ? <Dashboards key="system" system canEdit me={me.user} /> : null
           ) : view.kind === "settings" ? (
             me.systemAdmin ? <SystemSettings part={view.part} onSelect={(part) => setView({ kind: "settings", part })} /> : null
-          ) : view.kind === "logs" || view.kind === "metrics" || view.kind === "traces" ? (
-            me.systemAdmin ? <Diagnostics view={view} onNavigate={setView} /> : null
           ) : view.kind === "users" ? (
             <ProjectUsers key={project?.id} me={me} isAdmin={isAdmin} projects={projects} />
           ) : view.kind === "projects" ? (

@@ -23,12 +23,8 @@ export type View =
   /** The system admin's user administration. */
   | { kind: "users" }
   | { kind: "settings"; part?: SettingsPart }
-  /** The cluster's telemetry (system admins); a trace open, or logs of one trace. */
-  | { kind: "logs"; traceId?: string }
-  | { kind: "metrics" }
   /** The project's sites' web analytics. */
   | { kind: "analytics" }
-  | { kind: "traces"; traceId?: string }
   | { kind: "files" }
   | { kind: "schedules" }
   | { kind: "database" }
@@ -52,13 +48,8 @@ export function toPath(view: View, project: string | undefined): string | undefi
       return "/profile";
     case "settings":
       return `/system/settings${view.part ? `/${view.part}` : ""}`;
-    case "metrics":
-      return `/system/${view.kind}`;
     case "sysdash":
       return "/system/dashboard";
-    case "logs":
-    case "traces":
-      return `/system/${view.kind}${view.traceId ? `/${seg(view.traceId)}` : ""}`;
     case "projects":
       return `/system/projects${view.initial === null ? "/new" : view.initial ? `/${seg(view.initial)}` : ""}`;
   }
@@ -88,9 +79,7 @@ export function fromPath(path: string): { project?: string; view: View } | undef
   if (top === "profile" && !a) return { view: { kind: "profile" } };
   if (top === "system") {
     if (a === "settings" && !c && (!b || (SETTINGS_PARTS as readonly string[]).includes(b))) return { view: b ? { kind: "settings", part: b as SettingsPart } : { kind: "settings" } };
-    if (a === "metrics" && !b) return { view: { kind: a } };
     if (a === "dashboard" && !b) return { view: { kind: "sysdash" } };
-    if ((a === "logs" || a === "traces") && !c) return { view: { kind: a, traceId: b } };
     if (a === "projects" && !c) return { view: { kind: "projects", initial: b === "new" ? null : b } };
     return undefined;
   }

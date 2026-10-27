@@ -78,5 +78,7 @@
   "confirmDelete": "Delete the dashboard {{name}}?",
   "editTitle": "Edit dashboard",
   "definition": "Definition",
-  "definitionHelp": "range: {{ranges}}. Panel: title, kind (stat, line, bar, table, meters), width 1–4 (of 4 columns), source:"
+  "definitionHelp": "range: {{ranges}}. Panel: title, kind (stat, line, bar, table, meters), width 1–4 (of 4 columns), source:",
+  "chart": "Time series ({{count}})",
+  "topSeries": "{{shown}} busiest of {{count}} shown"
 }

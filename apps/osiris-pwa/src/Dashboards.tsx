@@ -6,7 +6,7 @@ import { fileSize } from "./Files.tsx";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
 import { attempt, ErrorNotice, Field, Loading } from "./Scope.tsx";
-import { LineChart } from "./Telemetry.tsx";
+import { LineChart } from "./Chart.tsx";
 import { t } from "i18next";
 import { formatDateTime, formatNumber } from "./i18n.ts";
 
