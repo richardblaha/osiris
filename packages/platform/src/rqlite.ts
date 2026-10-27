@@ -3,11 +3,11 @@ import { join } from "node:path";
 import { createClient, type Client, type InValue } from "@libsql/client";
 
 /**
- * The central database: rqlite (SQLite replicated with Raft) in the cluster, a local SQLite file in development and
- * tests. rqlite has no interactive transactions, so code here never reads and then writes inside one: a batch of
- * statements is applied atomically, and work is claimed with a single conditional UPDATE that stamps a claim token,
- * then read back by that token. Writes go through the Raft leader one at a time, so two workers can't claim the same
- * row. Time is always passed in as a parameter (epoch ms), never `datetime('now')`, so every node computes the same.
+ * Control's database is a single SQLite file on its volume (`LocalDb`); the same class serves development and tests.
+ * rqlite has no interactive transactions, so code here never reads and then writes inside one: a batch of statements
+ * is applied atomically, and work is claimed with a single conditional UPDATE that stamps a claim token, then read
+ * back by that token. Time is always passed in as a parameter (epoch ms), never `datetime('now')`, so every node
+ * computes the same.
  */
 export type Value = string | number | null;
 export type Statement = { sql: string; args?: Value[] };

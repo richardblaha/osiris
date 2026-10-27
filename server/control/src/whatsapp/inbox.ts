@@ -54,8 +54,8 @@ export class Inbox {
         AND NOT EXISTS (SELECT 1 FROM wa_inbox p WHERE p.from_number = m.from_number AND p.status = 'processing')
         AND NOT EXISTS (SELECT 1 FROM wa_inbox e WHERE e.from_number = m.from_number AND e.status = 'pending' AND e.received_at < m.received_at)
       ORDER BY m.received_at LIMIT 1`;
-    // Look before claiming: an UPDATE that changes nothing still grows rqlite's Raft log, and without new data rqlite
-    // can't snapshot it away, so an idle poll every second would fill the disk.
+    // Look before claiming: an UPDATE that changes nothing still writes (and so grows the database file), so an idle
+    // poll every second would churn the volume for nothing.
     const [due] = await this.db.query(`SELECT 1 FROM wa_inbox WHERE status = 'processing' AND lease_until < ? UNION ALL SELECT * FROM (${next})`, [now, now]);
     if (!due) return null;
     const claim = randomUUID();

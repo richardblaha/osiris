@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { serve } from "@hono/node-server";
 import { InternalSigner, InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
 import { FsObjectStore, S3ObjectStore, type ObjectStore } from "@osiris/platform/objects.ts";
-import { LocalDb, migrate, RqliteDb, type Db } from "@osiris/platform/rqlite.ts";
+import { LocalDb, migrate, type Db } from "@osiris/platform/rqlite.ts";
 import { ClickHouse, Telemetry } from "./telemetry/clickhouse.ts";
 import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";
@@ -29,13 +29,8 @@ startTelemetry("osiris-control");
 const config = loadConfig();
 
 let db: Db;
-if (config.RQLITE_URL) {
-  db = new RqliteDb(config.RQLITE_URL, { username: config.RQLITE_USERNAME, password: config.RQLITE_PASSWORD });
-} else {
-  console.warn("RQLITE_URL not set: using a local SQLite file (development only).");
-  mkdirSync(dirname(config.LOCAL_DB_PATH), { recursive: true });
-  db = new LocalDb(config.LOCAL_DB_PATH);
-}
+mkdirSync(dirname(config.LOCAL_DB_PATH), { recursive: true });
+db = new LocalDb(config.LOCAL_DB_PATH);
 const applied = await migrate(db, join(import.meta.dirname, "db/migrations"));
 if (applied.length) console.log(`Applied migrations ${applied.join(", ")}`);
 

@@ -6,7 +6,7 @@ Osiris runs in the `busiris` microk8s cluster at https://osiris.k6labs.cz. Share
 namespace; each project gets its own namespace `osiris-p-<slug>`, created by the operator.
 
 ```
-Internet ─ Traefik ─── osiris.k6labs.cz ──▶ gateway ──┬─▶ control ──▶ rqlite (3 nodes) ─▶ S3 (rqlite backups)
+Internet ─ Traefik ─── osiris.k6labs.cz ──▶ gateway ──┬─▶ control ──▶ SQLite (own volume) ─▶ S3 (control backups)
                                                       │      │  └──▶ WhatsApp, S3, Emailit, Google/Facebook/Microsoft/Seznam (sign-in)
                                                       │      └──▶ Project objects ◀── operator ──▶ project namespaces
                                                       └─▶ runtime (osiris-p-<slug>, 0–1 pod, own volume) ─▶ gotenberg
@@ -18,7 +18,8 @@ Internet ─ Traefik ─── osiris.k6labs.cz ──▶ gateway ──┬─�
 - **Projects sleep:** a runtime idle for `idleMinutes` (30 by default, 0 = always on) is snapshotted to S3 and scaled to
   zero; the next request, WhatsApp message or scheduled task wakes it (the gateway waits for it, usually 10–30 s).
 - **Data:** project database and files on the project's volume (`ceph-rbd`), snapshots in S3 (before every sleep and
-  daily); the central database in rqlite with automatic backups to S3.
+  daily); control's SQLite (`/data/control.db`) on its own volume, copied daily to the volume and to S3
+  (`backups/control/`, CronJob `control-backup`).
 - **TLS:** cert-manager (`letsencrypt` ClusterIssuer); project domains get their certificates through HTTP-01.
 - **Sign-in:** osiris-auth at `https://auth.k6labs.cz`, on the **busiris** cluster (`.kubeconfig.busiris`, namespace
   `osiris-auth`, `deploy/auth`): the OpenID Connect provider, the account page, users and groups (SCIM 2.0).
@@ -173,8 +174,8 @@ then adds its `count.js` to the page and the site to the CSP; the app counts eac
 
 The RGW of the cluster's Ceph (namespace `rook-ceph-external`, service `ceph-rgw`; outside the cluster at
 https://s3.k6labs.cz) with the user of the secret `rook-ceph-object-user-s3-richard` and a bucket (`osiris`).
-Pods use `http://ceph-rgw.rook-ceph-external.svc` (path style). Prefixes: `backups/` (project snapshots),
-`rqlite/` (central DB).
+Pods use `http://ceph-rgw.rook-ceph-external.svc` (path style). Prefixes: `backups/` (project snapshots and
+control's database copies, `backups/control/`).
 
 ## Secrets
 
@@ -185,7 +186,6 @@ unreadable; changing the JWT keys only needs a restart of all services):
 pnpm --filter @osiris/platform gen-keys   # → OSIRIS_INTERNAL_JWT_PRIVATE_KEY, OSIRIS_INTERNAL_JWT_PUBLIC_KEY, OSIRIS_SECRETS_MASTER_KEY,
                                           #   OSIRIS_AUTH_SIGNING_KEY, OSIRIS_AUTH_SECRET (osiris-auth's)
                                           #   (put the PEM values in single quotes in .env: they contain spaces)
-openssl rand -hex 24                      # → OSIRIS_RQLITE_CONTROL_PASSWORD, OSIRIS_RQLITE_NODE_PASSWORD
 ```
 
 ```bash
@@ -201,7 +201,6 @@ apply osiris-control \
   --from-literal=INTERNAL_JWT_PRIVATE_KEY="$(key "$OSIRIS_INTERNAL_JWT_PRIVATE_KEY")" \
   --from-literal=INTERNAL_JWT_PUBLIC_KEY="$(key "$OSIRIS_INTERNAL_JWT_PUBLIC_KEY")" \
   --from-literal=AUTH_SCIM_TOKEN="$OSIRIS_AUTH_SCIM_TOKEN" --from-literal=EMAILIT_API_KEY="$EMAILIT_API_KEY" \
-  --from-literal=RQLITE_USERNAME=control --from-literal=RQLITE_PASSWORD="$OSIRIS_RQLITE_CONTROL_PASSWORD" \
   --from-literal=S3_ENDPOINT="$OSIRIS_S3_ENDPOINT" --from-literal=S3_REGION="$OSIRIS_S3_REGION" --from-literal=S3_BUCKET="$OSIRIS_S3_BUCKET" \
   --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY" \
   --from-literal=WHATSAPP_VERIFY_TOKEN="$OSIRIS_WHATSAPP_VERIFY_TOKEN" --from-literal=WHATSAPP_APP_SECRET="$OSIRIS_WHATSAPP_APP_SECRET" \
@@ -217,12 +216,6 @@ apply osiris-operator \
   --from-literal=RUNTIME_SECRET_MICROSOFT_INTEGRATION_CLIENT_ID="$OSIRIS_MICROSOFT_INTEGRATION_CLIENT_ID" \
   --from-literal=RUNTIME_SECRET_MICROSOFT_INTEGRATION_CLIENT_SECRET="$OSIRIS_MICROSOFT_INTEGRATION_CLIENT_SECRET"
 
-# rqlite: users and permissions (control all, nodes join), automatic backup to S3 every 5 minutes.
-apply rqlite-config \
-  --from-literal=users.json="[{\"username\":\"control\",\"password\":\"$OSIRIS_RQLITE_CONTROL_PASSWORD\",\"perms\":[\"all\"]},{\"username\":\"node\",\"password\":\"$OSIRIS_RQLITE_NODE_PASSWORD\",\"perms\":[\"join\",\"remove\"]},{\"username\":\"*\",\"perms\":[\"status\",\"ready\"]}]" \
-  --from-literal=backup.json="{\"version\":1,\"type\":\"s3\",\"interval\":\"5m\",\"vacuum\":false,\"sub\":{\"access_key_id\":\"\$S3_ACCESS_KEY_ID\",\"secret_access_key\":\"\$S3_SECRET_ACCESS_KEY\",\"endpoint\":\"$OSIRIS_S3_ENDPOINT\",\"region\":\"$OSIRIS_S3_REGION\",\"bucket\":\"$OSIRIS_S3_BUCKET\",\"path\":\"rqlite/osiris.sqlite3.gz\",\"force_path_style\":true}}" \
-  --from-literal=S3_ACCESS_KEY_ID="$OSIRIS_S3_ACCESS_KEY_ID" --from-literal=S3_SECRET_ACCESS_KEY="$OSIRIS_S3_SECRET_ACCESS_KEY"
-# (Nodes join as `node`; rqlite takes its password from users.json.)
 
 # Pull access to the private images (read:packages only); the operator copies it into project namespaces.
 $K create secret docker-registry ghcr-pull --docker-server=ghcr.io --docker-username=richardblaha \
@@ -249,7 +242,6 @@ keys from the operator, which restarts them by itself).
 
 ```bash
 kubectl apply -k deploy/k8s
-kubectl -n osiris rollout status statefulset/rqlite
 kubectl -n osiris rollout status deploy/control deploy/gateway deploy/operator
 kubectl -n osiris get projects
 ```
@@ -271,7 +263,7 @@ Control's migration `011_projects.sql` renames the tables and rewrites users' cl
 - Network policies are enforced (the cluster runs Cilium). From a project runtime,
   everything inside the cluster must fail:
   ```bash
-  kubectl -n osiris-p-<slug> exec statefulset/runtime -- node -e "fetch('http://rqlite.osiris.svc:4001/status').then(r=>console.log('REACHABLE',r.status),e=>console.log('blocked',e.cause?.code))"
+  kubectl -n osiris-p-<slug> exec statefulset/runtime -- node -e "fetch('http://gateway.osiris.svc:3001/health').then(r=>console.log('REACHABLE',r.status),e=>console.log('blocked',e.cause?.code))"
   ```
 - A sleeping project wakes on a request; `kubectl -n osiris get projects` shows the phase and last activity.
 - Backups: `kubectl -n osiris logs deploy/control | grep -i backup`, and the project detail in the web app lists them.
@@ -283,7 +275,8 @@ Control's migration `011_projects.sql` renames the tables and rewrites users' cl
 - **Remove a project for good:** archive it in the web app first (claims removed, runtime suspended), then
   `kubectl -n osiris delete project <slug>`: the operator takes a last snapshot and deletes the namespace and volume.
   Backups stay in S3 for `BACKUP_RETENTION_DAYS` (30).
-- **rqlite lost entirely:** restore the newest `rqlite/osiris.sqlite3.gz` from S3 (`rqlite` CLI `.restore`, see rqlite docs).
+- **Control's database lost entirely:** restore the newest `backups/control/control-<date>.db.gz` from S3 as
+  `/data/control.db` on the `control-data` volume (scale control to 0 first, then wake it).
 - **Updating:** CI pushes `:main`; `kubectl -n osiris rollout restart deploy/<service>`. To pin a release, set the
   image to `:sha-<commit>` (runtimes: `RUNTIME_IMAGE` of the operator).
 

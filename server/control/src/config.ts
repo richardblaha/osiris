@@ -20,10 +20,7 @@ const schema = z
     WHATSAPP_TEMPLATE_LANGUAGE: z.string().default("cs"),
     TIMEZONE: z.string().default("Europe/Prague"),
 
-    // rqlite (any node); without it a local SQLite file (development only).
-    RQLITE_URL: z.url().optional(),
-    RQLITE_USERNAME: z.string().optional(),
-    RQLITE_PASSWORD: z.string().optional(),
+    // Control's database: one SQLite file (on the volume in the cluster, like osiris-auth's).
     LOCAL_DB_PATH: z.string().default("./data/control.db"),
 
     // Internal JWT: control signs calls to runtimes and verifies the gateway's calls.
@@ -78,7 +75,6 @@ const schema = z
   })
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";
-    if (prod && !env.RQLITE_URL) ctx.addIssue({ code: "custom", path: ["RQLITE_URL"], message: "is required in production" });
     if (prod && !env.AUTH_URL.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["AUTH_URL"], message: "must be https in production" });
     if (prod && !env.PUBLIC_URL.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["PUBLIC_URL"], message: "must be https in production" });
     if (prod && !env.S3_BUCKET) ctx.addIssue({ code: "custom", path: ["S3_BUCKET"], message: "is required in production" });

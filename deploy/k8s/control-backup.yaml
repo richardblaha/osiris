@@ -1,0 +1,88 @@
+# A daily consistent copy of control's database (SQLite's VACUUM INTO): the last 7 next to it on the volume and the
+# last 7 in the bucket (backups/control/), so a lost volume doesn't take the projects, members and settings along.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: control-backup
+spec:
+  schedule: "33 3 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          automountServiceAccountToken: false
+          imagePullSecrets: [{ name: ghcr-pull }]
+          # The volume is ReadWriteOnce: run next to the control pod.
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector: { matchLabels: { app: control } }
+                  topologyKey: kubernetes.io/hostname
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: { type: RuntimeDefault }
+          containers:
+            - name: backup
+              image: ghcr.io/richardblaha/osiris-control:main
+              envFrom:
+                - secretRef: { name: osiris-control }
+              command:
+                - node
+                - -e
+                - |
+                  const { createClient } = require("/app/server/control/node_modules/@libsql/client");
+                  const { S3Client, PutObjectCommand, ListObjectsV2Command, DeleteObjectsCommand } =
+                    require("/app/packages/platform/node_modules/@aws-sdk/client-s3");
+                  const { gzipSync } = require("node:zlib");
+                  const fs = require("fs");
+                  const prefix = "backups/control/";
+                  const day = new Date().toISOString().slice(0, 10);
+                  const dir = "/data/backups";
+                  fs.mkdirSync(dir, { recursive: true });
+                  const file = `${dir}/control-${day}.db`;
+                  fs.rmSync(file, { force: true });
+                  createClient({ url: "file:/data/control.db" }).execute(`VACUUM INTO '${file}'`).then(async () => {
+                    const all = fs.readdirSync(dir).filter((f) => f.endsWith(".db")).sort();
+                    for (const old of all.slice(0, -7)) fs.rmSync(`${dir}/${old}`);
+                    const s3 = new S3Client({
+                      region: process.env.S3_REGION,
+                      endpoint: process.env.S3_ENDPOINT,
+                      forcePathStyle: true,
+                      credentials: { accessKeyId: process.env.S3_ACCESS_KEY_ID, secretAccessKey: process.env.S3_SECRET_ACCESS_KEY },
+                    });
+                    await s3.send(new PutObjectCommand({
+                      Bucket: process.env.S3_BUCKET,
+                      Key: `${prefix}control-${day}.db.gz`,
+                      Body: gzipSync(fs.readFileSync(file)),
+                      ContentType: "application/gzip",
+                    }));
+                    const remote = await s3.send(new ListObjectsV2Command({ Bucket: process.env.S3_BUCKET, Prefix: prefix }));
+                    const keys = (remote.Contents ?? []).map((o) => o.Key).sort();
+                    if (keys.length > 7)
+                      await s3.send(new DeleteObjectsCommand({
+                        Bucket: process.env.S3_BUCKET,
+                        Delete: { Objects: keys.slice(0, -7).map((Key) => ({ Key })) },
+                      }));
+                    console.log(`Backed up to ${file} and s3://${process.env.S3_BUCKET}/${prefix}control-${day}.db.gz`);
+                  });
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: { drop: [ALL] }
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { memory: 256Mi }
+              volumeMounts:
+                - { name: data, mountPath: /data }
+                - { name: tmp, mountPath: /tmp }
+          volumes:
+            - name: data
+              persistentVolumeClaim: { claimName: control-data }
+            - name: tmp
+              emptyDir: { sizeLimit: 64Mi }

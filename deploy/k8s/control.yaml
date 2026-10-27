@@ -1,18 +1,27 @@
 # Projects and their members, schedules, WhatsApp and backups; users and groups are osiris-auth's (SCIM, deploy/auth).
-# Writes Project objects only.
+# Writes Project objects only. Its SQLite (one writer: one replica, on a volume like osiris-auth's; VACUUM INTO
+# backups daily, to the volume and the bucket, CronJob control-backup).
 # Secret osiris-control: INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, AUTH_SCIM_TOKEN, EMAILIT_API_KEY,
-# RQLITE_USERNAME, RQLITE_PASSWORD, S3_*, WHATSAPP_*, CLICKHOUSE_PASSWORD (the read-only user osiris; see deploy/README.md).
+# S3_*, WHATSAPP_*, CLICKHOUSE_PASSWORD (the read-only user osiris; see deploy/README.md).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: control-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ceph-rbd
+  resources:
+    requests: { storage: 2Gi }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: control
   labels: { app: control }
 spec:
-  replicas: 2
-  # Keep updates within cluster capacity while one replica remains available.
-  strategy:
-    type: RollingUpdate
-    rollingUpdate: { maxSurge: 0, maxUnavailable: 1 }
+  # SQLite has one writer: never two pods on the volume.
+  replicas: 1
+  strategy: { type: Recreate }
   selector:
     matchLabels: { app: control }
   template:
@@ -41,7 +50,7 @@ spec:
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
             - { name: ORCHESTRATOR, value: kubernetes }
             - { name: K8S_NAMESPACE, value: osiris }
-            - { name: RQLITE_URL, value: http://rqlite.osiris.svc.cluster.local:4001 }
+            - { name: LOCAL_DB_PATH, value: /data/control.db }
             - { name: PUBLIC_URL, value: https://osiris.k6labs.cz }
             - { name: AUTH_URL, value: https://auth.k6labs.cz }
             - { name: MAIL_FROM, value: "Osiris <auth@k6labs.cz>" }
@@ -67,9 +76,12 @@ spec:
             limits: { memory: 768Mi }
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: data, mountPath: /data }
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 1Gi }
+        - name: data
+          persistentVolumeClaim: { claimName: control-data }
 ---
 apiVersion: v1
 kind: Service
@@ -79,12 +91,3 @@ spec:
   selector: { app: control }
   ports:
     - { name: http, port: 3002, targetPort: http }
----
-apiVersion: policy/v1
-kind: PodDisruptionBudget
-metadata:
-  name: control
-spec:
-  minAvailable: 1
-  selector:
-    matchLabels: { app: control }

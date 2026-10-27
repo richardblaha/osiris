@@ -8,8 +8,8 @@ resources:
   - crd.yaml
   - rbac.yaml
   - networkpolicies.yaml
-  - rqlite.yaml
   - control.yaml
+  - control-backup.yaml
   - gateway.yaml
   - operator.yaml
   - gotenberg.yaml
