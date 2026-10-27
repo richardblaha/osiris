@@ -36,6 +36,7 @@ spec:
             - { name: NAMESPACE, value: osiris }
             - { name: RUNTIME_IMAGE, value: ghcr.io/richardblaha/osiris-runtime:main }
             - { name: IMAGE_PULL_SECRET, value: ghcr-pull }
+            - { name: STORAGE_CLASS, value: ceph-rbd }
             - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
             - { name: GOTENBERG_URL, value: http://gotenberg.osiris.svc.cluster.local:3000 }
             - { name: VITEPRESS_URL, value: http://vitepress.osiris.svc.cluster.local:3000 }

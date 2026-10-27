@@ -15,7 +15,7 @@ const env = z
     NAMESPACE: z.string().default("osiris"),
     RUNTIME_IMAGE: z.string().min(1),
     IMAGE_PULL_SECRET: z.string().optional(),
-    STORAGE_CLASS: z.string().default("civo-volume"),
+    STORAGE_CLASS: z.string().default("ceph-rbd"),
     CONTROL_URL: z.url(),
     GOTENBERG_URL: z.url().optional(),
     VITEPRESS_URL: z.url().optional(),
