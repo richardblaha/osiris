@@ -2,7 +2,7 @@
 
 Optional conversational image generation: [Comfy Cloud integration](images/README.md).
 
-Osiris runs in the `abydos` k3s cluster (Civo) at https://osiris.k6labs.cz. Shared services live in the `osiris`
+Osiris runs in the `busiris` microk8s cluster at https://osiris.k6labs.cz. Shared services live in the `osiris`
 namespace; each project gets its own namespace `osiris-p-<slug>`, created by the operator.
 
 ```
@@ -17,13 +17,13 @@ Internet ─ Traefik ─── osiris.k6labs.cz ──▶ gateway ──┬─�
   Runtimes pull `:main` whenever they wake, so a new runtime version reaches a project on its next wake-up.
 - **Projects sleep:** a runtime idle for `idleMinutes` (30 by default, 0 = always on) is snapshotted to S3 and scaled to
   zero; the next request, WhatsApp message or scheduled task wakes it (the gateway waits for it, usually 10–30 s).
-- **Data:** project database and files on the project's volume (`civo-volume`), snapshots in S3 (before every sleep and
+- **Data:** project database and files on the project's volume (`ceph-rbd`), snapshots in S3 (before every sleep and
   daily); the central database in rqlite with automatic backups to S3.
 - **TLS:** cert-manager (`letsencrypt` ClusterIssuer); project domains get their certificates through HTTP-01.
 - **Sign-in:** osiris-auth at `https://auth.k6labs.cz`, on the **busiris** cluster (`.kubeconfig.busiris`, namespace
   `osiris-auth`, `deploy/auth`): the OpenID Connect provider, the account page, users and groups (SCIM 2.0).
 
-Commands below use `KUBECONFIG=.kubeconfig` and read keys from the gitignored root `.env`.
+Commands below use `KUBECONFIG=.kubeconfig.busiris` and read keys from the gitignored root `.env`.
 
 ## Sign-in (osiris-auth on busiris)
 
@@ -169,11 +169,12 @@ The web app counts visits with GoatCounter (cookieless, in namespace `goatcounte
 then adds its `count.js` to the page and the site to the CSP; the app counts each view as a path (`/chat`,
 `/skills`, …), never with ids or names.
 
-## Object storage (Civo)
+## Object storage (Ceph RGW)
 
-Create an object store and a bucket (`osiris`), and credentials for it. Put into `.env`: `OSIRIS_S3_ENDPOINT`
-(e.g. `https://objectstore.fra1.civo.com`), `OSIRIS_S3_REGION`, `OSIRIS_S3_BUCKET`, `OSIRIS_S3_ACCESS_KEY_ID`,
-`OSIRIS_S3_SECRET_ACCESS_KEY`. Prefixes: `backups/` (project snapshots), `rqlite/` (central DB).
+The RGW of the cluster's Ceph (namespace `rook-ceph-external`, service `ceph-rgw`; outside the cluster at
+https://s3.k6labs.cz) with the user of the secret `rook-ceph-object-user-s3-richard` and a bucket (`osiris`).
+Pods use `http://ceph-rgw.rook-ceph-external.svc` (path style). Prefixes: `backups/` (project snapshots),
+`rqlite/` (central DB).
 
 ## Secrets
 

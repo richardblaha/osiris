@@ -19,7 +19,7 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress } }
           podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
 ---
 # Control: user calls relayed by the gateway, and project runtimes (features, backups, schedules, publishing).
@@ -60,5 +60,5 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress } }
           podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
