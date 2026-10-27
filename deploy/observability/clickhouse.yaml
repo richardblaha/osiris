@@ -152,3 +152,8 @@ spec:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: osiris } }
           podSelector: { matchLabels: { app: control } }
       ports: [{ port: 8123, protocol: TCP }]
+    # dashboard.k6labs.cz's telemetry API (Logy, Metriky, Trasy)
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: k6labs-cz } }
+          podSelector: { matchLabels: { app: k6labs-cz } }
+      ports: [{ port: 8123, protocol: TCP }]
