@@ -1,5 +1,6 @@
 # Least privilege per service. Only the operator can touch project namespaces; control can only write Project
-# objects (and ask the API server who a runtime token belongs to); the gateway has no API access.
+# objects (and ask the API server who a runtime token belongs to); the digital twin reads the cluster's structure;
+# the gateway has no API access.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -15,6 +16,12 @@ kind: ServiceAccount
 metadata:
   name: gateway
 automountServiceAccountToken: false
+---
+# The digital twin: the cluster's namespaces, pods, nodes and replicasets, read-only (the twin's structure).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: digital-twin
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -64,3 +71,23 @@ metadata:
   name: osiris-operator
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: osiris-operator }
 subjects: [{ kind: ServiceAccount, name: operator, namespace: osiris }]
+---
+# What the digital twin builds its tree from: the cluster's structure, read-only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: osiris-digital-twin
+rules:
+  - apiGroups: [""]
+    resources: [namespaces, pods, nodes]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [replicasets]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: osiris-digital-twin
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: osiris-digital-twin }
+subjects: [{ kind: ServiceAccount, name: digital-twin, namespace: osiris }]

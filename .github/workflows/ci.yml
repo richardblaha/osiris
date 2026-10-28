@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [gateway, auth, control, runtime, operator, vitepress, web-events]
+        service: [gateway, auth, control, runtime, operator, vitepress, web-events, digital-twin]
     permissions:
       contents: read
       packages: write

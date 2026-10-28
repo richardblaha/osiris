@@ -125,8 +125,26 @@ services and runtimes send traces, metrics and logs over OTLP when `OTEL_EXPORTE
 (`@osiris/platform/telemetry.ts`; the manifests set it), so their pod logs are not collected a second time. Admins
 read it all at **https://dashboard.k6labs.cz** (Logy, Metriky, Trasy; signed in through auth.k6labs.cz, group `admin`):
 its telemetry API queries ClickHouse as the read-only user `osiris` — Osiris's Dashboards panels use the same user
-through control (`/api/admin/telemetry/logs` and `/series`); the NetworkPolicy lets only the collector write and
-control read.
+through control (`/api/admin/telemetry/logs` and `/series`), and so does the digital twin (below); the NetworkPolicy
+lets only the collector write and the three readers read.
+
+## Osiris Digital Twin (twin.k6labs.cz)
+
+`server/digital-twin` + `server/digital-twin/web` (Docker target `digital-twin`): the cluster's digital twin — a 3D
+WebGL PWA (three.js, the OSIRIS theme) of namespaces → workloads → pods → containers as nested translucent cuboids,
+edges coloured by status, with Logy/Metriky/Trasy pages that open filtered by the selected node. The structure comes
+straight from the Kubernetes API (read-only ServiceAccount `digital-twin`, `deploy/k8s/rbac.yaml`); the telemetry
+from ClickHouse; **Redis** (`deploy/k8s/redis.yaml`, cache only) caches both. The model is DTDL v2 (`/api/twin/model`).
+
+1. In osiris-auth (`/admin`), add the app **digital-twin** (public, PKCE, redirect `https://twin.k6labs.cz/callback`)
+   and the introspection client **osiris-digital-twin** (a secret, accepting `digital-twin`'s tokens), then:
+   ```bash
+   kubectl -n osiris create secret generic osiris-digital-twin --dry-run=client -o yaml \
+     --from-literal=AUTH_CLIENT_SECRET="<osiris-auth secret>" --from-literal=CLICKHOUSE_PASSWORD="$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD" | kubectl apply -f -
+   kubectl apply -k deploy/k8s
+   ```
+2. `AUTH_REQUIRED_GROUP` (default `admin`) says which group may see the twin; without membership the API answers 403.
+3. DNS: twin.k6labs.cz to the cluster's ingress, the same as osiris.k6labs.cz; cert-manager issues the certificate.
 
 1. `.env`: `OSIRIS_CLICKHOUSE_OTEL_PASSWORD`, `OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD` (`openssl rand -hex 24` each), then:
    ```bash

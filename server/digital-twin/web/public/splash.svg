@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200" overflow="visible">
+  <!-- OSIRIS orbit loader, colour variant (splash). The orbits lie in the pyramid's base plane (centre 100,140; axis ratio 0.375). -->
+  <style>
+    .orbit { fill: none; stroke-linecap: round; stroke-width: 2.7; stroke-dasharray: 35 28 16 28; animation: orbit-flow 2.6s linear infinite; }
+    .a { stroke: #00e7fa; }
+    .b { stroke: #f43d9c; stroke-width: 2; stroke-dasharray: 26 24 40 24; animation-duration: 3.5s; animation-direction: reverse; }
+    .pyramid { animation: breathe 2.7s ease-in-out infinite; transform-origin: 100px 140px; }
+    .rear { opacity: 0.65; }
+    @keyframes orbit-flow { to { stroke-dashoffset: -300; } }
+    @keyframes breathe { 0%, 100% { opacity: 0.86; transform: scale(1); } 50% { opacity: 1; transform: scale(1.025); } }
+    @media (prefers-reduced-motion: reduce) { .orbit, .pyramid { animation: none; } }
+  </style>
+  <defs>
+    <clipPath id="rear"><rect width="200" height="140" /></clipPath>
+    <clipPath id="front"><rect y="140" width="200" height="60" /></clipPath>
+  </defs>
+  <g class="rear" clip-path="url(#rear)">
+    <ellipse class="orbit a" cx="100" cy="140" rx="90" ry="33.75" />
+    <ellipse class="orbit b" cx="100" cy="140" rx="82" ry="30.75" />
+  </g>
+  <g class="pyramid">
+    <polygon fill="#00e7fa" points="100,30 20,130 100,170" />
+    <polygon fill="#f43d9c" points="100,30 180,130 100,170" />
+    <polygon points="20,130 100,170 180,130 100,110" fill="#000" opacity=".25" />
+    <line x1="100" y1="30" x2="100" y2="170" stroke="rgba(255,255,255,.65)" stroke-width="2" />
+  </g>
+  <g clip-path="url(#front)">
+    <ellipse class="orbit a" cx="100" cy="140" rx="90" ry="33.75" />
+    <ellipse class="orbit b" cx="100" cy="140" rx="82" ry="30.75" />
+  </g>
+</svg>

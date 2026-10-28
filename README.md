@@ -16,6 +16,7 @@ The UI and the services' messages are available in English (the default) and Cze
 | `server/operator` | Kubernetes operator for `Project` resources (scale to zero, snapshots) |
 | `apps/osiris-pwa` | React web app (Assistant UI) |
 | `server/sites`, `server/vitepress`, `server/web-events` | Project websites, the VitePress builder, cookieless web analytics |
+| `server/digital-twin` | The cluster's digital twin (twin.k6labs.cz): its 3D structure from the Kubernetes API, telemetry from ClickHouse |
 | `packages/shared` | Types shared with the web app, locale helpers |
 | `packages/platform` | Service plumbing: internal JWT, rqlite, object storage, telemetry, service message catalogs |
 | `packages/core` | The agent: graph, tools, checkpointer, RAG, MCP, vault, files |

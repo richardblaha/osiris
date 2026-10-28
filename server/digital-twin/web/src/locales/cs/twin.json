@@ -1,0 +1,35 @@
+{
+  "status": {
+    "ok": "běží",
+    "warn": "pozor",
+    "error": "chyba"
+  },
+  "kinds": {
+    "cluster": "Klaster",
+    "namespace": "Namespace",
+    "workload": "Workload",
+    "pod": "Pod",
+    "container": "Kontejner"
+  },
+  "properties": "Vlastnosti",
+  "model": "DTDL model",
+  "errors15m": "Chybové logy za posledních 15 minut.",
+  "open": {
+    "logs": "Logy",
+    "metrics": "Metriky",
+    "traces": "Trasy"
+  },
+  "noSelection": "Klikni na kvádr pro detail; dvojklik přiletí kamkoli.",
+  "empty": "Dvojče nemá žádné namespace k zobrazení.",
+  "hint": "Tažením otáčej, kolečkem přibližuj, klikem vybírej.",
+  "counts": {
+    "namespaces_one": "{{count}} namespace",
+    "namespaces_few": "{{count}} namespace",
+    "namespaces_many": "{{count}} namespaceu",
+    "namespaces_other": "{{count}} namespaceů",
+    "pods_one": "{{count}} pod",
+    "pods_few": "{{count}} pody",
+    "pods_many": "{{count}} podu",
+    "pods_other": "{{count}} podů"
+  }
+}

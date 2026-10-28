@@ -1,0 +1,12 @@
+{
+  "title": "Digital Twin",
+  "nav": {
+    "twin": "Twin",
+    "logs": "Logs",
+    "metrics": "Metrics",
+    "traces": "Traces"
+  },
+  "loading": "Loading…",
+  "signIn": "Sign in",
+  "signOut": "Sign out"
+}

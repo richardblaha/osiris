@@ -1,6 +1,7 @@
 # ClickHouse stores the whole cluster's telemetry (database otel: otel_logs, otel_traces, otel_metrics_*) and the web
 # analytics (database web, see web/schema.sql), written by the OpenTelemetry Collector (user otel) and read by Osiris
-# control (user osiris, read-only) for System > Logy, Metriky, Trasy, Návštěvnost. Tuned for a small node: no caches it doesn't need, no system logs. The exporter's TTL (30 days)
+# control (user osiris, read-only) for its Dashboards panels, the digital twin (twin.k6labs.cz) and the dashboard
+# (dashboard.k6labs.cz). Tuned for a small node: no caches it doesn't need, no system logs. The exporter's TTL (30 days)
 # expires old data. Secret clickhouse-users (not in git): OTEL_PASSWORD, OSIRIS_PASSWORD; see deploy/README.md.
 apiVersion: v1
 kind: ConfigMap
@@ -156,4 +157,9 @@ spec:
     - from:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: k6labs-cz } }
           podSelector: { matchLabels: { app: k6labs-cz } }
+      ports: [{ port: 8123, protocol: TCP }]
+    # twin.k6labs.cz's telemetry API (the digital twin's Logy, Metriky, Trasy)
+    - from:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: osiris } }
+          podSelector: { matchLabels: { app: digital-twin } }
       ports: [{ port: 8123, protocol: TCP }]

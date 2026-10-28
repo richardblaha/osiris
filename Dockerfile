@@ -1,4 +1,4 @@
-# One Dockerfile, one image per service: docker build --target <gateway|auth|control|runtime|operator|vitepress|web-events> .
+# One Dockerfile, one image per service: docker build --target <gateway|auth|control|runtime|operator|vitepress|web-events|digital-twin> .
 # Every service runs TypeScript with tsx as the unprivileged node user, read-only root filesystem (tsx caches in /tmp).
 
 FROM node:24-slim AS base
@@ -18,6 +18,8 @@ COPY apps/osiris/package.json apps/osiris/
 COPY server/operator/package.json server/operator/
 COPY server/vitepress/package.json server/vitepress/
 COPY server/web-events/package.json server/web-events/
+COPY server/digital-twin/package.json server/digital-twin/
+COPY server/digital-twin/web/package.json server/digital-twin/web/
 ENV NODE_ENV=production
 EXPOSE 8080
 
@@ -120,5 +122,25 @@ COPY packages/platform/src packages/platform/src
 COPY server/web-events/src server/web-events/src
 ENV PORT=8080
 WORKDIR /app/server/web-events
+USER node
+CMD ["node_modules/.bin/tsx", "src/index.ts"]
+
+# The digital twin's PWA (three.js WebGL, the OSIRIS theme), served by the API below.
+FROM base AS twin-web-build
+RUN NODE_ENV=development pnpm install --frozen-lockfile --filter "@osiris/digital-twin-web..."
+COPY packages/shared packages/shared
+COPY server/digital-twin/web server/digital-twin/web
+RUN pnpm --filter @osiris/digital-twin-web build
+
+# Osiris Digital Twin: the cluster's digital twin — structure from the Kubernetes API, telemetry from ClickHouse,
+# both cached in Redis — serving its PWA.
+FROM base AS digital-twin
+RUN pnpm install --frozen-lockfile --prod --filter "@osiris/digital-twin..." && pnpm store prune
+COPY packages/shared/src packages/shared/src
+COPY packages/platform/src packages/platform/src
+COPY server/digital-twin/src server/digital-twin/src
+COPY --from=twin-web-build /app/server/digital-twin/web/dist server/digital-twin/web/dist
+ENV PORT=3004 STATIC_DIR=/app/server/digital-twin/web/dist
+WORKDIR /app/server/digital-twin
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]

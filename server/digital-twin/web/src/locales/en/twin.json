@@ -1,0 +1,31 @@
+{
+  "status": {
+    "ok": "running",
+    "warn": "attention",
+    "error": "error"
+  },
+  "kinds": {
+    "cluster": "Cluster",
+    "namespace": "Namespace",
+    "workload": "Workload",
+    "pod": "Pod",
+    "container": "Container"
+  },
+  "properties": "Properties",
+  "model": "DTDL model",
+  "errors15m": "Error log records of the last 15 minutes.",
+  "open": {
+    "logs": "Logs",
+    "metrics": "Metrics",
+    "traces": "Traces"
+  },
+  "noSelection": "Click a box to see its detail; double-click to fly to it.",
+  "empty": "The twin has no namespaces to show.",
+  "hint": "Drag to orbit, wheel to zoom, click to select.",
+  "counts": {
+    "namespaces_one": "{{count}} namespace",
+    "namespaces_other": "{{count}} namespaces",
+    "pods_one": "{{count}} pod",
+    "pods_other": "{{count}} pods"
+  }
+}

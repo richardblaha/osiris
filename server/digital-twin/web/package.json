@@ -1,0 +1,29 @@
+{
+  "name": "@osiris/digital-twin-web",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@osiris/shared": "workspace:*",
+    "i18next": "26.4.2",
+    "oidc-client-ts": "^3.5.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-i18next": "17.0.16",
+    "three": "0.184.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/three": "0.184.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "tailwindcss": "^4.3.3",
+    "typescript": "6.0.3",
+    "vite": "^8.3.4"
+  }
+}

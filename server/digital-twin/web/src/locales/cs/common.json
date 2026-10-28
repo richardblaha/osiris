@@ -1,0 +1,12 @@
+{
+  "title": "Digitální dvojče",
+  "nav": {
+    "twin": "Dvojče",
+    "logs": "Logy",
+    "metrics": "Metriky",
+    "traces": "Trasy"
+  },
+  "loading": "Načítám…",
+  "signIn": "Přihlásit se",
+  "signOut": "Odhlásit se"
+}

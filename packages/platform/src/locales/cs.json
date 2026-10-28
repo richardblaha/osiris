@@ -130,6 +130,10 @@
     "telemetry": {
       "queryFailed": "Dotaz do ClickHouse selhal: {{detail}}"
     },
+    "digitalTwin": {
+      "k8sFailed": "Dotaz na Kubernetes API selhal: {{detail}}",
+      "signedIn": "Nejdřív se přihlaste."
+    },
     "validation": {
       "invalid": "Neplatný požadavek",
       "slug": "Zkratka: malá písmena, číslice a pomlčky",

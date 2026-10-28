@@ -118,6 +118,10 @@
     "telemetry": {
       "queryFailed": "The ClickHouse query failed: {{detail}}"
     },
+    "digitalTwin": {
+      "k8sFailed": "The Kubernetes API query failed: {{detail}}",
+      "signedIn": "Sign in first."
+    },
     "validation": {
       "invalid": "Invalid request.",
       "slug": "Slug: lowercase letters, digits and hyphens.",

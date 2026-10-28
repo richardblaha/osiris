@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <meta name="apple-mobile-web-app-title" content="Osiris Digital Twin" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" media="(prefers-color-scheme: light)" content="#ffffff" />
+    <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#0d1117" />
+    <title>Osiris Digital Twin</title>
+    <!-- The splash shows before the app's code has loaded (React replaces it), and again while the app signs in. -->
+    <style>
+      html, body, #root { height: 100%; margin: 0; }
+      .splash {
+        display: flex; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+        font-family: "Fira Code", ui-monospace, monospace; color: #1f2328;
+        background: radial-gradient(ellipse at 50% 52%, #ffffff, #e9eef5 75%);
+        animation: splash-in 0.3s ease 0.3s both;
+      }
+      .splash img { width: 120px; height: 120px; filter: drop-shadow(0 0 14px rgba(0, 212, 255, 0.18)); }
+      .splash strong { margin-left: 0.35em; font-size: 16px; font-weight: 500; letter-spacing: 0.35em; }
+      @media (prefers-color-scheme: dark) {
+        .splash { color: #dce6f5; background: radial-gradient(ellipse at 50% 52%, #27314e, #11182b 75%); }
+      }
+      @keyframes splash-in { from { opacity: 0; } }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div class="splash" role="status" aria-label="Loading Osiris Digital Twin"><img src="/splash.svg" alt="" /><strong>OSIRIS&nbsp;DIGITAL&nbsp;TWIN</strong></div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

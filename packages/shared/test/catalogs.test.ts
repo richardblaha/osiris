@@ -100,7 +100,7 @@ function references(sources: string[]) {
 function serverCatalog(): Catalog {
   const dir = join(ROOT, "packages/platform/src/locales");
   const languages = readdirSync(dir).map((f) => f.replace(/\.json$/, ""));
-  const sources = ["server/auth/src", "server/control/src", "server/gateway/src", "apps/osiris/src", "packages/core/src", "packages/platform/src"];
+  const sources = ["server/auth/src", "server/control/src", "server/gateway/src", "server/digital-twin/src", "apps/osiris/src", "packages/core/src", "packages/platform/src"];
   const refs = references(sources);
   return {
     name: "services (packages/platform/src/locales)",
@@ -136,7 +136,7 @@ function webCatalog(name: string, src: string): Catalog {
   };
 }
 
-describe.each([serverCatalog(), webCatalog("web app", "apps/osiris-pwa/src"), webCatalog("identity provider's pages", "server/auth/web/src")])("$name", (catalog) => {
+describe.each([serverCatalog(), webCatalog("web app", "apps/osiris-pwa/src"), webCatalog("identity provider's pages", "server/auth/web/src"), webCatalog("digital twin's pages", "server/digital-twin/web/src")])("$name", (catalog) => {
   const source = groups(catalog.files(SOURCE));
 
   it("has a catalog for every supported language, named by its BCP 47 tag", () => {

@@ -203,6 +203,33 @@ export interface MetricSeries {
   points: [number, number][];
 }
 
+/**
+ * The cluster's digital twin, as the digital-twin app builds it from the Kubernetes API (`/api/twin`): nested nodes
+ * (cluster → namespaces → workloads → pods → containers), each a DTDL instance of its interface in `/api/twin/model`.
+ */
+export type TwinStatus = "ok" | "warn" | "error";
+export type TwinKind = "cluster" | "namespace" | "workload" | "pod" | "container";
+
+export interface TwinNode {
+  /** DTDL identifiers: the instance's `@id` and the interface it instantiates. */
+  id: string;
+  model: string;
+  kind: TwinKind;
+  name: string;
+  status: TwinStatus;
+  /** Error log records of the last 15 minutes (ClickHouse), summed over the node's children. */
+  errors: number;
+  /** Key → value for the detail panel (already formatted; the 3D view ignores it). */
+  properties: Record<string, string>;
+  children: TwinNode[];
+}
+
+export interface Twin {
+  cluster: TwinNode;
+  /** When the structure was read from the Kubernetes API (epoch ms). */
+  ts: number;
+}
+
 /** Guard names, also their file names: kebab-case. */
 export const GUARD_NAME = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 

@@ -2,6 +2,7 @@ packages:
   - apps/*
   - server/*
   - server/auth/web
+  - server/digital-twin/web
   - packages/*
 allowBuilds:
   esbuild: true
