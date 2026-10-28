@@ -146,6 +146,15 @@ from ClickHouse; **Redis** (`deploy/k8s/redis.yaml`, cache only) caches both. Th
 2. `AUTH_REQUIRED_GROUP` (default `admin`) says which group may see the twin; without membership the API answers 403.
 3. DNS: twin.k6labs.cz to the cluster's ingress, the same as osiris.k6labs.cz; cert-manager issues the certificate.
 
+Any cluster can be twinned, not just the one the app runs in: mount the cluster's kubeconfig (as a secret) and set
+`KUBECONFIG` (and `KUBE_CONTEXT`, if not the current one) plus its ClickHouse (`CLICKHOUSE_URL`, `CLICKHOUSE_USER`,
+`CLICKHOUSE_PASSWORD`) and `CLUSTER_NAME`. The kubeconfig's user must authenticate with a token — client certificates
+and exec plugins are refused; `kubectl create token <service-account> --duration 0` prints one that doesn't expire
+(the cluster's read-only rules are in `deploy/k8s/rbac.yaml`). The cluster's telemetry must reach ClickHouse through
+the OpenTelemetry Collector's standard schema (`otel_logs`, `otel_traces`, `otel_metrics_*`, database `otel`).
+One instance twins one cluster; a ClickHouse shared by several clusters would mix their telemetry (the twin doesn't
+filter by `k8s.cluster.name`).
+
 1. `.env`: `OSIRIS_CLICKHOUSE_OTEL_PASSWORD`, `OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD` (`openssl rand -hex 24` each), then:
    ```bash
    kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -

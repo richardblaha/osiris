@@ -1,17 +1,36 @@
 import { serve } from "@hono/node-server";
+import { Agent, fetch as undiciFetch } from "undici";
 import { loadConfig } from "./config.ts";
 import { createApp } from "./app.ts";
 import { introspection, devVerifier } from "./auth.ts";
 import { noCache, redisCache } from "./cache.ts";
 import { Kube } from "./kube.ts";
+import { loadKubeconfig } from "./kubeconfig.ts";
 import { ClickHouse, Telemetry } from "./telemetry.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 
 const config = loadConfig();
 startTelemetry("osiris-digital-twin");
 
+// The cluster to twin: a kubeconfig (any cluster, its context, its certificate authority) or the pod's own
+// ServiceAccount (in the cluster we run in).
+const kubeconfig = config.KUBECONFIG ? await loadKubeconfig(config.KUBECONFIG, config.KUBE_CONTEXT) : undefined;
+const kubeFetch =
+  kubeconfig && (kubeconfig.ca || kubeconfig.insecureTls)
+    ? ((url: Parameters<typeof undiciFetch>[0], init: Parameters<typeof undiciFetch>[1]) =>
+        undiciFetch(url, {
+          ...init,
+          dispatcher: new Agent({ connect: { ca: kubeconfig.ca, rejectUnauthorized: !kubeconfig.insecureTls } }),
+        })) as unknown as typeof fetch
+    : undefined;
+
 const app = createApp(config, {
-  kube: new Kube({ apiServer: config.KUBE_API_SERVER, tokenPath: config.KUBE_TOKEN_PATH, token: config.KUBE_TOKEN }),
+  kube: new Kube({
+    apiServer: kubeconfig?.server ?? config.KUBE_API_SERVER,
+    tokenPath: kubeconfig?.tokenPath ?? config.KUBE_TOKEN_PATH,
+    token: kubeconfig?.token ?? config.KUBE_TOKEN,
+    fetchFn: kubeFetch,
+  }),
   telemetry: config.CLICKHOUSE_URL ? new Telemetry(new ClickHouse(config.CLICKHOUSE_URL, config.CLICKHOUSE_USER, config.CLICKHOUSE_PASSWORD ?? "")) : undefined,
   verifier: config.AUTH_DEV_BYPASS
     ? devVerifier()
@@ -28,4 +47,6 @@ const app = createApp(config, {
 });
 
 serve({ fetch: app.fetch, port: config.PORT });
-console.log(`osiris-digital-twin on :${config.PORT} (cluster ${config.CLUSTER_NAME}${config.REDIS_URL ? ", cached in Redis" : ""})`);
+console.log(
+  `osiris-digital-twin on :${config.PORT} (cluster ${config.CLUSTER_NAME}${kubeconfig ? ` at ${kubeconfig.server}` : ""}${config.REDIS_URL ? ", cached in Redis" : ""})`,
+);

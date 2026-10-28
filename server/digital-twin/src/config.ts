@@ -11,11 +11,15 @@ const schema = z
     // The twin's root label; the cluster's own name in the k8s API has no single place to read it from.
     CLUSTER_NAME: z.string().min(1).default("k8s"),
 
-    // The Kubernetes API: the pod's ServiceAccount in the cluster (read-only ClusterRole, deploy/k8s/rbac.yaml).
+    // The Kubernetes API: the pod's ServiceAccount in the cluster (read-only ClusterRole, deploy/k8s/rbac.yaml), or a
+    // kubeconfig of any other cluster: KUBECONFIG is its path (a `:`-separated list takes the first that exists) and
+    // KUBE_CONTEXT the context to use (the current one without it). Its user must authenticate with a token.
     KUBE_API_SERVER: z.url().default("https://kubernetes.default.svc"),
     KUBE_TOKEN_PATH: z.string().default("/var/run/secrets/kubernetes.io/serviceaccount/token"),
-    // Development only: a token to send instead of the ServiceAccount's (kubectl create token …).
+    // Development only: a token to send instead of the ServiceAccount's or the kubeconfig's.
     KUBE_TOKEN: z.string().optional(),
+    KUBECONFIG: z.string().optional(),
+    KUBE_CONTEXT: z.string().optional(),
 
     // The cluster's telemetry (logs, metrics, traces) through ClickHouse's HTTP interface, read-only.
     CLICKHOUSE_URL: z.url().optional(),
@@ -43,8 +47,8 @@ const schema = z
     if (prod) {
       if (!env.AUTH_URL?.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["AUTH_URL"], message: "must be set and https in production" });
       if (!env.AUTH_CLIENT_SECRET) ctx.addIssue({ code: "custom", path: ["AUTH_CLIENT_SECRET"], message: "is required in production" });
-      if (!env.CLICKHOUSE_URL?.startsWith("http://")) ctx.addIssue({ code: "custom", path: ["CLICKHOUSE_URL"], message: "must be the in-cluster address in production" });
-      if (env.KUBE_TOKEN) ctx.addIssue({ code: "custom", path: ["KUBE_TOKEN"], message: "must not be set in production (use the ServiceAccount)" });
+      // The cluster can be anywhere (a kubeconfig of another cluster), but its telemetry has to be reachable.
+      if (!env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["CLICKHOUSE_URL"], message: "is required in production" });
       if (env.AUTH_DEV_BYPASS) ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
     }
     if (env.REDIS_URL && !/^redises?:/.test(env.REDIS_URL)) ctx.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be a redis:// or rediss:// URL" });
