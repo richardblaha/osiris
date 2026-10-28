@@ -31,7 +31,9 @@ const app = createApp(config, {
     token: kubeconfig?.token ?? config.KUBE_TOKEN,
     fetchFn: kubeFetch,
   }),
-  telemetry: config.CLICKHOUSE_URL ? new Telemetry(new ClickHouse(config.CLICKHOUSE_URL, config.CLICKHOUSE_USER, config.CLICKHOUSE_PASSWORD ?? "")) : undefined,
+  telemetry: config.CLICKHOUSE_URL
+    ? new Telemetry(new ClickHouse(config.CLICKHOUSE_URL, config.CLICKHOUSE_USER, config.CLICKHOUSE_PASSWORD ?? ""), config.CLICKHOUSE_CLUSTER)
+    : undefined,
   verifier: config.AUTH_DEV_BYPASS
     ? devVerifier()
     : config.AUTH_URL && config.AUTH_CLIENT_SECRET

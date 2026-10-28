@@ -21,10 +21,13 @@ const schema = z
     KUBECONFIG: z.string().optional(),
     KUBE_CONTEXT: z.string().optional(),
 
-    // The cluster's telemetry (logs, metrics, traces) through ClickHouse's HTTP interface, read-only.
+    // The cluster's telemetry (logs, metrics, traces) through ClickHouse's HTTP interface, read-only. Any cluster:
+    // CLICKHOUSE_CLUSTER is the `k8s.cluster.name` its collector stamps its telemetry with (the resource/cluster
+    // processor, deploy/observability/collector.yaml); without it the queries see every cluster in the database.
     CLICKHOUSE_URL: z.url().optional(),
     CLICKHOUSE_USER: z.string().default("osiris"),
     CLICKHOUSE_PASSWORD: z.string().optional(),
+    CLICKHOUSE_CLUSTER: z.string().min(1).optional(),
 
     // Redis caches the twin's structure and the telemetry answers; without it every request queries the sources.
     REDIS_URL: z.url().optional(),

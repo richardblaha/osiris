@@ -81,6 +81,12 @@ data:
           - { name: events, mode: watch, group: events.k8s.io }
     processors:
       memory_limiter: { check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20 }
+      # Which cluster every record belongs to (resource attribute k8s.cluster.name): the twin filters by it, so
+      # several clusters can share one ClickHouse without their telemetry mixing. Keep it in step with the twin's
+      # CLICKHOUSE_CLUSTER (deploy/k8s/digital-twin.yaml).
+      resource/cluster:
+        attributes:
+          - { key: k8s.cluster.name, value: busiris, action: upsert }
       k8sattributes:
         extract:
           metadata: [k8s.namespace.name, k8s.pod.name, k8s.node.name, k8s.deployment.name, k8s.statefulset.name, k8s.container.name]
@@ -117,11 +123,11 @@ data:
       telemetry:
         logs: { level: warn }
       pipelines:
-        traces: { receivers: [otlp], processors: [memory_limiter, k8sattributes, batch], exporters: [clickhouse] }
-        metrics: { receivers: [otlp, k8s_cluster], processors: [memory_limiter, k8sattributes, batch], exporters: [clickhouse] }
-        logs: { receivers: [otlp, k8sobjects], processors: [memory_limiter, k8sattributes, batch], exporters: [clickhouse] }
-        logs/agents: { receivers: [otlp/agents], processors: [memory_limiter, batch], exporters: [clickhouse] }
-        metrics/agents: { receivers: [otlp/agents, prometheus], processors: [memory_limiter, batch], exporters: [clickhouse] }
+        traces: { receivers: [otlp], processors: [memory_limiter, resource/cluster, k8sattributes, batch], exporters: [clickhouse] }
+        metrics: { receivers: [otlp, k8s_cluster], processors: [memory_limiter, resource/cluster, k8sattributes, batch], exporters: [clickhouse] }
+        logs: { receivers: [otlp, k8sobjects], processors: [memory_limiter, resource/cluster, k8sattributes, batch], exporters: [clickhouse] }
+        logs/agents: { receivers: [otlp/agents], processors: [memory_limiter, resource/cluster, batch], exporters: [clickhouse] }
+        metrics/agents: { receivers: [otlp/agents, prometheus], processors: [memory_limiter, resource/cluster, batch], exporters: [clickhouse] }
         logs/web: { receivers: [otlp/web], processors: [memory_limiter, batch/web], exporters: [clickhouse/web] }
 ---
 apiVersion: apps/v1
@@ -137,7 +143,7 @@ spec:
       labels: { app: otel-collector }
       annotations:
         # Restart when the configuration changes.
-        config/version: "3"
+        config/version: "4"
     spec:
       serviceAccountName: otel-collector
       securityContext:

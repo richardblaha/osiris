@@ -152,8 +152,9 @@ Any cluster can be twinned, not just the one the app runs in: mount the cluster'
 and exec plugins are refused; `kubectl create token <service-account> --duration 0` prints one that doesn't expire
 (the cluster's read-only rules are in `deploy/k8s/rbac.yaml`). The cluster's telemetry must reach ClickHouse through
 the OpenTelemetry Collector's standard schema (`otel_logs`, `otel_traces`, `otel_metrics_*`, database `otel`).
-One instance twins one cluster; a ClickHouse shared by several clusters would mix their telemetry (the twin doesn't
-filter by `k8s.cluster.name`).
+`CLICKHOUSE_CLUSTER` is the `k8s.cluster.name` its collector stamps its telemetry with (the resource/cluster
+processor, `deploy/observability/collector.yaml`): set it and a ClickHouse shared by several clusters keeps them
+apart; without it, the twin sees every cluster in the database.
 
 1. `.env`: `OSIRIS_CLICKHOUSE_OTEL_PASSWORD`, `OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD` (`openssl rand -hex 24` each), then:
    ```bash

@@ -45,6 +45,9 @@ spec:
             - { name: AUTH_REQUIRED_GROUP, value: admin }
             - { name: REDIS_URL, value: redis://redis:6379 }
             - { name: CLICKHOUSE_URL, value: http://clickhouse.observability.svc.cluster.local:8123 }
+            # The busiris cluster's telemetry, as the collector's resource/cluster processor stamps it; keep the
+            # two values in step (CLICKHOUSE_CLUSTER also appears in deploy/observability/collector.yaml).
+            - { name: CLICKHOUSE_CLUSTER, value: busiris }
           envFrom:
             - secretRef: { name: osiris-digital-twin }
           securityContext:
