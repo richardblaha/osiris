@@ -52,6 +52,10 @@
     "workflows": {
       "label": "Vícekrokové postupy",
       "hint": "asistent rozplánuje větší úkoly do kroků, ověří vytvořené modely a dotazy a před kroky, které mění data, se zeptá"
+    },
+    "infrastructure": {
+      "label": "Infrastruktura",
+      "hint": "asistent spravuje Kubernetes cluster a Ceph (před každou změnou se zeptá) a ovládá digitální dvojče; jen pro projekty, které dvojče povolí"
     }
   },
   "new": "Nový projekt",

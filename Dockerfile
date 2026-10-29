@@ -20,6 +20,7 @@ COPY packages/tools/scheduler/package.json packages/tools/scheduler/
 COPY packages/tools/sites/package.json packages/tools/sites/
 COPY packages/tools/skills/package.json packages/tools/skills/
 COPY packages/tools/workflows/package.json packages/tools/workflows/
+COPY packages/tools/infrastructure/package.json packages/tools/infrastructure/
 COPY apps/osiris-pwa/package.json apps/osiris-pwa/
 COPY server/gateway/package.json server/gateway/
 COPY server/auth/package.json server/auth/
@@ -107,6 +108,7 @@ COPY packages/tools/scheduler/src packages/tools/scheduler/src
 COPY packages/tools/sites/src packages/tools/sites/src
 COPY packages/tools/skills/src packages/tools/skills/src
 COPY packages/tools/workflows/src packages/tools/workflows/src
+COPY packages/tools/infrastructure/src packages/tools/infrastructure/src
 COPY apps/osiris/src apps/osiris/src
 COPY apps/osiris/skills apps/osiris/skills
 ENV PORT=8080 SKILLS_DIR=/app/apps/osiris/skills DATA_DIR=/data

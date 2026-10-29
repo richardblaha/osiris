@@ -32,6 +32,8 @@ interface StoredQuestion {
   expiresAt: number;
   /** Order of asking within the thread. */
   seq: number;
+  /** The answer was acted on once (`take`): it never approves anything again. */
+  taken?: boolean;
 }
 
 /** A thread's questions, `private/threads/<thread>/questions/<id>.json`; changes run under the thread's lock. */
@@ -67,7 +69,19 @@ export class QuestionStore {
   }
   async latest(user: string, thread: string) {
     const q = (await this.all(user, thread))[0];
-    return q ? this.view(q) : null;
+    return q ? { ...this.view(q), taken: !!q.taken } : null;
+  }
+  /**
+   * The answer of a closed question, once: it is marked taken under the thread's lock, so one yes approves one action
+   * (a second call gets null, as does a question still open).
+   */
+  async take(user: string, thread: string, id: string): Promise<Record<string, unknown> | null> {
+    return this.lock(thread, async () => {
+      const q = (await this.all(user, thread)).find((q) => q.id === id);
+      if (!q || q.taken || (q.state !== "answered" && q.state !== "cancelled")) return null;
+      await this.save(thread, { ...q, taken: true });
+      return q.answer ?? {};
+    });
   }
   async create(user: string, thread: string, input: z.infer<typeof questionDefinition>) {
     input = questionDefinition.parse(input);

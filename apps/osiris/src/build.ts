@@ -13,7 +13,13 @@ export async function buildProject(
   config: Config,
   id: string,
   root: string,
-  mode: { features: FeatureSource; secrets: SecretBox; schedules?: ToolModuleOptions["schedules"]; notifyAdmins?: ProjectDeps["notifyAdmins"] },
+  mode: {
+    features: FeatureSource;
+    secrets: SecretBox;
+    schedules?: ToolModuleOptions["schedules"];
+    infrastructure?: ToolModuleOptions["infrastructure"];
+    notifyAdmins?: ProjectDeps["notifyAdmins"];
+  },
 ): Promise<Project> {
   const models = await createAgentModels({
     agent: config.LLM_AGENT_MODEL ?? config.LLM_MODEL,
@@ -24,6 +30,7 @@ export async function buildProject(
   const tools = await loadToolModules({
     enabled: config.TOOL_MODULES,
     schedules: mode.schedules,
+    infrastructure: mode.infrastructure,
     images: config.IMAGE_GENERATION_ENABLED
       ? {
           comfyApiKey: config.COMFY_API_KEY,

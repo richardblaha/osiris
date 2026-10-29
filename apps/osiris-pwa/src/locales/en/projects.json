@@ -52,6 +52,10 @@
     "workflows": {
       "label": "Multi-step workflows",
       "hint": "the assistant plans larger tasks into steps, checks generated models and queries, and asks before steps that change data"
+    },
+    "infrastructure": {
+      "label": "Infrastructure",
+      "hint": "the assistant manages the Kubernetes cluster and Ceph (asking before every change) and steers the digital twin; only for projects the twin allows"
     }
   },
   "new": "New project",

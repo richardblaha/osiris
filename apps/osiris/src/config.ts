@@ -69,6 +69,9 @@ const schema = z
     IMAGE_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(30),
     IMAGE_DOWNLOAD_HOSTS: z.string().default("cloud.comfy.org,storage.googleapis.com").transform(v => v.split(",").map(h => h.trim()).filter(Boolean)),
     GOTENBERG_URL: z.url().optional(),
+    // The digital twin's ops API (kubectl, ceph) and the projects whose agents manage the infrastructure through it.
+    OPS_URL: z.url().optional(),
+    OPS_PROJECTS: z.string().default("").transform((v) => v.split(",").map((p) => p.trim()).filter(Boolean)),
     VITEPRESS_URL: z.url().optional(),
     // Development only: let MCP servers and http_request use http and private addresses.
     MCP_ALLOW_PRIVATE: bool,

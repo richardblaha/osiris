@@ -26,6 +26,7 @@
     "@osiris/tools-sites": "workspace:*",
     "@osiris/tools-skills": "workspace:*",
     "@osiris/tools-workflows": "workspace:*",
+    "@osiris/tools-infrastructure": "workspace:*",
     "hono": "^4.13.13",
     "jose": "^6.2.12",
     "tar": "7.5.22",

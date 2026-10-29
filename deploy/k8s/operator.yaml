@@ -46,6 +46,10 @@ spec:
             - { name: RUNTIME_ENV_DEFAULT_LOCALE, value: cs }
             # OAuth sign-ins to MCP servers return to <PUBLIC_URL>/mcp-callback.
             - { name: RUNTIME_ENV_PUBLIC_URL, value: https://osiris.k6labs.cz }
+            # The digital twin's ops API (kubectl, ceph); only the projects named here get the infrastructure tools
+            # (and the twin answers only its own OPS_PROJECTS).
+            - { name: RUNTIME_ENV_OPS_URL, value: http://digital-twin.osiris.svc.cluster.local:3004 }
+            - { name: RUNTIME_ENV_OPS_PROJECTS, value: twin }
             # Runtimes send their telemetry to the cluster's collector too (the operator's network policy lets them).
             - { name: RUNTIME_ENV_OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: RUNTIME_ENV_OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }

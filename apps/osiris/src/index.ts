@@ -36,6 +36,13 @@ const project = await buildProject(config, config.PROJECT_ID, projectDir(config.
   secrets: config.PROJECT_SECRETS_KEY ? new SecretBox(config.PROJECT_SECRETS_KEY) : SecretBox.insecureDev(),
   schedules: control,
   notifyAdmins: (subject, text) => control.notifyAdmins(subject, text),
+  // The digital twin's ops API answers with the same projected token control checks (TokenReview).
+  infrastructure: config.OPS_URL
+    ? {
+        projects: config.OPS_PROJECTS,
+        ops: { url: config.OPS_URL, token: runtimeToken(config.DEV_RUNTIME_AUTH ? { devProject: config.PROJECT_ID } : { tokenPath: config.RUNTIME_TOKEN_PATH }) },
+      }
+    : undefined,
 });
 
 const activity = new Activity();

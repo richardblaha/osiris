@@ -51,7 +51,7 @@ export interface MeResponse {
 }
 
 /** What a system admin can switch on or off per project. */
-export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public", "database", "workflows"] as const;
+export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public", "database", "workflows", "infrastructure"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type ProjectFeatures = Record<Feature, boolean>;
 
