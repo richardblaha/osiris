@@ -10,8 +10,8 @@ export interface Box {
 }
 
 /**
- * A network link: from the hub on its container's floor, along the floor under the box, then up into the box. The
- * view animates traffic along it by the box's load.
+ * A network link: from the hub on its container's floor, along the floor to the box's side that faces the hub, then
+ * up that side to its middle. The view animates traffic along it by the box's load.
  */
 export interface Link {
   /** The twin whose traffic the link carries, and the one whose network it joins. */
@@ -56,6 +56,23 @@ const padAt = (depth: number) => gapAt(depth) * 0.55 + 0.45;
 const leafOf = (node: TwinView): Vec => (node.depth >= 3 ? [1, 1, 1] : node.depth === 2 ? [1.6, 1.2, 1.6] : [3, 2, 3]);
 
 const shift = (v: Vec, by: Vec): Vec => [v[0] + by[0], v[1] + by[1], v[2] + by[2]];
+
+/**
+ * A link from the hub (the container's floor center, at `hubY`) to a child's side that faces it, never into the
+ * child: along the floor to the foot of that side's middle, then up the side to half the child's height. `at` is the
+ * child's floor center, `size` its box.
+ */
+function toSide(hubY: number, at: Vec, size: Vec): Vec[] {
+  const [x, floor, z] = at;
+  // The side the hub lies beyond: the axis on which the hub is farther out, relative to the box's extent.
+  const alongX = Math.abs(x) / size[0] > Math.abs(z) / size[2];
+  const side: [number, number] = alongX ? [x - Math.sign(x) * (size[0] / 2), z] : [x, z - (Math.sign(z) || 1) * (size[2] / 2)];
+  return [
+    [0, hubY, 0],
+    [side[0], hubY, side[1]],
+    [side[0], floor + size[1] / 2, side[1]],
+  ];
+}
 
 /**
  * Measures one node: its children grouped by model (siblings of a kind share a layer), each group a near-square grid
@@ -105,7 +122,7 @@ function measure(node: TwinView, networked: (node: TwinView) => boolean): Measur
       const at: Vec = [-rowW / 2 + g.cell[0] / 2 + col * (g.cell[0] + gap), pad, z + g.cell[2] / 2 + row * (g.cell[2] + gap)];
       for (const b of m.boxes) boxes.push({ id: b.id, center: shift(b.center, at), size: b.size });
       for (const l of m.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
-      if (networked(child)) links.push({ id: child.id, parent: node.id, path: [[0, hubY, 0], [at[0], hubY, at[2]], [at[0], pad, at[2]]] });
+      if (networked(child)) links.push({ id: child.id, parent: node.id, path: toSide(hubY, at, m.size) });
     });
     z += g.depth + gap;
   }
