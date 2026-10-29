@@ -1,6 +1,6 @@
 /**
  * The twin's structure in the Digital Twins Definition Language v2 (DTDL, an open JSON-LD standard,
- * https://github.com/Azure/azure-digital-twins): one interface per node kind, the nesting as relationships. The
+ * https://github.com/Azure/azure-digital-twins): one interface per kind of entity, containment and placement as relationships. The
  * twin's nodes are instances of these interfaces; `/api/twin` carries their `@id` and `model`.
  */
 
@@ -10,6 +10,7 @@ export const MODEL = {
   Workload: "dtmi:osiris:k8s:Workload;1",
   Pod: "dtmi:osiris:k8s:Pod;1",
   Container: "dtmi:osiris:k8s:Container;1",
+  Node: "dtmi:osiris:k8s:Node;1",
 } as const;
 
 const phase = {
@@ -40,6 +41,7 @@ export function dtdlModel() {
         { "@type": "Telemetry", name: "pods", schema: "long", description: "Pods in the cluster." },
         { "@type": "Telemetry", name: "errorLogs", schema: "long", description: "Error log records of the last 15 minutes (ClickHouse)." },
         { "@type": "Relationship", name: "contains", target: MODEL.Namespace, description: "The cluster's namespaces." },
+        { "@type": "Relationship", name: "hasNode", target: MODEL.Node, description: "The machines the cluster runs on." },
       ],
     ),
     doc(
@@ -76,6 +78,7 @@ export function dtdlModel() {
         { "@type": "Telemetry", name: "restarts", schema: "long", description: "Container restarts, summed over the pod." },
         { "@type": "Telemetry", name: "errorLogs", schema: "long", description: "Error log records of the last 15 minutes (ClickHouse)." },
         { "@type": "Relationship", name: "contains", target: MODEL.Container, description: "The pod's containers." },
+        { "@type": "Relationship", name: "runsOn", target: MODEL.Node, description: "The node the pod is scheduled on." },
       ],
     ),
     doc(
@@ -88,6 +91,18 @@ export function dtdlModel() {
         { "@type": "Property", name: "ready", schema: "boolean", description: "Whether the container is ready." },
         { "@type": "Telemetry", name: "restarts", schema: "long", description: "The container's restarts." },
         { "@type": "Telemetry", name: "errorLogs", schema: "long", description: "Error log records of the last 15 minutes (ClickHouse)." },
+      ],
+    ),
+    doc(
+      MODEL.Node,
+      "Node",
+      "A machine of the cluster: not Ready is an error, memory, disk or PID pressure a warning.",
+      [
+        { "@type": "Property", name: "name", schema: "string", description: "The node's name." },
+        { "@type": "Property", name: "kubelet", schema: "string", description: "The kubelet's version." },
+        { "@type": "Property", name: "os", schema: "string", description: "The operating system image." },
+        { "@type": "Property", name: "cpu", schema: "string", description: "CPU capacity." },
+        { "@type": "Property", name: "memory", schema: "string", description: "Memory capacity." },
       ],
     ),
   ];

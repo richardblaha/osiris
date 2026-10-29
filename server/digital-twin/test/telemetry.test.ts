@@ -21,7 +21,7 @@ describe("Telemetry's cluster filter", () => {
     const { calls, ch } = spy();
     const t = new Telemetry(ch, "busiris");
     await t.facets(RANGE);
-    await t.podErrors();
+    await t.errorCounts(["k8s.namespace.name", "k8s.pod.name"]);
     await t.logs({ ...RANGE, limit: 10 });
     await t.traces({ ...RANGE, limit: 10 });
     await t.trace("0123456789abcdef0123456789abcdef");
@@ -42,7 +42,7 @@ describe("Telemetry's cluster filter", () => {
     const { calls, ch } = spy();
     const t = new Telemetry(ch);
     await t.facets(RANGE);
-    await t.podErrors();
+    await t.errorCounts(["k8s.namespace.name", "k8s.pod.name"]);
     await t.logs({ ...RANGE, limit: 10 });
     await t.traces({ ...RANGE, limit: 10 });
     await t.trace("0123456789abcdef0123456789abcdef");
@@ -56,5 +56,23 @@ describe("Telemetry's cluster filter", () => {
     const logs = calls[3]!;
     expect(logs.sql).toContain("otel_logs");
     expect(logs.params).toMatchObject({ from: "1730000000", to: "1730003600" });
+  });
+});
+
+describe("Telemetry's error counts", () => {
+  it("groups error records by the adapter's attributes, passed as parameters", async () => {
+    const { calls, ch } = spy();
+    const t = new Telemetry(ch);
+    await t.errorCounts(["k8s.namespace.name", "k8s.pod.name"]);
+    const [{ sql, params }] = calls as [{ sql: string; params: Record<string, string | number> }];
+    expect(sql).toContain("ResourceAttributes[{a0:String}] AS k0, ResourceAttributes[{a1:String}] AS k1");
+    expect(sql).toContain("GROUP BY k0, k1");
+    expect(params).toMatchObject({ a0: "k8s.namespace.name", a1: "k8s.pod.name", severity: "17" });
+  });
+
+  it("asks nothing without attributes", async () => {
+    const { calls, ch } = spy();
+    expect((await new Telemetry(ch).errorCounts([])).size).toBe(0);
+    expect(calls).toHaveLength(0);
   });
 });

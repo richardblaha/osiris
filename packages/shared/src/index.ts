@@ -204,29 +204,58 @@ export interface MetricSeries {
 }
 
 /**
- * The cluster's digital twin, as the digital-twin app builds it from the Kubernetes API (`/api/twin`): nested nodes
- * (cluster → namespaces → workloads → pods → containers), each a DTDL instance of its interface in `/api/twin/model`.
+ * A digital twin, as the digital-twin app builds it from a source (an adapter: Kubernetes today). The twin is a
+ * graph (`/api/twin/graph`): entities, each a DTDL instance of an interface in `/api/twin/model`, and named
+ * relationships between them. `contains` makes the tree the 3D view shows (`/api/twin`).
  */
 export type TwinStatus = "ok" | "warn" | "error";
-export type TwinKind = "cluster" | "namespace" | "workload" | "pod" | "container";
+/** The Kubernetes source's kinds of entity; another source brings its own. */
+export type TwinKind = "cluster" | "namespace" | "workload" | "pod" | "container" | "node";
 
-export interface TwinNode {
-  /** DTDL identifiers: the instance's `@id` and the interface it instantiates. */
+export interface TwinEntity {
+  /** The instance's id (unique in the twin) and the DTDL interface it instantiates. */
   id: string;
   model: string;
-  kind: TwinKind;
+  /** The model's short name ("pod", "room"…), for the views. */
+  kind: string;
   name: string;
+  /** The entity's own status, before the tree rolls its children's up. */
   status: TwinStatus;
-  /** Error log records of the last 15 minutes (ClickHouse), summed over the node's children. */
+  /** Error log records of the last 15 minutes (ClickHouse): the entity's own. */
   errors: number;
-  /** Key → value for the detail panel (already formatted; the 3D view ignores it). */
+  /** Key → value for the detail panel (already formatted). */
   properties: Record<string, string>;
+  /** OpenTelemetry resource attributes naming the entity's own telemetry (e.g. `k8s.pod.name`). */
+  telemetry?: Record<string, string>;
+}
+
+/** A DTDL relationship instance: `source` —name→ `target`, by entity id. */
+export interface TwinRelationship {
+  name: string;
+  source: string;
+  target: string;
+}
+
+export interface TwinGraph {
+  /** Which adapter the twin comes from ("kubernetes"). */
+  source: string;
+  /** The root entity's id: the top of the `contains` tree. */
+  root: string;
+  entities: TwinEntity[];
+  relationships: TwinRelationship[];
+  /** When the structure was read from the source (epoch ms). */
+  ts: number;
+}
+
+/** The containment tree of the graph: statuses and error counts roll up (a node is as bad as its worst child). */
+export interface TwinNode extends TwinEntity {
   children: TwinNode[];
 }
 
 export interface Twin {
+  /** The root of the tree (for Kubernetes, the cluster). */
   cluster: TwinNode;
-  /** When the structure was read from the Kubernetes API (epoch ms). */
+  /** When the structure was read from the source (epoch ms). */
   ts: number;
 }
 

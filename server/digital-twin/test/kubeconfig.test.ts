@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { KubeconfigError, loadKubeconfig } from "../src/kubeconfig.ts";
-import { Kube } from "../src/kube.ts";
+import { KubeconfigError, loadKubeconfig } from "../src/sources/kubernetes/kubeconfig.ts";
+import { Kube } from "../src/sources/kubernetes/kube.ts";
 
 const CA = `-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n`;
 const kubeconfig = (contexts: unknown) => JSON.stringify(contexts); // JSON is valid YAML; enough for the fields used.

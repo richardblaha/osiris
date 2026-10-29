@@ -6,12 +6,13 @@ import { ServiceError } from "@osiris/platform/http.ts";
 import { createApp } from "../src/app.ts";
 import { noCache } from "../src/cache.ts";
 import { loadConfig } from "../src/config.ts";
-import { Kube } from "../src/kube.ts";
+import { Kube } from "../src/sources/kubernetes/kube.ts";
+import { kubernetesSource } from "../src/sources/kubernetes/source.ts";
 import { ClickHouse, Telemetry } from "../src/telemetry.ts";
 import { devVerifier } from "../src/auth.ts";
 import type { TokenVerifier } from "../src/auth.ts";
 import type { Cache } from "../src/cache.ts";
-import type { TwinNode } from "@osiris/shared";
+import type { TwinGraph, TwinNode } from "@osiris/shared";
 
 const config = loadConfig({ NODE_ENV: "test", AUTH_URL: "http://localhost:3003", CLICKHOUSE_URL: "http://ch", CLICKHOUSE_PASSWORD: "pw" });
 
@@ -74,7 +75,7 @@ function countingCache() {
 
 const app = (over: { verifier?: TokenVerifier; cache?: Cache; telemetry?: Telemetry } = {}) =>
   createApp(config, {
-    kube: new Kube({ apiServer: "https://kube", token: "t", fetchFn: kubeFetch }),
+    source: kubernetesSource(new Kube({ apiServer: "https://kube", token: "t", fetchFn: kubeFetch }), "k8s"),
     telemetry: over.telemetry ?? new Telemetry(new ClickHouse("http://ch", "osiris", "pw", chFetch as unknown as typeof fetch)),
     verifier: over.verifier ?? devVerifier(),
     cache: over.cache ?? noCache,
@@ -105,8 +106,20 @@ describe("the twin API", () => {
     const res = await app().request("/api/twin/model");
     expect(res.status).toBe(200);
     const docs = (await res.json()) as { "@id": string; "@type": string }[];
-    expect(docs).toHaveLength(5);
+    expect(docs).toHaveLength(6);
     expect(docs[0]!["@id"]).toBe("dtmi:osiris:k8s:Cluster;1");
+  });
+
+  it("serves the twin as a graph: entities and their relationships, nodes and placement included", async () => {
+    const res = await app().request("/api/twin/graph");
+    expect(res.status).toBe(200);
+    const graph = (await res.json()) as TwinGraph;
+    expect(graph.source).toBe("kubernetes");
+    const pod = graph.entities.find((e) => e.kind === "pod")!;
+    const machine = graph.entities.find((e) => e.kind === "node")!;
+    expect(machine.name).toBe("node1");
+    expect(graph.relationships).toContainEqual({ name: "runsOn", source: pod.id, target: machine.id });
+    expect(graph.relationships).toContainEqual({ name: "hasNode", source: graph.root, target: machine.id });
   });
 
   it("caches the tree: the second answer doesn't ask the Kubernetes API again", async () => {
@@ -116,7 +129,7 @@ describe("the twin API", () => {
     const calls = kubeFetch.mock.calls.length;
     await instance.request("/api/twin");
     expect(kubeFetch.mock.calls.length).toBe(calls);
-    expect(loads).toContain("twin:k8s:*:tree"); // the cluster in the key: one Redis, several twins
+    expect(loads).toContain("twin:kubernetes:k8s:*:graph"); // the cluster in the key: one Redis, several twins
   });
 
   it("answers the logs page's query and caches it", async () => {
@@ -129,7 +142,7 @@ describe("the twin API", () => {
     const calls = chFetch.mock.calls.length;
     await instance.request("/api/logs?namespace=osiris&pod=gateway-abc&severity=error");
     expect(chFetch.mock.calls.length).toBe(calls);
-    expect(loads.some((k) => k.startsWith("twin:k8s:*:logs:"))).toBe(true);
+    expect(loads.some((k) => k.startsWith("twin:kubernetes:k8s:*:logs:"))).toBe(true);
   });
 
   it("refuses a bad query", async () => {
@@ -150,7 +163,7 @@ describe("the PWA's static files", () => {
 
   it("serves the app's files, and the index.html for every other path", async () => {
     const instance = createApp(config, {
-      kube: new Kube({ apiServer: "https://kube", token: "t", fetchFn: kubeFetch }),
+      source: kubernetesSource(new Kube({ apiServer: "https://kube", token: "t", fetchFn: kubeFetch }), "k8s"),
       verifier: devVerifier(),
       cache: noCache,
       staticDir: dir,

@@ -1,5 +1,5 @@
 import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary } from "@osiris/shared";
-import type { PodErrors } from "./twin.ts";
+import { errorKey, type ErrorCounts } from "./twin.ts";
 
 /** ClickHouse's HTTP interface with a read-only user; values go in as query parameters (`{name:Type}`), never as SQL. */
 export class ClickHouse {
@@ -82,12 +82,22 @@ export class Telemetry {
   }
 
   /** Error log records of the last 15 minutes per pod, the twin's status overlay (a pod logs for itself, 0 with none). */
-  async podErrors(): Promise<PodErrors> {
-    const rows = await this.ch.query<{ namespace: string; pod: string; count: string }>(
-      `SELECT ${NS} AS namespace, ${POD} AS pod, count() AS count FROM otel_logs\n       WHERE Timestamp >= now() - INTERVAL 15 MINUTE AND SeverityNumber >= {severity:UInt8} AND pod <> ''${this.of().where}\n       GROUP BY namespace, pod`,
-      { ...this.of().params, severity: SEVERITY.error ?? 17 },
+  /**
+   * Error log records of the last 15 minutes by the values of the given resource attributes (an adapter's error
+   * attributes, e.g. namespace and pod), keyed with `errorKey`. Records missing any of them don't count. The
+   * attribute names go in as parameters, never as SQL.
+   */
+  async errorCounts(attributes: string[]): Promise<ErrorCounts> {
+    if (!attributes.length) return new Map();
+    const columns = attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`);
+    const present = attributes.map((_, i) => `k${i} <> ''`).join(" AND ");
+    const params: Record<string, string | number> = { ...this.of().params, severity: SEVERITY.error ?? 17 };
+    attributes.forEach((a, i) => (params[`a${i}`] = a));
+    const rows = await this.ch.query<Record<string, string>>(
+      `SELECT ${columns.join(", ")}, count() AS count FROM otel_logs\n       WHERE Timestamp >= now() - INTERVAL 15 MINUTE AND SeverityNumber >= {severity:UInt8} AND ${present}${this.of().where}\n       GROUP BY ${attributes.map((_, i) => `k${i}`).join(", ")}`,
+      params,
     );
-    return new Map(rows.map((r) => [`${r.namespace}/${r.pod}`, Number(r.count)]));
+    return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.count)]));
   }
 
   /** The newest log records matching the filters (`to`: older than that, for the next page). */

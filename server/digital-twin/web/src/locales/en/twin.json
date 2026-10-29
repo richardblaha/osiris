@@ -9,7 +9,8 @@
     "namespace": "Namespace",
     "workload": "Workload",
     "pod": "Pod",
-    "container": "Container"
+    "container": "Container",
+    "node": "Node"
   },
   "properties": "Properties",
   "model": "DTDL model",

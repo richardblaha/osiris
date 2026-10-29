@@ -26,7 +26,7 @@ interface Terminated {
 
 export interface NodeObject {
   metadata: { name: string; uid?: string };
-  status?: { nodeInfo?: { kubeletVersion?: string; osImage?: string }; capacity?: Record<string, string> };
+  status?: { nodeInfo?: { kubeletVersion?: string; osImage?: string }; capacity?: Record<string, string>; conditions?: { type: string; status: string }[] };
 }
 
 /** ReplicaSets matter only to find the Deployment a pod's owner belongs to. */

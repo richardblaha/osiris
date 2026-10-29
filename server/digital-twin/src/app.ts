@@ -6,13 +6,11 @@ import { z } from "zod";
 import { errorResponse, HttpError, requestLocale, ValidationError } from "@osiris/platform/i18n.ts";
 import { ServiceError } from "@osiris/platform/http.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
-import type { Twin } from "@osiris/shared";
+import type { TwinGraph } from "@osiris/shared";
 import type { Identity, TokenVerifier } from "./auth.ts";
 import type { Cache } from "./cache.ts";
 import type { Config } from "./config.ts";
-import { dtdlModel } from "./dtdl.ts";
-import { Kube } from "./kube.ts";
-import { buildTwin } from "./twin.ts";
+import { graphOf, treeOf, type TwinSource } from "./twin.ts";
 import type { MetricType, Telemetry } from "./telemetry.ts";
 
 const HOUR = 3_600_000;
@@ -37,7 +35,8 @@ const csp = (authUrl?: string) =>
   `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${authUrl ? ` ${new URL(authUrl).origin}` : ""}; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'`;
 
 export interface AppOptions {
-  kube: Kube;
+  /** The adapter the twin mirrors (Kubernetes). */
+  source: TwinSource;
   telemetry?: Telemetry;
   verifier?: TokenVerifier;
   cache: Cache;
@@ -46,49 +45,29 @@ export interface AppOptions {
 
 /**
  * Osiris Digital Twin's HTTP app: the cluster's twin as DTDL documents (`/api/twin/model`) and the live tree
- * (`/api/twin`, structure from the Kubernetes API, error counts from ClickHouse, both cached in Redis), the
+ * (`/api/twin`, structure from the source adapter, error counts from ClickHouse, both cached in Redis) and its
+ * graph (`/api/twin/graph`), the
  * telemetry pages' data (logs, metrics, traces), and the PWA itself. Sign-in is osiris-auth's: the PWA signs in
  * with OIDC, the API introspects the token and answers members of the configured group.
  */
 export function createApp(config: Config, options: AppOptions) {
-  const { kube, telemetry, verifier, cache, staticDir } = options;
+  const { source, telemetry, verifier, cache, staticDir } = options;
   const CSP = csp(config.AUTH_URL);
   const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
 
-  /** The twin's tree: k8s structure (and ClickHouse's error counts), cached for CACHE_TTL_SECONDS. */
-  // One Redis may serve twins of several clusters: every key carries the cluster (and its telemetry's) name.
-  const prefix = `twin:${config.CLUSTER_NAME}:${config.CLICKHOUSE_CLUSTER ?? "*"}`;
-  const twin = async (): Promise<Twin> => {
-    const key = `${prefix}:tree`;
-    const cached = await cache.get<Twin>(key);
+  // One Redis may serve twins of several clusters: every key carries the source, the cluster (and its telemetry's) name.
+  const prefix = `twin:${source.name}:${config.CLUSTER_NAME}:${config.CLICKHOUSE_CLUSTER ?? "*"}`;
+  /** The twin's graph: the source's snapshot (and ClickHouse's error counts), cached for CACHE_TTL_SECONDS. */
+  const graph = async (): Promise<TwinGraph> => {
+    const key = `${prefix}:graph`;
+    const cached = await cache.get<TwinGraph>(key);
     if (cached) return cached;
-    const [namespaces, pods, nodes, replicasets, version] = await Promise.all([
-      kube.namespaces(),
-      kube.pods(),
-      kube.nodes(),
-      kube.replicasets().catch(() => []),
-      kube.version(),
-    ]);
-    const deploymentOf = new Map(
-      replicasets
-        .flatMap((rs) => {
-          const deployment = rs.metadata.ownerReferences?.find((o) => o.kind === "Deployment");
-          return deployment ? [[`${rs.metadata.namespace}/${rs.metadata.name}`, deployment.name] as const] : [];
-        }),
-    );
+    const snapshot = await source.snapshot();
     // The twin works without telemetry: no error counts is better than no twin.
-    const podErrors = telemetry ? await telemetry.podErrors().catch(() => new Map<string, number>()) : new Map<string, number>();
-    const tree = buildTwin({
-      clusterName: config.CLUSTER_NAME,
-      namespaces,
-      pods,
-      nodes,
-      version,
-      deploymentOf,
-      podErrors,
-    });
-    await cache.set(key, tree, config.CACHE_TTL_SECONDS);
-    return tree;
+    const counts = telemetry && source.errorAttributes?.length ? await telemetry.errorCounts(source.errorAttributes).catch(() => new Map<string, number>()) : new Map<string, number>();
+    const value = graphOf(source, snapshot, counts);
+    await cache.set(key, value, config.CACHE_TTL_SECONDS);
+    return value;
   };
 
   /** An endpoint whose answer is cached: the key a hash of the query, the value fresh when the key misses. Epoch
@@ -108,11 +87,11 @@ export function createApp(config: Config, options: AppOptions) {
     if (!telemetry) throw new HttpError(503, "errors.telemetryOff");
     return telemetry;
   };
-  const kubeFailing = async <T>(action: () => Promise<T>): Promise<T> => {
+  const sourceFailing = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
     } catch (err) {
-      console.error("Kubernetes query failed", err);
+      console.error(`The twin's source (${source.name}) failed`, err);
       throw new HttpError(502, "errors.digitalTwin.k8sFailed", { detail: (err as Error).message.slice(0, 300) });
     }
   };
@@ -161,9 +140,10 @@ export function createApp(config: Config, options: AppOptions) {
     })
     .get("/api/me", (c) => c.json(c.get("identity") ?? null))
 
-    // The twin: the DTDL documents that define its structure, and the live tree as their instances.
-    .get("/api/twin", async (c) => c.json(await kubeFailing(twin)))
-    .get("/api/twin/model", (c) => c.json(dtdlModel()))
+    // The twin: the DTDL documents that define it, the graph of their instances and its containment tree.
+    .get("/api/twin", async (c) => c.json(treeOf(await sourceFailing(graph))))
+    .get("/api/twin/graph", async (c) => c.json(await sourceFailing(graph)))
+    .get("/api/twin/model", (c) => c.json(source.models()))
 
     // The telemetry pages: the same queries the dashboard reads ClickHouse with, cached briefly.
     .get("/api/facets", async (c) => {

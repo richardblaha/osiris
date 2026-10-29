@@ -83,24 +83,8 @@ export function App() {
   const openFromNode = (page: "logs" | "metrics" | "traces") => {
     const node = selected ?? twin?.cluster;
     if (!node) return;
-    // Pages filter by the node's namespace (a pod or container by the pod's own name, too).
-    const ns = node.kind === "cluster" ? undefined : node.kind === "namespace" ? node.name : findKind(node, "namespace")?.name;
-    const pod = node.kind === "pod" ? node.name : node.kind === "container" ? findKind(node, "pod")?.name : undefined;
-    navigate({ kind: page, preset: { namespace: ns, pod } } as View);
-  };
-
-  /** Walks up: a node knows its place in the tree only through the path it came by. */
-  const findKind = (node: TwinNode, kind: TwinNode["kind"]): TwinNode | undefined => {
-    const walk = (at: TwinNode, trail: TwinNode[]): TwinNode[] => {
-      const next = [...trail, at];
-      if (at.id === node.id) return next;
-      for (const child of at.children) {
-        const found = walk(child, next);
-        if (found) return found;
-      }
-      return [];
-    };
-    return twin ? walk(twin.cluster, []).find((n) => n.kind === kind) : undefined;
+    // Pages filter by the attributes that name the entity's telemetry (OpenTelemetry's k8s namespace and pod).
+    navigate({ kind: page, preset: { namespace: node.telemetry?.["k8s.namespace.name"], pod: node.telemetry?.["k8s.pod.name"] } } as View);
   };
 
   const nav = [

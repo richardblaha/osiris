@@ -5,11 +5,12 @@
     "error": "chyba"
   },
   "kinds": {
-    "cluster": "Klaster",
+    "cluster": "Klastr",
     "namespace": "Namespace",
     "workload": "Workload",
     "pod": "Pod",
-    "container": "Kontejner"
+    "container": "Kontejner",
+    "node": "Node"
   },
   "properties": "Vlastnosti",
   "model": "DTDL model",

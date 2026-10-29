@@ -4,8 +4,9 @@ import { loadConfig } from "./config.ts";
 import { createApp } from "./app.ts";
 import { introspection, devVerifier } from "./auth.ts";
 import { noCache, redisCache } from "./cache.ts";
-import { Kube } from "./kube.ts";
-import { loadKubeconfig } from "./kubeconfig.ts";
+import { Kube } from "./sources/kubernetes/kube.ts";
+import { loadKubeconfig } from "./sources/kubernetes/kubeconfig.ts";
+import { kubernetesSource } from "./sources/kubernetes/source.ts";
 import { ClickHouse, Telemetry } from "./telemetry.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 
@@ -25,12 +26,16 @@ const kubeFetch =
     : undefined;
 
 const app = createApp(config, {
-  kube: new Kube({
-    apiServer: kubeconfig?.server ?? config.KUBE_API_SERVER,
-    tokenPath: kubeconfig?.tokenPath ?? config.KUBE_TOKEN_PATH,
-    token: kubeconfig?.token ?? config.KUBE_TOKEN,
-    fetchFn: kubeFetch,
-  }),
+  // The source adapter; Kubernetes is the one there is (TwinSource in twin.ts is how another one plugs in).
+  source: kubernetesSource(
+    new Kube({
+      apiServer: kubeconfig?.server ?? config.KUBE_API_SERVER,
+      tokenPath: kubeconfig?.tokenPath ?? config.KUBE_TOKEN_PATH,
+      token: kubeconfig?.token ?? config.KUBE_TOKEN,
+      fetchFn: kubeFetch,
+    }),
+    config.CLUSTER_NAME,
+  ),
   telemetry: config.CLICKHOUSE_URL
     ? new Telemetry(new ClickHouse(config.CLICKHOUSE_URL, config.CLICKHOUSE_USER, config.CLICKHOUSE_PASSWORD ?? ""), config.CLICKHOUSE_CLUSTER)
     : undefined,

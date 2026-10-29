@@ -8,7 +8,7 @@ export function TwinDetail({ node, onOpen }: { node: TwinNode; onOpen: (page: "l
   return (
     <aside className="flex w-96 shrink-0 flex-col border-s border-line" aria-label={t("twin:properties")}>
       <div className="border-b border-line px-4 py-3">
-        <span className="section-header block">{t(`twin:kinds.${node.kind}`)}</span>
+        <span className="section-header block">{t(`twin:kinds.${node.kind}` as "twin:kinds.pod", { defaultValue: node.kind })}</span>
         <h2 className="mt-0.5 truncate font-semibold" title={node.name}>
           {node.name}
         </h2>
