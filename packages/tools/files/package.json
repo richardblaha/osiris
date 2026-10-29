@@ -1,0 +1,26 @@
+{
+  "name": "@osiris/tools-files",
+  "private": true,
+  "description": "Osiris agent tools: Project files.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.17",
+    "@osiris/core": "workspace:*",
+    "@osiris/shared": "workspace:*",
+    "mustache": "4.2.0",
+    "sharp": "0.35.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/mustache": "4.2.6",
+    "@types/node": "^26.6.4",
+    "typescript": "6.0.3"
+  }
+}

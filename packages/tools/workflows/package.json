@@ -1,0 +1,25 @@
+{
+  "name": "@osiris/tools-workflows",
+  "private": true,
+  "description": "Osiris agent tools: Workflow orchestration.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.17",
+    "@langchain/langgraph": "^1.4.21",
+    "@osiris/core": "workspace:*",
+    "@osiris/platform": "workspace:*",
+    "@osiris/shared": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "6.0.3"
+  }
+}

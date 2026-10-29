@@ -760,7 +760,7 @@ export interface ChatQuestion {
 /** Tools whose result may be a chat question (`{ question }`), shown as a form even with tool calls hidden. */
 export const QUESTION_TOOLS: readonly string[] = ["ask_user", "run_workflow"];
 
-/** Agent orchestration patterns (`@osiris/core/agent/orchestrator`). `Composite`: a plan mixing several of them. */
+/** Agent orchestration patterns (`@osiris/tools-workflows`). `Composite`: a plan mixing several of them. */
 export type AgentPattern = "ReAct" | "PEV" | "JEV" | "MapReduce" | "Reflexion" | "HITL" | "Composite";
 export type AgentPhase = "Router" | "Plan" | "Judge" | "Execute" | "Verify" | "Critic" | "Map" | "Reduce" | "HumanApproval" | "Complete";
 /** `skipped`: never ran (what it needed failed or was rejected, or the workflow ended without it). */

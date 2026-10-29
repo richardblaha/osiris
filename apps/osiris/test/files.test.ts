@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { fileTools } from "@osiris/core/agent/tools/files.ts";
+import { fileTools } from "@osiris/tools-files/tools.ts";
 import type { RunContext } from "@osiris/core/agent/context.ts";
 import { GotenbergClient } from "@osiris/core/files/gotenberg.ts";
 import { FileError, FileStore, pathSegments, type FileLocation } from "@osiris/core/files/store.ts";

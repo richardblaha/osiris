@@ -8,7 +8,6 @@ import { loadConfig, serverConfig } from "./config.ts";
 import { buildProject } from "./build.ts";
 import { ControlClient, RemoteFeatures } from "./control.ts";
 import { hasProject, projectDir, restoreSnapshot, withSnapshot } from "./snapshot.ts";
-import { controlTools } from "./tools.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 import { monthOf } from "@osiris/core/agent/usage.ts";
 import type { ReportedUsage } from "@osiris/shared";
@@ -35,7 +34,7 @@ const features = new RemoteFeatures(control);
 const project = await buildProject(config, config.PROJECT_ID, projectDir(config.DATA_DIR), {
   features,
   secrets: config.PROJECT_SECRETS_KEY ? new SecretBox(config.PROJECT_SECRETS_KEY) : SecretBox.insecureDev(),
-  extraTools: (store) => controlTools(control, store, config.TIMEZONE),
+  schedules: control,
   notifyAdmins: (subject, text) => control.notifyAdmins(subject, text),
 });
 

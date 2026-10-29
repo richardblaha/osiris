@@ -26,8 +26,8 @@ it.skipIf(process.env.COMFY_LIVE_GENERATE !== "1")("generates one small image th
   const { Records } = await import("@osiris/core/projects/records.ts");
   const { createThread } = await import("@osiris/core/repo/threads.ts");
   const { FileStore } = await import("@osiris/core/files/store.ts");
-  const { ImageJobStore } = await import("@osiris/core/images/store.ts");
-  const { ImageService, imageRequest } = await import("@osiris/core/images/service.ts");
+  const { ImageJobStore } = await import("@osiris/tools-images/store.ts");
+  const { ImageService, imageRequest } = await import("@osiris/tools-images/service.ts");
   const { createChatModel } = await import("@osiris/core/agent/model.ts");
   const dir = await mkdtemp(join(tmpdir(), "osiris-comfy-live-"));
   const db = new Records(join(dir, ".osiris"));
@@ -61,7 +61,7 @@ it.skipIf(process.env.COMFY_LIVE_GENERATE !== "1")("generates one small image th
 it.skipIf(process.env.COMFY_LIVE_UPLOAD !== "1")("uploads a small reference through the hosted MCP PUT protocol", async () => {
   const key = process.env.COMFY_TEST_API_KEY ?? process.env.COMFY_API_KEY;
   if (!key) throw new Error("Set a Comfy test key securely first");
-  const { completeMcpUpload } = await import("@osiris/core/images/http.ts");
+  const { completeMcpUpload } = await import("@osiris/tools-images/http.ts");
   const connection = await defaultConnector(false)({ name: "comfy-cloud", url: "https://cloud.comfy.org/mcp", auth: "headers", headers: { "X-API-Key": key } });
   try {
     const target = connection.tools.find(t => t.name === "comfy-cloud_upload_file")!;

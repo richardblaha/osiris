@@ -11,7 +11,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { describePersona, hasRules } from "@osiris/core/agent/assistant.ts";
 import { publicProfile } from "@osiris/core/public/assistant.ts";
-import { buildSite, createSite, describeBuild, SITE_DIST, siteInfo } from "@osiris/core/agent/tools/site.ts";
+import { buildSite, createSite, describeBuild, SITE_DIST, siteInfo } from "@osiris/core/sites/site.ts";
 import { GitError } from "@osiris/core/projects/git.ts";
 import type { GuardOwner } from "@osiris/core/agent/guards.ts";
 import { publishFolder as publishSftp, testTarget } from "@osiris/core/sites/sftp.ts";

@@ -4,6 +4,7 @@ packages:
   - server/auth/web
   - server/digital-twin/web
   - packages/*
+  - packages/tools/*
 allowBuilds:
   esbuild: true
   protobufjs: false

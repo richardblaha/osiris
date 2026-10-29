@@ -1,39 +1,20 @@
-import { ComfyUploadApi } from "../images/http.ts";
-import { ImageError } from "../images/errors.ts";
-import { imageTools } from "../agent/tools/images.ts";
-import { ImageService, type ImageOptions } from "../images/service.ts";
-import { ImageJobStore } from "../images/store.ts";
-import { chatFileTool } from "../agent/tools/chat-file.ts";
 import { MediaReader } from "../agent/attachments.ts";
 import { QuestionStore } from "../agent/questions.ts";
 import { StandardAccounts } from "../integrations/standard.ts";
-import { mailTools } from "../integrations/mail.ts";
-import { davTools } from "../integrations/dav.ts";
-import { tool } from "@langchain/core/tools";
-import { z } from "zod";
-import { getRunContext } from "../agent/context.ts";
 import type { AgentModels } from "../agent/model.ts";
 import type { EmbeddingsInterface } from "@langchain/core/embeddings";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { Client } from "@libsql/client";
 import { createAgentGraph, type AgentGraph } from "../agent/graph.ts";
-import { createOrchestratorGraph, reactFromAgentGraph } from "../agent/orchestrator/graph.ts";
-import { WORKFLOW_TOOL, workflowTool } from "../agent/orchestrator/tool.ts";
 import { MemoryStore } from "../agent/memory.ts";
 import { UserSettingsStore } from "../agent/settings.ts";
 import { SkillStore, type Skill } from "../agent/skills.ts";
-import { saveKnowledgeTool, searchKnowledgeTool } from "../agent/tools/knowledge.ts";
-import { memoryTools } from "../agent/tools/memory.ts";
-import { loadSkillTool } from "../agent/tools/skills.ts";
 import { FileSaver } from "../checkpointer/file-saver.ts";
 import { McpServerStore } from "../mcp/store.ts";
 import { McpToolset, type McpOptions } from "../mcp/toolset.ts";
 import { KnowledgeStore } from "../rag/store.ts";
 import type { SecretBox } from "../secrets.ts";
 import { SecretVault } from "../vault/vault.ts";
-import { httpRequestTool } from "../agent/tools/http.ts";
-import { fileTools, searchFilesTool } from "../agent/tools/files.ts";
-import { GotenbergClient } from "../files/gotenberg.ts";
 import { FileStore, type FileStoreOptions } from "../files/store.ts";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { fileType } from "@osiris/shared";
@@ -45,15 +26,12 @@ import { FileIndex } from "../files/index.ts";
 import { SiteTargetStore } from "../sites/sftp.ts";
 import { GuardStore, guardsText } from "../agent/guards.ts";
 import { buildPublicPrompt, InquiryStore, PublicAssistantStore, publicProfile, publicTools } from "../public/assistant.ts";
-import { googleTools } from "../integrations/google.ts";
-import { microsoftTools } from "../integrations/microsoft.ts";
 import { IntegrationAccounts, type IntegrationClient, type IntegrationProvider } from "../integrations/oauth.ts";
-import { buildVitepressTool, publishSiteTool } from "../agent/tools/site.ts";
 import { VitepressClient } from "../files/vitepress.ts";
 import { FileIndexer } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
-import { databaseTools } from "../agent/tools/database.ts";
 import { DataStore } from "../database/store.ts";
+import type { ToolHost, ToolModule } from "../tools/module.ts";
 import { createDb } from "../db/client.ts";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -101,7 +79,7 @@ export interface Project {
   inquiries: InquiryStore;
   /** Run once before serving: moves old database content to files and brings the indexes up to date. */
   init(): Promise<void>;
-  /** The built-in tools, each with the feature it belongs to. */
+  /** The built-in tools of the loaded tool modules, each with the feature it belongs to. */
   builtinTools: [Feature, StructuredToolInterface][];
   usage: UsageStore;
   /** Persona and rules, project-wide (owner '') and per user. */
@@ -118,9 +96,8 @@ export interface Project {
 
 /** Shared, project-independent dependencies. */
 export interface ProjectDeps {
-  images?: ImageOptions;
-  /** Optional runtime bootstrap credential; sealed into the existing project vault, never sent to the model. */
-  comfyApiKey?: string;
+  /** The tool modules the runtime loaded (its configuration); a module left out has no tools at all. */
+  tools?: ToolModule[];
   media?: MediaReader;
   model: BaseChatModel;
   models?: AgentModels;
@@ -134,19 +111,15 @@ export interface ProjectDeps {
   files?: FileStoreOptions;
   /** Which features the project may use (from control). */
   features: FeatureSource;
-  /** Tools beyond the built-in ones (the runtime's schedule and site tools), each tied to a feature. */
-  extraTools?: (files: FileStore) => [Feature, StructuredToolInterface][];
   /** Emails the project's admins (a new inquiry from the public assistant); through control. */
   notifyAdmins?: (subject: string, text: string) => Promise<void>;
   /** Osiris's OAuth clients at Google and Microsoft, for users' mail, contacts and calendar (none: no such tools). */
   integrations?: { clients: Partial<Record<IntegrationProvider, IntegrationClient>>; redirectUrl: string; fetch?: typeof fetch };
-  /** Gotenberg for converting files to PDF; without it there is no convert_to_pdf tool. */
-  gotenbergUrl?: string;
   /** The VitePress builder; without it there is no build_vitepress_site tool. */
   vitepressUrl?: string;
   /** Lets Mem0 pick the user's facts from every finished turn (costs a few model calls per turn). */
   learnMemories?: boolean;
-  /** Replaces global fetch for the http_request tool (tests). */
+  /** Replaces global fetch for the http_request tool and the builders (tests). */
   fetch?: typeof fetch;
 }
 
@@ -219,48 +192,38 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     deps.integrations?.fetch,
   );
   const standardAccounts = new StandardAccounts(records, deps.secrets);
-  const gotenberg = deps.gotenbergUrl ? new GotenbergClient(deps.gotenbergUrl) : undefined;
   const vitepress = deps.vitepressUrl ? new VitepressClient(deps.vitepressUrl, deps.fetch) : undefined;
-  // Each built-in tool belongs to a feature a system admin can switch off for the project.
-  const images = deps.images ? new ImageService(new ImageJobStore(records), files, mcp, deps.models?.tools ?? deps.model, { ...deps.images,
-    uploadApi: deps.images.uploadApi ?? (deps.images.apiUploadFallback ? new ComfyUploadApi(secrets, deps.images.uploadApiKeySecret, deps.fetch) : undefined),
-    authorize: async ctx => {
-      const on = await features.get(), q = await features.quotas();
-      if (!on.files || !on.mcp || ctx.channel === "public") throw new ImageError("IMAGE_ACCESS_DISABLED");
-      if ((q.tokensPerMonth !== null && await usage.tokens() >= q.tokensPerMonth) || (q.tokensPerUserMonth !== null && await usage.tokens(Date.now(), { user: ctx.user_id }) >= q.tokensPerUserMonth)) throw new ImageError("TOKEN_QUOTA_EXHAUSTED");
-      await deps.images?.authorize?.(ctx);
-    },
-  }, (ctx, tokens) => usage.add(tokens, Date.now(), { user: ctx.user_id })) : undefined;
   const questions = new QuestionStore(records);
-  // Workflow steps run as the project's agent itself, declared below (the graph exists before any tool runs).
-  const orchestrator = createOrchestratorGraph({
-    model: deps.models?.agent ?? deps.model,
-    react: (goal, config, key) => reactFromAgentGraph(graph)(goal, config, key),
+  // The loaded tool modules get the project's stores; each module's tools belong to a feature a system admin can switch off.
+  const host: ToolHost = {
+    projectId: id,
+    timezone: deps.timezone,
+    records,
     checkpointer,
-    usage: (config, tokens) => usage.add(tokens, Date.now(), { user: getRunContext(config).user_id }),
-  });
-  const builtins: [Feature, StructuredToolInterface][] = [
-    ...(images ? imageTools(images, files).map((t): [Feature, StructuredToolInterface] => ["files", t]) : []),
-    ["knowledge", searchKnowledgeTool(knowledge)],
-    ["knowledge", saveKnowledgeTool(knowledge)],
-    ["skills", loadSkillTool(skills)],
-    ...memoryTools(memory).map((t): [Feature, StructuredToolInterface] => ["memory", t]),
-    ...fileTools(files, gotenberg).map((t): [Feature, StructuredToolInterface] => ["files", t]),
-    ["files", searchFilesTool(fileIndex)],
-    ["files", chatFileTool(files)],
-    ["sites", publishSiteTool(files, siteTargets)],
-    ...(vitepress ? [["sites", buildVitepressTool(files, vitepress)] as [Feature, StructuredToolInterface]] : []),
-    ["integrations", tool(async (_, config) => JSON.stringify(await standardAccounts.list(getRunContext(config).user_id)), {
-      name: "standard_accounts", description: "Seznam mých propojených účtů pro poštu (SMTP/IMAP/POP3), CalDAV kalendář a CardDAV kontakty. Vrací názvy účtů pro ostatní nástroje.", schema: z.object({}),
-    })],
-    ...[...mailTools(standardAccounts, deps.mcp?.allowPrivate), ...davTools(standardAccounts, deps.mcp?.allowPrivate)].map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
-    ...googleTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
-    ...microsoftTools(integrations, deps.integrations?.fetch).map((t): [Feature, StructuredToolInterface] => ["integrations", t]),
-    ...databaseTools(data).map((t): [Feature, StructuredToolInterface] => ["database", t]),
-    ["http", httpRequestTool(secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch })],
-    ...(deps.extraTools?.(files) ?? []),
-    ["workflows", workflowTool(orchestrator, questions)],
-  ];
+    features,
+    usage,
+    questions,
+    files,
+    fileIndex,
+    knowledge,
+    memory,
+    skills,
+    data,
+    secrets,
+    mcp,
+    mcpServers,
+    siteTargets,
+    integrations,
+    standardAccounts,
+    vitepress,
+    models: { agent: deps.models?.agent ?? deps.model, tools: deps.models?.tools ?? deps.model },
+    graph: () => graph,
+    allowPrivate: deps.mcp?.allowPrivate ?? false,
+    fetch: deps.fetch,
+    integrationsFetch: deps.integrations?.fetch,
+  };
+  const modules = (deps.tools ?? []).map((m) => ({ module: m, set: m.create(host) }));
+  const builtins: [Feature, StructuredToolInterface][] = modules.flatMap(({ module, set }) => set.tools.map((t): [Feature, StructuredToolInterface] => [module.feature, t]));
   const graph = createAgentGraph({
     questions,
     images: async (threadId, paths) => {
@@ -295,16 +258,15 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
         return publicTools({ knowledge, inquiries, skills, notify }, assistant);
       }
       const [on, off] = await Promise.all([features.get(), features.disabledTools()]);
-      // Integration tools only for accounts the user connected.
-      const connected = on.integrations ? await integrations.connected(ctx.user_id) : [];
-      const standard = on.integrations ? await standardAccounts.list(ctx.user_id) : [];
-      const usable = (f: Feature, name: string) =>
-        f !== "integrations" ||
-        (name === "standard_accounts" && standard.length > 0) ||
-        connected.some((p) => name.startsWith(`${p}_`)) ||
-        standard.some((a) => name.startsWith(`${a.kind}_`));
-      const tools = builtins.filter(([f, t]) => on[f] && !(ctx.workflow && t.name === WORKFLOW_TOOL) && (!t.name.startsWith("image_") || on.mcp) && !off.includes(t.name) && usable(f, t.name)).map(([, t]) => t);
-      return on.mcp ? [...tools, ...(await mcp.tools(ctx.user_id)).filter(t => !images || !t.name.startsWith(`${deps.images?.server ?? "comfy-cloud"}_`))] : tools;
+      const tools: StructuredToolInterface[] = [];
+      for (const { module, set } of modules) {
+        if (!on[module.feature]) continue;
+        const usable = (await set.usable?.(ctx, on)) ?? (() => true);
+        tools.push(...set.tools.filter((t) => !off.includes(t.name) && usable(t.name)));
+      }
+      if (!on.mcp) return tools;
+      const hidden = (name: string) => modules.some(({ set }) => set.hidesMcpTool?.(name));
+      return [...tools, ...(await mcp.tools(ctx.user_id)).filter((t) => !hidden(t.name))];
     },
     features,
     usage,
@@ -353,20 +315,12 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     if (!(await records.read("project.json"))) await records.write("project.json", { id });
     await prepareCache(cache);
     await engine.initialize();
-    if (images && deps.comfyApiKey) {
-      const name = deps.images?.server ?? "comfy-cloud", keyName = deps.images?.uploadApiKeySecret ?? "COMFY_API_KEY";
-      if (!(await secrets.list("")).some(secret => secret.name === keyName)) await secrets.put(keyName, "", { value: deps.comfyApiKey, allowedHosts: ["cloud.comfy.org"], description: "Comfy Cloud runtime credential" });
-      if (!await mcpServers.get(name, "")) {
-        await mcpServers.put(name, "", { url: "https://cloud.comfy.org/mcp", auth: "headers", enabled: true, headers: { "X-API-Key": `{{secret:${keyName}}}` } });
-        mcp.invalidate("");
-      }
-    }
     await indexer!.reconcile();
     await knowledge.reindexStale();
     // A chat's scratchpad lives as long as the chat; one whose chat is gone goes now.
     const threads = await threadIds(records);
     for (const thread of await files.tempThreads()) if (!threads.has(thread)) await files.removeTemp(thread);
-    await images?.cleanup();
+    for (const { set } of modules) await set.init?.();
   };
   return {
     id,

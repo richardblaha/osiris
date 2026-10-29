@@ -8,10 +8,10 @@ import { z } from "zod";
 import { Records } from "@osiris/core/projects/records.ts";
 import { createThread } from "@osiris/core/repo/threads.ts";
 import { FileStore } from "@osiris/core/files/store.ts";
-import { ImageJobStore } from "@osiris/core/images/store.ts";
-import { ImageService, imageRequest } from "@osiris/core/images/service.ts";
-import { assembleSprites, inspectImage, transformImage } from "@osiris/core/images/processing.ts";
-import { imageTools } from "@osiris/core/agent/tools/images.ts";
+import { ImageJobStore } from "@osiris/tools-images/store.ts";
+import { ImageService, imageRequest } from "@osiris/tools-images/service.ts";
+import { assembleSprites, inspectImage, transformImage } from "@osiris/tools-images/processing.ts";
+import { imageTools } from "@osiris/tools-images/tools.ts";
 import type { McpToolset } from "@osiris/core/mcp/toolset.ts";
 import { ScriptedChatModel } from "./helpers.ts";
 

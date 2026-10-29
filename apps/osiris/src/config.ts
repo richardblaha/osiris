@@ -48,6 +48,9 @@ const schema = z
     SKILLS_DIR: z.string().default("./skills"),
     FILES_MAX_FILE_MB: z.coerce.number().int().positive().default(25),
     FILES_QUOTA_MB: z.coerce.number().int().positive().default(4096),
+    // Tool modules the runtime loads, comma-separated (files, knowledge, memory, skills, database, http, sites,
+    // integrations, images, workflows, scheduler), or "all". A module left out is never imported and has no tools.
+    TOOL_MODULES: z.string().default("all").transform((v) => v.split(",").map((m) => m.trim()).filter(Boolean)),
     // Gotenberg (HTML and office documents to PDF); without it there is no convert_to_pdf tool.
     COMFY_API_KEY: z.string().optional(),
     // Mem0 picks the user's facts from every finished conversation turn into their memory (a few model calls per turn).

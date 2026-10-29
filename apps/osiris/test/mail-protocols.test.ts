@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import { pop3Read } from "@osiris/core/integrations/pop3.ts";
-import { mailTools } from "@osiris/core/integrations/mail.ts";
+import { pop3Read } from "@osiris/tools-integrations/pop3.ts";
+import { mailTools } from "@osiris/tools-integrations/mail.ts";
 import { StandardAccounts } from "@osiris/core/integrations/standard.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
 import { createTestRecords } from "./helpers.ts";

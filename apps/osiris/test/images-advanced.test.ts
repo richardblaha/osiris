@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { imageRequest } from "@osiris/core/images/types.ts";
-import { assembleSprites, pixels, maskedComposite, compareImages, edgeContinuity, editTextImage, processImage, restoreOutpaintSource, borderImageMetadata, inspectImage } from "@osiris/core/images/processing.ts";
-import { providerData, providerFacts } from "@osiris/core/images/provider.ts";
-import { catalogRecords, rankWorkflows } from "@osiris/core/images/registry.ts";
-import { downloadImage, ComfyUploadApi, completeMcpUpload } from "@osiris/core/images/http.ts";
+import { imageRequest } from "@osiris/tools-images/types.ts";
+import { assembleSprites, pixels, maskedComposite, compareImages, edgeContinuity, editTextImage, processImage, restoreOutpaintSource, borderImageMetadata, inspectImage } from "@osiris/tools-images/processing.ts";
+import { providerData, providerFacts } from "@osiris/tools-images/provider.ts";
+import { catalogRecords, rankWorkflows } from "@osiris/tools-images/registry.ts";
+import { downloadImage, ComfyUploadApi, completeMcpUpload } from "@osiris/tools-images/http.ts";
 import { SecretVault } from "@osiris/core/vault/vault.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
 import { createTestRecords } from "./helpers.ts";

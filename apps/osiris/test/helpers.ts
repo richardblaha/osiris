@@ -19,6 +19,7 @@ import { accessFromClaims, membershipsFromClaims, isAuthorized } from "@osiris/p
 import { generateInternalKeys, InternalSigner, InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
 import { Activity } from "../src/activity.ts";
 import { createRuntimeApp } from "../src/app.ts";
+import { loadToolModules, type ToolModuleOptions } from "../src/tool-modules.ts";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "osiris-test-"));
 
@@ -83,6 +84,12 @@ export class StaticFeatures implements FeatureSource {
 
 export type TestProject = Project & { features: StaticFeatures };
 
+/** Test projects' tool modules: every module (as `TOOL_MODULES=all`), or the ones named. */
+export type TestToolOptions = Partial<Omit<ToolModuleOptions, "images">> & {
+  images?: ToolModuleOptions["images"];
+  comfyApiKey?: string;
+};
+
 /** Projects opened on demand, each in its own folder in a temp dir, like one runtime per project. */
 export class TestProjects {
   private readonly open = new Map<string, Promise<TestProject>>();
@@ -90,6 +97,7 @@ export class TestProjects {
   constructor(
     private readonly dir: string,
     private readonly deps: Omit<ProjectDeps, "features">,
+    private readonly toolOptions: TestToolOptions = {},
   ) {}
 
   get(id: string): Promise<TestProject> {
@@ -97,7 +105,9 @@ export class TestProjects {
     if (!t) {
       t = (async () => {
         const features = new StaticFeatures();
-        const project = openProject(id, join(this.dir, id), { ...this.deps, features }) as TestProject;
+        const { images, comfyApiKey, enabled = ["all"], ...rest } = this.toolOptions;
+        const tools = this.deps.tools ?? (await loadToolModules({ ...rest, enabled, images: images && { ...images, comfyApiKey } }));
+        const project = openProject(id, join(this.dir, id), { ...this.deps, tools, features }) as TestProject;
         await project.init();
         return project;
       })();
@@ -112,8 +122,9 @@ export function createTestProjects(
   script: AIMessage[] = [],
   bundledSkills: Skill[] = [],
   mcpConnect?: McpConnector,
-  extra: Partial<Omit<ProjectDeps, "features">> = {},
+  extra: Partial<Omit<ProjectDeps, "features">> & TestToolOptions = {},
 ) {
+  const { images, comfyApiKey, gotenbergUrl, schedules, enabled, ...deps } = extra;
   const model = new ScriptedChatModel(script);
   const dir = tempDir();
   const projects = new TestProjects(dir, {
@@ -124,8 +135,8 @@ export function createTestProjects(
     timezone: "Europe/Prague",
     secrets: SecretBox.insecureDev(),
     mcp: { connect: mcpConnect },
-    ...extra,
-  });
+    ...deps,
+  }, { images, comfyApiKey, gotenbergUrl, schedules, enabled });
   return { projects, model, dir };
 }
 

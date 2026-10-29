@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { StructuredToolInterface } from "@langchain/core/tools";
 import { describe, expect, it } from "vitest";
-import { databaseTools } from "@osiris/core/agent/tools/database.ts";
+import { databaseTools } from "@osiris/tools-database/tools.ts";
 import { createDb } from "@osiris/core/db/client.ts";
 import { DataError, DataStore, readOnlySql } from "@osiris/core/database/store.ts";
 import { NO_QUOTAS } from "@osiris/shared";

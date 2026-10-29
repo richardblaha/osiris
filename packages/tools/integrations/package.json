@@ -1,0 +1,30 @@
+{
+  "name": "@osiris/tools-integrations",
+  "private": true,
+  "description": "Osiris agent tools: Users' mail, calendar and contacts accounts.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.17",
+    "@osiris/core": "workspace:*",
+    "@osiris/platform": "workspace:*",
+    "@osiris/shared": "workspace:*",
+    "imapflow": "^2.5.9",
+    "mailparser": "^3.10.0",
+    "nodemailer": "^10.1.7",
+    "tsdav": "^2.5.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "^26.6.4",
+    "@types/nodemailer": "^8.0.2",
+    "typescript": "6.0.3"
+  }
+}

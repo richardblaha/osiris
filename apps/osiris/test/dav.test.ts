@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { davTools } from "@osiris/core/integrations/dav.ts";
+import { davTools } from "@osiris/tools-integrations/dav.ts";
 import { StandardAccounts } from "@osiris/core/integrations/standard.ts";
 import { SecretBox } from "@osiris/core/secrets.ts";
 import { createTestRecords } from "./helpers.ts";

@@ -9,6 +9,17 @@ COPY packages/shared/package.json packages/shared/
 COPY packages/platform/package.json packages/platform/
 COPY packages/core/package.json packages/core/
 COPY packages/client/package.json packages/client/
+COPY packages/tools/database/package.json packages/tools/database/
+COPY packages/tools/files/package.json packages/tools/files/
+COPY packages/tools/http/package.json packages/tools/http/
+COPY packages/tools/images/package.json packages/tools/images/
+COPY packages/tools/integrations/package.json packages/tools/integrations/
+COPY packages/tools/knowledge/package.json packages/tools/knowledge/
+COPY packages/tools/memory/package.json packages/tools/memory/
+COPY packages/tools/scheduler/package.json packages/tools/scheduler/
+COPY packages/tools/sites/package.json packages/tools/sites/
+COPY packages/tools/skills/package.json packages/tools/skills/
+COPY packages/tools/workflows/package.json packages/tools/workflows/
 COPY apps/osiris-pwa/package.json apps/osiris-pwa/
 COPY server/gateway/package.json server/gateway/
 COPY server/auth/package.json server/auth/
@@ -85,6 +96,17 @@ RUN pnpm install --frozen-lockfile --prod --filter "@osiris/agent..." && pnpm st
 COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src
 COPY packages/core/src packages/core/src
+COPY packages/tools/database/src packages/tools/database/src
+COPY packages/tools/files/src packages/tools/files/src
+COPY packages/tools/http/src packages/tools/http/src
+COPY packages/tools/images/src packages/tools/images/src
+COPY packages/tools/integrations/src packages/tools/integrations/src
+COPY packages/tools/knowledge/src packages/tools/knowledge/src
+COPY packages/tools/memory/src packages/tools/memory/src
+COPY packages/tools/scheduler/src packages/tools/scheduler/src
+COPY packages/tools/sites/src packages/tools/sites/src
+COPY packages/tools/skills/src packages/tools/skills/src
+COPY packages/tools/workflows/src packages/tools/workflows/src
 COPY apps/osiris/src apps/osiris/src
 COPY apps/osiris/skills apps/osiris/skills
 ENV PORT=8080 SKILLS_DIR=/app/apps/osiris/skills DATA_DIR=/data

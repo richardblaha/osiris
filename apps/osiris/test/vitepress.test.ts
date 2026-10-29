@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildVitepressTool, srcDirOf } from "@osiris/core/agent/tools/site.ts";
+import { srcDirOf } from "@osiris/core/sites/site.ts";
+import { buildVitepressTool } from "@osiris/tools-sites/tools.ts";
 import { VitepressClient } from "@osiris/core/files/vitepress.ts";
 import { createTestApp, createTestProjects } from "./helpers.ts";
 

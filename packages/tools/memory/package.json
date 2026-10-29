@@ -1,0 +1,23 @@
+{
+  "name": "@osiris/tools-memory",
+  "private": true,
+  "description": "Osiris agent tools: Long-term memory.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.17",
+    "@osiris/core": "workspace:*",
+    "@osiris/shared": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "6.0.3"
+  }
+}

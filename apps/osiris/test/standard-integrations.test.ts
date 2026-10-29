@@ -1,6 +1,6 @@
 import { AIMessage } from "@langchain/core/messages";
 import { describe, expect, it, vi } from "vitest";
-import { davFetch } from "@osiris/core/integrations/dav.ts";
+import { davFetch } from "@osiris/tools-integrations/dav.ts";
 import { createAgentModels } from "@osiris/core/agent/model.ts";
 import { createTestApp, createTestProjects, ScriptedChatModel, allText } from "./helpers.ts";
 
