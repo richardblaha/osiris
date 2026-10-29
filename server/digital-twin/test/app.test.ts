@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ServiceError } from "@osiris/platform/http.ts";
 import { createApp } from "../src/app.ts";
 import { noCache } from "../src/cache.ts";
@@ -132,6 +135,37 @@ describe("the twin API", () => {
   it("refuses a bad query", async () => {
     const res = await app().request("/api/logs?limit=9999");
     expect(res.status).toBe(400);
+  });
+});
+
+describe("the PWA's static files", () => {
+  const dir = join(tmpdir(), "twin-static");
+  beforeAll(async () => {
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "index.html"), "<html><body>twin index</body></html>");
+    await mkdir(join(dir, "assets"), { recursive: true });
+    await writeFile(join(dir, "assets", "app.js"), "console.log('twin')");
+  });
+  afterAll(() => void rm(dir, { recursive: true, force: true }));
+
+  it("serves the app's files, and the index.html for every other path", async () => {
+    const instance = createApp(config, {
+      kube: new Kube({ apiServer: "https://kube", token: "t", fetchFn: kubeFetch }),
+      verifier: devVerifier(),
+      cache: noCache,
+      staticDir: dir,
+    });
+    const asset = await instance.request("/assets/app.js");
+    expect(asset.status).toBe(200);
+    expect(asset.headers.get("content-type")).toContain("javascript");
+    expect(await asset.text()).toContain("console.log");
+    for (const path of ["/", "/logs", "/callback"]) {
+      const page = await instance.request(path);
+      expect(page.status).toBe(200);
+      expect(await page.text()).toContain("twin index"); // the fallback, not a missing file
+    }
+    const svg = await instance.request("/favicon.svg");
+    expect(await svg.text()).toContain("twin index"); // a missing file is also the index.html
   });
 });
 

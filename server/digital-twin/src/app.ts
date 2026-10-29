@@ -226,7 +226,8 @@ export function createApp(config: Config, options: AppOptions) {
       return c.json({ step, series });
     })
 
-    // The PWA itself: one page app; every unknown path is its index.html.
+    // The PWA itself: its files, and its index.html for every other path (one page app).
+    .use("*", staticDir ? serveStatic({ root: staticDir }) : async (c: Context) => c.notFound())
     .get("*", page);
 
   return app;
