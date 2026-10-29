@@ -54,7 +54,7 @@ const schema = z
       if (!env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["CLICKHOUSE_URL"], message: "is required in production" });
       if (env.AUTH_DEV_BYPASS) ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
     }
-    if (env.REDIS_URL && !/^redises?:/.test(env.REDIS_URL)) ctx.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be a redis:// or rediss:// URL" });
+    if (env.REDIS_URL && !/^rediss?:/.test(env.REDIS_URL)) ctx.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be a redis:// or rediss:// URL" });
   });
 
 export type Config = z.infer<typeof schema>;
