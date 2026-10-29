@@ -20,10 +20,22 @@ export interface Link {
   path: Vec[];
 }
 
+/** The internet outside an outermost twin: a globe its network reaches through the back wall. */
+export interface Internet {
+  /** The outermost twin it serves. */
+  id: string;
+  center: Vec;
+  radius: number;
+}
+
+/** The parent id of the links to the internet: they share their own load scale. */
+export const INTERNET = "@internet";
+
 export interface Scene {
   /** Every node's box, outermost first. */
   boxes: Box[];
   links: Link[];
+  internet: Internet[];
   /** Everything together, to fit the camera. */
   bounds: { center: Vec; size: Vec };
 }
@@ -102,25 +114,44 @@ function measure(node: TwinView, networked: (node: TwinView) => boolean): Measur
 
 /**
  * The twin's whole scene: the outermost twins (a cluster) side by side, each with what it contains nested inside as
- * translucent shells, all the way down.
+ * translucent shells, all the way down; behind each with a network, the internet it talks to.
  */
 export function layoutTwin(top: TwinView[], networked: (node: TwinView) => boolean): Scene {
   const roots = top.map((node) => measure(node, networked));
-  if (!roots.length) return { boxes: [], links: [], bounds: { center: [0, 1, 0], size: [4, 2, 4] } };
+  if (!roots.length) return { boxes: [], links: [], internet: [], bounds: { center: [0, 1, 0], size: [4, 2, 4] } };
   const gap = gapAt(0) * 2;
   const boxes: Box[] = [];
   const links: Link[] = [];
+  const internet: Internet[] = [];
   let x = 0;
-  for (const r of roots) {
+  top.forEach((node, i) => {
+    const r = roots[i]!;
     const at: Vec = [x + r.size[0] / 2, 0, 0];
     for (const b of r.boxes) boxes.push({ id: b.id, center: shift(b.center, at), size: b.size });
     for (const l of r.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
+    // Behind the twin, up in the air: the internet, and a link from the twin's hub out through its back wall.
+    if (r.links.length) {
+      const hubY = padAt(0) * 0.5;
+      const radius = Math.max(2.5, Math.min(r.size[0], r.size[2]) * 0.07);
+      const center: Vec = [at[0], r.size[1] + radius * 1.5, -r.size[2] / 2 - radius * 3 - gap];
+      internet.push({ id: node.id, center, radius });
+      links.push({
+        id: node.id,
+        parent: INTERNET,
+        path: [
+          [at[0], hubY, 0],
+          [at[0], hubY, -r.size[2] / 2 - gap / 2],
+          [center[0], center[1] - radius, center[2] + radius * 0.5],
+        ],
+      });
+    }
     x += r.size[0] + gap;
-  }
+  });
   const minX = Math.min(...boxes.map((b) => b.center[0] - b.size[0] / 2));
   const maxX = Math.max(...boxes.map((b) => b.center[0] + b.size[0] / 2));
   const minZ = Math.min(...boxes.map((b) => b.center[2] - b.size[2] / 2));
   const maxZ = Math.max(...boxes.map((b) => b.center[2] + b.size[2] / 2));
-  const maxY = Math.max(...boxes.map((b) => b.center[1] + b.size[1] / 2));
-  return { boxes, links, bounds: { center: [(minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxY, maxZ - minZ] } };
+  const minZ2 = Math.min(minZ, ...internet.map((n) => n.center[2] - n.radius));
+  const maxY = Math.max(...boxes.map((b) => b.center[1] + b.size[1] / 2), ...internet.map((n) => n.center[1] + n.radius));
+  return { boxes, links, internet, bounds: { center: [(minX + maxX) / 2, maxY / 2, (minZ2 + maxZ) / 2], size: [maxX - minX, maxY, maxZ - minZ2] } };
 }

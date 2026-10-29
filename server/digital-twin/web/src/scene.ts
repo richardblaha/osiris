@@ -86,7 +86,13 @@ export function buildScene(
     v.children.sort((a, b) => a.name.localeCompare(b.name));
   };
   const roots = [...byId.values()].filter((v) => !v.parent && v.children.length).sort((a, b) => a.name.localeCompare(b.name));
-  for (const r of roots) roll(r, 0);
+  for (const r of roots) {
+    roll(r, 0);
+    // An outermost twin without its own network (a cluster) carries its children's: its traffic to the internet,
+    // as near as the nodes' counters tell (they count traffic between nodes too).
+    const known = r.children.filter((c) => c.network !== undefined);
+    if (r.network === undefined && known.length) r.network = known.reduce((n, c) => n + c.network!, 0);
+  }
   return { models: modelMap, byId, top: roots, relationships, at };
 }
 

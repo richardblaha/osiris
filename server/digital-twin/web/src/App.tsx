@@ -114,17 +114,17 @@ export function App() {
     });
   }, []);
 
-  // Escape: the selection goes and the camera flies back to the whole twin.
+  // Escape: the first closes the selection's panels (the camera stays), the next flies back to the whole twin.
   useEffect(() => {
     if (view.kind !== "twin") return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      setSelectedId(undefined);
-      setHome((h) => h + 1);
+      if (selectedId) setSelectedId(undefined);
+      else setHome((h) => h + 1);
     };
     addEventListener("keydown", onKey);
     return () => removeEventListener("keydown", onKey);
-  }, [view.kind]);
+  }, [view.kind, selectedId]);
 
   const openFromNode = (page: "logs" | "metrics" | "traces") => {
     // Pages filter by the attributes that name the twin's telemetry (its otelResource: OpenTelemetry's k8s

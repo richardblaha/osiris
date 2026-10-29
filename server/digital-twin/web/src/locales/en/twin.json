@@ -8,7 +8,7 @@
   "model": "DTDL model",
   "errors15m": "Error log records of the last 15 minutes.",
   "empty": "The twin has nothing to show.",
-  "hint": "Drag to orbit, wheel to zoom, click a box to focus it.",
+  "hint": "Drag to orbit, wheel to zoom, click a box to focus it, Esc for the whole twin.",
   "counts": {
     "twins_one": "{{count}} twin",
     "twins_other": "{{count}} twins"
@@ -30,7 +30,7 @@
   "more_other": "and {{count}} more",
   "yes": "yes",
   "no": "no",
-  "escHint": "Esc: back to the whole twin",
+  "escHint": "Esc: close the panels, again: the whole twin",
   "view3d": "The digital twin in 3D",
   "inside": "in",
   "errorCount_one": "{{count}} error",
@@ -48,5 +48,6 @@
   },
   "peak": "max {{value}}",
   "scrollOlder": "Scroll up for older records",
-  "logsStart": "No older records"
+  "logsStart": "No older records",
+  "internet": "Internet"
 }

@@ -47,6 +47,8 @@ interface Content {
   lines: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
   packets: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   labels: Map<string, CSS2DObject>;
+  /** The internet's globes and their labels. */
+  globes: { lines: THREE.LineSegments<THREE.WireframeGeometry, THREE.LineBasicMaterial>; label: CSS2DObject }[];
   bounds: { center: THREE.Vector3; radius: number };
   /** The layout's boxes as one string: an unchanged structure keeps its meshes and only repaints. */
   shape: string;
@@ -73,9 +75,9 @@ function dotTexture() {
  * The twin as a 3D WebGL scene (three.js): nested translucent shells — the cluster, its nodes inside, their pods
  * inside those, down to the containers — with gaps between siblings and edges coloured by status in the theme's cyan.
  * Where twins have a network (DTDL telemetry `network`), a line joins each to a hub on its container's floor, and
- * packets travel it as fast and as many as its load says. Hovering highlights a box in magenta and names it; a click
- * selects it, and the camera flies to it until it fills the view. `home` changing (Escape) flies back to the whole
- * twin. `anchor` gives the selected box's corners on screen, for the panels' callout lines.
+ * packets travel it as fast and as many as its load says; the cluster's hub reaches the internet, a globe behind it. Hovering highlights a box in magenta and names it; a click
+ * selects it, and the camera flies to it until it fills the view; deselecting leaves the camera where it is, and
+ * `home` changing (a second Escape) flies back to the whole twin. `anchor` gives the selected box's corners on screen, for the panels' callout lines.
  */
 export function Twin3D({
   scene: twin,
@@ -147,6 +149,12 @@ export function Twin3D({
       content.packets.geometry.dispose();
       content.packets.material.dispose();
       for (const label of content.labels.values()) label.removeFromParent();
+      for (const g of content.globes) {
+        world.remove(g.lines);
+        g.lines.geometry.dispose();
+        g.lines.material.dispose();
+        g.label.removeFromParent();
+      }
       content = undefined;
     };
 
@@ -190,6 +198,20 @@ export function Twin3D({
       packets.frustumCulled = false;
       world.add(lines, packets);
 
+      // The internet: a wireframe globe behind each outermost twin, named.
+      const globes = scene.internet.map((n) => {
+        const lines = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.SphereGeometry(n.radius, 18, 12)), new THREE.LineBasicMaterial({ transparent: true, depthWrite: false }));
+        lines.position.set(...n.center);
+        const div = document.createElement("div");
+        div.className = "twin-label";
+        div.dataset.level = "0";
+        div.textContent = t("twin:internet");
+        const label = new CSS2DObject(div);
+        label.position.set(n.center[0], n.center[1] + n.radius * 1.25, n.center[2]);
+        world.add(lines, label);
+        return { lines, label };
+      });
+
       const b = scene.bounds;
       return {
         byId,
@@ -199,6 +221,7 @@ export function Twin3D({
         lines,
         packets,
         labels: new Map(),
+        globes,
         bounds: { center: new THREE.Vector3(...b.center), radius: Math.hypot(...b.size) / 2 },
         shape,
       };
@@ -260,6 +283,11 @@ export function Twin3D({
       }
       color.needsUpdate = true;
       content.packets.material.color = colors.cyan;
+      for (const g of content.globes) {
+        g.lines.material.color = colors.cyan;
+        g.lines.material.opacity = focus && content.boxes.has(focus.id) ? 0.08 : 0.4;
+        g.label.visible = !focus || !content.boxes.has(focus.id);
+      }
 
       for (const node of content.byId.values()) {
         const box = content.boxes.get(node.id);
@@ -346,11 +374,11 @@ export function Twin3D({
       flownTo = undefined;
       if (content) fly(content.bounds.center, content.bounds.radius, 0.9, homeDirection());
     };
-    /** The selected twin fills the view (once per selection); none: back to the whole twin. */
+    /** The selected twin fills the view (once per selection); none: the camera stays. */
     const focus = () => {
       paint();
       const node = chosen.current;
-      if (!node) return void (flownTo && flyHome());
+      if (!node) return void (flownTo = undefined);
       const box = content?.boxes.get(node.id);
       if (!box || flownTo === node.id) return;
       flownTo = node.id;
@@ -468,6 +496,7 @@ export function Twin3D({
       if (!running) return;
       controls.update();
       movePackets(time);
+      if (content && !reducedMotion()) for (const g of content.globes) g.lines.rotation.y = time / 12_000;
       renderer.render(world, camera);
       labelRenderer.render(world, camera);
       requestAnimationFrame(draw);
