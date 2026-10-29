@@ -45,6 +45,23 @@ export interface Scope {
   node?: string;
   container?: string;
 }
+/** Log records per bucket of a histogram, by severity. */
+export interface LogBucket {
+  ts: number;
+  error: number;
+  warn: number;
+  other: number;
+}
+
+/** Adds the logs page's filters: service, scope, lowest severity, text and trace. */
+function logFilters(f: Scope & { service?: string; severity?: string; q?: string; traceId?: string }, where: string[], params: Record<string, string | number>) {
+  if (f.service) (where.push("ServiceName = {service:String}"), (params.service = f.service));
+  scope(f, where, params);
+  if (f.severity) (where.push("SeverityNumber >= {severity:UInt8}"), (params.severity = SEVERITY[f.severity] ?? 0));
+  if (f.q) (where.push("positionCaseInsensitiveUTF8(Body, {q:String}) > 0"), (params.q = f.q));
+  if (f.traceId) (where.push("TraceId = {traceId:String}"), (params.traceId = f.traceId));
+}
+
 /** Adds a scope's conditions and parameters. */
 function scope(f: Scope, where: string[], params: Record<string, string | number>) {
   if (f.namespace) (where.push(`${NS} = {namespace:String}`), (params.namespace = f.namespace));
@@ -149,15 +166,27 @@ export class Telemetry {
     return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.rate)]));
   }
 
+  /** How many log records match the filters per `step` seconds, split by severity (errors, warnings, the rest). */
+  async logHistogram(f: Range & Scope & { service?: string; severity?: string; q?: string; traceId?: string; step: number }): Promise<LogBucket[]> {
+    const where = ["Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)" + this.of().where];
+    const params: Record<string, string | number> = { ...this.of().params, ...range(f), step: f.step, warn: SEVERITY.warn ?? 13, error: SEVERITY.error ?? 17 };
+    logFilters(f, where, params);
+    const rows = await this.ch.query<{ t: string; error: string; warn: string; other: string }>(
+      `SELECT toUnixTimestamp(toStartOfInterval(Timestamp, toIntervalSecond({step:UInt32}))) AS t,
+              countIf(SeverityNumber >= {error:UInt8}) AS error,
+              countIf(SeverityNumber >= {warn:UInt8} AND SeverityNumber < {error:UInt8}) AS warn,
+              countIf(SeverityNumber < {warn:UInt8}) AS other
+       FROM otel_logs WHERE ${where.join(" AND ")} GROUP BY t ORDER BY t`,
+      params,
+    );
+    return rows.map((r) => ({ ts: Number(r.t) * 1000, error: Number(r.error), warn: Number(r.warn), other: Number(r.other) }));
+  }
+
   /** The newest log records matching the filters (`to`: older than that, for the next page). */
   async logs(f: Range & Scope & { service?: string; severity?: string; q?: string; traceId?: string; limit: number }): Promise<LogRecord[]> {
     const where = ["Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)", "Timestamp <= fromUnixTimestamp64Milli({toMs:Int64})" + this.of().where];
     const params: Record<string, string | number> = { ...this.of().params, ...range(f), toMs: f.to, limit: f.limit };
-    if (f.service) (where.push("ServiceName = {service:String}"), (params.service = f.service));
-    scope(f, where, params);
-    if (f.severity) (where.push("SeverityNumber >= {severity:UInt8}"), (params.severity = SEVERITY[f.severity] ?? 0));
-    if (f.q) (where.push("positionCaseInsensitiveUTF8(Body, {q:String}) > 0"), (params.q = f.q));
-    if (f.traceId) (where.push("TraceId = {traceId:String}"), (params.traceId = f.traceId));
+    logFilters(f, where, params);
     const rows = await this.ch.query<Omit<LogRecord, "ts"> & { ts: string }>(
       `SELECT toUnixTimestamp64Milli(Timestamp) AS ts, SeverityText AS severity, SeverityNumber AS severityNumber, ServiceName AS service,\n              ${NS} AS namespace, ${POD} AS pod, Body AS body, TraceId AS traceId, SpanId AS spanId,\n              LogAttributes AS attributes, ResourceAttributes AS resource\n       FROM otel_logs WHERE ${where.join(" AND ")} ORDER BY Timestamp DESC LIMIT {limit:UInt32}`,
       params,

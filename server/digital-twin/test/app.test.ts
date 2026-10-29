@@ -43,7 +43,9 @@ const chFetch = vi.fn(async (_url: unknown, init?: { body?: string }): Promise<R
   Response.json({
     data: init?.body?.includes("count() AS count")
       ? [{ k0: "osiris", k1: "gateway-abc", count: "3" }]
-      : init?.body?.includes("AS rate")
+      : init?.body?.includes("countIf(")
+        ? [{ t: "1730000000", error: "2", warn: "1", other: "7" }]
+        : init?.body?.includes("AS rate")
         ? new URL(String(_url)).searchParams.get("param_metric") === "k8s.node.network.io"
           ? [{ k0: "node1", rate: "2048" }]
           : [{ k0: "osiris", k1: "gateway-abc", rate: "512.5" }]
@@ -173,6 +175,29 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     await instance.request("/api/logs?namespace=osiris&pod=gateway-abc&severity=error");
     expect(chFetch.mock.calls.length).toBe(calls);
     expect(loads.some((k) => k.startsWith("twin:k8s:logs:"))).toBe(true);
+  });
+
+  it("counts the logs over time by severity, for the logs page's bar chart", async () => {
+    const out = await json<{ step: number; buckets: unknown[] }>("/api/logs/histogram?pod=gateway-abc&from=1729996400000&to=1730000000000");
+    expect(out.step).toBe(60);
+    expect(out.buckets).toEqual([{ ts: 1730000000000, error: 2, warn: 1, other: 7 }]);
+  });
+
+  it("keeps each user's saved filters their own", async () => {
+    // The token is the user.
+    const users: TokenVerifier = { identify: async (token) => ({ sub: token, name: token, email: null, groups: ["admin"] }) };
+    const instance = app({ verifier: users });
+    const as = (who: string, path: string, init: RequestInit = {}) =>
+      instance.request(path, { ...init, headers: { authorization: `Bearer ${who}`, "content-type": "application/json", ...init.headers } });
+    const put = await as("alice", "/api/me/filters/errors-gw", { method: "PUT", body: JSON.stringify({ kind: "logs", name: "Gateway errors", filter: { pod: "gateway-abc", severity: "error" } }) });
+    expect(put.status).toBe(200);
+    const mine = (await (await as("alice", "/api/me/filters?kind=logs")).json()) as { value: { id: string; name: string; filter: Record<string, string> }[] };
+    expect(mine.value).toEqual([expect.objectContaining({ id: "errors-gw", name: "Gateway errors", filter: { pod: "gateway-abc", severity: "error" } })]);
+    expect(((await (await as("bob", "/api/me/filters?kind=logs")).json()) as { value: unknown[] }).value).toEqual([]);
+    expect((await as("bob", "/api/me/filters/errors-gw", { method: "DELETE" })).status).toBe(404);
+    expect((await as("alice", "/api/me/filters/x", { method: "PUT", body: JSON.stringify({ kind: "logs", name: "", filter: {} }) })).status).toBe(400);
+    expect((await as("alice", "/api/me/filters/errors-gw", { method: "DELETE" })).status).toBe(204);
+    expect(((await (await as("alice", "/api/me/filters?kind=logs")).json()) as { value: unknown[] }).value).toEqual([]);
   });
 
   it("refuses a bad query", async () => {

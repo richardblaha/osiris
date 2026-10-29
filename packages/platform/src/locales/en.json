@@ -122,7 +122,9 @@
       "notFound": "There is no such twin or model.",
       "signedIn": "Sign in first.",
       "historyOff": "The twin's history is not switched on.",
-      "historyMissing": "The twin's history doesn't reach that far back."
+      "historyMissing": "The twin's history doesn't reach that far back.",
+      "filterNotFound": "There is no such saved filter.",
+      "tooManyFilters": "You have saved too many filters; delete some first."
     },
     "validation": {
       "invalid": "Invalid request.",

@@ -65,5 +65,17 @@
   "time": "Čas",
   "name": "Název",
   "value": "hodnota",
-  "search": "Hledat"
+  "search": "Hledat",
+  "node": "Node",
+  "container": "Kontejner",
+  "saved": {
+    "title": "Oblíbené",
+    "empty": "Zatím žádné uložené filtry.",
+    "name": "Pojmenujte aktuální filtr",
+    "save": "Uložit",
+    "delete": "Smazat {{name}}"
+  },
+  "histogram": "Počet logů v čase",
+  "histogramTip": "chyby {{error}}, varování {{warn}}, ostatní {{other}}",
+  "histogramMax": "max {{value}} na sloupec"
 }

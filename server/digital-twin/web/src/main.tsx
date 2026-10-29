@@ -4,8 +4,11 @@ import { handleCallback } from "./auth.ts";
 import { App } from "./App.tsx";
 import "./index.css";
 
-// Completes the OIDC redirect first (it rewrites the URL), then the app renders the path it came back to.
-void handleCallback().then(() => {
+// Completes the OIDC redirect first (it rewrites the URL), then the app renders the path it came back to; a failed
+// sign-in still renders the app (it offers signing in again).
+void handleCallback()
+  .catch(() => history.replaceState(null, "", "/"))
+  .then(() => {
   createRoot(document.getElementById("root")!).render(
     <StrictMode>
       <App />

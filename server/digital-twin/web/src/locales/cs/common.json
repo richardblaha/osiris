@@ -1,12 +1,15 @@
 {
   "title": "Digitální dvojče",
   "nav": {
-    "twin": "Dvojče",
+    "label": "Stránky",
     "logs": "Logy",
     "metrics": "Metriky",
     "traces": "Trasy"
   },
   "loading": "Načítám…",
   "signIn": "Přihlásit se",
-  "signOut": "Odhlásit se"
+  "signOut": "Odhlásit se",
+  "user": "Uživatel",
+  "userMenu": "{{name}}: nabídka účtu",
+  "account": "Můj účet"
 }

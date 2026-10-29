@@ -1,16 +1,13 @@
 import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary } from "@osiris/shared";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
-import { api } from "./api.ts";
+import { api, type SavedFilter, type Scope } from "./api.ts";
 import { LineChart } from "./Chart.tsx";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { t } from "i18next";
 import { formatDateTime, formatNumber } from "./i18n.ts";
 
-/** What the twin's detail panel sends along when it opens a page: the selected node's namespace and pod. */
-export interface Preset {
-  namespace?: string;
-  pod?: string;
-}
+/** What a page opens filtered by: the selected twin's telemetry (its namespace, pod, node or container). */
+export type Preset = Scope;
 
 const RANGES = [
   { key: "m15", ms: 15 * 60_000 },
@@ -105,27 +102,194 @@ function Attributes({ title, values }: { title: string; values: Record<string, s
 
 export const SEVERITY_CLASS = (n: number) => (n >= 17 ? "text-error" : n >= 13 ? "text-warning" : n >= 9 ? "text-fg" : "text-fg-muted");
 
-/** The cluster's log records, newest first, with filters; a record opens with its attributes and its trace. */
+/** Removable chips for the scope's pod, node and container (the namespace has its own select). */
+function ScopeChips({ scope, onClear }: { scope: Scope; onClear: (key: "pod" | "node" | "container") => void }) {
+  return (
+    <>
+      {(["node", "pod", "container"] as const).map((key) =>
+        scope[key] ? (
+          <button key={key} type="button" onClick={() => onClear(key)} className="badge self-center" title={t("telemetry:all")}>
+            {t(`telemetry:${key}`)}: {scope[key]} ×
+          </button>
+        ) : null,
+      )}
+    </>
+  );
+}
+
+/** The logs page's filters, as a saved filter keeps them. */
+interface LogFilter {
+  range: number;
+  service: string;
+  namespace: string;
+  pod: string;
+  node: string;
+  container: string;
+  severity: string;
+  q: string;
+}
+const filterOf = (f: Record<string, string>): Partial<LogFilter> => ({
+  ...(f.range && Number(f.range) > 0 ? { range: Number(f.range) } : {}),
+  ...Object.fromEntries((["service", "namespace", "pod", "node", "container", "severity", "q"] as const).map((k) => [k, f[k] ?? ""])),
+});
+
+/**
+ * The user's saved filters (on the server, their own): applying one sets the page's filters, the star saves the
+ * current ones under a name, × deletes one.
+ */
+function SavedFilters({ current, onApply }: { current: LogFilter; onApply: (f: Partial<LogFilter>) => void }) {
+  const [list, setList] = useState<SavedFilter[]>();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string>();
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => void api.savedFilters().then(setList, (e: Error) => setError(e.message)), []);
+  // A click elsewhere or Escape closes it (before Escape closes the page).
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => !box.current?.contains(e.target as Node) && setOpen(false);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && (e.preventDefault(), setOpen(false));
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey, true);
+    };
+  }, [open]);
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) return;
+    const filter = Object.fromEntries(Object.entries({ ...current, range: String(current.range) }).filter(([, v]) => v !== ""));
+    try {
+      const saved = await api.saveFilter({ id: crypto.randomUUID().slice(0, 12), name: name.trim(), filter });
+      setList((l) => [...(l ?? []), saved]);
+      setName("");
+      setError(undefined);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const remove = async (id: string) => {
+    try {
+      await api.deleteFilter(id);
+      setList((l) => l?.filter((f) => f.id !== id));
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  return (
+    <div ref={box} className="relative self-end">
+      <button type="button" onClick={() => setOpen(!open)} data-active={open} className="btn-secondary py-1 text-sm" aria-expanded={open}>
+        ★ {t("telemetry:saved.title")}
+        {list && list.length > 0 && <span className="ms-1 text-fg-muted">{formatNumber(list.length)}</span>}
+      </button>
+      {open && (
+        <div className="menu-popup end-0 w-72" role="dialog" aria-label={t("telemetry:saved.title")}>
+          {list && list.length === 0 && <p className="px-3 py-2 text-xs text-fg-muted">{t("telemetry:saved.empty")}</p>}
+          <ul>
+            {list?.map((f) => (
+              <li key={f.id} className="flex items-center">
+                <button type="button" className="list-row min-w-0 flex-1 truncate px-3 py-1.5 text-start text-sm" onClick={() => (onApply(filterOf(f.filter)), setOpen(false))} title={Object.entries(f.filter).map(([k, v]) => `${k}: ${v}`).join(", ")}>
+                  {f.name}
+                </button>
+                <button type="button" className="px-2 text-fg-muted hover:text-error" onClick={() => void remove(f.id)} aria-label={t("telemetry:saved.delete", { name: f.name })}>
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+          <form onSubmit={(e) => void save(e)} className="flex gap-2 border-t border-line p-2">
+            <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} placeholder={t("telemetry:saved.name")} className="field min-w-0 flex-1 py-1 text-sm" aria-label={t("telemetry:saved.name")} />
+            <button className="btn-primary px-2 py-1 text-sm" disabled={!name.trim()}>
+              {t("telemetry:saved.save")}
+            </button>
+          </form>
+          {error && <p className="px-3 pb-2 text-xs text-error">{error}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+type Buckets = Awaited<ReturnType<typeof api.logHistogram>>;
+
+/** How many records came when, as stacked bars: errors, warnings and the rest. */
+function LogBars({ data }: { data: Buckets }) {
+  const W = 1000;
+  const H = 72;
+  const max = Math.max(1, ...data.buckets.map((b) => b.error + b.warn + b.other));
+  if (!data.buckets.length) return <div className="h-[72px]" />;
+  const t0 = data.buckets[0]!.ts;
+  const t1 = data.buckets.at(-1)!.ts + data.step * 1000;
+  const x = (ts: number) => ((ts - t0) / (t1 - t0)) * W;
+  const bw = Math.max(1, ((data.step * 1000) / (t1 - t0)) * W - 1.5);
+  const y = (v: number) => (v / max) * (H - 4);
+  const label = (ts: number) => formatDateTime(ts, t1 - t0 > 2 * 86_400_000 ? { day: "numeric", month: "numeric", hour: "2-digit" } : { hour: "2-digit", minute: "2-digit" });
+  return (
+    <figure className="px-6 pt-2" aria-label={t("telemetry:histogram")}>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="h-[72px] w-full" role="img" aria-label={t("telemetry:histogram")}>
+        {data.buckets.map((b) => {
+          let base = H;
+          return (
+            <g key={b.ts}>
+              <title>{`${formatDateTime(b.ts)} · ${t("telemetry:histogramTip", { error: b.error, warn: b.warn, other: b.other })}`}</title>
+              {(
+                [
+                  [b.other, "var(--accent-primary)"],
+                  [b.warn, "var(--state-warning)"],
+                  [b.error, "var(--state-error)"],
+                ] as const
+              ).map(([v, fill], i) => {
+                if (!v) return null;
+                base -= y(v);
+                return <rect key={i} x={x(b.ts)} y={base} width={bw} height={y(v)} fill={fill} opacity={i === 0 ? 0.55 : 0.9} />;
+              })}
+            </g>
+          );
+        })}
+      </svg>
+      <figcaption className="flex justify-between text-[10px] text-fg-muted">
+        <span>{label(t0)}</span>
+        <span>{t("telemetry:histogramMax", { value: formatNumber(max) })}</span>
+        <span>{label(t1)}</span>
+      </figcaption>
+    </figure>
+  );
+}
+
+/**
+ * The cluster's log records, newest first, with filters (opened from a twin: its namespace, pod, node or container)
+ * and saved favourites; above them a bar chart of how many came when. A record opens with its attributes and trace.
+ */
 export function Logs({ preset, traceId: initialTrace, onOpenTrace }: { preset: Preset; traceId?: string; onOpenTrace: (id: string) => void }) {
   const [range, setRange] = useState(3_600_000);
   const [service, setService] = useState("");
   const [namespace, setNamespace] = useState(preset.namespace ?? "");
   const [pod, setPod] = useState(preset.pod ?? "");
+  const [node, setNode] = useState(preset.node ?? "");
+  const [container, setContainer] = useState(preset.container ?? "");
   const [severity, setSeverity] = useState("");
   const [q, setQ] = useState("");
   const [traceId, setTraceId] = useState(initialTrace ?? "");
+  /** Bumped by a saved filter: reloads with all its values, the text too. */
+  const [applied, setApplied] = useState(0);
   const [logs, setLogs] = useState<LogRecord[]>();
+  const [bars, setBars] = useState<Buckets>();
   const [more, setMore] = useState(false);
   const [open, setOpen] = useState<number>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const facets = useFacets(range);
-  const filters = () => ({ ...lastMs(range), service, namespace, pod, severity, q, traceId: traceId || undefined, limit: 200 });
+  const filters = () => ({ ...lastMs(range), service, namespace, pod, node, container, severity, q, traceId: traceId || undefined });
 
   const load = () =>
     attempt(setBusy, setError, async () => {
-      const list = await api.logs(filters());
+      const f = filters();
+      const [list, histogram] = await Promise.all([api.logs({ ...f, limit: 200 }), api.logHistogram(f).catch(() => undefined)]);
       setLogs(list);
+      setBars(histogram);
       setMore(list.length === 200);
       setOpen(undefined);
     });
@@ -133,23 +297,31 @@ export function Logs({ preset, traceId: initialTrace, onOpenTrace }: { preset: P
     attempt(setBusy, setError, async () => {
       const last = logs?.at(-1);
       if (!last) return;
-      const list = await api.logs({ ...filters(), to: last.ts - 1 });
+      const list = await api.logs({ ...filters(), to: last.ts - 1, limit: 200 });
       setLogs([...(logs ?? []), ...list]);
       setMore(list.length === 200);
     });
-  useEffect(() => void load(), [range, service, namespace, pod, severity, traceId]);
+  useEffect(() => void load(), [range, service, namespace, pod, node, container, severity, traceId, applied]);
   const search = (e: FormEvent) => (e.preventDefault(), void load());
+  const apply = (f: Partial<LogFilter>) => {
+    if (f.range) setRange(f.range);
+    setService(f.service ?? "");
+    setNamespace(f.namespace ?? "");
+    setPod(f.pod ?? "");
+    setNode(f.node ?? "");
+    setContainer(f.container ?? "");
+    setSeverity(f.severity ?? "");
+    setQ(f.q ?? "");
+    setTraceId("");
+    setApplied((n) => n + 1);
+  };
 
   return (
     <div className="flex h-full flex-col">
       <Toolbar range={range} setRange={setRange} onRefresh={() => void load()} busy={busy}>
         <Select label={t("telemetry:service")} value={service} onChange={setService} options={facets.services} />
         <Select label={t("telemetry:namespace")} value={namespace} onChange={setNamespace} options={facets.namespaces} />
-        {pod && (
-          <button type="button" onClick={() => setPod("")} className="badge self-center" title={t("telemetry:all")}>
-            {t("telemetry:pod")}: {pod} ×
-          </button>
-        )}
+        <ScopeChips scope={{ pod, node, container }} onClear={(key) => (key === "pod" ? setPod("") : key === "node" ? setNode("") : setContainer(""))} />
         <label className="flex flex-col text-xs text-fg-secondary">
           {t("telemetry:severity")}
           <select value={severity} onChange={(e) => setSeverity(e.target.value)} className="field w-auto py-1 text-sm">
@@ -168,7 +340,9 @@ export function Logs({ preset, traceId: initialTrace, onOpenTrace }: { preset: P
             {t("telemetry:traceFilter", { id: traceId.slice(0, 8) })} ×
           </button>
         )}
+        <SavedFilters current={{ range, service, namespace, pod, node, container, severity, q }} onApply={apply} />
       </Toolbar>
+      {bars && <LogBars data={bars} />}
       <div className="relative min-h-0 flex-1">
         <Loading show={busy} />
         <div className="h-full overflow-y-auto px-6 py-2">
@@ -215,6 +389,8 @@ export function Traces({ preset, traceId, onOpenTrace, onOpenLogs }: { preset: P
   const [range, setRange] = useState(3_600_000);
   const [service, setService] = useState("");
   const [namespace, setNamespace] = useState(preset.namespace ?? "");
+  const [pod, setPod] = useState(preset.pod ?? "");
+  const [node, setNode] = useState(preset.node ?? "");
   const [q, setQ] = useState("");
   const [minMs, setMinMs] = useState("");
   const [errors, setErrors] = useState(false);
@@ -225,9 +401,9 @@ export function Traces({ preset, traceId, onOpenTrace, onOpenLogs }: { preset: P
 
   const load = () =>
     attempt(setBusy, setError, async () =>
-      setList(await api.traces({ ...lastMs(range), service, namespace, q, minMs: minMs ? Number(minMs) : undefined, errors })),
+      setList(await api.traces({ ...lastMs(range), service, namespace, pod, node, q, minMs: minMs ? Number(minMs) : undefined, errors })),
     );
-  useEffect(() => void load(), [range, service, namespace, errors]);
+  useEffect(() => void load(), [range, service, namespace, pod, node, errors]);
 
   if (traceId) return <TraceView traceId={traceId} onBack={() => onOpenTrace(undefined)} onOpenLogs={onOpenLogs} />;
   return (
@@ -235,6 +411,7 @@ export function Traces({ preset, traceId, onOpenTrace, onOpenLogs }: { preset: P
       <Toolbar range={range} setRange={setRange} onRefresh={() => void load()} busy={busy}>
         <Select label={t("telemetry:service")} value={service} onChange={setService} options={facets.services} />
         <Select label={t("telemetry:namespace")} value={namespace} onChange={setNamespace} options={facets.namespaces} />
+        <ScopeChips scope={{ pod, node }} onClear={(key) => (key === "pod" ? setPod("") : setNode(""))} />
         <form onSubmit={(e) => (e.preventDefault(), void load())} className="flex items-end gap-2">
           <label className="flex flex-col text-xs text-fg-secondary">
             {t("telemetry:name")}
@@ -383,15 +560,17 @@ export function Metrics({ preset }: { preset: Preset }) {
   const [chosen, setChosen] = useState<MetricInfo>();
   const [groupBy, setGroupBy] = useState("k8s.pod.name");
   const [data, setData] = useState<{ step: number; series: MetricSeries[] }>();
+  /** Whose series (opened from a twin: its namespace, pod, node or container); each part can be cleared. */
+  const [scope, setScope] = useState<Scope>(preset);
   const [table, setTable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
 
   const loadList = () => attempt(setBusy, setError, async () => setMetrics(await api.metrics(lastMs(Math.max(range, 3_600_000)))));
   const loadSeries = () =>
-    chosen && attempt(setBusy, setError, async () => setData(await api.series({ ...lastMs(range), name: chosen.name, type: chosen.type, groupBy, namespace: preset.namespace })));
+    chosen && attempt(setBusy, setError, async () => setData(await api.series({ ...lastMs(range), ...scope, name: chosen.name, type: chosen.type, groupBy })));
   useEffect(() => void loadList(), []);
-  useEffect(() => void loadSeries(), [chosen, groupBy, range]);
+  useEffect(() => void loadSeries(), [chosen, groupBy, range, scope]);
   const shown = metrics?.filter((m) => m.name.toLowerCase().includes(filter.toLowerCase())) ?? [];
 
   return (
@@ -430,6 +609,12 @@ export function Metrics({ preset }: { preset: Preset }) {
               ))}
             </select>
           </label>
+          {scope.namespace && (
+            <button type="button" onClick={() => setScope({ ...scope, namespace: undefined })} className="badge self-center" title={t("telemetry:all")}>
+              {t("telemetry:namespace")}: {scope.namespace} ×
+            </button>
+          )}
+          <ScopeChips scope={scope} onClear={(key) => setScope({ ...scope, [key]: undefined })} />
           <label className="flex items-center gap-1 self-center text-xs text-fg-secondary">
             <input type="checkbox" checked={table} onChange={(e) => setTable(e.target.checked)} /> {t("telemetry:table")}
           </label>

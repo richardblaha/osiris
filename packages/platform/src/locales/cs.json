@@ -134,7 +134,9 @@
       "notFound": "Takový twin ani model neexistuje.",
       "signedIn": "Nejdřív se přihlaste.",
       "historyOff": "Historie dvojčete není zapnutá.",
-      "historyMissing": "Historie dvojčete tak daleko nesahá."
+      "historyMissing": "Historie dvojčete tak daleko nesahá.",
+      "filterNotFound": "Takový uložený filtr neexistuje.",
+      "tooManyFilters": "Uložených filtrů je příliš mnoho; nejdřív některé smažte."
     },
     "validation": {
       "invalid": "Neplatný požadavek",

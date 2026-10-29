@@ -11,7 +11,17 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS relationships (source_id TEXT NOT NULL, relationship_id TEXT NOT NULL, name TEXT NOT NULL, target_id TEXT NOT NULL, source TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (source_id, relationship_id))`,
   `CREATE INDEX IF NOT EXISTS relationships_target ON relationships (target_id)`,
   `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS saved_filters (owner TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, filter TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (owner, id))`,
 ];
+
+/** A filter a user saved for a telemetry page (`kind`: logs), as the page's own query values. */
+export interface SavedFilter {
+  id: string;
+  kind: string;
+  name: string;
+  filter: Record<string, string>;
+  createdAt: number;
+}
 
 /** A twin's properties: everything but the `$` fields. */
 const contentsOf = (t: SourceTwin | DigitalTwin) => Object.fromEntries(Object.entries(t).filter(([k]) => !k.startsWith("$")).sort(([a], [b]) => a.localeCompare(b)));
@@ -114,6 +124,31 @@ export class TwinStore {
 
   async meta(key: string): Promise<string | undefined> {
     return (await this.db.query<{ value: string }>(`SELECT value FROM meta WHERE key = ?`, [key]))[0]?.value;
+  }
+
+  /** A user's saved filters of one page, oldest first. */
+  async savedFilters(owner: string, kind: string): Promise<SavedFilter[]> {
+    const rows = await this.db.query<{ id: string; kind: string; name: string; filter: string; created_at: number }>(
+      `SELECT id, kind, name, filter, created_at FROM saved_filters WHERE owner = ? AND kind = ? ORDER BY created_at, id`,
+      [owner, kind],
+    );
+    return rows.map((r) => ({ id: r.id, kind: r.kind, name: r.name, filter: JSON.parse(r.filter) as Record<string, string>, createdAt: r.created_at }));
+  }
+
+  async countSavedFilters(owner: string): Promise<number> {
+    return Number((await this.db.query<{ n: number }>(`SELECT count(*) AS n FROM saved_filters WHERE owner = ?`, [owner]))[0]?.n ?? 0);
+  }
+
+  async saveFilter(owner: string, f: SavedFilter): Promise<void> {
+    await this.db.execute([
+      run(`INSERT OR REPLACE INTO saved_filters (owner, id, kind, name, filter, created_at) VALUES (?, ?, ?, ?, ?, ?)`, owner, f.id, f.kind, f.name, JSON.stringify(f.filter), f.createdAt),
+    ]);
+  }
+
+  /** Removes one of the user's own filters; false when they have none of that id. */
+  async deleteFilter(owner: string, id: string): Promise<boolean> {
+    const [r] = await this.db.execute([run(`DELETE FROM saved_filters WHERE owner = ? AND id = ?`, owner, id)]);
+    return (r?.rowsAffected ?? 0) > 0;
   }
 
   async setMeta(key: string, value: string): Promise<void> {

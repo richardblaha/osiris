@@ -61,5 +61,17 @@
   "time": "Time",
   "name": "Name",
   "value": "value",
-  "search": "Search"
+  "search": "Search",
+  "node": "Node",
+  "container": "Container",
+  "saved": {
+    "title": "Favourites",
+    "empty": "No saved filters yet.",
+    "name": "Name the current filter",
+    "save": "Save",
+    "delete": "Delete {{name}}"
+  },
+  "histogram": "Log records over time",
+  "histogramTip": "errors {{error}}, warnings {{warn}}, other {{other}}",
+  "histogramMax": "max {{value}} per bar"
 }

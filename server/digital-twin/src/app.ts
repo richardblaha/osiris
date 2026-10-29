@@ -25,6 +25,20 @@ const rangeQuery = z
 const text = z.string().trim().max(200).optional();
 /** Whose telemetry: OpenTelemetry's k8s namespace, pod, node or container. */
 const scope = { namespace: text, pod: text, node: text, container: text };
+/** The logs page's filters. */
+const logFilters = z.object({
+  service: text,
+  ...scope,
+  severity: z.enum(["debug", "info", "warn", "error", "fatal"]).optional(),
+  q: text,
+  traceId: z.string().regex(/^[0-9a-f]{32}$/).optional(),
+});
+/** The pages a filter can be saved for. */
+const filterKind = z.enum(["logs"]);
+/** How many filters one user may keep. */
+const MAX_SAVED_FILTERS = 100;
+/** The signed-in user's id (development without sign-in: `dev`). */
+const owner = (c: Context<{ Variables: { identity: Identity } }>) => c.get("identity")?.sub ?? "dev";
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const r = schema.safeParse(value, { reportInput: true });
   if (!r.success) throw new ValidationError(r.error);
@@ -197,20 +211,40 @@ export function createApp(config: Config, options: AppOptions) {
       const f = parse(rangeQuery, c.req.query());
       return c.json(await cached("facets", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().facets(f))));
     })
-    .get("/api/logs", async (c) => {
-      const f = parse(
-        rangeQuery.and(
-          z.object({
-            service: text,
-            ...scope,
-            severity: z.enum(["debug", "info", "warn", "error", "fatal"]).optional(),
-            q: text,
-            traceId: z.string().regex(/^[0-9a-f]{32}$/).optional(),
-            limit: z.coerce.number().int().min(1).max(1000).default(200),
-          }),
-        ),
-        c.req.query(),
+    // How many log records match the logs page's filters over time, by severity (about 60 bars across the range).
+    .get("/api/logs/histogram", async (c) => {
+      const f = parse(rangeQuery.and(logFilters), c.req.query());
+      const step = Math.max(10, Math.round((f.to - f.from) / 1000 / 60 / 10) * 10);
+      return c.json({ step, buckets: await cached("log-histogram", { ...f, step }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().logHistogram({ ...f, step }))) });
+    })
+    // The signed-in user's saved filters of a telemetry page (their own, never another's).
+    .get("/api/me/filters", async (c) => {
+      const { kind } = parse(z.object({ kind: filterKind }), c.req.query());
+      return c.json({ value: await store.savedFilters(owner(c), kind) });
+    })
+    .put("/api/me/filters/:id", async (c) => {
+      const id = parse(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), c.req.param("id"));
+      const body = parse(
+        z.object({
+          kind: filterKind,
+          name: z.string().trim().min(1).max(80),
+          filter: z.record(z.string().regex(/^[A-Za-z]{1,32}$/), z.string().max(300)).refine((f) => Object.keys(f).length <= 20),
+        }),
+        await c.req.json().catch(() => null),
       );
+      const who = owner(c);
+      const existing = (await store.savedFilters(who, body.kind)).find((f) => f.id === id);
+      if (!existing && (await store.countSavedFilters(who)) >= MAX_SAVED_FILTERS) throw new HttpError(409, "errors.digitalTwin.tooManyFilters");
+      const saved = { id, ...body, createdAt: existing?.createdAt ?? Date.now() };
+      await store.saveFilter(who, saved);
+      return c.json(saved);
+    })
+    .delete("/api/me/filters/:id", async (c) => {
+      if (!(await store.deleteFilter(owner(c), c.req.param("id")))) throw new HttpError(404, "errors.digitalTwin.filterNotFound");
+      return c.body(null, 204);
+    })
+    .get("/api/logs", async (c) => {
+      const f = parse(rangeQuery.and(logFilters).and(z.object({ limit: z.coerce.number().int().min(1).max(1000).default(200) })), c.req.query());
       return c.json(await cached("logs", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().logs(f))));
     })
     .get("/api/traces", async (c) => {

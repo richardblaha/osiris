@@ -99,6 +99,123 @@ body,
   color: var(--state-warning);
 }
 
+/* The bar over the twin: see-through, the name on the left, the pages in the middle, the user's avatar on the right.
+   Only its controls take the pointer, so the 3D view under it still turns. */
+:root {
+  --app-bar: 3rem;
+}
+.app-bar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  height: var(--app-bar);
+  padding: 0 1rem;
+  pointer-events: none;
+}
+.app-bar > * {
+  pointer-events: auto;
+}
+.app-bar-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  justify-self: start;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-shadow: 0 0 6px var(--bg-editor);
+}
+.app-bar-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-sidebar) 55%, transparent);
+  backdrop-filter: blur(6px);
+}
+.app-tab {
+  padding: 0.25rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  transition:
+    background var(--transition),
+    color var(--transition);
+}
+.app-tab:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.app-tab[data-active="true"] {
+  color: var(--text-inverse);
+  background: var(--accent-primary);
+}
+.app-bar-user {
+  justify-self: end;
+}
+.avatar {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  overflow: hidden;
+  border: 2px solid var(--accent-secondary);
+  border-radius: 999px;
+  background: var(--accent-secondary-soft);
+  color: var(--accent-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.avatar[aria-expanded="true"] {
+  box-shadow: 0 0 0 3px var(--accent-secondary-soft);
+}
+/* A small menu or pop-up under its button. */
+.menu-popup {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  z-index: 50;
+  padding-block: 0.25rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sidebar);
+  box-shadow: var(--shadow-popup);
+  animation: panel-in 0.15s ease both;
+}
+
+/* A telemetry page over the twin: half see-through, under the bar; its tab or Escape closes it. */
+.page-overlay {
+  position: absolute;
+  top: calc(var(--app-bar) + 0.25rem);
+  inset-inline: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 30;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-editor) 80%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-popup);
+  animation: panel-in 0.2s ease both;
+}
+/* The twin's own notes sit under the bar. */
+.twin-chrome {
+  position: absolute;
+  top: var(--app-bar);
+  inset-inline: 1rem;
+  z-index: 5;
+}
+.twin-count {
+  top: calc(var(--app-bar) + 0.25rem);
+}
+
 /* The selected twin's panels in the view's corners, with SVG lines to its box. */
 .focus-panels {
   position: absolute;
@@ -132,7 +249,7 @@ body,
   display: flex;
   flex-direction: column;
   width: clamp(17rem, 27vw, 26rem);
-  height: calc(50% - 1.25rem);
+  height: calc(50% - 1.25rem - var(--app-bar) / 2);
   border: 1px solid var(--border-strong);
   border-top: 2px solid var(--accent-primary);
   border-radius: var(--radius);
@@ -143,13 +260,13 @@ body,
   animation: panel-in 0.35s ease both;
 }
 .focus-panel[data-slot="tl"] {
-  top: 0.75rem;
+  top: calc(var(--app-bar) + 0.5rem);
   left: 0.75rem;
   border-top-color: var(--accent-secondary);
   animation-delay: 0.45s;
 }
 .focus-panel[data-slot="tr"] {
-  top: 0.75rem;
+  top: calc(var(--app-bar) + 0.5rem);
   right: 0.75rem;
   animation-delay: 0.55s;
 }
@@ -173,6 +290,9 @@ body,
 }
 /* Narrow screens: the panels scroll in a column over the lower half, without lines. */
 @media (max-width: 900px) {
+  .app-bar-brand > span {
+    display: none;
+  }
   .focus-panels {
     top: 45%;
     overflow-y: auto;
