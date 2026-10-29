@@ -29,6 +29,11 @@ const schema = z
     CLICKHOUSE_PASSWORD: z.string().optional(),
     CLICKHOUSE_CLUSTER: z.string().min(1).optional(),
 
+    // The twin's history (deploy/observability/twin/schema.sql): every HISTORY_INTERVAL_SECONDS the replica holding
+    // the lease (Redis) writes what changed to ClickHouse's database twin, so CLICKHOUSE_USER needs INSERT there.
+    HISTORY_ENABLED: bool,
+    HISTORY_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3600).default(30),
+
     // Redis caches the twin's structure and the telemetry answers; without it every request queries the sources.
     REDIS_URL: z.url().optional(),
     CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(30),
@@ -52,6 +57,7 @@ const schema = z
       if (!env.AUTH_CLIENT_SECRET) ctx.addIssue({ code: "custom", path: ["AUTH_CLIENT_SECRET"], message: "is required in production" });
       // The cluster can be anywhere (a kubeconfig of another cluster), but its telemetry has to be reachable.
       if (!env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["CLICKHOUSE_URL"], message: "is required in production" });
+      if (env.HISTORY_ENABLED && !env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["HISTORY_ENABLED"], message: "needs CLICKHOUSE_URL" });
       if (env.AUTH_DEV_BYPASS) ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
     }
     if (env.REDIS_URL && !/^rediss?:/.test(env.REDIS_URL)) ctx.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be a redis:// or rediss:// URL" });

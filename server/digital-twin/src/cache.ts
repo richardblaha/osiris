@@ -9,6 +9,11 @@ import { createClient, type RedisClientType } from "redis";
 export interface Cache {
   get<T>(key: string): Promise<T | undefined>;
   set(key: string, value: unknown, ttlSeconds: number): Promise<void>;
+  /**
+   * Takes or renews a lease: true when `owner` holds `key` for the next `ttlSeconds`. Without Redis there is one
+   * replica and it always holds it; with Redis unreachable nobody does (better no record than a doubled one).
+   */
+  claim(key: string, owner: string, ttlSeconds: number): Promise<boolean>;
 }
 
 /** No cache: development without Redis. */
@@ -17,6 +22,9 @@ export const noCache: Cache = {
     return undefined;
   },
   async set() {},
+  async claim() {
+    return true;
+  },
 };
 
 /** Redis, never throwing: a broken cache must not break the twin. */
@@ -44,6 +52,15 @@ export function redisCache(url: string): Cache {
     },
     async set(key: string, value: unknown, ttlSeconds: number) {
       await wrap(() => client.set(key, JSON.stringify(value), { EX: ttlSeconds }));
+    },
+    async claim(key: string, owner: string, ttlSeconds: number) {
+      const held = await wrap(async () => {
+        if ((await client.set(key, owner, { NX: true, EX: ttlSeconds })) === "OK") return true;
+        if ((await client.get(key)) !== owner) return false;
+        await client.expire(key, ttlSeconds);
+        return true;
+      });
+      return held === true;
     },
   };
 }

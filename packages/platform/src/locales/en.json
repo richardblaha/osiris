@@ -120,7 +120,9 @@
     },
     "digitalTwin": {
       "k8sFailed": "The Kubernetes API query failed: {{detail}}",
-      "signedIn": "Sign in first."
+      "signedIn": "Sign in first.",
+      "historyOff": "The twin's history is not switched on.",
+      "historyMissing": "The twin's history doesn't reach that far back."
     },
     "validation": {
       "invalid": "Invalid request.",

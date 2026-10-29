@@ -22,6 +22,19 @@ export class ClickHouse {
     if (!res.ok) throw new Error(`ClickHouse ${res.status}: ${(await res.text()).slice(0, 500)}`);
     return ((await res.json()) as { data: T[] }).data;
   }
+
+  /** Inserts rows as JSONEachRow into a table the caller names (a constant, never input). */
+  async insert(table: string, rows: object[]): Promise<void> {
+    if (!rows.length) return;
+    const qs = new URLSearchParams({ query: `INSERT INTO ${table} FORMAT JSONEachRow` });
+    const res = await this.fetchFn(`${this.url.replace(/\/$/, "")}/?${qs}`, {
+      method: "POST",
+      headers: { "x-clickhouse-user": this.user, "x-clickhouse-key": this.password },
+      body: rows.map((r) => JSON.stringify(r)).join("\n"),
+      signal: AbortSignal.timeout(25_000),
+    });
+    if (!res.ok) throw new Error(`ClickHouse ${res.status}: ${(await res.text()).slice(0, 500)}`);
+  }
 }
 
 export interface Range {
@@ -83,18 +96,19 @@ export class Telemetry {
 
   /** Error log records of the last 15 minutes per pod, the twin's status overlay (a pod logs for itself, 0 with none). */
   /**
-   * Error log records of the last 15 minutes by the values of the given resource attributes (an adapter's error
-   * attributes, e.g. namespace and pod), keyed with `errorKey`. Records missing any of them don't count. The
-   * attribute names go in as parameters, never as SQL.
+   * Error log records of the 15 minutes before `at` (now without it) by the values of the given resource attributes
+   * (an adapter's error attributes, e.g. namespace and pod), keyed with `errorKey`. Records missing any of them
+   * don't count. The attribute names go in as parameters, never as SQL.
    */
-  async errorCounts(attributes: string[]): Promise<ErrorCounts> {
+  async errorCounts(attributes: string[], at?: number): Promise<ErrorCounts> {
     if (!attributes.length) return new Map();
     const columns = attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`);
     const present = attributes.map((_, i) => `k${i} <> ''`).join(" AND ");
     const params: Record<string, string | number> = { ...this.of().params, severity: SEVERITY.error ?? 17 };
     attributes.forEach((a, i) => (params[`a${i}`] = a));
+    if (at !== undefined) params.at = at;
     const rows = await this.ch.query<Record<string, string>>(
-      `SELECT ${columns.join(", ")}, count() AS count FROM otel_logs\n       WHERE Timestamp >= now() - INTERVAL 15 MINUTE AND SeverityNumber >= {severity:UInt8} AND ${present}${this.of().where}\n       GROUP BY ${attributes.map((_, i) => `k${i}`).join(", ")}`,
+      `SELECT ${columns.join(", ")}, count() AS count FROM otel_logs\n       WHERE ${at === undefined ? "Timestamp >= now() - INTERVAL 15 MINUTE" : "Timestamp BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 15 MINUTE AND fromUnixTimestamp64Milli({at:Int64})"} AND SeverityNumber >= {severity:UInt8} AND ${present}${this.of().where}\n       GROUP BY ${attributes.map((_, i) => `k${i}`).join(", ")}`,
       params,
     );
     return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.count)]));

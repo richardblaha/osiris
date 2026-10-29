@@ -132,7 +132,9 @@
     },
     "digitalTwin": {
       "k8sFailed": "Dotaz na Kubernetes API selhal: {{detail}}",
-      "signedIn": "Nejdřív se přihlaste."
+      "signedIn": "Nejdřív se přihlaste.",
+      "historyOff": "Historie dvojčete není zapnutá.",
+      "historyMissing": "Historie dvojčete tak daleko nesahá."
     },
     "validation": {
       "invalid": "Neplatný požadavek",

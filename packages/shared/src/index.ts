@@ -252,11 +252,28 @@ export interface TwinNode extends TwinEntity {
   children: TwinNode[];
 }
 
+/** One change of an entity in the twin's history (`/api/twin/history`). */
+export interface TwinChange {
+  ts: number;
+  entityId: string;
+  kind: string;
+  name: string;
+  change: "added" | "changed" | "removed";
+  status: TwinStatus;
+  /** The status before a change; null when it was added. */
+  previousStatus: TwinStatus | null;
+  /** What changed: property names, and "status". */
+  changed: string[];
+  properties: Record<string, string>;
+}
+
 export interface Twin {
   /** The root of the tree (for Kubernetes, the cluster). */
   cluster: TwinNode;
   /** When the structure was read from the source (epoch ms). */
   ts: number;
+  /** Set when the tree is the recorded state at `ts`, not the live one. */
+  historical?: boolean;
 }
 
 /** Guard names, also their file names: kebab-case. */

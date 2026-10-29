@@ -28,5 +28,17 @@
     "namespaces_other": "{{count}} namespaces",
     "pods_one": "{{count}} pod",
     "pods_other": "{{count}} pods"
+  },
+  "history": {
+    "live": "Live",
+    "title": "Changes",
+    "empty": "No changes in the last 7 days.",
+    "at": "State at {{time}}",
+    "back": "Back to live",
+    "change": {
+      "added": "added",
+      "changed": "changed",
+      "removed": "removed"
+    }
   }
 }

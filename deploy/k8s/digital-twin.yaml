@@ -2,7 +2,7 @@
 # API (read-only ServiceAccount, see rbac.yaml), telemetry from ClickHouse, both cached in Redis. Serves its PWA
 # (server/digital-twin/web, three.js). Sign-in through osiris-auth: the PWA signs in as the public client
 # `digital-twin`, the API introspects as `osiris-digital-twin` and answers the group `admin`.
-# Secret osiris-digital-twin: AUTH_CLIENT_SECRET, CLICKHOUSE_PASSWORD (the read-only user osiris; deploy/README.md).
+# Secret osiris-digital-twin: AUTH_CLIENT_SECRET, CLICKHOUSE_PASSWORD (ClickHouse user twin's; deploy/README.md).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -48,6 +48,10 @@ spec:
             # The busiris cluster's telemetry, as the collector's resource/cluster processor stamps it; keep the
             # two values in step (CLICKHOUSE_CLUSTER also appears in deploy/observability/collector.yaml).
             - { name: CLICKHOUSE_CLUSTER, value: busiris }
+            # The history (database twin): user twin reads the telemetry and writes the changes; the secret's
+            # CLICKHOUSE_PASSWORD is its TWIN_PASSWORD.
+            - { name: CLICKHOUSE_USER, value: twin }
+            - { name: HISTORY_ENABLED, value: "true" }
           envFrom:
             - secretRef: { name: osiris-digital-twin }
           securityContext:

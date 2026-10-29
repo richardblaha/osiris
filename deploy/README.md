@@ -140,11 +140,18 @@ from ClickHouse; **Redis** (`deploy/k8s/redis.yaml`, cache only) caches both. Th
    and the introspection client **osiris-digital-twin** (a secret, accepting `digital-twin`'s tokens), then:
    ```bash
    kubectl -n osiris create secret generic osiris-digital-twin --dry-run=client -o yaml \
-     --from-literal=AUTH_CLIENT_SECRET="<osiris-auth secret>" --from-literal=CLICKHOUSE_PASSWORD="$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD" | kubectl apply -f -
+     --from-literal=AUTH_CLIENT_SECRET="<osiris-auth secret>" --from-literal=CLICKHOUSE_PASSWORD="$OSIRIS_CLICKHOUSE_TWIN_PASSWORD" | kubectl apply -f -
    kubectl apply -k deploy/k8s
    ```
+   The twin reads ClickHouse as its own user `twin` (the telemetry, and its history; see Observability for
+   `TWIN_PASSWORD`). The history's tables come first:
+   `kubectl -n observability exec -i clickhouse-0 -- sh -c 'clickhouse-client --user otel --password "$OTEL_PASSWORD" --multiquery' < deploy/observability/twin/schema.sql`.
 2. `AUTH_REQUIRED_GROUP` (default `admin`) says which group may see the twin; without membership the API answers 403.
 3. DNS: twin.k6labs.cz to the cluster's ingress, the same as osiris.k6labs.cz; cert-manager issues the certificate.
+4. **History** (`HISTORY_ENABLED`): every `HISTORY_INTERVAL_SECONDS` (30) the replica holding the Redis lease writes
+   what changed in the graph to ClickHouse's `twin.entity_events` and `twin.relationship_events`, plus a checkpoint of
+   everything once a day (90 days kept). The PWA's time axis shows the tree at any five minutes since the first
+   checkpoint, and the detail lists the changes under the selected entity.
 
 Any cluster can be twinned, not just the one the app runs in: mount the cluster's kubeconfig (as a secret) and set
 `KUBECONFIG` (and `KUBE_CONTEXT`, if not the current one) plus its ClickHouse (`CLICKHOUSE_URL`, `CLICKHOUSE_USER`,
@@ -156,11 +163,12 @@ the OpenTelemetry Collector's standard schema (`otel_logs`, `otel_traces`, `otel
 processor, `deploy/observability/collector.yaml`): set it and a ClickHouse shared by several clusters keeps them
 apart; without it, the twin sees every cluster in the database.
 
-1. `.env`: `OSIRIS_CLICKHOUSE_OTEL_PASSWORD`, `OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD` (`openssl rand -hex 24` each), then:
+1. `.env`: `OSIRIS_CLICKHOUSE_OTEL_PASSWORD`, `OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD`, `OSIRIS_CLICKHOUSE_TWIN_PASSWORD` (`openssl rand -hex 24` each), then:
    ```bash
    kubectl create namespace observability --dry-run=client -o yaml | kubectl apply -f -
    kubectl -n observability create secret generic clickhouse-users --dry-run=client -o yaml \
-     --from-literal=OTEL_PASSWORD="$OSIRIS_CLICKHOUSE_OTEL_PASSWORD" --from-literal=OSIRIS_PASSWORD="$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD" | kubectl apply -f -
+     --from-literal=OTEL_PASSWORD="$OSIRIS_CLICKHOUSE_OTEL_PASSWORD" --from-literal=OSIRIS_PASSWORD="$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD" \
+     --from-literal=TWIN_PASSWORD="$OSIRIS_CLICKHOUSE_TWIN_PASSWORD" | kubectl apply -f -
    kubectl -n osiris patch secret osiris-control --type merge -p "{\"stringData\":{\"CLICKHOUSE_PASSWORD\":\"$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD\"}}"
    kubectl apply -k deploy/observability
    ```

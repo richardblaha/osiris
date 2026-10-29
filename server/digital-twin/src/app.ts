@@ -10,6 +10,7 @@ import type { TwinGraph } from "@osiris/shared";
 import type { Identity, TokenVerifier } from "./auth.ts";
 import type { Cache } from "./cache.ts";
 import type { Config } from "./config.ts";
+import type { HistoryStore } from "./history.ts";
 import { graphOf, treeOf, type TwinSource } from "./twin.ts";
 import type { MetricType, Telemetry } from "./telemetry.ts";
 
@@ -41,6 +42,26 @@ export interface AppOptions {
   verifier?: TokenVerifier;
   cache: Cache;
   staticDir?: string;
+  /** The twin's recorded history (HISTORY_ENABLED); without it the history endpoints answer 503. */
+  history?: HistoryStore;
+}
+
+/** The cache keys' prefix: one Redis may serve twins of several clusters, so it names the source, cluster and telemetry. */
+export const cachePrefix = (config: Config, source: TwinSource) => `twin:${source.name}:${config.CLUSTER_NAME}:${config.CLICKHOUSE_CLUSTER ?? "*"}`;
+
+/** The twin's live graph: the source's snapshot (and ClickHouse's error counts), cached for CACHE_TTL_SECONDS. */
+export function graphLoader(config: Config, { source, telemetry, cache }: Pick<AppOptions, "source" | "telemetry" | "cache">) {
+  const key = `${cachePrefix(config, source)}:graph`;
+  return async (): Promise<TwinGraph> => {
+    const cached = await cache.get<TwinGraph>(key);
+    if (cached) return cached;
+    const snapshot = await source.snapshot();
+    // The twin works without telemetry: no error counts is better than no twin.
+    const counts = telemetry && source.errorAttributes?.length ? await telemetry.errorCounts(source.errorAttributes).catch(() => new Map<string, number>()) : new Map<string, number>();
+    const value = graphOf(source, snapshot, counts);
+    await cache.set(key, value, config.CACHE_TTL_SECONDS);
+    return value;
+  };
 }
 
 /**
@@ -51,24 +72,12 @@ export interface AppOptions {
  * with OIDC, the API introspects the token and answers members of the configured group.
  */
 export function createApp(config: Config, options: AppOptions) {
-  const { source, telemetry, verifier, cache, staticDir } = options;
+  const { source, telemetry, verifier, cache, staticDir, history } = options;
   const CSP = csp(config.AUTH_URL);
   const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
 
-  // One Redis may serve twins of several clusters: every key carries the source, the cluster (and its telemetry's) name.
-  const prefix = `twin:${source.name}:${config.CLUSTER_NAME}:${config.CLICKHOUSE_CLUSTER ?? "*"}`;
-  /** The twin's graph: the source's snapshot (and ClickHouse's error counts), cached for CACHE_TTL_SECONDS. */
-  const graph = async (): Promise<TwinGraph> => {
-    const key = `${prefix}:graph`;
-    const cached = await cache.get<TwinGraph>(key);
-    if (cached) return cached;
-    const snapshot = await source.snapshot();
-    // The twin works without telemetry: no error counts is better than no twin.
-    const counts = telemetry && source.errorAttributes?.length ? await telemetry.errorCounts(source.errorAttributes).catch(() => new Map<string, number>()) : new Map<string, number>();
-    const value = graphOf(source, snapshot, counts);
-    await cache.set(key, value, config.CACHE_TTL_SECONDS);
-    return value;
-  };
+  const prefix = cachePrefix(config, source);
+  const graph = graphLoader(config, options);
 
   /** An endpoint whose answer is cached: the key a hash of the query, the value fresh when the key misses. Epoch
    * times are bucketed to the TTL before hashing, so a repeated question (the pages' `now`-anchored ranges) hits. */
@@ -83,6 +92,10 @@ export function createApp(config: Config, options: AppOptions) {
     return value;
   };
 
+  const h = () => {
+    if (!history) throw new HttpError(503, "errors.digitalTwin.historyOff");
+    return history;
+  };
   const t = () => {
     if (!telemetry) throw new HttpError(503, "errors.telemetryOff");
     return telemetry;
@@ -144,6 +157,28 @@ export function createApp(config: Config, options: AppOptions) {
     .get("/api/twin", async (c) => c.json(treeOf(await sourceFailing(graph))))
     .get("/api/twin/graph", async (c) => c.json(await sourceFailing(graph)))
     .get("/api/twin/model", (c) => c.json(source.models()))
+    // The twin's history: how far back it goes, the tree as it was at a time, and the changes under an entity.
+    .get("/api/twin/range", async (c) => c.json(await failing(() => h().range())))
+    .get("/api/twin/at", async (c) => {
+      const { ts } = parse(z.object({ ts: z.coerce.number().int().positive() }), c.req.query());
+      const root = (await sourceFailing(graph)).root;
+      const tree = await cached("at", { ts }, config.CACHE_DATA_TTL_SECONDS, () =>
+        failing(async () => {
+          const snapshot = await h().graphAt(Math.min(ts, Date.now()), root);
+          if (!snapshot) throw new HttpError(404, "errors.digitalTwin.historyMissing");
+          const counts = telemetry && source.errorAttributes?.length ? await telemetry.errorCounts(source.errorAttributes, ts).catch(() => new Map<string, number>()) : new Map<string, number>();
+          return { ...treeOf(graphOf(source, snapshot, counts, ts)), historical: true };
+        }),
+      );
+      return c.json(tree);
+    })
+    .get("/api/twin/history", async (c) => {
+      const f = parse(
+        rangeQuery.and(z.object({ entity: z.string().max(2000).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) })),
+        c.req.query(),
+      );
+      return c.json(await cached("history", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => h().changes(f))));
+    })
 
     // The telemetry pages: the same queries the dashboard reads ClickHouse with, cached briefly.
     .get("/api/facets", async (c) => {

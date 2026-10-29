@@ -7,6 +7,7 @@ import { applyLanguageSetting, currentLocale } from "./i18n.ts";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
 import { Twin3D } from "./Twin3D.tsx";
+import { Timeline } from "./Timeline.tsx";
 import { TwinDetail } from "./TwinDetail.tsx";
 
 /** The views, in the URL's hash so a selection or a page survives reloading and signing in. */
@@ -57,10 +58,18 @@ export function App() {
     setView(next);
   };
 
-  /** The twin loads once signed in and refreshes every minute (the server caches it in Redis anyway). */
+  /** The time the twin shows: null is live, else the recorded state at that time (epoch ms). */
+  const [at, setAt] = useState<number | null>(null);
+  /** How far back the recorded history goes; undefined while there is none (or it's off). */
+  const [historyFrom, setHistoryFrom] = useState<number>();
+  useEffect(() => {
+    if (signedIn) void api.range().then((r) => setHistoryFrom(r.from ?? undefined), () => setHistoryFrom(undefined));
+  }, [signedIn]);
+
+  /** The twin loads once signed in and, live, refreshes every minute (the server caches it in Redis anyway). */
   const loadTwin = () =>
     attempt(setBusy, setError, async () => {
-      const next = await api.twin();
+      const next = at === null ? await api.twin() : await api.at(at);
       setTwin(next);
       // The selection follows the refreshed tree (its new status and properties), or goes when its node is gone.
       setSelected((was) => (was ? findById(next.cluster, was.id) : undefined));
@@ -68,9 +77,10 @@ export function App() {
   useEffect(() => {
     if (!signedIn) return;
     void loadTwin();
+    if (at !== null) return;
     const id = setInterval(() => void loadTwin(), 60_000);
     return () => clearInterval(id);
-  }, [signedIn]);
+  }, [signedIn, at]);
 
   // After the OIDC redirect: back to where the user was; without a token the pages offer signing in.
   useEffect(() => {
@@ -139,23 +149,26 @@ export function App() {
           <div className="grid h-full place-items-center text-sm text-fg-muted">{t("common:signIn")}</div>
         ) : view.kind === "twin" ? (
           <div className="flex h-full">
-            <div className="relative min-w-0 flex-1">
-              <Loading show={busy && !twin} />
-              <ErrorNotice error={error} />
-              {twin ? (
-                twin.cluster.children.length ? (
-                  <Twin3D twin={twin} selected={selected} onSelect={(node) => setSelected(node)} />
-                ) : (
-                  <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
-                )
-              ) : null}
-              <p className="pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:hint")}</p>
-              <p className="pointer-events-none absolute top-2 start-4 text-xs text-fg-muted">
-                {t("twin:counts.namespaces", { count: twin?.cluster.children.length ?? 0 })}
-                {twin ? ` · ${t("twin:counts.pods", { count: countPods(twin.cluster) })}` : ""}
-              </p>
+            <div className="flex min-w-0 flex-1 flex-col">
+              <div className="relative min-h-0 flex-1">
+                <Loading show={busy && !twin} />
+                <ErrorNotice error={error} />
+                {twin ? (
+                  twin.cluster.children.length ? (
+                    <Twin3D twin={twin} selected={selected} onSelect={(node) => setSelected(node)} />
+                  ) : (
+                    <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
+                  )
+                ) : null}
+                <p className="pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:hint")}</p>
+                <p className="pointer-events-none absolute top-2 start-4 text-xs text-fg-muted">
+                  {t("twin:counts.namespaces", { count: twin?.cluster.children.length ?? 0 })}
+                  {twin ? ` · ${t("twin:counts.pods", { count: countPods(twin.cluster) })}` : ""}
+                </p>
+              </div>
+              {historyFrom !== undefined && <Timeline from={historyFrom} at={at} onChange={setAt} />}
             </div>
-            {selected ? <TwinDetail node={selected} onOpen={openFromNode} /> : <p className="pointer-events-none absolute end-4 top-2 hidden text-xs text-fg-muted md:block">{t("twin:noSelection")}</p>}
+            {selected ? <TwinDetail node={selected} at={at} onOpen={openFromNode} /> : <p className="pointer-events-none absolute end-4 top-2 hidden text-xs text-fg-muted md:block">{t("twin:noSelection")}</p>}
           </div>
         ) : view.kind === "logs" ? (
           <Logs

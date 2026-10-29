@@ -69,6 +69,9 @@ function countingCache() {
       store.set(key, value);
       loads.push(key);
     },
+    async claim() {
+      return true;
+    },
   };
   return { loads, cache };
 }
@@ -108,6 +111,14 @@ describe("the twin API", () => {
     const docs = (await res.json()) as { "@id": string; "@type": string }[];
     expect(docs).toHaveLength(6);
     expect(docs[0]!["@id"]).toBe("dtmi:osiris:k8s:Cluster;1");
+  });
+
+  it("answers the history endpoints with 503 while the history is off", async () => {
+    for (const path of ["/api/twin/range", "/api/twin/at?ts=1730000000000", "/api/twin/history"]) {
+      const res = await app().request(path);
+      expect(res.status).toBe(503);
+      expect(((await res.json()) as { code: string }).code).toBe("errors.digitalTwin.historyOff");
+    }
   });
 
   it("serves the twin as a graph: entities and their relationships, nodes and placement included", async () => {

@@ -32,5 +32,17 @@
     "pods_few": "{{count}} pody",
     "pods_many": "{{count}} podu",
     "pods_other": "{{count}} podů"
+  },
+  "history": {
+    "live": "Živě",
+    "title": "Změny",
+    "empty": "Za posledních 7 dní žádné změny.",
+    "at": "Stav k {{time}}",
+    "back": "Zpět na živý stav",
+    "change": {
+      "added": "přidáno",
+      "changed": "změna",
+      "removed": "odebráno"
+    }
   }
 }
