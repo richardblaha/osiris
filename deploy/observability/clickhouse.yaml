@@ -93,7 +93,7 @@ spec:
     metadata:
       labels: { app: clickhouse }
       annotations:
-        config/version: "2"
+        config/version: "3"
     spec:
       securityContext:
         runAsUser: 101
@@ -112,6 +112,14 @@ spec:
               valueFrom: { secretKeyRef: { name: clickhouse-users, key: OSIRIS_PASSWORD } }
             - name: TWIN_PASSWORD
               valueFrom: { secretKeyRef: { name: clickhouse-users, key: TWIN_PASSWORD } }
+            # The clickhouse-backup CronJob's user and bucket (CronJob, ConfigMap and Secret clickhouse-backups are
+            # deployed outside this repository; keep these so applying this manifest doesn't drop them).
+            - name: BACKUP_PASSWORD
+              valueFrom: { secretKeyRef: { name: clickhouse-users, key: BACKUP_PASSWORD } }
+            - name: BACKUP_S3_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: clickhouse-backups, key: AWS_ACCESS_KEY_ID } }
+            - name: BACKUP_S3_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: clickhouse-backups, key: AWS_SECRET_ACCESS_KEY } }
           ports:
             - { name: http, containerPort: 8123 }
             - { name: native, containerPort: 9000 }
@@ -123,8 +131,8 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 30
           resources:
-            requests: { cpu: 100m, memory: 768Mi }
-            limits: { memory: 1536Mi }
+            requests: { cpu: 200m, memory: 1Gi }
+            limits: { memory: 2Gi }
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: [ALL] }
@@ -140,7 +148,7 @@ spec:
       spec:
         accessModes: [ReadWriteOnce]
         storageClassName: ceph-rbd
-        resources: { requests: { storage: 20Gi } }
+        resources: { requests: { storage: 50Gi } }
 ---
 apiVersion: v1
 kind: Service
