@@ -1,4 +1,4 @@
-# One Dockerfile, one image per service: docker build --target <gateway|auth|control|runtime|operator|vitepress|web-events|digital-twin> .
+# One Dockerfile, one image per service: docker build --target <gateway|auth|control|runtime|operator|vitepress|web-events|digital-twin|tts> .
 # Every service runs TypeScript with tsx as the unprivileged node user, read-only root filesystem (tsx caches in /tmp).
 
 FROM node:24-slim AS base
@@ -179,3 +179,18 @@ ENV PORT=3004 STATIC_DIR=/app/server/digital-twin/web/dist
 WORKDIR /app/server/digital-twin
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
+
+# Osiris speech: Piper TTS with Czech (jirka) and English (lessac) voices, an HTTP service inside the cluster. The
+# build speaks a sentence, so a broken voice or API never ships.
+FROM python:3.12-slim AS tts
+ARG PIPER_VOICES=https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0
+WORKDIR /app
+COPY server/tts/requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+ADD ${PIPER_VOICES}/cs/cs_CZ/jirka/medium/cs_CZ-jirka-medium.onnx ${PIPER_VOICES}/cs/cs_CZ/jirka/medium/cs_CZ-jirka-medium.onnx.json /voices/
+ADD ${PIPER_VOICES}/en/en_US/lessac/medium/en_US-lessac-medium.onnx ${PIPER_VOICES}/en/en_US/lessac/medium/en_US-lessac-medium.onnx.json /voices/
+COPY server/tts/server.py ./
+RUN chmod -R a+r /voices && python -c "import server; assert len(server.synthesize('Dobrý den, tady Osiris.', 'cs')) > 10000; assert len(server.synthesize('Hello.', 'en')) > 5000"
+ENV PYTHONUNBUFFERED=1 PORT=8080
+USER 1000
+CMD ["python", "server.py"]

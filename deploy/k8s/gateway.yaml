@@ -39,6 +39,7 @@ spec:
             # - { name: GOATCOUNTER_URL, value: https://osiris.stats.k6labs.cz }
             - { name: CORS_ORIGIN, value: https://osiris.k6labs.cz }
             - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
+            - { name: TTS_URL, value: http://tts.osiris.svc.cluster.local:8080 }
             - { name: AUTH_URL, value: https://auth.k6labs.cz }
           envFrom:
             - secretRef: { name: osiris-gateway }

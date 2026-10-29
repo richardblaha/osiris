@@ -15,4 +15,5 @@ resources:
   - gotenberg.yaml
   - vitepress.yaml
   - digital-twin.yaml
+  - tts.yaml
   - ingress.yaml

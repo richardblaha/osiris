@@ -25,6 +25,8 @@ const schema = z
     GATEWAY_CLIENT_SECRET: z.string().optional(),
 
     CONTROL_URL: z.url().default("http://127.0.0.1:3002"),
+    // The speech service (Piper TTS) behind /api/tts; without it there is no speech.
+    TTS_URL: z.url().optional(),
     // Signs the internal tokens that carry the verified user to control and the runtimes.
     INTERNAL_JWT_PRIVATE_KEY: pem,
 

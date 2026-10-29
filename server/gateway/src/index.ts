@@ -22,6 +22,7 @@ const app = createGatewayApp({
   signer,
   control,
   controlUrl: config.CONTROL_URL,
+  ttsUrl: config.TTS_URL,
   runtimes: new RuntimeClient(control),
   corsOrigin: config.CORS_ORIGIN,
   maxBodyBytes: config.MAX_BODY_MB * 1024 * 1024,

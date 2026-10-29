@@ -38,6 +38,10 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
     // What Cilium answers for a Service without endpoints.
     if (asleep.has(service)) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "EPERM" } });
     if (u.pathname === "/health") return Response.json({ ok: true });
+    if (u.host === "tts") {
+      calls.push({ service: "tts", path: u.pathname, method: init.method ?? "GET", auth: headers.get("authorization"), projectHeader: null, body: String(init.body) });
+      return new Response("RIFF", { headers: { "content-type": "audio/wav" } });
+    }
     calls.push({
       service,
       path: u.pathname + u.search,
@@ -61,12 +65,25 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
     limits: { requestsPerMinute: 100, runsPerMinute: options.runsPerMinute ?? 10 },
     web: options.web,
     auth: { issuer: "https://auth.example.cz" },
+    ttsUrl: "http://tts",
     fetchFn,
   });
   const as = (token: string, project?: string) => (path: string, init: RequestInit = {}) =>
     app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(project ? { "x-project-id": project } : {}), ...(init.headers as Record<string, string>) } });
   return { app, as, calls, woken };
 }
+
+describe("speech", () => {
+  it("turns a signed-in user's text into speech, without passing their credentials on", async () => {
+    const { app, as, calls } = setup();
+    const res = await as("alice:project=acme")("/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "Dobrý den", lang: "cs" }) });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("audio/wav");
+    expect(calls).toEqual([{ service: "tts", path: "/tts", method: "POST", auth: null, projectHeader: null, body: JSON.stringify({ text: "Dobrý den", lang: "cs" }) }]);
+    expect((await app.request("/api/tts", { method: "POST", body: "{}" })).status).toBe(401);
+    expect((await as("alice:project=acme")("/tts", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: " " }) })).status).toBe(400);
+  });
+});
 
 describe("access from claims", () => {
   it("maps project to member and project-admin to admin, from single values or comma-separated lists", () => {

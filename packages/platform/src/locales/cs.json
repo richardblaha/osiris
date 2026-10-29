@@ -392,6 +392,10 @@
     "picture": {
       "type": "Obrázek musí být PNG nebo JPEG.",
       "tooLarge": "Obrázek smí mít nejvýš 2 MB."
+    },
+    "tts": {
+      "off": "Řeč není k dispozici.",
+      "failed": "Řeč se nepodařilo vytvořit, zkuste to znovu."
     }
   },
   "schedules": {

@@ -36,6 +36,8 @@ export interface GatewayDeps {
   web?: { dir: string; goatcounter?: string };
   /** osiris-auth, where users sign in; the web app's pages may talk to it and show its pictures. */
   auth: { issuer: string };
+  /** The speech service (Piper): `/api/tts` turns text into speech for signed-in users. */
+  ttsUrl?: string;
   fetchFn?: typeof fetch;
 }
 
@@ -209,6 +211,22 @@ export function createGatewayApp(deps: GatewayDeps) {
   const api = new Hono<Env>()
     .use(bodyLimit({ maxSize: deps.maxBodyBytes, onError: tooLarge("errors.requestTooLarge") }))
     .use(authenticate)
+    // Speech: the text of an answer as audio (Piper), for any signed-in user; the service is inside the cluster.
+    .post("/tts", async (c) => {
+      if (!deps.ttsUrl) throw new HttpError(404, "errors.tts.off");
+      const input = (await c.req.json().catch(() => null)) as { text?: unknown; lang?: unknown } | null;
+      const text = typeof input?.text === "string" ? input.text.slice(0, 5000) : "";
+      if (!text.trim()) throw new HttpError(400, "errors.validation.invalid");
+      const lang = typeof input?.lang === "string" ? input.lang : requestLocale(c.req.header("accept-language"));
+      const res = await (deps.fetchFn ?? fetch)(`${deps.ttsUrl.replace(/\/$/, "")}/tts`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text, lang }),
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (!res.ok) throw new HttpError(502, "errors.tts.failed");
+      return new Response(res.body, { headers: { "content-type": res.headers.get("content-type") ?? "audio/wav", "cache-control": "no-store" } });
+    })
     .all("*", (c) => (CONTROL_PATHS.test(c.req.path) ? toControl(c) : toRuntime(c)));
 
   const app = new Hono()

@@ -378,6 +378,10 @@
     "picture": {
       "type": "The picture must be a PNG or JPEG.",
       "tooLarge": "The picture can be at most 2 MB."
+    },
+    "tts": {
+      "off": "Speech is not available.",
+      "failed": "Speech could not be made, try again."
     }
   },
   "schedules": {
