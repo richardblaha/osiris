@@ -41,7 +41,7 @@ body,
     padding: 1.5rem;
   }
 
-  /* Loading veil over a part whose data is on the way (Scope.tsx `Loading`): the orbit loader, monochrome. */
+  /* Loading veil over a part whose data is on the way (Scope.tsx `Loading`): the turning pyramid. */
   .loading-overlay {
     position: absolute;
     inset: 0;
@@ -55,47 +55,16 @@ body,
     backdrop-filter: blur(3px);
     animation: loading-in 0.2s ease 0.15s both;
   }
-  .orbit-loader {
+  .pyramid-loader {
     display: flex;
     align-items: center;
     gap: 8px;
   }
   /* Twice the caption's line. */
-  .orbit-logo {
+  .pyramid-logo {
     height: 40px;
     width: 40px;
     flex: none;
-    overflow: visible;
-    fill: currentColor;
-    stroke: currentColor;
-  }
-  .orbit-logo .pyramid {
-    stroke: none;
-    transform-origin: 100px 140px;
-    animation: orbit-breathe 2.7s ease-in-out infinite;
-  }
-  .orbit-logo .shade {
-    fill: #000;
-    opacity: 0.12;
-  }
-  .orbit-logo .axis {
-    stroke: currentColor;
-  }
-  .orbit-logo .rear {
-    opacity: 0.65;
-  }
-  .orbit-logo .orbit {
-    fill: none;
-    stroke-linecap: round;
-    stroke-width: 2.7;
-    stroke-dasharray: 35 28 16 28;
-    animation: orbit-flow 2.6s linear infinite;
-  }
-  .orbit-logo .orbit-b {
-    stroke-width: 2;
-    stroke-dasharray: 26 24 40 24;
-    animation-duration: 3.5s;
-    animation-direction: reverse;
   }
   .loader-caption {
     font-size: 12px;
@@ -324,28 +293,6 @@ body,
 @keyframes loading-in {
   from {
     opacity: 0;
-  }
-}
-@keyframes orbit-flow {
-  to {
-    stroke-dashoffset: -300;
-  }
-}
-@keyframes orbit-breathe {
-  0%,
-  100% {
-    opacity: 0.86;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.025);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .orbit-logo .orbit,
-  .orbit-logo .pyramid {
-    animation: none;
   }
 }
 @keyframes run-dots {
