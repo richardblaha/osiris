@@ -40,8 +40,12 @@ describe("dtdlModel", () => {
     expect(cluster.contents).toContainEqual(expect.objectContaining({ "@type": "Relationship", target: MODEL.Namespace }));
   });
 
-  it("makes valid instance ids out of k8s names", () => {
-    expect(instanceId("osiris", "Gateway.ABC", "pod/x")).toBe("dtmi:osiris:k8s:instance:osiris:gateway-abc:pod-x");
+  it("makes instance ids that never collide, whatever the names", () => {
+    expect(instanceId("busiris", ["namespace", "osiris"], ["pod", "gateway-abc"])).toBe("k8s:busiris/namespace/osiris/pod/gateway-abc");
+    // Names that used to fold into one id stay apart.
+    expect(instanceId("c", ["namespace", "api.v1"])).not.toBe(instanceId("c", ["namespace", "api-v1"]));
+    expect(instanceId("c", ["namespace", "A"])).not.toBe(instanceId("c", ["namespace", "a"]));
+    expect(instanceId("c", ["namespace", "a/b"])).not.toBe(instanceId("c", ["namespace", "a"], ["b", ""]));
   });
 });
 

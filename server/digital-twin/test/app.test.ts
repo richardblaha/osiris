@@ -116,7 +116,7 @@ describe("the twin API", () => {
     const calls = kubeFetch.mock.calls.length;
     await instance.request("/api/twin");
     expect(kubeFetch.mock.calls.length).toBe(calls);
-    expect(loads).toContain("twin:tree");
+    expect(loads).toContain("twin:k8s:*:tree"); // the cluster in the key: one Redis, several twins
   });
 
   it("answers the logs page's query and caches it", async () => {
@@ -129,7 +129,7 @@ describe("the twin API", () => {
     const calls = chFetch.mock.calls.length;
     await instance.request("/api/logs?namespace=osiris&pod=gateway-abc&severity=error");
     expect(chFetch.mock.calls.length).toBe(calls);
-    expect(loads.some((k) => k.startsWith("twin:logs:"))).toBe(true);
+    expect(loads.some((k) => k.startsWith("twin:k8s:*:logs:"))).toBe(true);
   });
 
   it("refuses a bad query", async () => {

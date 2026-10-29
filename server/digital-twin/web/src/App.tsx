@@ -42,7 +42,8 @@ export function App() {
   const [selected, setSelected] = useState<TwinNode>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  const [signedIn, setSignedIn] = useState(!authOff);
+  // undefined while the stored token is being checked: nothing asks the API before it's known whether there is one.
+  const [signedIn, setSignedIn] = useState<boolean | undefined>(authOff ? true : undefined);
   const [user, setUser] = useState<{ name: string | null } | null>(null);
 
   useEffect(() => {
@@ -56,13 +57,20 @@ export function App() {
     setView(next);
   };
 
-  /** The twin loads with the app and refreshes every minute (the server caches it in Redis anyway). */
-  const loadTwin = () => attempt(setBusy, setError, async () => setTwin(await api.twin()));
+  /** The twin loads once signed in and refreshes every minute (the server caches it in Redis anyway). */
+  const loadTwin = () =>
+    attempt(setBusy, setError, async () => {
+      const next = await api.twin();
+      setTwin(next);
+      // The selection follows the refreshed tree (its new status and properties), or goes when its node is gone.
+      setSelected((was) => (was ? findById(next.cluster, was.id) : undefined));
+    });
   useEffect(() => {
+    if (!signedIn) return;
     void loadTwin();
     const id = setInterval(() => void loadTwin(), 60_000);
     return () => clearInterval(id);
-  }, []);
+  }, [signedIn]);
 
   // After the OIDC redirect: back to where the user was; without a token the pages offer signing in.
   useEffect(() => {
@@ -131,15 +139,19 @@ export function App() {
               {t("common:signOut")}
             </button>
           </span>
-        ) : (
+        ) : signedIn === false ? (
           <button type="button" className="btn-primary px-2 py-1 text-xs" onClick={() => void login(location.hash.slice(1))}>
             {t("common:signIn")}
           </button>
-        )}
+        ) : null}
       </header>
 
       <main className="min-h-0 flex-1">
-        {!signedIn ? (
+        {signedIn === undefined ? (
+          <div className="relative h-full">
+            <Loading show />
+          </div>
+        ) : !signedIn ? (
           <div className="grid h-full place-items-center text-sm text-fg-muted">{t("common:signIn")}</div>
         ) : view.kind === "twin" ? (
           <div className="flex h-full">
@@ -181,6 +193,15 @@ export function App() {
     </div>
   );
 }
+
+const findById = (node: TwinNode, id: string): TwinNode | undefined => {
+  if (node.id === id) return node;
+  for (const child of node.children) {
+    const found = findById(child, id);
+    if (found) return found;
+  }
+  return undefined;
+};
 
 const countPods = (node: TwinNode): number => {
   let n = 0;

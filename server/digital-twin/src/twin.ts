@@ -32,9 +32,9 @@ export function podStatus(pod: PodObject): TwinStatus {
 }
 
 /** Containers of a pod as twin nodes (a container has no children; log records belong to the pod). */
-function containerNodes(pod: PodObject): TwinNode[] {
+function containerNodes(cluster: string, pod: PodObject): TwinNode[] {
   return (pod.status?.containerStatuses ?? []).map((c) => ({
-    id: instanceId(pod.metadata.namespace, pod.metadata.name, c.name),
+    id: instanceId(cluster, ["namespace", pod.metadata.namespace], ["pod", pod.metadata.name], ["container", c.name]),
     model: MODEL.Container,
     kind: "container",
     name: c.name,
@@ -46,12 +46,12 @@ function containerNodes(pod: PodObject): TwinNode[] {
 }
 
 /** Pods as twin nodes, under their workload (owner references; a ReplicaSet resolves to its Deployment). */
-function podNode(pod: PodObject, errors: PodErrors): TwinNode {
+function podNode(cluster: string, pod: PodObject, errors: PodErrors): TwinNode {
   const status = podStatus(pod);
   const containers = pod.status?.containerStatuses ?? [];
-  const children = containerNodes(pod);
+  const children = containerNodes(cluster, pod);
   return {
-    id: instanceId(pod.metadata.namespace, pod.metadata.name),
+    id: instanceId(cluster, ["namespace", pod.metadata.namespace], ["pod", pod.metadata.name]),
     model: MODEL.Pod,
     kind: "pod",
     name: pod.metadata.name,
@@ -108,7 +108,7 @@ export function buildTwin(input: TwinInput): Twin {
     const o = owner(pod, input.deploymentOf);
     const key = `${pod.metadata.namespace}/${o.kind}/${o.name}`;
     const group = byWorkload.get(key) ?? { owner: o, pods: [] };
-    group.pods.push(podNode(pod, input.podErrors));
+    group.pods.push(podNode(input.clusterName, pod, input.podErrors));
     byWorkload.set(key, group);
   }
 
@@ -120,7 +120,7 @@ export function buildTwin(input: TwinInput): Twin {
         .map(([_, { owner: o, pods }]): TwinNode => {
           pods.sort((a, b) => a.name.localeCompare(b.name));
           return {
-            id: instanceId(ns.metadata.name, o.kind, o.name),
+            id: instanceId(input.clusterName, ["namespace", ns.metadata.name], [o.kind.toLowerCase(), o.name]),
             model: MODEL.Workload,
             kind: "workload",
             name: o.name,
@@ -136,7 +136,7 @@ export function buildTwin(input: TwinInput): Twin {
         })
         .sort((a, b) => a.name.localeCompare(b.name));
       return {
-        id: instanceId(ns.metadata.name),
+        id: instanceId(input.clusterName, ["namespace", ns.metadata.name]),
         model: MODEL.Namespace,
         kind: "namespace",
         name: ns.metadata.name,

@@ -56,8 +56,10 @@ export function createApp(config: Config, options: AppOptions) {
   const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
 
   /** The twin's tree: k8s structure (and ClickHouse's error counts), cached for CACHE_TTL_SECONDS. */
+  // One Redis may serve twins of several clusters: every key carries the cluster (and its telemetry's) name.
+  const prefix = `twin:${config.CLUSTER_NAME}:${config.CLICKHOUSE_CLUSTER ?? "*"}`;
   const twin = async (): Promise<Twin> => {
-    const key = "twin:tree";
+    const key = `${prefix}:tree`;
     const cached = await cache.get<Twin>(key);
     if (cached) return cached;
     const [namespaces, pods, nodes, replicasets, version] = await Promise.all([
@@ -92,7 +94,7 @@ export function createApp(config: Config, options: AppOptions) {
   /** An endpoint whose answer is cached: the key a hash of the query, the value fresh when the key misses. Epoch
    * times are bucketed to the TTL before hashing, so a repeated question (the pages' `now`-anchored ranges) hits. */
   const cached = async <T>(name: string, query: Record<string, unknown>, ttlSeconds: number, load: () => Promise<T>): Promise<T> => {
-    const key = `twin:${name}:${createHash("sha256")
+    const key = `${prefix}:${name}:${createHash("sha256")
       .update(JSON.stringify(query, (_, v) => (typeof v === "number" && v > 1e12 ? Math.floor(v / (ttlSeconds * 1000)) : v)))
       .digest("hex")}`;
     const hit = await cache.get<T>(key);

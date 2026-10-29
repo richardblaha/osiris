@@ -93,6 +93,10 @@ export function dtdlModel() {
   ];
 }
 
-/** A DTDL instance id under the twin's namespace; k8s names may hold characters a dtmi segment may not. */
-export const instanceId = (...parts: string[]) =>
-  `dtmi:osiris:k8s:instance:${parts.map((p) => p.toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "") || "-").join(":")}`;
+/**
+ * An instance's id: the path of kinds and names from the cluster down (`k8s:busiris/namespace/osiris/…`). DTDL keeps
+ * `dtmi:` for the models; an instance id is any unique string (like Azure Digital Twins' `$dtId`). Names within a
+ * parent are unique per kind, and each segment is escaped, so two objects never share an id.
+ */
+export const instanceId = (cluster: string, ...path: [kind: string, name: string][]) =>
+  `k8s:${[cluster, ...path.flatMap(([kind, name]) => [kind, name])].map(encodeURIComponent).join("/")}`;
