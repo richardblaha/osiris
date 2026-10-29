@@ -1,4 +1,4 @@
-import type { TwinNode } from "@osiris/shared";
+import type { TwinView } from "./scene.ts";
 
 /** A node's box in the twin's 3D scene: the center and the full size, in scene units. */
 export interface Box {
@@ -23,17 +23,17 @@ interface Measured {
   boxes: Box[];
 }
 
-const cellOf = (kind: TwinNode["kind"]): [number, number, number] =>
-  kind === "container" ? [1.6, 1.1, 1.6] : kind === "pod" ? [2.6, 1.8, 2.6] : [4, 3, 4];
+/** A leaf's box: a small cube at the bottom of the tree, a bigger one when it stands alone near the top. */
+const cellOf = (node: TwinView): [number, number, number] => (node.depth >= 4 ? [1.6, 1.1, 1.6] : node.depth === 3 ? [2.6, 1.8, 2.6] : [4, 3, 4]);
 
 /**
  * Measures one node: children in a grid of uniform cells (at most four in a row), wrapped in the node's own box.
  * Boxes come back relative to the node's floor center; `translate` moves them into place afterwards. Everything
  * grows up from y = 0, so nested boxes share a floor and read as one cuboid tree.
  */
-function measure(node: TwinNode): Measured {
+function measure(node: TwinView): Measured {
   if (!node.children.length) {
-    const size = cellOf(node.kind);
+    const size = cellOf(node);
     return { size, boxes: [{ id: node.id, center: [0, size[1] / 2, 0], size }] };
   }
   const children = node.children.map(measure);
@@ -65,11 +65,11 @@ function translate(source: Box[], center: [number, number, number], out: Box[]) 
 }
 
 /**
- * The twin's whole scene: namespaces side by side in a grid on one floor, each with its workloads, pods and
- * containers nested inside as translucent cuboids.
+ * The twin's whole scene: the top twins side by side in a grid on one floor, each with what it contains nested inside
+ * as translucent cuboids, all the way down.
  */
-export function layoutTwin(twin: TwinNode): Scene {
-  const namespaces = twin.children.map(measure);
+export function layoutTwin(top: TwinView[]): Scene {
+  const namespaces = top.map(measure);
   if (!namespaces.length) return { boxes: [], bounds: { center: [0, 1, 0], size: [4, 2, 4] } };
   const cell: [number, number, number] = [
     Math.max(...namespaces.map((n) => n.size[0])),

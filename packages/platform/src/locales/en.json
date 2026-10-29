@@ -119,7 +119,7 @@
       "queryFailed": "The ClickHouse query failed: {{detail}}"
     },
     "digitalTwin": {
-      "k8sFailed": "The Kubernetes API query failed: {{detail}}",
+      "notFound": "There is no such twin or model.",
       "signedIn": "Sign in first.",
       "historyOff": "The twin's history is not switched on.",
       "historyMissing": "The twin's history doesn't reach that far back."

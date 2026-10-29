@@ -1,4 +1,5 @@
-import type { Twin, TwinNode, TwinStatus } from "@osiris/shared";
+import type { TwinStatus } from "@osiris/shared";
+import type { TwinScene, TwinView } from "./scene.ts";
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
@@ -22,29 +23,29 @@ function themeColors() {
 
 /** What the scene shows of one twin: every box's mesh and edges, and the labels. */
 interface Content {
-  byId: Map<string, TwinNode>;
+  byId: Map<string, TwinView>;
   boxes: Map<string, Box>;
   meshes: { mesh: THREE.Mesh; edges: THREE.LineSegments; material: THREE.LineBasicMaterial; box: Box; id: string }[];
-  labels: { object: CSS2DObject; node: TwinNode }[];
+  labels: { object: CSS2DObject; node: TwinView }[];
   /** The layout's boxes as one string: an unchanged structure keeps its meshes and only repaints. */
   shape: string;
 }
 
 /**
- * The twin as a 3D WebGL scene (three.js): nested translucent cuboids — every namespace a box, inside it its
- * workloads' and pods' boxes and the containers' small cubes, edges coloured by status. A box can be selected
+ * The twin as a 3D WebGL scene (three.js): nested translucent cuboids — every top twin a box, and inside it what it
+ * contains (DTDL `contains`), all the way down to small cubes; edges coloured by status. A box can be selected
  * (click) and flown to (double-click); the OSIRIS palette follows the light and dark scheme. The renderer, camera and
  * controls live as long as the view: a refreshed twin repaints the boxes (or rebuilds them when the structure
  * changed) without moving the camera.
  */
-export function Twin3D({ twin, selected, onSelect }: { twin: Twin; selected?: TwinNode; onSelect: (node: TwinNode) => void }) {
+export function Twin3D({ scene: twin, selected, onSelect }: { scene: TwinScene; selected?: TwinView; onSelect: (node: TwinView) => void }) {
   const host = useRef<HTMLDivElement>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
   const chosen = useRef(selected);
   chosen.current = selected;
   /** The mounted scene's entry points, for the effects below. */
-  const view = useRef<{ show: (twin: Twin) => void; paint: () => void }>(undefined);
+  const view = useRef<{ show: (twin: TwinScene) => void; paint: () => void }>(undefined);
 
   useEffect(() => {
     const element = host.current!;
@@ -87,7 +88,7 @@ export function Twin3D({ twin, selected, onSelect }: { twin: Twin; selected?: Tw
     };
 
     /** A node's box: a translucent fill and the edges that carry its status; bigger boxes render first. */
-    const build = (twin: Twin, scene: Scene, byId: Map<string, TwinNode>, shape: string): Content => {
+    const build = (twin: TwinScene, scene: Scene, byId: Map<string, TwinView>, shape: string): Content => {
       const meshes: Content["meshes"] = [];
       for (const box of scene.boxes) {
         const node = byId.get(box.id)!;
@@ -109,11 +110,12 @@ export function Twin3D({ twin, selected, onSelect }: { twin: Twin; selected?: Tw
         m.edges.renderOrder = i + meshes.length;
       });
 
-      // Namespace labels (workload labels when the cluster is small enough to stay readable).
+      // The top twins' labels (and the next level's when there are few enough to stay readable).
       const labels: Content["labels"] = [];
       for (const box of scene.boxes) {
         const node = byId.get(box.id)!;
-        if (node.kind !== "namespace" && !(node.kind === "workload" && twin.cluster.children.length <= 4)) continue;
+        const level = node.depth - (twin.top[0]?.depth ?? 0);
+        if (level > 1 || (level === 1 && twin.top.length > 4)) continue;
         const div = document.createElement("div");
         div.className = "twin-label";
         div.textContent = node.name;
@@ -135,7 +137,7 @@ export function Twin3D({ twin, selected, onSelect }: { twin: Twin; selected?: Tw
         m.material.color = new THREE.Color(color);
         m.material.opacity = isChosen || isHovered ? 1 : 0.75;
         (m.mesh.material as THREE.MeshBasicMaterial).color = new THREE.Color(color);
-        (m.mesh.material as THREE.MeshBasicMaterial).opacity = node.kind === "container" ? (isHovered || isChosen ? 0.35 : 0.22) : isHovered || isChosen ? 0.18 : 0.07;
+        (m.mesh.material as THREE.MeshBasicMaterial).opacity = !node.children.length ? (isHovered || isChosen ? 0.35 : 0.22) : isHovered || isChosen ? 0.18 : 0.07;
       }
       for (const label of content.labels) {
         const node = content.byId.get(label.node.id) ?? label.node;
@@ -145,14 +147,14 @@ export function Twin3D({ twin, selected, onSelect }: { twin: Twin; selected?: Tw
     };
 
     /** Shows a (new or refreshed) twin: the same structure only repaints, a changed one rebuilds the boxes. */
-    const show = (twin: Twin) => {
-      const scene = layoutTwin(twin.cluster);
-      const byId = new Map<string, TwinNode>();
-      const walk = (node: TwinNode) => {
+    const show = (twin: TwinScene) => {
+      const scene = layoutTwin(twin.top);
+      const byId = new Map<string, TwinView>();
+      const walk = (node: TwinView) => {
         byId.set(node.id, node);
         for (const child of node.children) walk(child);
       };
-      walk(twin.cluster);
+      for (const node of twin.top) walk(node);
       const shape = scene.boxes.map((b) => `${b.id}@${b.center.join(",")}:${b.size.join(",")}`).join("|");
       if (content && content.shape === shape) content.byId = byId;
       else {
@@ -175,7 +177,7 @@ export function Twin3D({ twin, selected, onSelect }: { twin: Twin; selected?: Tw
     const pointer = new THREE.Vector2();
 
     /** What a pointer event hits: the innermost (smallest) box under it, so pods answer over their namespace. */
-    const pick = (event: MouseEvent): TwinNode | undefined => {
+    const pick = (event: MouseEvent): TwinView | undefined => {
       if (!content) return undefined;
       const rect = renderer.domElement.getBoundingClientRect();
       pointer.set(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);

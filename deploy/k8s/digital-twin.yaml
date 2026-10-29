@@ -1,23 +1,35 @@
-# Osiris Digital Twin (twin.k6labs.cz): the cluster's digital twin — structure read straight from the Kubernetes
-# API (read-only ServiceAccount, see rbac.yaml), telemetry from ClickHouse, both cached in Redis. Serves its PWA
-# (server/digital-twin/web, three.js). Sign-in through osiris-auth: the PWA signs in as the public client
-# `digital-twin`, the API introspects as `osiris-digital-twin` and answers the group `admin`.
-# Secret osiris-digital-twin: AUTH_CLIENT_SECRET, CLICKHOUSE_PASSWORD (ClickHouse user twin's; deploy/README.md).
+# Osiris Digital Twin (twin.k6labs.cz): the cluster's digital twin — structure synced from the Kubernetes API
+# (read-only ServiceAccount, see rbac.yaml) into its SQLite (DTDL models, twins, relationships; the volume below),
+# history sent as OpenTelemetry events, telemetry and history read from ClickHouse (otel, read-only user osiris).
+# Serves its PWA (server/digital-twin/web, three.js). Sign-in through osiris-auth: the PWA signs in as the public
+# client `digital-twin`, the API introspects as `osiris-digital-twin` and answers the group `admin`.
+# Secret osiris-digital-twin: AUTH_CLIENT_SECRET, CLICKHOUSE_PASSWORD (user osiris's; deploy/README.md).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: digital-twin-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: ceph-rbd
+  resources:
+    requests: { storage: 1Gi }
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: digital-twin
   labels: { app: digital-twin }
 spec:
-  # Stateless: every replica caches through Redis, so any of them can answer anything.
-  replicas: 2
+  # One replica, one writer of its SQLite; Recreate, so the old pod lets go of the volume first.
+  replicas: 1
+  strategy: { type: Recreate }
   selector:
     matchLabels: { app: digital-twin }
   template:
     metadata:
       labels: { app: digital-twin }
     spec:
-      # Service env vars (REDIS_PORT=tcp://…) would clash with our settings.
+      # Service env vars (CLICKHOUSE_PORT=tcp://… and the like) would clash with our settings.
       enableServiceLinks: false
       serviceAccountName: digital-twin
       imagePullSecrets: [{ name: ghcr-pull }]
@@ -25,9 +37,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        fsGroup: 1000
         seccompProfile: { type: RuntimeDefault }
-      topologySpreadConstraints:
-        - { maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: { matchLabels: { app: digital-twin } } }
       containers:
         - name: digital-twin
           image: ghcr.io/richardblaha/osiris-digital-twin:main
@@ -43,15 +54,11 @@ spec:
             - { name: STATIC_DIR, value: /app/server/digital-twin/web/dist }
             - { name: AUTH_URL, value: https://auth.k6labs.cz }
             - { name: AUTH_REQUIRED_GROUP, value: admin }
-            - { name: REDIS_URL, value: redis://redis:6379 }
+            - { name: DATA_DIR, value: /data }
             - { name: CLICKHOUSE_URL, value: http://clickhouse.observability.svc.cluster.local:8123 }
             # The busiris cluster's telemetry, as the collector's resource/cluster processor stamps it; keep the
             # two values in step (CLICKHOUSE_CLUSTER also appears in deploy/observability/collector.yaml).
             - { name: CLICKHOUSE_CLUSTER, value: busiris }
-            # The history (database twin): user twin reads the telemetry and writes the changes; the secret's
-            # CLICKHOUSE_PASSWORD is its TWIN_PASSWORD.
-            - { name: CLICKHOUSE_USER, value: twin }
-            - { name: HISTORY_ENABLED, value: "true" }
           envFrom:
             - secretRef: { name: osiris-digital-twin }
           securityContext:
@@ -70,9 +77,12 @@ spec:
           volumeMounts:
             # Read-only root filesystem: tsx caches in /tmp.
             - { name: tmp, mountPath: /tmp }
+            - { name: data, mountPath: /data }
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 1Gi }
+        - name: data
+          persistentVolumeClaim: { claimName: digital-twin-data }
 ---
 apiVersion: v1
 kind: Service

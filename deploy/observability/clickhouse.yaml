@@ -1,9 +1,9 @@
 # ClickHouse stores the whole cluster's telemetry (database otel: otel_logs, otel_traces, otel_metrics_*) and the web
 # analytics (database web, see web/schema.sql), written by the OpenTelemetry Collector (user otel) and read by Osiris
 # control (user osiris, read-only) for its Dashboards panels, the digital twin (twin.k6labs.cz) and the dashboard
-# (dashboard.k6labs.cz), and the digital twin's history (database twin, see twin/schema.sql; user twin). Tuned for a
-# small node: no caches it doesn't need, no system logs. The exporter's TTL (30 days) expires old data. Secret
-# clickhouse-users (not in git): OTEL_PASSWORD, OSIRIS_PASSWORD, TWIN_PASSWORD; see deploy/README.md.
+# (dashboard.k6labs.cz); the digital twin reads its telemetry and its history (OpenTelemetry events in otel_logs)
+# as osiris too. Tuned for a small node: no caches it doesn't need, no system logs. The exporter's TTL (30 days)
+# expires old data. Secret clickhouse-users (not in git): OTEL_PASSWORD, OSIRIS_PASSWORD; see deploy/README.md.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -48,10 +48,6 @@ data:
           <max_result_rows>20000</max_result_rows>
           <result_overflow_mode>break</result_overflow_mode>
         </reader>
-        <twin>
-          <max_memory_usage>402653184</max_memory_usage>
-          <max_execution_time>20</max_execution_time>
-        </twin>
       </profiles>
       <users>
         <default remove="remove"/>
@@ -60,7 +56,7 @@ data:
           <networks><ip>::/0</ip></networks>
           <profile>default</profile>
           <quota>default</quota>
-          <grants><query>GRANT ALL ON otel.*</query><query>GRANT ALL ON web.*</query><query>GRANT ALL ON twin.*</query></grants>
+          <grants><query>GRANT ALL ON otel.*</query><query>GRANT ALL ON web.*</query></grants>
         </otel>
         <osiris>
           <password from_env="OSIRIS_PASSWORD"/>
@@ -69,14 +65,6 @@ data:
           <quota>default</quota>
           <grants><query>GRANT SELECT ON otel.*</query><query>GRANT SELECT ON web.*</query></grants>
         </osiris>
-        <!-- The digital twin: reads the telemetry, records its own history (no DDL: twin/schema.sql runs as otel). -->
-        <twin>
-          <password from_env="TWIN_PASSWORD"/>
-          <networks><ip>::/0</ip></networks>
-          <profile>twin</profile>
-          <quota>default</quota>
-          <grants><query>GRANT SELECT ON otel.*</query><query>GRANT SELECT, INSERT ON twin.*</query></grants>
-        </twin>
       </users>
     </clickhouse>
 ---
@@ -93,7 +81,7 @@ spec:
     metadata:
       labels: { app: clickhouse }
       annotations:
-        config/version: "3"
+        config/version: "4"
     spec:
       securityContext:
         runAsUser: 101
@@ -110,8 +98,6 @@ spec:
               valueFrom: { secretKeyRef: { name: clickhouse-users, key: OTEL_PASSWORD } }
             - name: OSIRIS_PASSWORD
               valueFrom: { secretKeyRef: { name: clickhouse-users, key: OSIRIS_PASSWORD } }
-            - name: TWIN_PASSWORD
-              valueFrom: { secretKeyRef: { name: clickhouse-users, key: TWIN_PASSWORD } }
             # The clickhouse-backup CronJob's user and bucket (CronJob, ConfigMap and Secret clickhouse-backups are
             # deployed outside this repository; keep these so applying this manifest doesn't drop them).
             - name: BACKUP_PASSWORD

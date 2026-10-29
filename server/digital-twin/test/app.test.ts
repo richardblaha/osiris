@@ -12,7 +12,9 @@ import { ClickHouse, Telemetry } from "../src/telemetry.ts";
 import { devVerifier } from "../src/auth.ts";
 import type { TokenVerifier } from "../src/auth.ts";
 import type { Cache } from "../src/cache.ts";
-import type { TwinGraph, TwinNode } from "@osiris/shared";
+import { interfaceErrors, relationshipErrors, twinErrors, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
+import { TwinStore } from "../src/store.ts";
+import { startSync } from "../src/sync.ts";
 
 const config = loadConfig({ NODE_ENV: "test", AUTH_URL: "http://localhost:3003", CLICKHOUSE_URL: "http://ch", CLICKHOUSE_PASSWORD: "pw" });
 
@@ -36,24 +38,26 @@ const kubeFetch = vi.fn(async (url: string | URL | Request): Promise<Response> =
   return Response.json({}, { status: 404 });
 });
 
-/** ClickHouse answering one log record, whatever the SQL asks. */
-const chFetch = vi.fn(async (): Promise<Response> =>
+/** ClickHouse answering one log record, or the pod's error count when the SQL counts errors. */
+const chFetch = vi.fn(async (_url: unknown, init?: { body?: string }): Promise<Response> =>
   Response.json({
-    data: [
-      {
-        ts: "1730000000000",
-        severity: "ERROR",
-        severityNumber: "17",
-        service: "gateway",
-        namespace: "osiris",
-        pod: "gateway-abc",
-        body: "boom",
-        traceId: "0123456789abcdef0123456789abcdef",
-        spanId: "0123456789abcdef",
-        attributes: { k: "v" },
-        resource: { "k8s.pod.name": "gateway-abc" },
-      },
-    ],
+    data: init?.body?.includes("count() AS count")
+      ? [{ k0: "osiris", k1: "gateway-abc", count: "3" }]
+      : [
+          {
+            ts: "1730000000000",
+            severity: "ERROR",
+            severityNumber: "17",
+            service: "gateway",
+            namespace: "osiris",
+            pod: "gateway-abc",
+            body: "boom",
+            traceId: "0123456789abcdef0123456789abcdef",
+            spanId: "0123456789abcdef",
+            attributes: { k: "v" },
+            resource: { "k8s.pod.name": "gateway-abc" },
+          },
+        ],
   }),
 );
 
@@ -69,78 +73,79 @@ function countingCache() {
       store.set(key, value);
       loads.push(key);
     },
-    async claim() {
-      return true;
-    },
   };
   return { loads, cache };
 }
 
+const source = kubernetesSource(new Kube({ apiServer: "https://kube", token: "t", fetchFn: kubeFetch }), "k8s");
+let store: TwinStore;
+beforeAll(async () => {
+  store = await TwinStore.open(join(tmpdir(), `twin-app-${process.pid}-${Date.now()}.db`));
+  (await startSync({ source, store, intervalMs: 1e9 })).stop();
+});
+
 const app = (over: { verifier?: TokenVerifier; cache?: Cache; telemetry?: Telemetry } = {}) =>
   createApp(config, {
-    source: kubernetesSource(new Kube({ apiServer: "https://kube", token: "t", fetchFn: kubeFetch }), "k8s"),
+    source,
+    store,
     telemetry: over.telemetry ?? new Telemetry(new ClickHouse("http://ch", "osiris", "pw", chFetch as unknown as typeof fetch)),
     verifier: over.verifier ?? devVerifier(),
     cache: over.cache ?? noCache,
   });
 
-/** Finds a node by a path of names (or kinds), for walking into the twin's tree. */
-const node = (n: TwinNode, ...path: string[]): TwinNode | undefined => {
-  if (!path.length) return n;
-  const [head, ...rest] = path;
-  const child = n.children.find((c) => c.name === head || c.kind === head);
-  return child ? node(child, ...rest) : undefined;
+const json = async <T>(path: string) => {
+  const res = await app().request(path);
+  expect(res.status).toBe(200);
+  return (await res.json()) as T;
 };
 
-describe("the twin API", () => {
-  it("serves the cluster's tree, built from the Kubernetes API, with DTDL ids", async () => {
-    const res = await app().request("/api/twin");
-    expect(res.status).toBe(200);
-    const twin = (await res.json()) as { cluster: TwinNode };
-    expect(twin.cluster.name).toBe("k8s");
-    expect(twin.cluster.properties.version).toBe("v1.33.0");
-    const pod = node(twin.cluster, "osiris", "gateway", "gateway-abc")!;
-    expect(pod).toMatchObject({ kind: "pod", model: "dtmi:osiris:k8s:Pod;1" });
-    expect(pod.properties.node).toBe("node1");
-    expect(pod.children[0]!.kind).toBe("container");
+describe("the twin API, in the shape of Azure Digital Twins", () => {
+  it("serves the models: valid DTDL v3 interfaces, the base Entity among them", async () => {
+    const { value } = await json<{ value: DtdlModelData[] }>("/api/models");
+    expect(value.map((m) => m.id)).toContain("dtmi:osiris:twin:Entity;1");
+    for (const m of value) {
+      expect(interfaceErrors(m.model)).toEqual([]);
+      expect(m.uploadTime).toMatch(/^\d{4}-/);
+    }
+    const pod = await json<DtdlModelData>(`/api/models/${encodeURIComponent("dtmi:osiris:k8s:Pod;2")}`);
+    expect(pod.model.extends).toBe("dtmi:osiris:twin:Entity;1");
   });
 
-  it("serves the DTDL documents that define the tree's interfaces", async () => {
-    const res = await app().request("/api/twin/model");
-    expect(res.status).toBe(200);
-    const docs = (await res.json()) as { "@id": string; "@type": string }[];
-    expect(docs).toHaveLength(6);
-    expect(docs[0]!["@id"]).toBe("dtmi:osiris:k8s:Cluster;1");
+  it("serves the twins and relationships, every one valid against its model", async () => {
+    const models = new Map((await json<{ value: DtdlModelData[] }>("/api/models")).value.map((m): [string, DtdlInterface] => [m.id, m.model]));
+    const { value: twins } = await json<{ value: DigitalTwin[] }>("/api/digitaltwins");
+    const { value: relationships } = await json<{ value: DigitalTwinRelationship[] }>("/api/relationships");
+    expect(twins.length).toBe(6); // cluster, node, namespace, workload, pod, container
+    for (const t of twins) expect(twinErrors(t, models)).toEqual([]);
+    const byId = new Map(twins.map((t) => [t.$dtId, t]));
+    for (const r of relationships) expect(relationshipErrors(r, byId, models)).toEqual([]);
+    const pod = twins.find((t) => t.$metadata.$model === "dtmi:osiris:k8s:Pod;2")!;
+    expect(pod).toMatchObject({ name: "gateway-abc", status: "ok", phase: "running", nodeName: "node1", restarts: 0, otelResource: { "k8s.pod.name": "gateway-abc" } });
+    expect(pod.$etag).toMatch(/^W\//);
+  });
+
+  it("serves one twin, its relationships and the ones pointing at it", async () => {
+    const id = "k8s:k8s/namespace/osiris/pod/gateway-abc";
+    const pod = await json<DigitalTwin>(`/api/digitaltwins/${encodeURIComponent(id)}`);
+    expect(pod.$dtId).toBe(id);
+    const out = await json<{ value: DigitalTwinRelationship[] }>(`/api/digitaltwins/${encodeURIComponent(id)}/relationships`);
+    expect(out.value.map((r) => r.$relationshipName).sort()).toEqual(["contains", "runsOn"]);
+    const incoming = await json<{ value: { $sourceId: string; $relationshipName: string }[] }>(`/api/digitaltwins/${encodeURIComponent(id)}/incomingrelationships`);
+    expect(incoming.value).toEqual([expect.objectContaining({ $relationshipName: "contains", $sourceId: "k8s:k8s/namespace/osiris/workload-deployment/gateway" })]);
+    expect((await app().request(`/api/digitaltwins/${encodeURIComponent("k8s:nope")}`)).status).toBe(404);
+  });
+
+  it("answers each twin's error logs from the telemetry: the pod's own", async () => {
+    const { value } = await json<{ value: Record<string, number> }>("/api/telemetry/errorLogs");
+    expect(value).toEqual({ "k8s:k8s/namespace/osiris/pod/gateway-abc": 3 });
   });
 
   it("answers the history endpoints with 503 while the history is off", async () => {
-    for (const path of ["/api/twin/range", "/api/twin/at?ts=1730000000000", "/api/twin/history"]) {
+    for (const path of ["/api/history/range", "/api/digitaltwins?at=1730000000000", `/api/digitaltwins/${encodeURIComponent("k8s:k8s")}/history`]) {
       const res = await app().request(path);
       expect(res.status).toBe(503);
       expect(((await res.json()) as { code: string }).code).toBe("errors.digitalTwin.historyOff");
     }
-  });
-
-  it("serves the twin as a graph: entities and their relationships, nodes and placement included", async () => {
-    const res = await app().request("/api/twin/graph");
-    expect(res.status).toBe(200);
-    const graph = (await res.json()) as TwinGraph;
-    expect(graph.source).toBe("kubernetes");
-    const pod = graph.entities.find((e) => e.kind === "pod")!;
-    const machine = graph.entities.find((e) => e.kind === "node")!;
-    expect(machine.name).toBe("node1");
-    expect(graph.relationships).toContainEqual({ name: "runsOn", source: pod.id, target: machine.id });
-    expect(graph.relationships).toContainEqual({ name: "hasNode", source: graph.root, target: machine.id });
-  });
-
-  it("caches the tree: the second answer doesn't ask the Kubernetes API again", async () => {
-    const { cache, loads } = countingCache();
-    const instance = app({ cache });
-    await instance.request("/api/twin");
-    const calls = kubeFetch.mock.calls.length;
-    await instance.request("/api/twin");
-    expect(kubeFetch.mock.calls.length).toBe(calls);
-    expect(loads).toContain("twin:kubernetes:k8s:*:graph"); // the cluster in the key: one Redis, several twins
   });
 
   it("answers the logs page's query and caches it", async () => {
@@ -153,7 +158,7 @@ describe("the twin API", () => {
     const calls = chFetch.mock.calls.length;
     await instance.request("/api/logs?namespace=osiris&pod=gateway-abc&severity=error");
     expect(chFetch.mock.calls.length).toBe(calls);
-    expect(loads.some((k) => k.startsWith("twin:kubernetes:k8s:*:logs:"))).toBe(true);
+    expect(loads.some((k) => k.startsWith("twin:k8s:logs:"))).toBe(true);
   });
 
   it("refuses a bad query", async () => {
@@ -173,12 +178,7 @@ describe("the PWA's static files", () => {
   afterAll(() => void rm(dir, { recursive: true, force: true }));
 
   it("serves the app's files, and the index.html for every other path", async () => {
-    const instance = createApp(config, {
-      source: kubernetesSource(new Kube({ apiServer: "https://kube", token: "t", fetchFn: kubeFetch }), "k8s"),
-      verifier: devVerifier(),
-      cache: noCache,
-      staticDir: dir,
-    });
+    const instance = createApp(config, { source, store, verifier: devVerifier(), cache: noCache, staticDir: dir });
     const asset = await instance.request("/assets/app.js");
     expect(asset.status).toBe(200);
     expect(asset.headers.get("content-type")).toContain("javascript");
@@ -210,16 +210,16 @@ describe("sign-in", () => {
 
   it("answers only with a bearer token when a verifier is set", async () => {
     const instance = app({ verifier: allow });
-    expect((await instance.request("/api/twin")).status).toBe(401);
-    expect((await instance.request("/api/twin", { headers: { authorization: "Bearer bad" } })).status).toBe(401);
-    expect((await instance.request("/api/twin", { headers: { authorization: "Bearer good" } })).status).toBe(200);
+    expect((await instance.request("/api/digitaltwins")).status).toBe(401);
+    expect((await instance.request("/api/digitaltwins", { headers: { authorization: "Bearer bad" } })).status).toBe(401);
+    expect((await instance.request("/api/digitaltwins", { headers: { authorization: "Bearer good" } })).status).toBe(200);
     expect((await instance.request("/api/me", { headers: { authorization: "Bearer good" } })).status).toBe(200);
   });
 
   it("the public auth config is readable without signing in, the API is not", async () => {
     const instance = app({ verifier: refuse });
     expect((await instance.request("/auth-config.json")).status).toBe(200);
-    expect((await instance.request("/api/twin")).status).toBe(401);
+    expect((await instance.request("/api/models")).status).toBe(401);
   });
 
   it("tells the PWA where osiris-auth is", async () => {

@@ -1,5 +1,5 @@
-import type { TwinEntity, TwinRelationship, TwinStatus } from "@osiris/shared";
-import { CONTAINS, type SourceSnapshot } from "../../twin.ts";
+import type { TwinStatus } from "@osiris/shared";
+import { CONTAINS, type SourceRelationship, type SourceSnapshot, type SourceTwin } from "../../twin.ts";
 import type { NamespaceObject, NodeObject, PodObject, ReplicaSetObject } from "./kube.ts";
 import { instanceId, MODEL } from "./models.ts";
 
@@ -58,15 +58,17 @@ function owner(pod: PodObject, deploymentOf: Map<string, string>): { kind: strin
 }
 
 /**
- * The cluster as a graph: the cluster contains its namespaces, a namespace its workloads (pods grouped by owner), a
- * workload its pods, a pod its containers; the cluster has its nodes and every pod runs on one. Each entity is an
- * instance of its DTDL interface, with the OpenTelemetry attributes that name its telemetry.
+ * The cluster as twins: the cluster contains its namespaces, a namespace its workloads (pods grouped by owner), a
+ * workload its pods, a pod its containers; the cluster has its nodes and every pod runs on one. Each twin is an
+ * instance of its DTDL interface (property values typed as the model says), with the OpenTelemetry attributes that
+ * name its telemetry.
  */
 export function clusterGraph(input: ClusterInput): SourceSnapshot {
   const cluster = input.clusterName;
-  const entities: TwinEntity[] = [];
-  const relationships: TwinRelationship[] = [];
-  const add = (e: Omit<TwinEntity, "errors">) => entities.push({ ...e, errors: 0 });
+  const twins: SourceTwin[] = [];
+  const relationships: SourceRelationship[] = [];
+  const add = (id: string, model: string, name: string, status: TwinStatus, properties: Record<string, unknown>, otelResource?: Record<string, string>) =>
+    twins.push({ $dtId: id, $metadata: { $model: model }, name, status, ...properties, ...(otelResource ? { otelResource } : {}) });
   const link = (name: string, source: string, target: string) => relationships.push({ name, source, target });
 
   const deploymentOf = new Map(
@@ -78,38 +80,30 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
 
   const kubelets = new Set(input.nodes.map((n) => n.status?.nodeInfo?.kubeletVersion).filter(Boolean));
   const root = instanceId(cluster);
-  add({
-    id: root,
-    model: MODEL.Cluster,
-    kind: "cluster",
-    name: cluster,
-    status: "ok",
-    properties: {
-      version: input.version ?? "",
-      nodes: String(input.nodes.length),
-      pods: String(input.pods.length),
-      ...(kubelets.size === 1 ? { kubelet: [...kubelets][0]! } : {}),
-    },
+  add(root, MODEL.Cluster, cluster, "ok", {
+    version: input.version ?? "",
+    kubelet: kubelets.size === 1 ? [...kubelets][0]! : "",
+    nodeCount: input.nodes.length,
+    podCount: input.pods.length,
   });
 
   const nodeIds = new Map<string, string>();
   for (const node of [...input.nodes].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))) {
     const id = instanceId(cluster, ["node", node.metadata.name]);
     nodeIds.set(node.metadata.name, id);
-    add({
+    add(
       id,
-      model: MODEL.Node,
-      kind: "node",
-      name: node.metadata.name,
-      status: nodeStatus(node),
-      properties: {
+      MODEL.Node,
+      node.metadata.name,
+      nodeStatus(node),
+      {
         kubelet: node.status?.nodeInfo?.kubeletVersion ?? "",
         os: node.status?.nodeInfo?.osImage ?? "",
         cpu: node.status?.capacity?.cpu ?? "",
         memory: node.status?.capacity?.memory ?? "",
       },
-      telemetry: { "k8s.node.name": node.metadata.name },
-    });
+      { "k8s.node.name": node.metadata.name },
+    );
     link("hasNode", root, id);
   }
 
@@ -126,70 +120,47 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
   for (const ns of [...input.namespaces].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))) {
     const namespace = ns.metadata.name;
     const nsId = instanceId(cluster, ["namespace", namespace]);
-    add({
-      id: nsId,
-      model: MODEL.Namespace,
-      kind: "namespace",
-      name: namespace,
-      status: "ok",
-      properties: { phase: (ns.status?.phase ?? "active").toLowerCase() },
-      telemetry: { [NAMESPACE_ATTR]: namespace },
-    });
+    add(nsId, MODEL.Namespace, namespace, "ok", { phase: (ns.status?.phase ?? "active").toLowerCase() === "terminating" ? "terminating" : "active" }, { [NAMESPACE_ATTR]: namespace });
     link(CONTAINS, root, nsId);
 
     const workloads = [...byWorkload.values()].filter((w) => w.namespace === namespace).sort((a, b) => a.owner.name.localeCompare(b.owner.name));
     for (const { owner: o, pods } of workloads) {
       // `workload-<kind>`: a lone pod is its own workload, and the two must not share an id.
       const workloadId = instanceId(cluster, ["namespace", namespace], [`workload-${o.kind.toLowerCase()}`, o.name]);
-      add({
-        id: workloadId,
-        model: MODEL.Workload,
-        kind: "workload",
-        name: o.name,
-        status: "ok",
-        properties: { kind: o.kind, pods: String(pods.length), ready: String(pods.filter((p) => podStatus(p) === "ok").length) },
-        telemetry: { [NAMESPACE_ATTR]: namespace },
-      });
+      add(workloadId, MODEL.Workload, o.name, "ok", { ownerKind: o.kind, podCount: pods.length, readyCount: pods.filter((p) => podStatus(p) === "ok").length }, { [NAMESPACE_ATTR]: namespace });
       link(CONTAINS, nsId, workloadId);
 
       for (const pod of [...pods].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))) {
         const podId = instanceId(cluster, ["namespace", namespace], ["pod", pod.metadata.name]);
         const containers = pod.status?.containerStatuses ?? [];
-        add({
-          id: podId,
-          model: MODEL.Pod,
-          kind: "pod",
-          name: pod.metadata.name,
-          status: podStatus(pod),
-          properties: {
-            phase: phase(pod),
-            node: pod.spec.nodeName ?? "",
+        const p = phase(pod);
+        add(
+          podId,
+          MODEL.Pod,
+          pod.metadata.name,
+          podStatus(pod),
+          {
+            phase: ["pending", "running", "succeeded", "failed"].includes(p) ? p : "unknown",
+            nodeName: pod.spec.nodeName ?? "",
             ip: pod.status?.podIP ?? "",
-            ready: `${containers.filter((c) => c.ready).length}/${containers.length}`,
-            restarts: String(containers.reduce((n, c) => n + c.restartCount, 0)),
+            readyCount: containers.filter((c) => c.ready).length,
+            containerCount: containers.length,
+            restarts: containers.reduce((n, c) => n + c.restartCount, 0),
           },
-          telemetry: { [NAMESPACE_ATTR]: namespace, [POD_ATTR]: pod.metadata.name },
-        });
+          { [NAMESPACE_ATTR]: namespace, [POD_ATTR]: pod.metadata.name },
+        );
         link(CONTAINS, workloadId, podId);
         const nodeId = pod.spec.nodeName && nodeIds.get(pod.spec.nodeName);
         if (nodeId) link("runsOn", podId, nodeId);
 
         for (const c of containers) {
           const containerId = instanceId(cluster, ["namespace", namespace], ["pod", pod.metadata.name], ["container", c.name]);
-          add({
-            id: containerId,
-            model: MODEL.Container,
-            kind: "container",
-            name: c.name,
-            status: c.ready ? "ok" : "warn",
-            properties: { image: c.image, ready: String(c.ready), restarts: String(c.restartCount) },
-            // A container's log records count for its pod (the error attributes name pods).
-            telemetry: { [NAMESPACE_ATTR]: namespace, [POD_ATTR]: pod.metadata.name, [CONTAINER_ATTR]: c.name },
-          });
+          // A container's log records count for its pod (the error attributes name pods).
+          add(containerId, MODEL.Container, c.name, c.ready ? "ok" : "warn", { image: c.image, ready: c.ready, restarts: c.restartCount }, { [NAMESPACE_ATTR]: namespace, [POD_ATTR]: pod.metadata.name, [CONTAINER_ATTR]: c.name });
           link(CONTAINS, podId, containerId);
         }
       }
     }
   }
-  return { root, entities, relationships };
+  return { twins, relationships };
 }

@@ -1,5 +1,6 @@
-import type { Twin, TwinNode } from "@osiris/shared";
-import { useEffect, useState } from "react";
+import type { DtdlModelData } from "@osiris/shared/dtdl.ts";
+import { useEffect, useMemo, useState } from "react";
+import { buildScene, type TwinScene } from "./scene.ts";
 import { t } from "i18next";
 import { api } from "./api.ts";
 import { authOff, getAccessToken, login, logout } from "./auth.ts";
@@ -39,8 +40,10 @@ const toHash = (view: View) => {
 
 export function App() {
   const [view, setView] = useState<View>(parseHash);
-  const [twin, setTwin] = useState<Twin>();
-  const [selected, setSelected] = useState<TwinNode>();
+  /** The DTDL models, loaded once; the twins, their relationships and error counts, live or at `at`. */
+  const [models, setModels] = useState<DtdlModelData[]>();
+  const [data, setData] = useState<{ twins: Awaited<ReturnType<typeof api.twins>>; relationships: Awaited<ReturnType<typeof api.relationships>>; errors: Record<string, number>; at: number | null }>();
+  const [selectedId, setSelectedId] = useState<string>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   // undefined while the stored token is being checked: nothing asks the API before it's known whether there is one.
@@ -66,14 +69,24 @@ export function App() {
     if (signedIn) void api.range().then((r) => setHistoryFrom(r.from ?? undefined), () => setHistoryFrom(undefined));
   }, [signedIn]);
 
-  /** The twin loads once signed in and, live, refreshes every minute (the server caches it in Redis anyway). */
+  /** The twin loads once signed in and, live, refreshes every minute (the server syncs every 30 s). */
   const loadTwin = () =>
     attempt(setBusy, setError, async () => {
-      const next = at === null ? await api.twin() : await api.at(at);
-      setTwin(next);
-      // The selection follows the refreshed tree (its new status and properties), or goes when its node is gone.
-      setSelected((was) => (was ? findById(next.cluster, was.id) : undefined));
+      const [m, twins, relationships, errors] = await Promise.all([
+        models ? Promise.resolve(models) : api.models(),
+        api.twins(at),
+        api.relationships(at),
+        api.errorLogs(at).catch(() => ({})),
+      ]);
+      setModels(m);
+      setData({ twins, relationships, errors, at });
     });
+  const scene: TwinScene | undefined = useMemo(
+    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.at) : undefined),
+    [models, data],
+  );
+  // The selection follows the refreshed scene (its new status and properties), or goes when its twin is gone.
+  const selected = selectedId ? scene?.byId.get(selectedId) : undefined;
   useEffect(() => {
     if (!signedIn) return;
     void loadTwin();
@@ -91,10 +104,10 @@ export function App() {
   }, []);
 
   const openFromNode = (page: "logs" | "metrics" | "traces") => {
-    const node = selected ?? twin?.cluster;
-    if (!node) return;
-    // Pages filter by the attributes that name the entity's telemetry (OpenTelemetry's k8s namespace and pod).
-    navigate({ kind: page, preset: { namespace: node.telemetry?.["k8s.namespace.name"], pod: node.telemetry?.["k8s.pod.name"] } } as View);
+    // Pages filter by the attributes that name the twin's telemetry (its otelResource: OpenTelemetry's k8s
+    // namespace and pod).
+    const otel = (selected?.twin.otelResource ?? {}) as Record<string, string>;
+    navigate({ kind: page, preset: { namespace: otel["k8s.namespace.name"], pod: otel["k8s.pod.name"] } } as View);
   };
 
   const nav = [
@@ -151,24 +164,23 @@ export function App() {
           <div className="flex h-full">
             <div className="flex min-w-0 flex-1 flex-col">
               <div className="relative min-h-0 flex-1">
-                <Loading show={busy && !twin} />
+                <Loading show={busy && !scene} />
                 <ErrorNotice error={error} />
-                {twin ? (
-                  twin.cluster.children.length ? (
-                    <Twin3D twin={twin} selected={selected} onSelect={(node) => setSelected(node)} />
+                {scene ? (
+                  scene.top.length ? (
+                    <Twin3D scene={scene} selected={selected} onSelect={(node) => setSelectedId(node.id)} />
                   ) : (
                     <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
                   )
                 ) : null}
                 <p className="pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:hint")}</p>
                 <p className="pointer-events-none absolute top-2 start-4 text-xs text-fg-muted">
-                  {t("twin:counts.namespaces", { count: twin?.cluster.children.length ?? 0 })}
-                  {twin ? ` · ${t("twin:counts.pods", { count: countPods(twin.cluster) })}` : ""}
+                  {scene ? t("twin:counts.twins", { count: scene.byId.size }) : ""}
                 </p>
               </div>
               {historyFrom !== undefined && <Timeline from={historyFrom} at={at} onChange={setAt} />}
             </div>
-            {selected ? <TwinDetail node={selected} at={at} onOpen={openFromNode} /> : <p className="pointer-events-none absolute end-4 top-2 hidden text-xs text-fg-muted md:block">{t("twin:noSelection")}</p>}
+            {selected && scene ? <TwinDetail node={selected} scene={scene} onSelect={setSelectedId} onOpen={openFromNode} /> : <p className="pointer-events-none absolute end-4 top-2 hidden text-xs text-fg-muted md:block">{t("twin:noSelection")}</p>}
           </div>
         ) : view.kind === "logs" ? (
           <Logs
@@ -190,18 +202,3 @@ export function App() {
     </div>
   );
 }
-
-const findById = (node: TwinNode, id: string): TwinNode | undefined => {
-  if (node.id === id) return node;
-  for (const child of node.children) {
-    const found = findById(child, id);
-    if (found) return found;
-  }
-  return undefined;
-};
-
-const countPods = (node: TwinNode): number => {
-  let n = 0;
-  for (const child of node.children) n += child.kind === "pod" ? 1 : countPods(child);
-  return n;
-};

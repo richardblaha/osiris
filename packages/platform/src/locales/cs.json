@@ -131,7 +131,7 @@
       "queryFailed": "Dotaz do ClickHouse selhal: {{detail}}"
     },
     "digitalTwin": {
-      "k8sFailed": "Dotaz na Kubernetes API selhal: {{detail}}",
+      "notFound": "Takový twin ani model neexistuje.",
       "signedIn": "Nejdřív se přihlaste.",
       "historyOff": "Historie dvojčete není zapnutá.",
       "historyMissing": "Historie dvojčete tak daleko nesahá."

@@ -1,273 +1,194 @@
-import type { TwinChange, TwinEntity, TwinGraph, TwinRelationship, TwinStatus } from "@osiris/shared";
+import type { TwinChange, TwinStatus } from "@osiris/shared";
+import type { DigitalTwin, DigitalTwinRelationship } from "@osiris/shared/dtdl.ts";
+import type { SyncResult } from "./store.ts";
 import type { ClickHouse } from "./telemetry.ts";
-import { CONTAINS, type SourceSnapshot } from "./twin.ts";
+import { CONTAINS } from "./twin.ts";
 
-const ENTITIES = "twin.entity_events";
-const RELATIONSHIPS = "twin.relationship_events";
 /** A full checkpoint once a day: the state at any time is the newest checkpoint before it plus the changes after. */
 export const CHECKPOINT_MS = 24 * 3_600_000;
+export const ENTITY_EVENT = "twin.entity";
+export const RELATIONSHIP_EVENT = "twin.relationship";
 
-/** ClickHouse's DateTime64(3) text form, in UTC. */
-const chTime = (ms: number) => new Date(ms).toISOString().replace("T", " ").replace("Z", "");
-const relKey = (r: TwinRelationship) => `${r.name}\u0000${r.source}\u0000${r.target}`;
-const sorted = (m: Record<string, string> | undefined) => Object.fromEntries(Object.entries(m ?? {}).sort(([a], [b]) => a.localeCompare(b)));
+/** Emits one OpenTelemetry log record (`eventEmitter` of @osiris/platform/telemetry.ts). */
+export type Emit = (name: string, attributes: Record<string, string>, timestampMs: number) => void;
 
-/** What an entity is, for telling whether it changed: everything but its error count, which is telemetry. */
-const fingerprint = (e: TwinEntity) => JSON.stringify([e.model, e.kind, e.name, e.status, sorted(e.properties), sorted(e.telemetry)]);
+const contentsOf = (t: DigitalTwin) => Object.fromEntries(Object.entries(t).filter(([k]) => !k.startsWith("$")));
 
-/** The ids up the contains tree, nearest first: an entity's history includes its descendants' changes. */
-function ancestorsOf(snapshot: { root: string; relationships: TwinRelationship[] }): Map<string, string[]> {
+/** The ids up the contains tree, nearest first: a twin's history includes its descendants' changes. */
+function ancestorsOf(relationships: DigitalTwinRelationship[]): (id: string) => string[] {
   const parent = new Map<string, string>();
-  for (const r of snapshot.relationships) if (r.name === CONTAINS && !parent.has(r.target)) parent.set(r.target, r.source);
-  const memo = new Map<string, string[]>();
-  const up = (id: string): string[] => {
-    const known = memo.get(id);
-    if (known) return known;
+  for (const r of relationships) if (r.$relationshipName === CONTAINS && !parent.has(r.$targetId)) parent.set(r.$targetId, r.$sourceId);
+  return (id) => {
     const chain: string[] = [];
     const seen = new Set([id]);
     for (let p = parent.get(id); p && !seen.has(p); p = parent.get(p)) {
       chain.push(p);
       seen.add(p);
     }
-    memo.set(id, chain);
     return chain;
   };
-  return new Map([...parent.keys()].map((id) => [id, up(id)]));
 }
 
-interface EntityRow {
-  entity_id: string;
-  change: string;
-  model: string;
-  kind: string;
-  name: string;
-  status: TwinStatus;
-  properties: Record<string, string>;
-  telemetry: Record<string, string>;
+/**
+ * The twin's history as OpenTelemetry events: every change a sync makes (and a checkpoint of everything once a day)
+ * goes out as a log record through the collector into ClickHouse's `otel_logs`, next to the rest of the telemetry.
+ * The twin keeps no history of its own.
+ */
+export class HistoryLog {
+  constructor(
+    private readonly emit: Emit,
+    /** The twin's name (CLUSTER_NAME), so one otel_logs holds the history of several twins. */
+    private readonly twin: string,
+    private readonly source: string,
+  ) {}
+
+  private entity(change: string, t: DigitalTwin, ancestors: string[], ts: number, extra: Record<string, string> = {}) {
+    this.emit(
+      ENTITY_EVENT,
+      {
+        "twin.id": this.twin,
+        "twin.source": this.source,
+        "twin.change": change,
+        "dt.id": t.$dtId,
+        "dt.model": t.$metadata.$model,
+        "dt.name": String(t.name ?? ""),
+        "dt.status": String(t.status ?? ""),
+        "dt.contents": JSON.stringify(contentsOf(t)),
+        "dt.ancestors": JSON.stringify(ancestors),
+        ...extra,
+      },
+      ts,
+    );
+  }
+
+  private relationship(change: string, r: DigitalTwinRelationship, ts: number) {
+    this.emit(
+      RELATIONSHIP_EVENT,
+      { "twin.id": this.twin, "twin.source": this.source, "twin.change": change, "rel.id": r.$relationshipId, "rel.name": r.$relationshipName, "rel.source": r.$sourceId, "rel.target": r.$targetId },
+      ts,
+    );
+  }
+
+  /**
+   * Writes a sync's changes, and with `all` (a checkpoint) every twin and relationship as they are now. `current` are
+   * the relationships after the sync (for the ancestors). Returns the events sent.
+   */
+  record(result: SyncResult, current: DigitalTwinRelationship[], all?: { twins: DigitalTwin[] }): number {
+    const ts = result.ts;
+    // Ancestors from the relationships as they are now, and for removed twins as they were.
+    const up = ancestorsOf([...current, ...result.relationshipsRemoved]);
+    let n = 0;
+    const count = () => void n++;
+    for (const r of result.relationshipsAdded) (this.relationship("added", r, ts), count());
+    for (const r of result.relationshipsRemoved) (this.relationship("removed", r, ts), count());
+    for (const t of result.added) (this.entity("added", t, up(t.$dtId), ts), count());
+    for (const { before, after, changed } of result.changed)
+      (this.entity("changed", after, up(after.$dtId), ts, { "dt.previous_status": String(before.status ?? ""), "dt.changed": JSON.stringify(changed) }), count());
+    for (const t of result.removed) (this.entity("removed", t, up(t.$dtId), ts), count());
+    if (all) {
+      for (const r of current) (this.relationship("checkpoint", r, ts), count());
+      for (const t of all.twins) (this.entity("checkpoint", t, up(t.$dtId), ts), count());
+    }
+    return n;
+  }
 }
 
-/** The recorded state of the twin: what the recorder compares the next snapshot with. */
+/** The twin as it was at a time: its twins and relationships (from the newest checkpoint and the changes after). */
 export interface RecordedState {
-  entities: Map<string, TwinEntity>;
-  relationships: Map<string, TwinRelationship>;
-  /** When the newest checkpoint was written; null before the first. */
-  checkpoint: number | null;
+  twins: DigitalTwin[];
+  relationships: DigitalTwinRelationship[];
 }
 
-/** The twin's history in ClickHouse (deploy/observability/twin/schema.sql): changes only, a checkpoint a day. */
-export class HistoryStore {
+const attr = (key: string) => `LogAttributes['${key}']`;
+
+/** Reads the history back from ClickHouse's `otel_logs` (read-only, values always as parameters). */
+export class HistoryReader {
   constructor(
     private readonly ch: ClickHouse,
-    /** The twin's name (CLUSTER_NAME): one database holds the history of several twins. */
-    readonly twin: string,
-    readonly source: string,
+    private readonly twin: string,
+    /** The twin's OpenTelemetry service name (its records' ServiceName). */
+    private readonly service: string,
   ) {}
+
+  private where(event: string) {
+    return `ServiceName = {service:String} AND ${attr("event.name")} = '${event}' AND ${attr("twin.id")} = {twin:String}`;
+  }
+
+  private params(extra: Record<string, string | number> = {}) {
+    return { service: this.service, twin: this.twin, ...extra };
+  }
 
   /** The newest checkpoint at or before `at` (epoch ms), or null when there's none yet. */
   async checkpointBefore(at: number): Promise<number | null> {
     // Aliases never reuse a column's name: ClickHouse would read the alias in WHERE.
     const [row] = await this.ch.query<{ last_ms: string; n: string }>(
-      `SELECT toUnixTimestamp64Milli(max(ts)) AS last_ms, count() AS n FROM ${ENTITIES} WHERE twin = {twin:String} AND change = 'checkpoint' AND ts <= fromUnixTimestamp64Milli({at:Int64})`,
-      { twin: this.twin, at },
+      `SELECT toUnixTimestamp64Milli(max(Timestamp)) AS last_ms, count() AS n FROM otel_logs
+       WHERE ${this.where(ENTITY_EVENT)} AND ${attr("twin.change")} = 'checkpoint' AND Timestamp <= fromUnixTimestamp64Milli({at:Int64})`,
+      this.params({ at }),
     );
-    // max() of nothing is the epoch, so a missing checkpoint shows as the count.
     return row && Number(row.n) > 0 ? Number(row.last_ms) : null;
-  }
-
-  /** The twin as it was at `at`: the newest checkpoint before it and every change after, the latest per entity. */
-  async stateAt(at: number): Promise<RecordedState> {
-    const checkpoint = await this.checkpointBefore(at);
-    if (checkpoint === null) return { entities: new Map(), relationships: new Map(), checkpoint };
-    const params = { twin: this.twin, from: checkpoint, at };
-    const window = `twin = {twin:String} AND ts BETWEEN fromUnixTimestamp64Milli({from:Int64}) AND fromUnixTimestamp64Milli({at:Int64})`;
-    const [entities, relationships] = await Promise.all([
-      this.ch.query<EntityRow>(
-        `SELECT entity_id, argMax(change, ts) AS change, argMax(model, ts) AS model, argMax(kind, ts) AS kind, argMax(name, ts) AS name,
-                argMax(status, ts) AS status, argMax(properties, ts) AS properties, argMax(telemetry, ts) AS telemetry
-         FROM ${ENTITIES} WHERE ${window} GROUP BY entity_id HAVING change != 'removed'`,
-        params,
-      ),
-      this.ch.query<{ name: string; source_id: string; target_id: string; change: string }>(
-        `SELECT name, source_id, target_id, argMax(change, ts) AS change FROM ${RELATIONSHIPS} WHERE ${window}
-         GROUP BY name, source_id, target_id HAVING change != 'removed'`,
-        params,
-      ),
-    ]);
-    return {
-      checkpoint,
-      entities: new Map(
-        entities.map((r) => [
-          r.entity_id,
-          { id: r.entity_id, model: r.model, kind: r.kind, name: r.name, status: r.status, errors: 0, properties: r.properties ?? {}, ...(Object.keys(r.telemetry ?? {}).length ? { telemetry: r.telemetry } : {}) },
-        ]),
-      ),
-      relationships: new Map(
-        relationships.map((r) => {
-          const rel = { name: r.name, source: r.source_id, target: r.target_id };
-          return [relKey(rel), rel];
-        }),
-      ),
-    };
-  }
-
-  /** The graph at `at`, without error counts (the caller adds them for that time). */
-  async graphAt(at: number, root: string): Promise<SourceSnapshot | null> {
-    const state = await this.stateAt(at);
-    if (!state.entities.has(root)) return null;
-    return { root, entities: [...state.entities.values()], relationships: [...state.relationships.values()] };
   }
 
   /** How far back the history goes: the first checkpoint, or null before any. */
   async range(): Promise<{ from: number | null; to: number }> {
     const [row] = await this.ch.query<{ first_ms: string; n: string }>(
-      `SELECT toUnixTimestamp64Milli(min(ts)) AS first_ms, count() AS n FROM ${ENTITIES} WHERE twin = {twin:String} AND change = 'checkpoint'`,
-      { twin: this.twin },
+      `SELECT toUnixTimestamp64Milli(min(Timestamp)) AS first_ms, count() AS n FROM otel_logs WHERE ${this.where(ENTITY_EVENT)} AND ${attr("twin.change")} = 'checkpoint'`,
+      this.params(),
     );
     return { from: row && Number(row.n) > 0 ? Number(row.first_ms) : null, to: Date.now() };
   }
 
-  /** The changes of an entity and its descendants (or of the whole twin), newest first. */
-  async changes(f: { entity?: string; from: number; to: number; limit: number }): Promise<TwinChange[]> {
-    const params: Record<string, string | number> = { twin: this.twin, from: f.from, to: f.to, limit: f.limit };
-    const where = [
-      "twin = {twin:String}",
-      "change != 'checkpoint'",
-      "ts BETWEEN fromUnixTimestamp64Milli({from:Int64}) AND fromUnixTimestamp64Milli({to:Int64})",
-    ];
-    if (f.entity) {
-      where.push("(entity_id = {entity:String} OR has(ancestors, {entity:String}))");
-      params.entity = f.entity;
-    }
-    const rows = await this.ch.query<EntityRow & { at_ms: string; previous_status: string; changed: string[] }>(
-      `SELECT toUnixTimestamp64Milli(ts) AS at_ms, entity_id, change, kind, name, status, previous_status, changed, properties
-       FROM ${ENTITIES} WHERE ${where.join(" AND ")} ORDER BY ts DESC, entity_id LIMIT {limit:UInt32}`,
-      params,
+  /** The twin at `at`: the newest checkpoint before it and every change after, the latest per twin; null before any. */
+  async stateAt(at: number): Promise<RecordedState | null> {
+    const checkpoint = await this.checkpointBefore(at);
+    if (checkpoint === null) return null;
+    const window = `Timestamp BETWEEN fromUnixTimestamp64Milli({from:Int64}) AND fromUnixTimestamp64Milli({at:Int64})`;
+    const params = this.params({ from: checkpoint, at });
+    const [twins, relationships] = await Promise.all([
+      this.ch.query<{ id: string; change: string; model: string; contents: string; updated_ms: string }>(
+        `SELECT ${attr("dt.id")} AS id, argMax(${attr("twin.change")}, Timestamp) AS change, argMax(${attr("dt.model")}, Timestamp) AS model,
+                argMax(${attr("dt.contents")}, Timestamp) AS contents, toUnixTimestamp64Milli(max(Timestamp)) AS updated_ms
+         FROM otel_logs WHERE ${this.where(ENTITY_EVENT)} AND ${window} GROUP BY id HAVING change != 'removed'`,
+        params,
+      ),
+      this.ch.query<{ source: string; id: string; change: string; name: string; target: string }>(
+        `SELECT ${attr("rel.source")} AS source, ${attr("rel.id")} AS id, argMax(${attr("twin.change")}, Timestamp) AS change,
+                any(${attr("rel.name")}) AS name, any(${attr("rel.target")}) AS target
+         FROM otel_logs WHERE ${this.where(RELATIONSHIP_EVENT)} AND ${window} GROUP BY source, id HAVING change != 'removed'`,
+        params,
+      ),
+    ]);
+    return {
+      twins: twins.map((r) => ({
+        $dtId: r.id,
+        $metadata: { $model: r.model, $lastUpdateTime: new Date(Number(r.updated_ms)).toISOString() },
+        ...(JSON.parse(r.contents || "{}") as Record<string, unknown>),
+      })),
+      relationships: relationships.map((r) => ({ $relationshipId: r.id, $sourceId: r.source, $relationshipName: r.name, $targetId: r.target })),
+    };
+  }
+
+  /** The changes of a twin and its descendants, newest first, never the checkpoints. */
+  async changes(f: { dtId: string; from: number; to: number; limit: number }): Promise<TwinChange[]> {
+    const rows = await this.ch.query<{ at_ms: string; id: string; change: string; model: string; name: string; status: string; previous: string; changed: string }>(
+      `SELECT toUnixTimestamp64Milli(Timestamp) AS at_ms, ${attr("dt.id")} AS id, ${attr("twin.change")} AS change, ${attr("dt.model")} AS model,
+              ${attr("dt.name")} AS name, ${attr("dt.status")} AS status, ${attr("dt.previous_status")} AS previous, ${attr("dt.changed")} AS changed
+       FROM otel_logs
+       WHERE ${this.where(ENTITY_EVENT)} AND ${attr("twin.change")} != 'checkpoint'
+         AND Timestamp BETWEEN fromUnixTimestamp64Milli({from:Int64}) AND fromUnixTimestamp64Milli({to:Int64})
+         AND (${attr("dt.id")} = {dt:String} OR has(JSONExtract(${attr("dt.ancestors")}, 'Array(String)'), {dt:String}))
+       ORDER BY Timestamp DESC, id LIMIT {limit:UInt32}`,
+      this.params({ dt: f.dtId, from: f.from, to: f.to, limit: f.limit }),
     );
     return rows.map((r) => ({
       ts: Number(r.at_ms),
-      entityId: r.entity_id,
-      kind: r.kind,
+      dtId: r.id,
+      model: r.model,
       name: r.name,
       change: r.change as TwinChange["change"],
-      status: r.status,
-      previousStatus: (r.previous_status || null) as TwinStatus | null,
-      changed: r.changed ?? [],
-      properties: r.properties ?? {},
+      status: r.status as TwinStatus,
+      previousStatus: (r.previous || null) as TwinStatus | null,
+      changed: r.changed ? (JSON.parse(r.changed) as string[]) : [],
     }));
   }
-
-  /**
-   * Writes what changed between `before` and the graph: added, changed and removed entities and relationships, or
-   * every one of them as a checkpoint. Returns how many rows went in.
-   */
-  async write(graph: TwinGraph, before: RecordedState, checkpoint: boolean): Promise<number> {
-    const ts = chTime(graph.ts);
-    const ancestors = ancestorsOf(graph);
-    const entityRows: object[] = [];
-    const row = (e: TwinEntity, change: string, previous?: TwinEntity, changed: string[] = []) => ({
-      ts,
-      twin: this.twin,
-      source: this.source,
-      entity_id: e.id,
-      change,
-      model: e.model,
-      kind: e.kind,
-      name: e.name,
-      status: e.status,
-      previous_status: previous?.status ?? "",
-      changed,
-      properties: e.properties,
-      telemetry: e.telemetry ?? {},
-      ancestors: ancestors.get(e.id) ?? [],
-    });
-    const now = new Map(graph.entities.map((e) => [e.id, e]));
-    for (const e of graph.entities) {
-      const was = before.entities.get(e.id);
-      // A checkpoint carries every entity; a change in the same round is still written, for the list of changes.
-      if (checkpoint) entityRows.push(row(e, "checkpoint", was));
-      if (!was) entityRows.push(row(e, "added"));
-      else if (fingerprint(was) !== fingerprint(e)) {
-        const keys = new Set([...Object.keys(was.properties), ...Object.keys(e.properties)]);
-        const changed = [...keys].filter((k) => was.properties[k] !== e.properties[k]).sort();
-        if (was.status !== e.status) changed.unshift("status");
-        entityRows.push(row(e, "changed", was, changed));
-      }
-    }
-    // A removed entity is written as it was last seen, with the ancestors it had then.
-    const oldAncestors = ancestorsOf({ root: "", relationships: [...before.relationships.values()] });
-    for (const [id, was] of before.entities)
-      if (!now.has(id)) entityRows.push({ ...row(was, "removed", was), ancestors: oldAncestors.get(id) ?? [] });
-
-    const relRows: object[] = [];
-    const rel = (r: TwinRelationship, change: string) => ({ ts, twin: this.twin, source: this.source, name: r.name, source_id: r.source, target_id: r.target, change });
-    const rels = new Map(graph.relationships.map((r) => [relKey(r), r]));
-    for (const [key, r] of rels) {
-      if (checkpoint) relRows.push(rel(r, "checkpoint"));
-      if (!before.relationships.has(key)) relRows.push(rel(r, "added"));
-    }
-    for (const [key, r] of before.relationships) if (!rels.has(key)) relRows.push(rel(r, "removed"));
-
-    // Relationships first: a reader between the two inserts sees no entity without its place in the tree.
-    await this.ch.insert(RELATIONSHIPS, relRows);
-    await this.ch.insert(ENTITIES, entityRows);
-    return entityRows.length + relRows.length;
-  }
-}
-
-/** The graph as the state the next comparison starts from (error counts left out). */
-export const stateOf = (graph: TwinGraph, checkpoint: number | null): RecordedState => ({
-  entities: new Map(graph.entities.map((e) => [e.id, { ...e, errors: 0 }])),
-  relationships: new Map(graph.relationships.map((r) => [relKey(r), r])),
-  checkpoint,
-});
-
-/** Who records: with several replicas, the one holding the lease (Redis); alone, always. */
-export interface Lease {
-  hold(ttlSeconds: number): Promise<boolean>;
-}
-
-/**
- * Records the twin's changes: every `intervalMs` the replica holding the lease reads the graph, compares it with the
- * recorded state (from ClickHouse when it takes over) and writes the difference, and a checkpoint once a day. A
- * failing source or ClickHouse skips the round; the next one compares with what was last written.
- */
-export function startRecorder(options: {
-  history: HistoryStore;
-  graph: () => Promise<TwinGraph>;
-  lease: Lease;
-  intervalMs: number;
-  log?: (message: string, err?: unknown) => void;
-}): { stop(): void; round(): Promise<number> } {
-  const { history, graph, lease, intervalMs } = options;
-  const log = options.log ?? ((m, e) => console.error(m, e ?? ""));
-  let state: RecordedState | undefined;
-  let busy = false;
-
-  const round = async (): Promise<number> => {
-    if (busy) return 0;
-    busy = true;
-    try {
-      // Another replica may have written meanwhile: whoever takes the lease starts from what's in ClickHouse.
-      if (!(await lease.hold(Math.ceil((intervalMs * 3) / 1000)))) {
-        state = undefined;
-        return 0;
-      }
-      const current = await graph();
-      state ??= await history.stateAt(current.ts);
-      const checkpoint = state.checkpoint === null || current.ts - state.checkpoint >= CHECKPOINT_MS;
-      const written = await history.write(current, state, checkpoint);
-      state = stateOf(current, checkpoint ? current.ts : state.checkpoint);
-      return written;
-    } catch (err) {
-      log("Recording the twin's history failed", err);
-      state = undefined;
-      return 0;
-    } finally {
-      busy = false;
-    }
-  };
-  const timer = setInterval(() => void round(), intervalMs);
-  timer.unref();
-  void round();
-  return { stop: () => clearInterval(timer), round };
 }

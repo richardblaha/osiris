@@ -6,12 +6,12 @@ import { z } from "zod";
 import { errorResponse, HttpError, requestLocale, ValidationError } from "@osiris/platform/i18n.ts";
 import { ServiceError } from "@osiris/platform/http.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
-import type { TwinGraph } from "@osiris/shared";
 import type { Identity, TokenVerifier } from "./auth.ts";
 import type { Cache } from "./cache.ts";
 import type { Config } from "./config.ts";
-import type { HistoryStore } from "./history.ts";
-import { graphOf, treeOf, type TwinSource } from "./twin.ts";
+import type { HistoryReader } from "./history.ts";
+import type { TwinStore } from "./store.ts";
+import { errorsByTwin, type TwinSource } from "./twin.ts";
 import type { MetricType, Telemetry } from "./telemetry.ts";
 
 const HOUR = 3_600_000;
@@ -36,48 +36,31 @@ const csp = (authUrl?: string) =>
   `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${authUrl ? ` ${new URL(authUrl).origin}` : ""}; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'`;
 
 export interface AppOptions {
-  /** The adapter the twin mirrors (Kubernetes). */
+  /** The adapter the twin mirrors (Kubernetes): its error attributes name the twins' logs. */
   source: TwinSource;
+  /** The twin's structure (SQLite), kept in step with the source by the sync. */
+  store: TwinStore;
   telemetry?: Telemetry;
   verifier?: TokenVerifier;
   cache: Cache;
   staticDir?: string;
-  /** The twin's recorded history (HISTORY_ENABLED); without it the history endpoints answer 503. */
-  history?: HistoryStore;
-}
-
-/** The cache keys' prefix: one Redis may serve twins of several clusters, so it names the source, cluster and telemetry. */
-export const cachePrefix = (config: Config, source: TwinSource) => `twin:${source.name}:${config.CLUSTER_NAME}:${config.CLICKHOUSE_CLUSTER ?? "*"}`;
-
-/** The twin's live graph: the source's snapshot (and ClickHouse's error counts), cached for CACHE_TTL_SECONDS. */
-export function graphLoader(config: Config, { source, telemetry, cache }: Pick<AppOptions, "source" | "telemetry" | "cache">) {
-  const key = `${cachePrefix(config, source)}:graph`;
-  return async (): Promise<TwinGraph> => {
-    const cached = await cache.get<TwinGraph>(key);
-    if (cached) return cached;
-    const snapshot = await source.snapshot();
-    // The twin works without telemetry: no error counts is better than no twin.
-    const counts = telemetry && source.errorAttributes?.length ? await telemetry.errorCounts(source.errorAttributes).catch(() => new Map<string, number>()) : new Map<string, number>();
-    const value = graphOf(source, snapshot, counts);
-    await cache.set(key, value, config.CACHE_TTL_SECONDS);
-    return value;
-  };
+  /** The twin's history in OpenTelemetry's logs; without it the history endpoints answer 503. */
+  history?: HistoryReader;
 }
 
 /**
- * Osiris Digital Twin's HTTP app: the cluster's twin as DTDL documents (`/api/twin/model`) and the live tree
- * (`/api/twin`, structure from the source adapter, error counts from ClickHouse, both cached in Redis) and its
- * graph (`/api/twin/graph`), the
- * telemetry pages' data (logs, metrics, traces), and the PWA itself. Sign-in is osiris-auth's: the PWA signs in
- * with OIDC, the API introspects the token and answers members of the configured group.
+ * Osiris Digital Twin's HTTP app. The twin in the shape of the Azure Digital Twins API, DTDL's de facto instance
+ * format: `/api/models` (DTDL v3 interfaces), `/api/digitaltwins/{id}`, its relationships and incoming relationships,
+ * plus the lists the PWA draws from (`/api/digitaltwins`, `/api/relationships`; `?at=` for a past time) and each
+ * twin's history. Structure from SQLite; telemetry and history from OpenTelemetry's ClickHouse; the telemetry
+ * pages' data (logs, metrics, traces) and the PWA itself. Sign-in is osiris-auth's: the PWA signs in with OIDC, the
+ * API introspects the token and answers members of the configured group.
  */
 export function createApp(config: Config, options: AppOptions) {
-  const { source, telemetry, verifier, cache, staticDir, history } = options;
+  const { source, store, telemetry, verifier, cache, staticDir, history } = options;
   const CSP = csp(config.AUTH_URL);
   const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
-
-  const prefix = cachePrefix(config, source);
-  const graph = graphLoader(config, options);
+  const prefix = `twin:${config.CLUSTER_NAME}`;
 
   /** An endpoint whose answer is cached: the key a hash of the query, the value fresh when the key misses. Epoch
    * times are bucketed to the TTL before hashing, so a repeated question (the pages' `now`-anchored ranges) hits. */
@@ -100,14 +83,14 @@ export function createApp(config: Config, options: AppOptions) {
     if (!telemetry) throw new HttpError(503, "errors.telemetryOff");
     return telemetry;
   };
-  const sourceFailing = async <T>(action: () => Promise<T>): Promise<T> => {
-    try {
-      return await action();
-    } catch (err) {
-      console.error(`The twin's source (${source.name}) failed`, err);
-      throw new HttpError(502, "errors.digitalTwin.k8sFailed", { detail: (err as Error).message.slice(0, 300) });
-    }
+  /** The twins and relationships now (SQLite) or at a past time (the history). */
+  const stateAt = async (at: number | undefined) => {
+    if (at === undefined) return { twins: await store.twins(), relationships: await store.relationships() };
+    const state = await failing(() => h().stateAt(Math.min(at, Date.now())));
+    if (!state) throw new HttpError(404, "errors.digitalTwin.historyMissing");
+    return state;
   };
+  const atQuery = z.object({ at: z.coerce.number().int().positive().optional() });
   const failing = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
       return await action();
@@ -153,34 +136,49 @@ export function createApp(config: Config, options: AppOptions) {
     })
     .get("/api/me", (c) => c.json(c.get("identity") ?? null))
 
-    // The twin: the DTDL documents that define it, the graph of their instances and its containment tree.
-    .get("/api/twin", async (c) => c.json(treeOf(await sourceFailing(graph))))
-    .get("/api/twin/graph", async (c) => c.json(await sourceFailing(graph)))
-    .get("/api/twin/model", (c) => c.json(source.models()))
-    // The twin's history: how far back it goes, the tree as it was at a time, and the changes under an entity.
-    .get("/api/twin/range", async (c) => c.json(await failing(() => h().range())))
-    .get("/api/twin/at", async (c) => {
-      const { ts } = parse(z.object({ ts: z.coerce.number().int().positive() }), c.req.query());
-      const root = (await sourceFailing(graph)).root;
-      const tree = await cached("at", { ts }, config.CACHE_DATA_TTL_SECONDS, () =>
-        failing(async () => {
-          const snapshot = await h().graphAt(Math.min(ts, Date.now()), root);
-          if (!snapshot) throw new HttpError(404, "errors.digitalTwin.historyMissing");
-          const counts = telemetry && source.errorAttributes?.length ? await telemetry.errorCounts(source.errorAttributes, ts).catch(() => new Map<string, number>()) : new Map<string, number>();
-          return { ...treeOf(graphOf(source, snapshot, counts, ts)), historical: true };
-        }),
-      );
-      return c.json(tree);
+    // The twin, in the shape of the Azure Digital Twins API: models, twins and their relationships.
+    .get("/api/models", async (c) => c.json({ value: await store.models() }))
+    .get("/api/models/:id", async (c) => {
+      const model = (await store.models()).find((m) => m.id === c.req.param("id"));
+      if (!model) throw new HttpError(404, "errors.digitalTwin.notFound");
+      return c.json(model);
     })
-    .get("/api/twin/history", async (c) => {
-      const f = parse(
-        rangeQuery.and(z.object({ entity: z.string().max(2000).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) })),
-        c.req.query(),
-      );
-      return c.json(await cached("history", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => h().changes(f))));
+    .get("/api/digitaltwins", async (c) => {
+      const { at } = parse(atQuery, c.req.query());
+      const state = at === undefined ? { twins: await store.twins() } : await cached("twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(at));
+      return c.json({ value: state.twins });
     })
-
-    // The telemetry pages: the same queries the dashboard reads ClickHouse with, cached briefly.
+    .get("/api/relationships", async (c) => {
+      const { at } = parse(atQuery, c.req.query());
+      const state = at === undefined ? { relationships: await store.relationships() } : await cached("twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(at));
+      return c.json({ value: state.relationships });
+    })
+    .get("/api/digitaltwins/:id", async (c) => {
+      const twin = await store.twin(c.req.param("id"));
+      if (!twin) throw new HttpError(404, "errors.digitalTwin.notFound");
+      return c.json(twin);
+    })
+    .get("/api/digitaltwins/:id/relationships", async (c) => c.json({ value: await store.relationships({ source: c.req.param("id") }) }))
+    .get("/api/digitaltwins/:id/incomingrelationships", async (c) =>
+      c.json({ value: (await store.relationships({ target: c.req.param("id") })).map((r) => ({ $relationshipId: r.$relationshipId, $sourceId: r.$sourceId, $relationshipName: r.$relationshipName })) }),
+    )
+    // A twin's changes and its descendants' (newest first), and how far back the history goes.
+    .get("/api/digitaltwins/:id/history", async (c) => {
+      const f = parse(rangeQuery.and(z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) })), c.req.query());
+      const dtId = c.req.param("id");
+      return c.json({ value: await cached("history", { ...f, dtId }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => h().changes({ ...f, dtId }))) });
+    })
+    .get("/api/history/range", async (c) => c.json(await failing(() => h().range())))
+    // The telemetry the models declare: `errorLogs`, each twin's error log records of the 15 minutes before `at`.
+    .get("/api/telemetry/errorLogs", async (c) => {
+      const { at } = parse(atQuery, c.req.query());
+      const value = await cached("errorLogs", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
+        if (!telemetry || !source.errorAttributes?.length) return {};
+        const [{ twins }, counts] = await Promise.all([stateAt(at), failing(() => telemetry.errorCounts(source.errorAttributes!, at))]);
+        return errorsByTwin(twins, source.errorAttributes, counts);
+      });
+      return c.json({ value });
+    })
     .get("/api/facets", async (c) => {
       const f = parse(rangeQuery, c.req.query());
       return c.json(await cached("facets", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().facets(f))));

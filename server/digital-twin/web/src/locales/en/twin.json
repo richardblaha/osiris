@@ -4,14 +4,6 @@
     "warn": "attention",
     "error": "error"
   },
-  "kinds": {
-    "cluster": "Cluster",
-    "namespace": "Namespace",
-    "workload": "Workload",
-    "pod": "Pod",
-    "container": "Container",
-    "node": "Node"
-  },
   "properties": "Properties",
   "model": "DTDL model",
   "errors15m": "Error log records of the last 15 minutes.",
@@ -21,13 +13,11 @@
     "traces": "Traces"
   },
   "noSelection": "Click a box to see its detail; double-click to fly to it.",
-  "empty": "The twin has no namespaces to show.",
+  "empty": "The twin has nothing to show.",
   "hint": "Drag to orbit, wheel to zoom, click to select.",
   "counts": {
-    "namespaces_one": "{{count}} namespace",
-    "namespaces_other": "{{count}} namespaces",
-    "pods_one": "{{count}} pod",
-    "pods_other": "{{count}} pods"
+    "twins_one": "{{count}} twin",
+    "twins_other": "{{count}} twins"
   },
   "history": {
     "live": "Live",
@@ -40,5 +30,10 @@
       "changed": "changed",
       "removed": "removed"
     }
-  }
+  },
+  "relationships": "Relationships",
+  "more_one": "and {{count}} more",
+  "more_other": "and {{count}} more",
+  "yes": "yes",
+  "no": "no"
 }

@@ -1,4 +1,5 @@
-import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, Twin, TwinChange } from "@osiris/shared";
+import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, TwinChange } from "@osiris/shared";
+import type { DigitalTwin, DigitalTwinRelationship, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { getAccessToken } from "./auth.ts";
 
 /** One API call with the signed-in user's token; the server's message goes to the UI as it is. */
@@ -14,12 +15,14 @@ async function call<T>(path: string): Promise<T> {
 
 export const api = {
   me: () => call<{ sub: string; name: string | null; email: string | null } | null>("/api/me"),
-  twin: () => call<Twin>("/api/twin"),
-  /** The twin's history: how far back it goes, the tree at a time, the changes under an entity. */
-  range: () => call<{ from: number | null; to: number }>("/api/twin/range"),
-  at: (ts: number) => call<Twin>(`/api/twin/at?ts=${ts}`),
-  history: (f: { entity?: string; from: number; to: number; limit?: number }) =>
-    call<TwinChange[]>(`/api/twin/history?${new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`),
+  // The twin, in the shape of the Azure Digital Twins API (`at`: a past time from the history).
+  models: async () => (await call<{ value: DtdlModelData[] }>("/api/models")).value,
+  twins: async (at: number | null) => (await call<{ value: DigitalTwin[] }>(`/api/digitaltwins${at === null ? "" : `?at=${at}`}`)).value,
+  relationships: async (at: number | null) => (await call<{ value: DigitalTwinRelationship[] }>(`/api/relationships${at === null ? "" : `?at=${at}`}`)).value,
+  errorLogs: async (at: number | null) => (await call<{ value: Record<string, number> }>(`/api/telemetry/errorLogs${at === null ? "" : `?at=${at}`}`)).value,
+  range: () => call<{ from: number | null; to: number }>("/api/history/range"),
+  history: async (dtId: string, f: { from: number; to: number; limit?: number }) =>
+    (await call<{ value: TwinChange[] }>(`/api/digitaltwins/${encodeURIComponent(dtId)}/history?${new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`)).value,
   facets: (range: { from: number; to: number }) => call<TelemetryFacets>(`/api/facets?from=${range.from}&to=${range.to}`),
   logs: (f: { from: number; to: number; service?: string; namespace?: string; pod?: string; severity?: string; q?: string; traceId?: string; limit: number }) =>
     call<LogRecord[]>(`/api/logs?${new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined && v !== "").map(([k, v]) => [k, String(v)]))}`),

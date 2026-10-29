@@ -23,18 +23,6 @@ export class ClickHouse {
     return ((await res.json()) as { data: T[] }).data;
   }
 
-  /** Inserts rows as JSONEachRow into a table the caller names (a constant, never input). */
-  async insert(table: string, rows: object[]): Promise<void> {
-    if (!rows.length) return;
-    const qs = new URLSearchParams({ query: `INSERT INTO ${table} FORMAT JSONEachRow` });
-    const res = await this.fetchFn(`${this.url.replace(/\/$/, "")}/?${qs}`, {
-      method: "POST",
-      headers: { "x-clickhouse-user": this.user, "x-clickhouse-key": this.password },
-      body: rows.map((r) => JSON.stringify(r)).join("\n"),
-      signal: AbortSignal.timeout(25_000),
-    });
-    if (!res.ok) throw new Error(`ClickHouse ${res.status}: ${(await res.text()).slice(0, 500)}`);
-  }
 }
 
 export interface Range {

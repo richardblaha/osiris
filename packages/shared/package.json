@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./theme.ts": "./src/theme.ts"
+    "./theme.ts": "./src/theme.ts",
+    "./dtdl.ts": "./src/dtdl.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",

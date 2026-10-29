@@ -1,132 +1,135 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import type { TwinEntity, TwinGraph } from "@osiris/shared";
-import { CHECKPOINT_MS, HistoryStore, startRecorder, stateOf, type RecordedState } from "../src/history.ts";
+import { CHECKPOINT_MS, ENTITY_EVENT, HistoryLog, HistoryReader, RELATIONSHIP_EVENT } from "../src/history.ts";
+import { TwinStore } from "../src/store.ts";
+import { startSync } from "../src/sync.ts";
 import { ClickHouse } from "../src/telemetry.ts";
+import type { SourceSnapshot, TwinSource } from "../src/twin.ts";
+import { DTDL_CONTEXT } from "@osiris/shared/dtdl.ts";
 
-/** A ClickHouse that keeps the inserted rows per table and answers queries with what a test gives it. */
-function fakeClickHouse(answer: (sql: string) => unknown[] = () => []) {
-  const inserted: Record<string, Record<string, unknown>[]> = {};
+const tempStore = () => TwinStore.open(join(tmpdir(), `twin-${process.pid}-${Math.random().toString(36).slice(2)}.db`));
+const thing = (id: string, over: Record<string, unknown> = {}) => ({ $dtId: id, $metadata: { $model: "dtmi:test:Thing;1" }, name: id, status: "ok", ...over });
+const snap = (twins: ReturnType<typeof thing>[], contains: [string, string][]): SourceSnapshot => ({ twins, relationships: contains.map(([source, target]) => ({ name: "contains", source, target })) });
+const first = snap([thing("root"), thing("a", { v: 1 }), thing("b")], [["root", "a"], ["a", "b"]]);
+const second = snap([thing("root"), thing("a", { v: 2, status: "warn" })], [["root", "a"]]);
+
+describe("TwinStore", () => {
+  it("syncs a source's snapshot and tells what changed", async () => {
+    const store = await tempStore();
+    const one = await store.sync("test", first, 1_000);
+    expect(one.added.map((t) => t.$dtId).sort()).toEqual(["a", "b", "root"]);
+    expect(one.relationshipsAdded).toHaveLength(2);
+    const two = await store.sync("test", second, 2_000);
+    expect(two.added).toEqual([]);
+    expect(two.changed).toEqual([expect.objectContaining({ changed: ["status", "v"] })]);
+    expect(two.removed.map((t) => t.$dtId)).toEqual(["b"]);
+    expect(two.relationshipsRemoved).toEqual([expect.objectContaining({ $sourceId: "a", $targetId: "b" })]);
+    expect((await store.twin("a"))).toMatchObject({ v: 2, status: "warn", $metadata: { $lastUpdateTime: "1970-01-01T00:00:02.000Z" } });
+    // Nothing changed: nothing written, the etag and update time stay.
+    const three = await store.sync("test", second, 3_000);
+    expect([three.added, three.changed, three.removed, three.relationshipsAdded, three.relationshipsRemoved].flat()).toEqual([]);
+    expect((await store.twin("root"))!.$metadata.$lastUpdateTime).toBe("1970-01-01T00:00:01.000Z");
+  });
+
+  it("keeps each source's twins its own", async () => {
+    const store = await tempStore();
+    await store.sync("one", snap([thing("x")], []), 1);
+    await store.sync("two", snap([thing("y")], []), 2);
+    await store.sync("one", snap([], []), 3);
+    expect((await store.twins()).map((t) => t.$dtId)).toEqual(["y"]);
+  });
+});
+
+describe("HistoryLog", () => {
+  it("sends each change as an OpenTelemetry event, with the ancestors and what changed", async () => {
+    const store = await tempStore();
+    const events: { name: string; a: Record<string, string>; ts: number }[] = [];
+    const log = new HistoryLog((name, a, ts) => events.push({ name, a, ts }), "busiris", "test");
+    await store.sync("test", first, 1_000);
+    const result = await store.sync("test", second, 2_000);
+    log.record(result, await store.relationships());
+    const entity = events.filter((e) => e.name === ENTITY_EVENT);
+    expect(entity.find((e) => e.a["dt.id"] === "a")!.a).toMatchObject({ "twin.id": "busiris", "twin.change": "changed", "dt.status": "warn", "dt.previous_status": "ok", "dt.changed": '["status","v"]', "dt.ancestors": '["root"]' });
+    // b is gone, under the ancestors it had.
+    expect(entity.find((e) => e.a["dt.id"] === "b")!.a).toMatchObject({ "twin.change": "removed", "dt.ancestors": '["a","root"]' });
+    expect(events.filter((e) => e.name === RELATIONSHIP_EVENT).map((e) => e.a["twin.change"])).toEqual(["removed"]);
+    expect(events.every((e) => e.ts === 2_000)).toBe(true);
+  });
+});
+
+describe("startSync", () => {
+  it("writes the models, syncs, and checkpoints everything once a day", async () => {
+    const store = await tempStore();
+    let snapshot = first;
+    let now = 1_000;
+    const source: TwinSource = {
+      name: "test",
+      models: () => [{ "@context": DTDL_CONTEXT, "@id": "dtmi:test:Thing;1", "@type": "Interface" }],
+      snapshot: async () => snapshot,
+    };
+    const events: string[] = [];
+    const sync = await startSync({ source, store, history: new HistoryLog((_, a) => events.push(a["twin.change"]!), "t", "test"), intervalMs: 1e9, now: () => now, log: () => {} });
+    expect((await store.models()).map((m) => m.id)).toEqual(["dtmi:test:Thing;1"]);
+    expect(events.filter((e) => e === "checkpoint")).toHaveLength(5); // 3 twins, 2 relationships
+    events.length = 0;
+    snapshot = second;
+    now = 2_000;
+    await sync.round();
+    expect(events).not.toContain("checkpoint");
+    now = 1_000 + CHECKPOINT_MS;
+    await sync.round();
+    expect(events.filter((e) => e === "checkpoint")).toHaveLength(3); // 2 twins, 1 relationship
+    sync.stop();
+  });
+
+  it("refuses models that aren't valid DTDL", async () => {
+    const source: TwinSource = { name: "bad", models: () => [{ "@context": "x", "@id": "nope", "@type": "Interface" }], snapshot: async () => snap([], []) };
+    await expect(startSync({ source, store: await tempStore(), intervalMs: 1e9 })).rejects.toThrow(/not valid/);
+  });
+});
+
+/** A ClickHouse that answers queries with what a test gives it and remembers them. */
+function fakeClickHouse(answer: (sql: string) => unknown[]) {
   const queries: { sql: string; params: Record<string, string> }[] = [];
   const fetchFn = vi.fn(async (input: unknown, init?: { body?: string }) => {
     const url = new URL(String(input));
-    const insert = url.searchParams.get("query");
-    if (insert) {
-      const table = /INSERT INTO (\S+)/.exec(insert)![1]!;
-      (inserted[table] ??= []).push(...(init?.body ?? "").split("\n").map((l) => JSON.parse(l) as Record<string, unknown>));
-      return new Response("");
-    }
-    const params = Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("param_")).map(([k, v]) => [k.slice(6), v]));
-    queries.push({ sql: init?.body ?? "", params });
+    queries.push({ sql: init?.body ?? "", params: Object.fromEntries([...url.searchParams].filter(([k]) => k.startsWith("param_")).map(([k, v]) => [k.slice(6), v])) });
     return Response.json({ data: answer(init?.body ?? "") });
   });
-  return { ch: new ClickHouse("http://ch", "twin", "pw", fetchFn as unknown as typeof fetch), inserted, queries };
+  return { ch: new ClickHouse("http://ch", "osiris", "pw", fetchFn as unknown as typeof fetch), queries };
 }
 
-const entity = (id: string, over: Partial<TwinEntity> = {}): TwinEntity => ({ id, model: "dtmi:x:Thing;1", kind: "thing", name: id, status: "ok", errors: 0, properties: {}, ...over });
-const graph = (entities: TwinEntity[], contains: [string, string][], ts = 1_000): TwinGraph => ({
-  source: "test",
-  root: "root",
-  entities,
-  relationships: contains.map(([source, target]) => ({ name: "contains", source, target })),
-  ts,
-});
-const empty: RecordedState = { entities: new Map(), relationships: new Map(), checkpoint: null };
-
-describe("HistoryStore.write", () => {
-  const first = graph([entity("root"), entity("a", { properties: { v: "1" } }), entity("b")], [["root", "a"], ["a", "b"]]);
-
-  it("writes a checkpoint of everything, with the changes of that round beside it", async () => {
-    const { ch, inserted } = fakeClickHouse();
-    await new HistoryStore(ch, "busiris", "test").write(first, empty, true);
-    const rows = inserted["twin.entity_events"]!;
-    expect(rows.filter((r) => r.change === "checkpoint")).toHaveLength(3);
-    expect(rows.filter((r) => r.change === "added")).toHaveLength(3);
-    expect(rows.find((r) => r.entity_id === "b" && r.change === "added")).toMatchObject({ twin: "busiris", source: "test", ancestors: ["a", "root"], ts: "1970-01-01 00:00:01.000" });
-    expect(inserted["twin.relationship_events"]!.map((r) => r.change).sort()).toEqual(["added", "added", "checkpoint", "checkpoint"]);
-  });
-
-  it("writes only what changed: properties and status, removed entities and relationships; error counts are no change", async () => {
-    const { ch, inserted } = fakeClickHouse();
-    const next = graph([entity("root", { errors: 7 }), entity("a", { properties: { v: "2" }, status: "warn" })], [["root", "a"]], 2_000);
-    await new HistoryStore(ch, "busiris", "test").write(next, stateOf(first, 1_000), false);
-    const rows = inserted["twin.entity_events"]!;
-    expect(rows).toHaveLength(2);
-    expect(rows[0]).toMatchObject({ entity_id: "a", change: "changed", status: "warn", previous_status: "ok", changed: ["status", "v"], ancestors: ["root"] });
-    // b is gone, written as it was, under the ancestors it had.
-    expect(rows[1]).toMatchObject({ entity_id: "b", change: "removed", ancestors: ["a", "root"] });
-    expect(inserted["twin.relationship_events"]).toEqual([expect.objectContaining({ change: "removed", source_id: "a", target_id: "b" })]);
-  });
-
-  it("writes nothing when nothing changed", async () => {
-    const { ch, inserted } = fakeClickHouse();
-    expect(await new HistoryStore(ch, "busiris", "test").write({ ...first, ts: 5_000 }, stateOf(first, 1_000), false)).toBe(0);
-    expect(inserted).toEqual({});
-  });
-});
-
-describe("HistoryStore's queries", () => {
-  it("rebuild the state from the newest checkpoint and the changes after it, per twin", async () => {
+describe("HistoryReader", () => {
+  it("rebuilds the state at a time from otel_logs: the newest checkpoint and the changes after it", async () => {
     const { ch, queries } = fakeClickHouse((sql) =>
       sql.includes("count() AS n")
         ? [{ last_ms: "500", n: "1" }]
-        : sql.includes("entity_events")
-          ? [{ entity_id: "root", change: "checkpoint", model: "m", kind: "thing", name: "root", status: "ok", properties: {}, telemetry: {} }]
-          : [{ name: "contains", source_id: "root", target_id: "a", change: "added" }],
+        : sql.includes("dt.contents")
+          ? [{ id: "root", change: "checkpoint", model: "m", contents: '{"name":"root"}', updated_ms: "500" }]
+          : [{ source: "root", id: "contains-1", change: "added", name: "contains", target: "a" }],
     );
-    const state = await new HistoryStore(ch, "busiris", "test").stateAt(900);
-    expect(state.checkpoint).toBe(500);
-    expect([...state.entities.keys()]).toEqual(["root"]);
-    expect([...state.relationships.values()]).toEqual([{ name: "contains", source: "root", target: "a" }]);
-    const window = queries.slice(1);
-    for (const q of window) {
-      expect(q.sql).toContain("HAVING change != 'removed'");
-      expect(q.params).toMatchObject({ twin: "busiris", from: "500", at: "900" });
+    const state = (await new HistoryReader(ch, "busiris", "osiris-digital-twin").stateAt(900))!;
+    expect(state.twins).toEqual([{ $dtId: "root", $metadata: { $model: "m", $lastUpdateTime: "1970-01-01T00:00:00.500Z" }, name: "root" }]);
+    expect(state.relationships).toEqual([{ $relationshipId: "contains-1", $sourceId: "root", $relationshipName: "contains", $targetId: "a" }]);
+    for (const q of queries) {
+      expect(q.sql).toContain("FROM otel_logs");
+      expect(q.params).toMatchObject({ service: "osiris-digital-twin", twin: "busiris" });
     }
+    expect(queries.slice(1).every((q) => q.sql.includes("HAVING change != 'removed'") && q.params.from === "500")).toBe(true);
   });
 
-  it("know there is no state before the first checkpoint", async () => {
+  it("has no state before the first checkpoint", async () => {
     const { ch, queries } = fakeClickHouse(() => [{ last_ms: "0", n: "0" }]);
-    expect((await new HistoryStore(ch, "busiris", "test").stateAt(900)).checkpoint).toBeNull();
+    expect(await new HistoryReader(ch, "busiris", "s").stateAt(900)).toBeNull();
     expect(queries).toHaveLength(1);
   });
 
-  it("list an entity's changes with its descendants', never the checkpoints", async () => {
-    const { ch, queries } = fakeClickHouse(() => [
-      { at_ms: "900", entity_id: "a", change: "changed", kind: "thing", name: "a", status: "warn", previous_status: "ok", changed: ["status"], properties: {} },
-    ]);
-    const changes = await new HistoryStore(ch, "busiris", "test").changes({ entity: "root", from: 0, to: 1000, limit: 10 });
-    expect(changes).toEqual([{ ts: 900, entityId: "a", kind: "thing", name: "a", change: "changed", status: "warn", previousStatus: "ok", changed: ["status"], properties: {} }]);
-    expect(queries[0]!.sql).toContain("has(ancestors, {entity:String})");
-    expect(queries[0]!.sql).toContain("change != 'checkpoint'");
-  });
-});
-
-describe("the recorder", () => {
-  it("records only while it holds the lease, and checkpoints once a day", async () => {
-    vi.useFakeTimers();
-    try {
-      const { ch, inserted } = fakeClickHouse((sql) => (sql.includes("count() AS n") ? [{ last_ms: "0", n: "0" }] : []));
-      let held = false;
-      let ts = 1_000;
-      const r = startRecorder({
-        history: new HistoryStore(ch, "busiris", "test"),
-        graph: async () => graph([entity("root")], [], ts),
-        lease: { hold: async () => held },
-        intervalMs: 1_000_000,
-        log: () => {},
-      });
-      await r.round();
-      expect(inserted).toEqual({});
-      held = true;
-      expect(await r.round()).toBeGreaterThan(0); // the first checkpoint
-      ts = 2_000;
-      expect(await r.round()).toBe(0); // no change, no checkpoint due
-      ts = 1_000 + CHECKPOINT_MS;
-      await r.round();
-      expect(inserted["twin.entity_events"]!.filter((e) => e.change === "checkpoint")).toHaveLength(2);
-      r.stop();
-    } finally {
-      vi.useRealTimers();
-    }
+  it("lists a twin's changes with its descendants', never the checkpoints", async () => {
+    const { ch, queries } = fakeClickHouse(() => [{ at_ms: "900", id: "a", change: "changed", model: "m", name: "a", status: "warn", previous: "ok", changed: '["status"]' }]);
+    const changes = await new HistoryReader(ch, "busiris", "s").changes({ dtId: "root", from: 0, to: 1000, limit: 10 });
+    expect(changes).toEqual([{ ts: 900, dtId: "a", model: "m", name: "a", change: "changed", status: "warn", previousStatus: "ok", changed: ["status"] }]);
+    expect(queries[0]!.sql).toContain("has(JSONExtract(LogAttributes['dt.ancestors'], 'Array(String)'), {dt:String})");
+    expect(queries[0]!.sql).toContain("!= 'checkpoint'");
   });
 });

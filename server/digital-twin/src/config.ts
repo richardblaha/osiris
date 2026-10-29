@@ -29,14 +29,14 @@ const schema = z
     CLICKHOUSE_PASSWORD: z.string().optional(),
     CLICKHOUSE_CLUSTER: z.string().min(1).optional(),
 
-    // The twin's history (deploy/observability/twin/schema.sql): every HISTORY_INTERVAL_SECONDS the replica holding
-    // the lease (Redis) writes what changed to ClickHouse's database twin, so CLICKHOUSE_USER needs INSERT there.
-    HISTORY_ENABLED: bool,
-    HISTORY_INTERVAL_SECONDS: z.coerce.number().int().min(10).max(3600).default(30),
+    // The twin's structure: DTDL models, twins and relationships in DATA_DIR/twin.db (SQLite, one replica), synced
+    // from the source every SYNC_INTERVAL_SECONDS. Its history goes out as OpenTelemetry events (with the service's
+    // telemetry, OTEL_EXPORTER_OTLP_ENDPOINT) and is read back from ClickHouse's otel_logs as OTEL_SERVICE_NAME's.
+    DATA_DIR: z.string().default("./data"),
+    SYNC_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(3600).default(30),
+    OTEL_SERVICE_NAME: z.string().min(1).default("osiris-digital-twin"),
 
-    // Redis caches the twin's structure and the telemetry answers; without it every request queries the sources.
-    REDIS_URL: z.url().optional(),
-    CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(30),
+    // Telemetry and history answers are cached in the process for this long.
     CACHE_DATA_TTL_SECONDS: z.coerce.number().int().positive().default(15),
 
     // Sign-in: osiris-auth (OIDC). The PWA signs in as WEB_CLIENT_ID (public, PKCE); the API introspects tokens as
@@ -57,10 +57,8 @@ const schema = z
       if (!env.AUTH_CLIENT_SECRET) ctx.addIssue({ code: "custom", path: ["AUTH_CLIENT_SECRET"], message: "is required in production" });
       // The cluster can be anywhere (a kubeconfig of another cluster), but its telemetry has to be reachable.
       if (!env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["CLICKHOUSE_URL"], message: "is required in production" });
-      if (env.HISTORY_ENABLED && !env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["HISTORY_ENABLED"], message: "needs CLICKHOUSE_URL" });
       if (env.AUTH_DEV_BYPASS) ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
     }
-    if (env.REDIS_URL && !/^rediss?:/.test(env.REDIS_URL)) ctx.addIssue({ code: "custom", path: ["REDIS_URL"], message: "must be a redis:// or rediss:// URL" });
   });
 
 export type Config = z.infer<typeof schema>;

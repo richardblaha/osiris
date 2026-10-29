@@ -204,76 +204,27 @@ export interface MetricSeries {
 }
 
 /**
- * A digital twin, as the digital-twin app builds it from a source (an adapter: Kubernetes today). The twin is a
- * graph (`/api/twin/graph`): entities, each a DTDL instance of an interface in `/api/twin/model`, and named
- * relationships between them. `contains` makes the tree the 3D view shows (`/api/twin`).
+ * The digital twin (twin.k6labs.cz): its models are DTDL v3 interfaces and its instances follow the Azure Digital
+ * Twins API (`@osiris/shared/dtdl.ts`). Every entity's model extends `dtmi:osiris:twin:Entity;1`, which gives it a
+ * `name`, a `status` and the OpenTelemetry resource attributes naming its telemetry (`otelResource`).
  */
 export type TwinStatus = "ok" | "warn" | "error";
-/** The Kubernetes source's kinds of entity; another source brings its own. */
-export type TwinKind = "cluster" | "namespace" | "workload" | "pod" | "container" | "node";
+export const TWIN_ENTITY_MODEL = "dtmi:osiris:twin:Entity;1";
+/** The relationship whose instances nest twins in one another (the 3D view's boxes). */
+export const TWIN_CONTAINS = "contains";
 
-export interface TwinEntity {
-  /** The instance's id (unique in the twin) and the DTDL interface it instantiates. */
-  id: string;
-  model: string;
-  /** The model's short name ("pod", "room"…), for the views. */
-  kind: string;
-  name: string;
-  /** The entity's own status, before the tree rolls its children's up. */
-  status: TwinStatus;
-  /** Error log records of the last 15 minutes (ClickHouse): the entity's own. */
-  errors: number;
-  /** Key → value for the detail panel (already formatted). */
-  properties: Record<string, string>;
-  /** OpenTelemetry resource attributes naming the entity's own telemetry (e.g. `k8s.pod.name`). */
-  telemetry?: Record<string, string>;
-}
-
-/** A DTDL relationship instance: `source` —name→ `target`, by entity id. */
-export interface TwinRelationship {
-  name: string;
-  source: string;
-  target: string;
-}
-
-export interface TwinGraph {
-  /** Which adapter the twin comes from ("kubernetes"). */
-  source: string;
-  /** The root entity's id: the top of the `contains` tree. */
-  root: string;
-  entities: TwinEntity[];
-  relationships: TwinRelationship[];
-  /** When the structure was read from the source (epoch ms). */
-  ts: number;
-}
-
-/** The containment tree of the graph: statuses and error counts roll up (a node is as bad as its worst child). */
-export interface TwinNode extends TwinEntity {
-  children: TwinNode[];
-}
-
-/** One change of an entity in the twin's history (`/api/twin/history`). */
+/** One change of a twin in the history (`/api/digitaltwins/{id}/history`), read back from OpenTelemetry's logs. */
 export interface TwinChange {
   ts: number;
-  entityId: string;
-  kind: string;
+  dtId: string;
+  model: string;
   name: string;
   change: "added" | "changed" | "removed";
   status: TwinStatus;
   /** The status before a change; null when it was added. */
   previousStatus: TwinStatus | null;
-  /** What changed: property names, and "status". */
+  /** What changed: property names (status among them). */
   changed: string[];
-  properties: Record<string, string>;
-}
-
-export interface Twin {
-  /** The root of the tree (for Kubernetes, the cluster). */
-  cluster: TwinNode;
-  /** When the structure was read from the source (epoch ms). */
-  ts: number;
-  /** Set when the tree is the recorded state at `ts`, not the live one. */
-  historical?: boolean;
 }
 
 /** Guard names, also their file names: kebab-case. */

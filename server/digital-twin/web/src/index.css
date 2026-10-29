@@ -50,6 +50,14 @@ body,
 }
 
 @layer components {
+  /* A twin named in another's detail: selects it. */
+  .link {
+    color: var(--accent-primary);
+    text-align: start;
+  }
+  .link:hover {
+    text-decoration: underline;
+  }
   .section-header {
     text-transform: uppercase;
     letter-spacing: 0.08em;

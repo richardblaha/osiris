@@ -57,6 +57,16 @@ export function startTelemetry(serviceName: string, attributes: Record<string, s
   process.once("SIGINT", stop);
 }
 
+/**
+ * Emits events as OpenTelemetry log records (INFO, body = the event's name, `event.name` among the attributes), at
+ * their own time. They go out with the service's other logs once `startTelemetry` ran, and nowhere otherwise.
+ */
+export function eventEmitter(scope: string) {
+  const logger = logs.getLogger(scope);
+  return (name: string, attributes: Record<string, string>, timestampMs: number) =>
+    logger.emit({ severityNumber: SeverityNumber.INFO, severityText: "INFO", body: name, timestamp: timestampMs, attributes: { "event.name": name, ...attributes } });
+}
+
 const tracer = trace.getTracer("osiris-http");
 const duration = metrics.getMeter("osiris-http").createHistogram("http.server.request.duration", { unit: "s", description: "Duration of HTTP requests" });
 

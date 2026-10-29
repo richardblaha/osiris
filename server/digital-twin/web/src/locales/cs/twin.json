@@ -4,14 +4,6 @@
     "warn": "pozor",
     "error": "chyba"
   },
-  "kinds": {
-    "cluster": "Klastr",
-    "namespace": "Namespace",
-    "workload": "Workload",
-    "pod": "Pod",
-    "container": "Kontejner",
-    "node": "Node"
-  },
   "properties": "Vlastnosti",
   "model": "DTDL model",
   "errors15m": "Chybové logy za posledních 15 minut.",
@@ -21,17 +13,13 @@
     "traces": "Trasy"
   },
   "noSelection": "Klikni na kvádr pro detail; dvojklik přiletí kamkoli.",
-  "empty": "Dvojče nemá žádné namespace k zobrazení.",
+  "empty": "Dvojče nemá nic k zobrazení.",
   "hint": "Tažením otáčej, kolečkem přibližuj, klikem vybírej.",
   "counts": {
-    "namespaces_one": "{{count}} namespace",
-    "namespaces_few": "{{count}} namespace",
-    "namespaces_many": "{{count}} namespaceu",
-    "namespaces_other": "{{count}} namespaceů",
-    "pods_one": "{{count}} pod",
-    "pods_few": "{{count}} pody",
-    "pods_many": "{{count}} podu",
-    "pods_other": "{{count}} podů"
+    "twins_one": "{{count}} twin",
+    "twins_few": "{{count}} twiny",
+    "twins_many": "{{count}} twinu",
+    "twins_other": "{{count}} twinů"
   },
   "history": {
     "live": "Živě",
@@ -44,5 +32,12 @@
       "changed": "změna",
       "removed": "odebráno"
     }
-  }
+  },
+  "relationships": "Vztahy",
+  "more_one": "a {{count}} další",
+  "more_few": "a {{count}} další",
+  "more_many": "a {{count}} dalšího",
+  "more_other": "a {{count}} dalších",
+  "yes": "ano",
+  "no": "ne"
 }

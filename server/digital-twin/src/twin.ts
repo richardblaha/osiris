@@ -1,73 +1,74 @@
-import type { Twin, TwinEntity, TwinGraph, TwinNode, TwinRelationship, TwinStatus } from "@osiris/shared";
+import { createHash } from "node:crypto";
+import type { DigitalTwinRelationship, DtdlInterface } from "@osiris/shared/dtdl.ts";
+import { TWIN_CONTAINS } from "@osiris/shared";
 
-/** The relationship whose instances make the tree the 3D view shows. */
-export const CONTAINS = "contains";
+export { TWIN_CONTAINS as CONTAINS };
 
-/** What an adapter reads from its system: entities with their own status, and the relationships between them. */
+/** A twin as an adapter reads it: an ADT twin without what the store adds (`$etag`, `$lastUpdateTime`). */
+export interface SourceTwin {
+  $dtId: string;
+  $metadata: { $model: string };
+  [property: string]: unknown;
+}
+/** A relationship as an adapter reads it: its id comes from the store. */
+export interface SourceRelationship {
+  name: string;
+  source: string;
+  target: string;
+}
+
+/** What an adapter reads from its system: the twins and the relationships between them. */
 export interface SourceSnapshot {
-  root: string;
-  entities: TwinEntity[];
-  relationships: TwinRelationship[];
+  twins: SourceTwin[];
+  relationships: SourceRelationship[];
 }
 
 /**
- * An adapter: one kind of system the twin can mirror (Kubernetes, and later Docker, MQTT devices, a CMDB…). It
- * defines its entities' interfaces in DTDL and reads a snapshot of the system; everything else (error counts from
- * the telemetry, the tree, caching, the API, the views) is the same for every source.
+ * An adapter: one kind of system the twin mirrors (Kubernetes, and later Docker, MQTT devices, a CMDB…). It defines
+ * its twins' interfaces in DTDL and reads a snapshot of the system; the store (SQLite), the history (OpenTelemetry),
+ * the telemetry (ClickHouse), the API and the views are the same for every source.
  */
 export interface TwinSource {
-  /** The adapter's name ("kubernetes"), in the graph and the cache keys. */
+  /** The adapter's name ("kubernetes"): its twins in the store are its own. */
   name: string;
-  /** The DTDL interfaces its entities instantiate. */
-  models(): unknown[];
+  /** The DTDL interfaces its twins instantiate. */
+  models(): DtdlInterface[];
   snapshot(): Promise<SourceSnapshot>;
   /**
-   * The OpenTelemetry resource attributes that name an entity's own logs (`k8s.namespace.name`, `k8s.pod.name`):
-   * entities whose `telemetry` holds exactly these get their error count (a pod, not its containers or namespace,
-   * which roll their children's up instead). None: the twin has no error counts.
+   * The OpenTelemetry resource attributes that name a twin's own logs (`k8s.namespace.name`, `k8s.pod.name`): twins
+   * whose `otelResource` holds exactly these get their error count (a pod, not its containers or namespace, which roll
+   * their children's up instead). None: no error counts.
    */
   errorAttributes?: string[];
 }
+
+/** A relationship's id (ADT's `$relationshipId`, unique per source twin): its name and its target, hashed. */
+export const relationshipId = (name: string, target: string) => `${name}-${createHash("sha256").update(target).digest("hex").slice(0, 16)}`;
+
+export const toRelationship = (r: SourceRelationship): DigitalTwinRelationship => ({
+  $relationshipId: relationshipId(r.name, r.target),
+  $sourceId: r.source,
+  $relationshipName: r.name,
+  $targetId: r.target,
+});
+
+/** The twin's own OpenTelemetry resource attributes. */
+export const otelResourceOf = (t: { otelResource?: unknown }) =>
+  t.otelResource && typeof t.otelResource === "object" ? (t.otelResource as Record<string, string>) : {};
 
 /** Error log counts by the values of the source's error attributes, joined with {@link errorKey}. */
 export type ErrorCounts = Map<string, number>;
 export const errorKey = (values: string[]) => values.join("\u0000");
 
-const worse = (a: TwinStatus, b: TwinStatus): TwinStatus => (a === "error" || b === "error" ? "error" : a === "warn" || b === "warn" ? "warn" : "ok");
-
-/** The snapshot as a graph, with each entity's own error count from the telemetry. */
-export function graphOf(source: TwinSource, snapshot: SourceSnapshot, counts: ErrorCounts = new Map(), ts = Date.now()): TwinGraph {
-  const attributes = source.errorAttributes ?? [];
-  const entities = snapshot.entities.map((e) => {
-    const keys = Object.keys(e.telemetry ?? {});
-    const exact = attributes.length > 0 && keys.length === attributes.length && attributes.every((a) => e.telemetry?.[a]);
-    const own = exact ? (counts.get(errorKey(attributes.map((a) => e.telemetry![a]!))) ?? 0) : 0;
-    return { ...e, errors: e.errors + own };
-  });
-  return { source: source.name, root: snapshot.root, entities, relationships: snapshot.relationships, ts };
-}
-
-/**
- * The graph's containment tree from its root, statuses and error counts rolled up: a node is as bad as its worst
- * child. Entities outside the tree (a Kubernetes node: pods run on it, nothing contains it) stay in the graph only;
- * a cycle or a second parent never repeats a node.
- */
-export function treeOf(graph: TwinGraph): Twin {
-  const byId = new Map(graph.entities.map((e) => [e.id, e]));
-  const children = new Map<string, string[]>();
-  for (const r of graph.relationships) {
-    if (r.name !== CONTAINS || !byId.has(r.source) || !byId.has(r.target)) continue;
-    children.set(r.source, [...(children.get(r.source) ?? []), r.target]);
+/** Each twin's own error count: the twins named by exactly the source's error attributes. */
+export function errorsByTwin(twins: { $dtId: string; otelResource?: unknown }[], attributes: string[] | undefined, counts: ErrorCounts): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!attributes?.length) return out;
+  for (const t of twins) {
+    const r = otelResourceOf(t);
+    if (Object.keys(r).length !== attributes.length || !attributes.every((a) => r[a])) continue;
+    const n = counts.get(errorKey(attributes.map((a) => r[a]!)));
+    if (n) out[t.$dtId] = n;
   }
-  const seen = new Set<string>();
-  const build = (id: string): TwinNode => {
-    seen.add(id);
-    const kids = (children.get(id) ?? []).filter((c) => !seen.has(c)).map(build);
-    const node: TwinNode = { ...byId.get(id)!, children: kids };
-    node.errors += kids.reduce((n, c) => n + c.errors, 0);
-    node.status = kids.reduce((s, c) => worse(s, c.status), node.status);
-    return node;
-  };
-  if (!byId.has(graph.root)) throw new Error(`The twin's root ${graph.root} is not one of its entities`);
-  return { cluster: build(graph.root), ts: graph.ts };
+  return out;
 }
