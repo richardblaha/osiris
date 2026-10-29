@@ -53,5 +53,25 @@
   "logsStart": "No older records",
   "internet": "Internet",
   "storageUse": "{{used}} of {{size}} used ({{share}})",
-  "fillEstimate": "≈ {{share}} full (cluster average)"
+  "fillEstimate": "≈ {{share}} full (cluster average)",
+  "chat": {
+    "title": "Osiris",
+    "new": "New conversation",
+    "hide": "Hide",
+    "thinking": "Thinking…",
+    "answered": "(answered)",
+    "cancelled": "(cancelled)",
+    "voice": "voice message",
+    "noMicrophone": "The microphone isn't available.",
+    "recording": "Listening… press ⏹ to send",
+    "placeholder": "Ask Osiris about the cluster…",
+    "speakOn": "Read answers aloud",
+    "speakOff": "Stop reading answers aloud",
+    "stop": "Stop",
+    "speakToMe": "Speak to Osiris",
+    "send": "Send",
+    "yes": "Yes, run it",
+    "no": "No",
+    "cancel": "Cancel"
+  }
 }

@@ -280,6 +280,93 @@ body,
   top: calc(var(--app-bar) + 0.25rem);
 }
 
+/* Osiris's chat over the twin: the input at the bottom in the middle (above the time axis), the conversation in a
+   panel above the twin, both over the 3D view and the open page. */
+.osiris-input {
+  position: absolute;
+  left: 50%;
+  bottom: 3.25rem;
+  z-index: 36;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  width: min(42rem, calc(100% - 2rem));
+  padding: 0.3rem 0.4rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-sidebar) 90%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-popup);
+  transform: translateX(-50%);
+}
+.osiris-input:focus-within {
+  border-color: var(--accent-active);
+  box-shadow: 0 0 0 3px var(--accent-active-soft), var(--shadow-popup);
+}
+.osiris-icon {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  font-size: 15px;
+}
+.osiris-icon:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.osiris-icon[aria-pressed="true"] {
+  background: var(--accent-primary-soft);
+}
+.osiris-icon[data-recording="true"] {
+  background: var(--accent-secondary-soft);
+  animation: fade-in 0.8s ease-in-out infinite alternate;
+}
+.osiris-answers {
+  position: absolute;
+  left: 50%;
+  top: calc(var(--app-bar) + 0.5rem);
+  z-index: 36;
+  display: flex;
+  flex-direction: column;
+  width: min(40rem, calc(100% - 2rem));
+  max-height: 45%;
+  border: 1px solid var(--border-strong);
+  border-top: 2px solid var(--accent-active);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sidebar) 94%, transparent);
+  backdrop-filter: blur(8px);
+  box-shadow: var(--shadow-popup);
+  transform: translateX(-50%);
+  animation: fade-in 0.2s ease both;
+}
+.osiris-user {
+  margin-left: auto;
+  max-width: 85%;
+  width: fit-content;
+  padding: 0.25rem 0.6rem;
+  border-radius: var(--radius);
+  background: var(--accent-primary-soft);
+  white-space: pre-wrap;
+}
+.osiris-step {
+  display: inline-block;
+  margin-right: 0.25rem;
+  padding: 0 0.4rem;
+  border-radius: var(--radius);
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.osiris-step[data-state="failed"] {
+  color: var(--state-error);
+}
+.osiris-question {
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--accent-active);
+  border-radius: var(--radius);
+  background: var(--accent-active-soft);
+}
+
 /* The log bar chart's tip over the hovered bar: its time span and counts. */
 .bar-tip {
   position: absolute;

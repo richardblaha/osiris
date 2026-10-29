@@ -1055,6 +1055,9 @@ importers:
 
   server/digital-twin/web:
     dependencies:
+      '@osiris/client':
+        specifier: workspace:*
+        version: link:../../../packages/client
       '@osiris/shared':
         specifier: workspace:*
         version: link:../../../packages/shared

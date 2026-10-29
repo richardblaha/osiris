@@ -59,5 +59,25 @@
   "logsStart": "Žádné starší záznamy",
   "internet": "Internet",
   "storageUse": "obsazeno {{used}} z {{size}} ({{share}})",
-  "fillEstimate": "≈ {{share}} zaplněno (průměr clusteru)"
+  "fillEstimate": "≈ {{share}} zaplněno (průměr clusteru)",
+  "chat": {
+    "title": "Osiris",
+    "new": "Nová konverzace",
+    "hide": "Skrýt",
+    "thinking": "Přemýšlím…",
+    "answered": "(odpovězeno)",
+    "cancelled": "(zrušeno)",
+    "voice": "hlasová zpráva",
+    "noMicrophone": "Mikrofon není k dispozici.",
+    "recording": "Poslouchám… ⏹ odešle",
+    "placeholder": "Zeptejte se Osirise na cluster…",
+    "speakOn": "Předčítat odpovědi",
+    "speakOff": "Nepředčítat odpovědi",
+    "stop": "Zastavit",
+    "speakToMe": "Mluvit s Osirisem",
+    "send": "Odeslat",
+    "yes": "Ano, spustit",
+    "no": "Ne",
+    "cancel": "Zrušit"
+  }
 }

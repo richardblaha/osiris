@@ -8,6 +8,7 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "@osiris/client": "workspace:*",
     "@osiris/shared": "workspace:*",
     "i18next": "26.4.2",
     "oidc-client-ts": "^3.5.0",

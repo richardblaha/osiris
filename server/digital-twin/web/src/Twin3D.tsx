@@ -10,6 +10,13 @@ import { iconOf, kindOf } from "./icons.ts";
 import { fillOf, hasNetwork, interfacesOf, isStorage, storageOf, type TwinScene, type TwinView } from "./scene.ts";
 import { layoutTwin, type Box, type Link, type Scene } from "./TwinLayout.ts";
 
+/** Steering the camera around what it looks at: degrees about the vertical axis, degrees of tilt, a zoom factor. */
+export interface CameraControl {
+  rotate(degrees: number): void;
+  tilt(degrees: number): void;
+  zoom(factor: number): void;
+}
+
 /** A point on the view, in CSS pixels from its top left corner. */
 export interface Point {
   x: number;
@@ -193,12 +200,15 @@ export function Twin3D({
   home,
   onSelect,
   anchor,
+  control,
 }: {
   scene: TwinScene;
   selected?: TwinView;
   home: number;
   onSelect: (node: TwinView) => void;
   anchor: RefObject<(() => Point[] | null) | null>;
+  /** The camera, steered from outside (the agent's twin_view): turn, tilt and zoom, animated. */
+  control?: RefObject<CameraControl | null>;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const select = useRef(onSelect);
@@ -669,6 +679,37 @@ export function Twin3D({
     };
     view.current = { show, focus, home: flyHome };
 
+    /** Moves the camera around its target to a new spherical position, animated like the flights. */
+    const orbit = (change: (s: THREE.Spherical) => void) => {
+      const s = new THREE.Spherical().setFromVector3(camera.position.clone().sub(controls.target));
+      change(s);
+      s.phi = THREE.MathUtils.clamp(s.phi, 0.15, controls.maxPolarAngle);
+      s.radius = THREE.MathUtils.clamp(s.radius, 2, 5000);
+      const to = controls.target.clone().add(new THREE.Vector3().setFromSpherical(s));
+      const from = camera.position.clone();
+      const id = ++flight;
+      if (reducedMotion()) return void camera.position.copy(to);
+      const start = performance.now();
+      const step = () => {
+        if (id !== flight) return;
+        const k = easeInOut(Math.min(1, (performance.now() - start) / 700));
+        // Around the target, not through it: interpolate the angles and the distance.
+        const a = new THREE.Spherical().setFromVector3(from.clone().sub(controls.target));
+        a.theta += (s.theta - a.theta) * k;
+        a.phi += (s.phi - a.phi) * k;
+        a.radius += (s.radius - a.radius) * k;
+        camera.position.copy(controls.target).add(new THREE.Vector3().setFromSpherical(a));
+        if (k < 1) requestAnimationFrame(step);
+      };
+      step();
+    };
+    if (control)
+      control.current = {
+        rotate: (degrees) => orbit((s) => (s.theta += THREE.MathUtils.degToRad(degrees))),
+        tilt: (degrees) => orbit((s) => (s.phi -= THREE.MathUtils.degToRad(degrees))),
+        zoom: (factor) => orbit((s) => (s.radius /= factor > 0 ? factor : 1)),
+      };
+
     // The selected box's corners on screen, for the panels' callout lines (none behind the camera).
     anchor.current = () => {
       const box = chosen.current && content?.boxes.get(chosen.current.id);
@@ -782,6 +823,7 @@ export function Twin3D({
       flight++;
       view.current = undefined;
       anchor.current = null;
+      if (control) control.current = null;
       scheme.removeEventListener("change", schemeChange);
       observer.disconnect();
       renderer.domElement.removeEventListener("pointermove", onMove);

@@ -7,7 +7,8 @@ import { authOff, autoSignIn, getAccessToken, login, profile, signedInOk } from 
 import { UserMenu, type Profile } from "./UserMenu.tsx";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
-import { Twin3D, type Point } from "./Twin3D.tsx";
+import { Twin3D, type CameraControl, type Point } from "./Twin3D.tsx";
+import { OsirisChat, type TwinAction } from "./OsirisChat.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { FocusPanels } from "./FocusPanels.tsx";
 import { Dashboard, DashboardMenu } from "./Dashboard.tsx";
@@ -71,6 +72,8 @@ export function App() {
   const [home, setHome] = useState(0);
   /** The selected box's corners on screen (the 3D view's), for the panels' lines. */
   const anchor = useRef<(() => Point[] | null) | null>(null);
+  /** The camera, for the agent's turns, tilts and zooms. */
+  const camera = useRef<CameraControl | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   // undefined while the stored token is being checked: nothing asks the API before it's known whether there is one.
@@ -184,6 +187,41 @@ export function App() {
   /** The logs page with a filter's values (from a dashboard): its scope and its own filters. */
   const openLogs = (values: Record<string, string>) => navigate({ kind: "logs", ...split(values) });
 
+  /** The twin, its newest scene, for the agent's steps (they run after a render or two). */
+  const latest = useRef(scene);
+  latest.current = scene;
+  /**
+   * The agent's steps for the view (twin_view), one after another with time for each flight: select by name or id
+   * (an exact name first, then a part of one), turn, tilt, zoom, go home, open a page with a filter, go back in time.
+   */
+  const runTwin = async (steps: TwinAction[]) => {
+    const pause = () => new Promise((r) => setTimeout(r, 950));
+    for (const step of steps) {
+      const views = [...(latest.current?.byId.values() ?? [])];
+      if (step.action === "select") {
+        const want = step.target.toLowerCase();
+        const match =
+          views.find((v) => v.id === step.target) ??
+          views.find((v) => v.name.toLowerCase() === want && !v.of) ??
+          views.find((v) => v.name.toLowerCase() === want) ??
+          views.find((v) => v.name.toLowerCase().includes(want) && !v.of);
+        if (match) (navigate({ kind: "twin" }), setSelectedId(match.id));
+      } else if (step.action === "clear") setSelectedId(undefined);
+      else if (step.action === "home") (setSelectedId(undefined), setHome((h) => h + 1));
+      else if (step.action === "rotate") camera.current?.rotate(step.degrees);
+      else if (step.action === "tilt") camera.current?.tilt(step.degrees);
+      else if (step.action === "zoom") camera.current?.zoom(step.factor);
+      else if (step.action === "close") navigate({ kind: "twin" });
+      else if (step.action === "history") setAt(step.at && !Number.isNaN(Date.parse(step.at)) ? Date.parse(step.at) : null);
+      else if (step.action === "open") {
+        if (step.page === "dashboard") navigate({ kind: "dashboard", id: step.filter?.id });
+        else if (step.page === "logs") openLogs(step.filter ?? {});
+        else navigate({ kind: step.page, preset: split(step.filter ?? {}).preset } as View);
+      }
+      await pause();
+    }
+  };
+
   const tabLabel = (page: Page) =>
     page === "dashboard" ? t("common:nav.dashboard") : page === "logs" ? t("common:nav.logs") : page === "metrics" ? t("common:nav.metrics") : t("common:nav.traces");
 
@@ -209,7 +247,7 @@ export function App() {
               </div>
               {scene ? (
                 scene.top.length ? (
-                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} />
+                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} control={camera} />
                 ) : (
                   <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
                 )
@@ -225,7 +263,7 @@ export function App() {
                     onOpenPage={openPage}
                     onOpenTrace={(traceId) => navigate({ kind: "traces", preset: {}, traceId })}
                   />
-                  <p className="twin-hint pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-fg-muted">{t("twin:escHint")}</p>
+                  <p className="twin-hint pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:escHint")}</p>
                 </>
               ) : (
                 <>
@@ -273,6 +311,8 @@ export function App() {
           )}
         </section>
       )}
+
+      {signedIn && <OsirisChat onTwin={(steps) => void runTwin(steps)} />}
 
       {/* The bar over everything, see-through: the name, the pages in the middle, the user. */}
       <header className="app-bar">
