@@ -7,14 +7,8 @@
   "properties": "Vlastnosti",
   "model": "DTDL model",
   "errors15m": "Chybové logy za posledních 15 minut.",
-  "open": {
-    "logs": "Logy",
-    "metrics": "Metriky",
-    "traces": "Trasy"
-  },
-  "noSelection": "Klikni na kvádr pro detail; dvojklik přiletí kamkoli.",
   "empty": "Dvojče nemá nic k zobrazení.",
-  "hint": "Tažením otáčej, kolečkem přibližuj, klikem vybírej.",
+  "hint": "Tažením otáčej, kolečkem přibližuj, klikem na kvádr ho zaměř.",
   "counts": {
     "twins_one": "{{count}} twin",
     "twins_few": "{{count}} twiny",
@@ -39,5 +33,26 @@
   "more_many": "a {{count}} dalšího",
   "more_other": "a {{count}} dalších",
   "yes": "ano",
-  "no": "ne"
+  "no": "ne",
+  "escHint": "Esc: zpět na celé dvojče",
+  "view3d": "Digitální dvojče ve 3D",
+  "inside": "v",
+  "errorCount_one": "{{count}} chyba",
+  "errorCount_few": "{{count}} chyby",
+  "errorCount_many": "{{count}} chyby",
+  "errorCount_other": "{{count}} chyb",
+  "openPage": "Otevřít celou stránku",
+  "panel": {
+    "logs": "Logy",
+    "metrics": "Metriky",
+    "traces": "Trasy"
+  },
+  "measure": {
+    "cpu": "CPU",
+    "memory": "Paměť",
+    "network": "Síť"
+  },
+  "peak": "max {{value}}",
+  "scrollOlder": "Posuň nahoru pro starší záznamy",
+  "logsStart": "Žádné starší záznamy"
 }

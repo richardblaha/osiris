@@ -3,7 +3,7 @@ import { localized, resolveContents, type DtdlProperty, type DtdlRelationship, t
 import { t } from "i18next";
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
-import { currentLocale, formatDateTime, formatNumber } from "./i18n.ts";
+import { currentLocale, formatBytesRate, formatDateTime, formatNumber } from "./i18n.ts";
 import type { TwinScene, TwinView } from "./scene.ts";
 
 const WEEK = 7 * 24 * 3_600_000;
@@ -26,24 +26,23 @@ function formatValue(value: unknown, schema: DtdlSchema): string {
 }
 
 /**
- * The selected twin's own panel, purely from its DTDL model: the model's name, the properties the model declares
- * (their display names and schemas), the relationships it declares (to other twins, which can be selected), the
- * telemetry pages for the twin's OpenTelemetry attributes, and the twin's history.
+ * The selected twin's properties panel, purely from its DTDL model: its status, the properties the model declares
+ * (their display names and schemas), the relationships it declares (to other twins, which can be selected) and the
+ * twin's history.
  */
-export function TwinDetail({ node, scene, onSelect, onOpen }: { node: TwinView; scene: TwinScene; onSelect: (id: string) => void; onOpen: (page: "logs" | "metrics" | "traces") => void }) {
+export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: TwinScene; onSelect: (id: string) => void }) {
   const locale = currentLocale();
   const contents = resolveContents(node.model, scene.models);
   const properties = contents.filter((c): c is DtdlProperty => c["@type"] === "Property" && !HEADER.has(c.name));
   const declared = new Map(contents.filter((c): c is DtdlRelationship => c["@type"] === "Relationship").map((r) => [r.name, r]));
   const name = (id: string) => scene.byId.get(id)?.name ?? id;
-  // Relationships other than containment (the 3D view shows that), both ways.
+  // Relationships other than containment (the 3D view shows that), both ways; and what contains the twin.
   const outgoing = scene.relationships.filter((r) => r.$sourceId === node.id && r.$relationshipName !== "contains");
   const incoming = scene.relationships.filter((r) => r.$targetId === node.id && r.$relationshipName !== "contains");
   const relName = (rel: string, model?: string) => {
     const d = model ? resolveContents(model, scene.models).find((c) => c["@type"] === "Relationship" && c.name === rel) : declared.get(rel);
     return localized(d?.displayName, locale) ?? rel;
   };
-  const otel = node.twin.otelResource as Record<string, string> | undefined;
 
   // The week of changes up to the time shown, the twin's and its descendants'; nothing when the history is off.
   const [changes, setChanges] = useState<TwinChange[]>();
@@ -60,15 +59,8 @@ export function TwinDetail({ node, scene, onSelect, onOpen }: { node: TwinView; 
   }, [node.id, scene.at]);
 
   return (
-    <aside className="flex w-96 shrink-0 flex-col border-s border-line" aria-label={t("twin:properties")}>
-      <div className="border-b border-line px-4 py-3">
-        <span className="section-header block" title={node.model}>
-          {node.modelName}
-        </span>
-        <h2 className="mt-0.5 truncate font-semibold" title={node.name}>
-          {node.name}
-        </h2>
-        <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+    <>
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
           <span className={`inline-flex items-center gap-1 ${statusClass(node.status)}`}>
             <span aria-hidden="true">●</span> {t(`twin:status.${node.status}`)}
           </span>
@@ -77,9 +69,17 @@ export function TwinDetail({ node, scene, onSelect, onOpen }: { node: TwinView; 
               {formatNumber(node.errors)}×
             </span>
           )}
-        </div>
+          {node.network !== undefined && <span className="text-fg-secondary">{formatBytesRate(node.network)}</span>}
+          {node.parent && (
+            <span className="text-fg-muted">
+              {t("twin:inside")}{" "}
+              <button type="button" className="link" onClick={() => onSelect(node.parent!.id)}>
+                {node.parent.name}
+              </button>
+            </span>
+          )}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+      <div>
         {properties.length > 0 && (
           <dl className="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-xs">
             {properties.map((p) => (
@@ -148,15 +148,6 @@ export function TwinDetail({ node, scene, onSelect, onOpen }: { node: TwinView; 
           {node.id}
         </p>
       </div>
-      {otel && Object.keys(otel).length > 0 && (
-        <div className="flex gap-2 border-t border-line px-4 py-3">
-          {(["logs", "metrics", "traces"] as const).map((page) => (
-            <button key={page} type="button" className="btn-secondary flex-1 py-1 text-sm" onClick={() => onOpen(page)}>
-              {t(`twin:open.${page}`)}
-            </button>
-          ))}
-        </div>
-      )}
-    </aside>
+    </>
   );
 }

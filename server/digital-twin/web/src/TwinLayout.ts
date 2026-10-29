@@ -1,97 +1,126 @@
 import type { TwinView } from "./scene.ts";
 
+type Vec = [number, number, number];
+
 /** A node's box in the twin's 3D scene: the center and the full size, in scene units. */
 export interface Box {
   id: string;
-  center: [number, number, number];
-  size: [number, number, number];
+  center: Vec;
+  size: Vec;
+}
+
+/**
+ * A network link: from the hub on its container's floor, along the floor under the box, then up into the box. The
+ * view animates traffic along it by the box's load.
+ */
+export interface Link {
+  /** The twin whose traffic the link carries, and the one whose network it joins. */
+  id: string;
+  parent: string;
+  path: Vec[];
 }
 
 export interface Scene {
-  /** Every node's box (namespaces, workloads, pods, containers). */
+  /** Every node's box, outermost first. */
   boxes: Box[];
+  links: Link[];
   /** Everything together, to fit the camera. */
-  bounds: { center: [number, number, number]; size: [number, number, number] };
+  bounds: { center: Vec; size: Vec };
 }
 
-const GAP = 1.4;
-const PAD = 0.9;
-
-/** What a node's own layout measured: its size on the floor, with boxes relative to its floor center. */
+/** What a node's own layout measured: its size, with boxes and links relative to its floor center. */
 interface Measured {
-  size: [number, number, number];
+  size: Vec;
   boxes: Box[];
+  links: Link[];
 }
 
-/** A leaf's box: a small cube at the bottom of the tree, a bigger one when it stands alone near the top. */
-const cellOf = (node: TwinView): [number, number, number] => (node.depth >= 4 ? [1.6, 1.1, 1.6] : node.depth === 3 ? [2.6, 1.8, 2.6] : [4, 3, 4]);
+/** The space between siblings: wide between the outer shells (nodes), tight between the innermost (containers). */
+const gapAt = (depth: number) => Math.max(0.5, 4 / 2.4 ** depth);
+/** The margin of a shell around what it holds, on every side: children float inside it, never touching it. */
+const padAt = (depth: number) => gapAt(depth) * 0.55 + 0.45;
+
+/** A leaf's box: a small cube at the bottom of the tree, a bigger one higher up. */
+const leafOf = (node: TwinView): Vec => (node.depth >= 3 ? [1, 1, 1] : node.depth === 2 ? [1.6, 1.2, 1.6] : [3, 2, 3]);
+
+const shift = (v: Vec, by: Vec): Vec => [v[0] + by[0], v[1] + by[1], v[2] + by[2]];
 
 /**
- * Measures one node: children in a grid of uniform cells (at most four in a row), wrapped in the node's own box.
- * Boxes come back relative to the node's floor center; `translate` moves them into place afterwards. Everything
- * grows up from y = 0, so nested boxes share a floor and read as one cuboid tree.
+ * Measures one node: its children grouped by model (siblings of a kind share a layer), each group a near-square grid
+ * of uniform cells with gaps between them, the groups one behind another, all of it floating inside the node's own
+ * box with a margin on every side — shells within shells. Children whose model has a network get a link to a hub
+ * on the node's floor.
  */
-function measure(node: TwinView): Measured {
+function measure(node: TwinView, networked: (node: TwinView) => boolean): Measured {
   if (!node.children.length) {
-    const size = cellOf(node);
-    return { size, boxes: [{ id: node.id, center: [0, size[1] / 2, 0], size }] };
+    const size = leafOf(node);
+    return { size, boxes: [{ id: node.id, center: [0, size[1] / 2, 0], size }], links: [] };
   }
-  const children = node.children.map(measure);
-  // Same-kind siblings share one cell size (a workload's pods, a namespace's workloads): the largest.
-  const cell: [number, number, number] = [
-    Math.max(...children.map((c) => c.size[0])),
-    Math.max(...children.map((c) => c.size[1])),
-    Math.max(...children.map((c) => c.size[2])),
-  ];
-  const cols = Math.min(4, children.length);
-  const rows = Math.ceil(children.length / cols);
-  const step = (v: number) => v + GAP;
-  const inner: [number, number, number] = [step(cell[0]) * cols - GAP, cell[1], step(cell[2]) * rows - GAP];
-  const size: [number, number, number] = [inner[0] + 2 * PAD, cell[1] + 2 * PAD, inner[2] + 2 * PAD];
-  const boxes: Box[] = [{ id: node.id, center: [0, size[1] / 2, 0], size }];
-  children.forEach((child, i) => {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const center: [number, number, number] = [inner[0] / 2 - step(cell[0]) / 2 + col * step(cell[0]), 0, inner[2] / 2 - step(cell[2]) / 2 + row * step(cell[2])];
-    // The child's own box is at the cell's floor center; its descendants hang below inside it.
-    translate(child.boxes, center, boxes);
-  });
-  return { size, boxes };
-}
+  const gap = gapAt(node.depth);
+  const pad = padAt(node.depth);
 
-/** Copies measured boxes into `out`, shifted by `center` (a child's grid cell) — children sit on the same floor. */
-function translate(source: Box[], center: [number, number, number], out: Box[]) {
-  for (const box of source) out.push({ id: box.id, center: [box.center[0] + center[0], box.center[1], box.center[2] + center[2]], size: box.size });
+  const groups = new Map<string, { node: TwinView; m: Measured }[]>();
+  for (const child of node.children) {
+    const list = groups.get(child.model) ?? groups.set(child.model, []).get(child.model)!;
+    list.push({ node: child, m: measure(child, networked) });
+  }
+  // Each group as a grid: its cell (the largest child's size), columns and footprint.
+  const grids = [...groups.values()]
+    .sort((a, b) => b.length - a.length)
+    .map((items) => {
+      const cell: Vec = [0, 1, 2].map((i) => Math.max(...items.map((x) => x.m.size[i]!))) as Vec;
+      const cols = Math.ceil(Math.sqrt(items.length));
+      const rows = Math.ceil(items.length / cols);
+      return { items, cell, cols, rows, width: (cell[0] + gap) * cols - gap, depth: (cell[2] + gap) * rows - gap };
+    });
+  const innerW = Math.max(...grids.map((g) => g.width));
+  const innerD = grids.reduce((n, g) => n + g.depth, 0) + gap * (grids.length - 1);
+  const innerH = Math.max(...grids.map((g) => g.cell[1]));
+  const size: Vec = [innerW + 2 * pad, innerH + 2 * pad, innerD + 2 * pad];
+
+  const boxes: Box[] = [{ id: node.id, center: [0, size[1] / 2, 0], size }];
+  const links: Link[] = [];
+  // The hub: on the node's floor, halfway up to its children's.
+  const hubY = pad * 0.5;
+  let z = -innerD / 2;
+  for (const g of grids) {
+    g.items.forEach(({ node: child, m }, i) => {
+      const col = i % g.cols;
+      const row = Math.floor(i / g.cols);
+      // Centered in its row: a short last row doesn't hug one side.
+      const inRow = row === g.rows - 1 ? g.items.length - row * g.cols : g.cols;
+      const rowW = (g.cell[0] + gap) * inRow - gap;
+      const at: Vec = [-rowW / 2 + g.cell[0] / 2 + col * (g.cell[0] + gap), pad, z + g.cell[2] / 2 + row * (g.cell[2] + gap)];
+      for (const b of m.boxes) boxes.push({ id: b.id, center: shift(b.center, at), size: b.size });
+      for (const l of m.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
+      if (networked(child)) links.push({ id: child.id, parent: node.id, path: [[0, hubY, 0], [at[0], hubY, at[2]], [at[0], pad, at[2]]] });
+    });
+    z += g.depth + gap;
+  }
+  return { size, boxes, links };
 }
 
 /**
- * The twin's whole scene: the top twins side by side in a grid on one floor, each with what it contains nested inside
- * as translucent cuboids, all the way down.
+ * The twin's whole scene: the outermost twins (a cluster) side by side, each with what it contains nested inside as
+ * translucent shells, all the way down.
  */
-export function layoutTwin(top: TwinView[]): Scene {
-  const namespaces = top.map(measure);
-  if (!namespaces.length) return { boxes: [], bounds: { center: [0, 1, 0], size: [4, 2, 4] } };
-  const cell: [number, number, number] = [
-    Math.max(...namespaces.map((n) => n.size[0])),
-    Math.max(...namespaces.map((n) => n.size[1])),
-    Math.max(...namespaces.map((n) => n.size[2])),
-  ];
-  const cols = Math.min(4, namespaces.length);
-  const rows = Math.ceil(namespaces.length / cols);
-  const step = (v: number) => v + 2 * GAP;
+export function layoutTwin(top: TwinView[], networked: (node: TwinView) => boolean): Scene {
+  const roots = top.map((node) => measure(node, networked));
+  if (!roots.length) return { boxes: [], links: [], bounds: { center: [0, 1, 0], size: [4, 2, 4] } };
+  const gap = gapAt(0) * 2;
   const boxes: Box[] = [];
-  namespaces.forEach((ns, i) => {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    translate(ns.boxes, [step(cell[0]) / 2 - cell[0] / 2 + col * step(cell[0]), 0, step(cell[2]) / 2 - cell[2] / 2 + row * step(cell[2])], boxes);
-  });
+  const links: Link[] = [];
+  let x = 0;
+  for (const r of roots) {
+    const at: Vec = [x + r.size[0] / 2, 0, 0];
+    for (const b of r.boxes) boxes.push({ id: b.id, center: shift(b.center, at), size: b.size });
+    for (const l of r.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
+    x += r.size[0] + gap;
+  }
   const minX = Math.min(...boxes.map((b) => b.center[0] - b.size[0] / 2));
   const maxX = Math.max(...boxes.map((b) => b.center[0] + b.size[0] / 2));
   const minZ = Math.min(...boxes.map((b) => b.center[2] - b.size[2] / 2));
   const maxZ = Math.max(...boxes.map((b) => b.center[2] + b.size[2] / 2));
   const maxY = Math.max(...boxes.map((b) => b.center[1] + b.size[1] / 2));
-  return {
-    boxes,
-    bounds: { center: [(minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxY, maxZ - minZ] },
-  };
+  return { boxes, links, bounds: { center: [(minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxY, maxZ - minZ] } };
 }

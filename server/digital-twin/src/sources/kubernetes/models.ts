@@ -3,16 +3,17 @@ import { TWIN_CONTAINS, TWIN_ENTITY_MODEL } from "@osiris/shared";
 
 /**
  * The Kubernetes adapter's models in DTDL v3 (https://github.com/Azure/opendigitaltwins-dtdl): one interface per kind
- * of object, each extending the twin's base Entity; containment and placement as relationships.
+ * of object, each extending the twin's base Entity. Containment is physical: the cluster contains its nodes, a node
+ * the pods scheduled on it, a pod its containers. Namespaces and workloads group pods by relationships instead.
  */
 export const MODEL = {
   Entity: TWIN_ENTITY_MODEL,
-  Cluster: "dtmi:osiris:k8s:Cluster;2",
-  Namespace: "dtmi:osiris:k8s:Namespace;2",
-  Workload: "dtmi:osiris:k8s:Workload;2",
-  Pod: "dtmi:osiris:k8s:Pod;2",
-  Container: "dtmi:osiris:k8s:Container;2",
-  Node: "dtmi:osiris:k8s:Node;2",
+  Cluster: "dtmi:osiris:k8s:Cluster;3",
+  Namespace: "dtmi:osiris:k8s:Namespace;3",
+  Workload: "dtmi:osiris:k8s:Workload;3",
+  Pod: "dtmi:osiris:k8s:Pod;3",
+  Container: "dtmi:osiris:k8s:Container;3",
+  Node: "dtmi:osiris:k8s:Node;3",
 } as const;
 
 const enumOf = (...values: string[]): DtdlSchema => ({ "@type": "Enum", valueSchema: "string", enumValues: values.map((v) => ({ name: v, enumValue: v })) });
@@ -25,7 +26,22 @@ const property = (name: string, schema: DtdlSchema, displayName: Localized, desc
   displayName,
   ...(description ? { description } : {}),
 });
-const contains = (target: string, description: string): DtdlContent => ({ "@type": "Relationship", name: TWIN_CONTAINS, target, displayName: l("contains", "obsahuje"), description });
+const contains = (target: string | undefined, description: string): DtdlContent => ({
+  "@type": "Relationship",
+  name: TWIN_CONTAINS,
+  ...(target ? { target } : {}),
+  displayName: l("contains", "obsahuje"),
+  description,
+});
+const relationship = (name: string, target: string, displayName: Localized, description: string): DtdlContent => ({ "@type": "Relationship", name, target, displayName, description });
+/** Bytes per second through a node's or a pod's network interfaces, the load the view animates. */
+const network: DtdlContent = {
+  "@type": "Telemetry",
+  name: "network",
+  schema: "double",
+  displayName: l("Network", "Síť"),
+  description: "Bytes per second received and sent, averaged over the last 5 minutes.",
+};
 const iface = (id: string, displayName: Localized, description: string, contents: DtdlContent[], base = true): DtdlInterface => ({
   "@context": DTDL_CONTEXT,
   "@id": id,
@@ -56,23 +72,24 @@ export function dtdlModel(): DtdlInterface[] {
       ],
       false,
     ),
-    iface(MODEL.Cluster, l("Cluster", "Klastr"), "A Kubernetes cluster: its namespaces and nodes.", [
+    iface(MODEL.Cluster, l("Cluster", "Klastr"), "A Kubernetes cluster: its nodes (and the pods not scheduled yet) and its namespaces.", [
       property("version", "string", l("Kubernetes version", "Verze Kubernetes")),
       property("kubelet", "string", l("Kubelet version", "Verze kubeletu")),
       property("nodeCount", "integer", l("Nodes", "Nody")),
       property("podCount", "integer", l("Pods", "Pody")),
-      contains(MODEL.Namespace, "The cluster's namespaces."),
-      { "@type": "Relationship", name: "hasNode", target: MODEL.Node, displayName: l("has node", "má node"), description: "The machines the cluster runs on." },
+      contains(undefined, "The cluster's nodes, and the pods no node runs yet."),
+      relationship("hasNamespace", MODEL.Namespace, l("has namespace", "má namespace"), "The cluster's namespaces."),
     ]),
-    iface(MODEL.Namespace, l("Namespace", "Namespace"), "A Kubernetes namespace.", [
+    iface(MODEL.Namespace, l("Namespace", "Namespace"), "A Kubernetes namespace: its status is its worst pod's.", [
       property("phase", enumOf("active", "terminating"), l("Phase", "Fáze")),
-      contains(MODEL.Workload, "The namespace's workloads, as its pods group by owner."),
+      property("podCount", "integer", l("Pods", "Pody")),
+      relationship("hasWorkload", MODEL.Workload, l("has workload", "má workload"), "The namespace's workloads, as its pods group by owner."),
     ]),
-    iface(MODEL.Workload, l("Workload", "Workload"), "What a group of pods belongs to: a Deployment (through its ReplicaSet), a StatefulSet, a DaemonSet, a Job or a lone Pod.", [
+    iface(MODEL.Workload, l("Workload", "Workload"), "What a group of pods belongs to: a Deployment (through its ReplicaSet), a StatefulSet, a DaemonSet, a Job or a lone Pod. Its status is its worst pod's.", [
       property("ownerKind", "string", l("Kind", "Druh")),
       property("podCount", "integer", l("Pods", "Pody")),
       property("readyCount", "integer", l("Pods ready", "Připravené pody")),
-      contains(MODEL.Pod, "The workload's pods."),
+      relationship("hasPod", MODEL.Pod, l("has pod", "má pod"), "The workload's pods."),
     ]),
     iface(MODEL.Pod, l("Pod", "Pod"), "A pod and its containers.", [
       property("phase", enumOf("pending", "running", "succeeded", "failed", "unknown"), l("Phase", "Fáze")),
@@ -81,8 +98,9 @@ export function dtdlModel(): DtdlInterface[] {
       property("readyCount", "integer", l("Containers ready", "Připravené kontejnery")),
       property("containerCount", "integer", l("Containers", "Kontejnery")),
       property("restarts", "integer", l("Restarts", "Restarty"), "Container restarts, summed over the pod."),
+      property("namespace", "string", l("Namespace", "Namespace")),
       contains(MODEL.Container, "The pod's containers."),
-      { "@type": "Relationship", name: "runsOn", target: MODEL.Node, displayName: l("runs on", "běží na"), description: "The node the pod is scheduled on." },
+      network,
     ]),
     iface(MODEL.Container, l("Container", "Kontejner"), "One container of a pod.", [
       property("image", "string", l("Image", "Image")),
@@ -94,6 +112,8 @@ export function dtdlModel(): DtdlInterface[] {
       property("os", "string", l("Operating system", "Operační systém")),
       property("cpu", "string", l("CPU capacity", "Kapacita CPU")),
       property("memory", "string", l("Memory capacity", "Kapacita paměti")),
+      contains(MODEL.Pod, "The pods scheduled on the node."),
+      network,
     ]),
   ];
 }

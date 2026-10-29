@@ -22,7 +22,7 @@ const RANGES = [
 
 const time = (ms: number, withDate = false) =>
   formatDateTime(ms, withDate ? { dateStyle: "short", timeStyle: "medium" } : { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-const duration = (ms: number) =>
+export const duration = (ms: number) =>
   ms < 1
     ? formatNumber(ms * 1000, { style: "unit", unit: "microsecond", maximumFractionDigits: 0 })
     : ms < 1000
@@ -103,7 +103,7 @@ function Attributes({ title, values }: { title: string; values: Record<string, s
   );
 }
 
-const SEVERITY_CLASS = (n: number) => (n >= 17 ? "text-error" : n >= 13 ? "text-warning" : n >= 9 ? "text-fg" : "text-fg-muted");
+export const SEVERITY_CLASS = (n: number) => (n >= 17 ? "text-error" : n >= 13 ? "text-warning" : n >= 9 ? "text-fg" : "text-fg-muted");
 
 /** The cluster's log records, newest first, with filters; a record opens with its attributes and its trace. */
 export function Logs({ preset, traceId: initialTrace, onOpenTrace }: { preset: Preset; traceId?: string; onOpenTrace: (id: string) => void }) {

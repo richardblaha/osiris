@@ -39,7 +39,7 @@ describe("the Kubernetes models", () => {
   it("are valid DTDL v3, each kind extending the twin's base Entity", () => {
     for (const m of dtdlModel()) expect(interfaceErrors(m)).toEqual([]);
     const pod = resolveContents(MODEL.Pod, models).map((c) => c.name);
-    expect(pod).toEqual(expect.arrayContaining(["name", "status", "otelResource", "errorLogs", "phase", "contains", "runsOn"]));
+    expect(pod).toEqual(expect.arrayContaining(["name", "status", "otelResource", "errorLogs", "phase", "namespace", "contains", "network"]));
   });
 
   it("make instance ids that never collide, whatever the names", () => {
@@ -55,15 +55,21 @@ describe("the cluster's twins", () => {
     for (const t of twins.values()) expect(twinErrors(t, models)).toEqual([]);
   });
 
-  it("are related as the models declare: containment, nodes of the cluster, pods to their node", () => {
+  it("nest as the machines do (cluster, node, pod), namespaces and workloads related to their pods", () => {
     const rels = snapshot.relationships.map(toRelationship);
     for (const r of rels) expect(relationshipErrors(r, twins, models)).toEqual([]);
     const has = (name: string, from: string, to: string) => expect(snapshot.relationships).toContainEqual({ name, source: from, target: to });
     const root = twin(MODEL.Cluster, "busiris").$dtId;
-    has("contains", root, twin(MODEL.Namespace, "osiris").$dtId);
-    has("contains", twin(MODEL.Workload, "gateway").$dtId, twin(MODEL.Pod, "gateway-abc").$dtId);
-    has("hasNode", root, twin(MODEL.Node, "node1").$dtId);
-    has("runsOn", twin(MODEL.Pod, "gateway-abc").$dtId, twin(MODEL.Node, "node1").$dtId);
+    has("contains", root, twin(MODEL.Node, "node1").$dtId);
+    has("contains", twin(MODEL.Node, "node1").$dtId, twin(MODEL.Pod, "gateway-abc").$dtId);
+    // Not scheduled yet: the cluster's own.
+    has("contains", root, twin(MODEL.Pod, "clickhouse-0").$dtId);
+    has("hasNamespace", root, twin(MODEL.Namespace, "osiris").$dtId);
+    has("hasWorkload", twin(MODEL.Namespace, "osiris").$dtId, twin(MODEL.Workload, "gateway").$dtId);
+    has("hasPod", twin(MODEL.Workload, "gateway").$dtId, twin(MODEL.Pod, "gateway-abc").$dtId);
+    // Every twin has at most one container.
+    const parents = snapshot.relationships.filter((r) => r.name === "contains").map((r) => r.target);
+    expect(new Set(parents).size).toBe(parents.length);
   });
 
   it("group pods by owner: a Deployment through its ReplicaSet, an ownerless pod as its own workload", () => {
@@ -75,6 +81,10 @@ describe("the cluster's twins", () => {
 
   it("carry their own status and the attributes naming their telemetry", () => {
     expect(twin(MODEL.Pod, "clickhouse-0")).toMatchObject({ status: "warn", phase: "pending" });
+    // A namespace and a workload carry their worst pod's status, as nothing contains under them.
+    expect(twin(MODEL.Namespace, "observability").status).toBe("warn");
+    expect(twin(MODEL.Workload, "clickhouse").status).toBe("warn");
+    expect(twin(MODEL.Namespace, "osiris").status).toBe("ok");
     expect(twin(MODEL.Pod, "gateway-abc").otelResource).toEqual({ "k8s.namespace.name": "osiris", "k8s.pod.name": "gateway-abc" });
   });
 

@@ -40,6 +40,11 @@ export interface TwinSource {
    * their children's up instead). None: no error counts.
    */
   errorAttributes?: string[];
+  /**
+   * The monotonic byte counters of the twins' network traffic (models' Telemetry `network`): each metric's rate goes
+   * to the twins whose `otelResource` holds exactly its attributes (a node by its name, a pod by namespace and pod).
+   */
+  networkMetrics?: { metric: string; attributes: string[] }[];
 }
 
 /** A relationship's id (ADT's `$relationshipId`, unique per source twin): its name and its target, hashed. */
@@ -61,8 +66,10 @@ export type ErrorCounts = Map<string, number>;
 export const errorKey = (values: string[]) => values.join("\u0000");
 
 /** Each twin's own error count: the twins named by exactly the source's error attributes. */
-export function errorsByTwin(twins: { $dtId: string; otelResource?: unknown }[], attributes: string[] | undefined, counts: ErrorCounts): Record<string, number> {
-  const out: Record<string, number> = {};
+export const errorsByTwin = (twins: { $dtId: string; otelResource?: unknown }[], attributes: string[] | undefined, counts: ErrorCounts) => valuesByTwin(twins, attributes, counts);
+
+/** Values keyed by attribute values ({@link errorKey}) given to the twins whose `otelResource` holds exactly those attributes. */
+export function valuesByTwin(twins: { $dtId: string; otelResource?: unknown }[], attributes: string[] | undefined, counts: Map<string, number>, out: Record<string, number> = {}): Record<string, number> {
   if (!attributes?.length) return out;
   for (const t of twins) {
     const r = otelResourceOf(t);

@@ -43,7 +43,11 @@ const chFetch = vi.fn(async (_url: unknown, init?: { body?: string }): Promise<R
   Response.json({
     data: init?.body?.includes("count() AS count")
       ? [{ k0: "osiris", k1: "gateway-abc", count: "3" }]
-      : [
+      : init?.body?.includes("AS rate")
+        ? new URL(String(_url)).searchParams.get("param_metric") === "k8s.node.network.io"
+          ? [{ k0: "node1", rate: "2048" }]
+          : [{ k0: "osiris", k1: "gateway-abc", rate: "512.5" }]
+        : [
           {
             ts: "1730000000000",
             severity: "ERROR",
@@ -107,7 +111,7 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
       expect(interfaceErrors(m.model)).toEqual([]);
       expect(m.uploadTime).toMatch(/^\d{4}-/);
     }
-    const pod = await json<DtdlModelData>(`/api/models/${encodeURIComponent("dtmi:osiris:k8s:Pod;2")}`);
+    const pod = await json<DtdlModelData>(`/api/models/${encodeURIComponent("dtmi:osiris:k8s:Pod;3")}`);
     expect(pod.model.extends).toBe("dtmi:osiris:twin:Entity;1");
   });
 
@@ -119,7 +123,7 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     for (const t of twins) expect(twinErrors(t, models)).toEqual([]);
     const byId = new Map(twins.map((t) => [t.$dtId, t]));
     for (const r of relationships) expect(relationshipErrors(r, byId, models)).toEqual([]);
-    const pod = twins.find((t) => t.$metadata.$model === "dtmi:osiris:k8s:Pod;2")!;
+    const pod = twins.find((t) => t.$metadata.$model === "dtmi:osiris:k8s:Pod;3")!;
     expect(pod).toMatchObject({ name: "gateway-abc", status: "ok", phase: "running", nodeName: "node1", restarts: 0, otelResource: { "k8s.pod.name": "gateway-abc" } });
     expect(pod.$etag).toMatch(/^W\//);
   });
@@ -129,15 +133,25 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     const pod = await json<DigitalTwin>(`/api/digitaltwins/${encodeURIComponent(id)}`);
     expect(pod.$dtId).toBe(id);
     const out = await json<{ value: DigitalTwinRelationship[] }>(`/api/digitaltwins/${encodeURIComponent(id)}/relationships`);
-    expect(out.value.map((r) => r.$relationshipName).sort()).toEqual(["contains", "runsOn"]);
+    expect(out.value.map((r) => r.$relationshipName).sort()).toEqual(["contains"]);
     const incoming = await json<{ value: { $sourceId: string; $relationshipName: string }[] }>(`/api/digitaltwins/${encodeURIComponent(id)}/incomingrelationships`);
-    expect(incoming.value).toEqual([expect.objectContaining({ $relationshipName: "contains", $sourceId: "k8s:k8s/namespace/osiris/workload-deployment/gateway" })]);
+    expect(incoming.value).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ $relationshipName: "contains", $sourceId: "k8s:k8s/node/node1" }),
+        expect.objectContaining({ $relationshipName: "hasPod", $sourceId: "k8s:k8s/namespace/osiris/workload-deployment/gateway" }),
+      ]),
+    );
     expect((await app().request(`/api/digitaltwins/${encodeURIComponent("k8s:nope")}`)).status).toBe(404);
   });
 
   it("answers each twin's error logs from the telemetry: the pod's own", async () => {
     const { value } = await json<{ value: Record<string, number> }>("/api/telemetry/errorLogs");
     expect(value).toEqual({ "k8s:k8s/namespace/osiris/pod/gateway-abc": 3 });
+  });
+
+  it("answers each node's and pod's network load from the kubeletstats counters", async () => {
+    const { value } = await json<{ value: Record<string, number> }>("/api/telemetry/network");
+    expect(value).toEqual({ "k8s:k8s/node/node1": 2048, "k8s:k8s/namespace/osiris/pod/gateway-abc": 512.5 });
   });
 
   it("answers the history endpoints with 503 while the history is off", async () => {

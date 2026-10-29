@@ -35,6 +35,23 @@ const range = (r: Range) => ({ from: Math.floor(r.from / 1000), to: Math.ceil(r.
 /** Where a pod's namespace is: the resource attribute OTel's Kubernetes processors set. */
 const NS = "ResourceAttributes['k8s.namespace.name']";
 const POD = "ResourceAttributes['k8s.pod.name']";
+const NODE = "ResourceAttributes['k8s.node.name']";
+const CONTAINER = "ResourceAttributes['k8s.container.name']";
+
+/** Whose telemetry: a namespace, a pod, a node or a container (OpenTelemetry's k8s resource attributes). */
+export interface Scope {
+  namespace?: string;
+  pod?: string;
+  node?: string;
+  container?: string;
+}
+/** Adds a scope's conditions and parameters. */
+function scope(f: Scope, where: string[], params: Record<string, string | number>) {
+  if (f.namespace) (where.push(`${NS} = {namespace:String}`), (params.namespace = f.namespace));
+  if (f.pod) (where.push(`${POD} = {pod:String}`), (params.pod = f.pod));
+  if (f.node) (where.push(`${NODE} = {node:String}`), (params.node = f.node));
+  if (f.container) (where.push(`${CONTAINER} = {container:String}`), (params.container = f.container));
+}
 /** Which cluster a record belongs to (the collector's resource/cluster processor sets it). */
 const CLUSTER = "ResourceAttributes['k8s.cluster.name']";
 const METRIC_TABLES = { gauge: "otel_metrics_gauge", sum: "otel_metrics_sum", histogram: "otel_metrics_histogram" } as const;
@@ -102,13 +119,42 @@ export class Telemetry {
     return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.count)]));
   }
 
+  /**
+   * A monotonic counter's rate per second over the 5 minutes before `at` (now without it), by the values of the given
+   * resource attributes (keyed with `errorKey`): each source (its attributes and resource) is differenced on its own,
+   * then summed (a node's interfaces, both directions).
+   */
+  async rates(metric: string, attributes: string[], at?: number): Promise<Map<string, number>> {
+    if (!attributes.length) return new Map();
+    const columns = attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`);
+    const keys = attributes.map((_, i) => `k${i}`).join(", ");
+    const params: Record<string, string | number> = { ...this.of().params, metric };
+    attributes.forEach((a, i) => (params[`a${i}`] = a));
+    if (at !== undefined) params.at = at;
+    const window =
+      at === undefined
+        ? "TimeUnix >= now() - INTERVAL 5 MINUTE"
+        : "TimeUnix BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 5 MINUTE AND fromUnixTimestamp64Milli({at:Int64})";
+    const rows = await this.ch.query<Record<string, string>>(
+      `SELECT ${keys}, sum(rate) AS rate FROM (
+         SELECT ${columns.join(", ")}, cityHash64(Attributes, ResourceAttributes) AS src,
+                if(max(TimeUnix) > min(TimeUnix), greatest(argMax(Value, TimeUnix) - argMin(Value, TimeUnix), 0) / dateDiff('second', min(TimeUnix), max(TimeUnix)), 0) AS rate
+         FROM otel_metrics_sum
+         WHERE MetricName = {metric:String} AND ${window}${this.of().where}
+         GROUP BY ${keys}, src)
+       WHERE ${attributes.map((_, i) => `k${i} <> ''`).join(" AND ")}
+       GROUP BY ${keys}`,
+      params,
+    );
+    return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.rate)]));
+  }
+
   /** The newest log records matching the filters (`to`: older than that, for the next page). */
-  async logs(f: Range & { service?: string; namespace?: string; pod?: string; severity?: string; q?: string; traceId?: string; limit: number }): Promise<LogRecord[]> {
+  async logs(f: Range & Scope & { service?: string; severity?: string; q?: string; traceId?: string; limit: number }): Promise<LogRecord[]> {
     const where = ["Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)", "Timestamp <= fromUnixTimestamp64Milli({toMs:Int64})" + this.of().where];
     const params: Record<string, string | number> = { ...this.of().params, ...range(f), toMs: f.to, limit: f.limit };
     if (f.service) (where.push("ServiceName = {service:String}"), (params.service = f.service));
-    if (f.namespace) (where.push(`${NS} = {namespace:String}`), (params.namespace = f.namespace));
-    if (f.pod) (where.push(`${POD} = {pod:String}`), (params.pod = f.pod));
+    scope(f, where, params);
     if (f.severity) (where.push("SeverityNumber >= {severity:UInt8}"), (params.severity = SEVERITY[f.severity] ?? 0));
     if (f.q) (where.push("positionCaseInsensitiveUTF8(Body, {q:String}) > 0"), (params.q = f.q));
     if (f.traceId) (where.push("TraceId = {traceId:String}"), (params.traceId = f.traceId));
@@ -120,11 +166,11 @@ export class Telemetry {
   }
 
   /** Root spans (one per trace) matching the filters, newest first, with how many spans their trace has. */
-  async traces(f: Range & { service?: string; namespace?: string; q?: string; minMs?: number; errors?: boolean; limit: number }): Promise<TraceSummary[]> {
-    const where = ["Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)", "ParentSpanId = ''" + this.of().where];
-    const params: Record<string, string | number> = { ...this.of().params, ...range(f), limit: f.limit };
+  async traces(f: Range & Scope & { service?: string; q?: string; minMs?: number; errors?: boolean; limit: number }): Promise<TraceSummary[]> {
+    const where = ["Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)", "Timestamp <= fromUnixTimestamp64Milli({toMs:Int64})", "ParentSpanId = ''" + this.of().where];
+    const params: Record<string, string | number> = { ...this.of().params, ...range(f), toMs: f.to, limit: f.limit };
     if (f.service) (where.push("ServiceName = {service:String}"), (params.service = f.service));
-    if (f.namespace) (where.push(`${NS} = {namespace:String}`), (params.namespace = f.namespace));
+    scope(f, where, params);
     if (f.q) (where.push("positionCaseInsensitiveUTF8(SpanName, {q:String}) > 0"), (params.q = f.q));
     if (f.minMs) (where.push("Duration >= {minNs:UInt64}"), (params.minNs = Math.round(f.minMs * 1e6)));
     if (f.errors) where.push("StatusCode = 'Error'");
@@ -176,15 +222,29 @@ export class Telemetry {
    * attribute; the 8 with most points). Gauges average; monotonic sums give their rate per second; histograms the
    * mean of what they measured in each bucket.
    */
-  async series(f: Range & { name: string; type: MetricType; groupBy?: string; service?: string; namespace?: string; step: number }): Promise<MetricSeries[]> {
+  async series(f: Range & Scope & { name: string; type: MetricType; groupBy?: string; service?: string; step: number }): Promise<MetricSeries[]> {
     const table = METRIC_TABLES[f.type];
-    const params: Record<string, string | number> = { ...this.of().params, ...range(f), name: f.name, step: f.step, g: f.groupBy ?? "", service: f.service ?? "", namespace: f.namespace ?? "" };
+    const params: Record<string, string | number> = {
+      ...this.of().params,
+      ...range(f),
+      name: f.name,
+      step: f.step,
+      g: f.groupBy ?? "",
+      service: f.service ?? "",
+      namespace: f.namespace ?? "",
+      pod: f.pod ?? "",
+      node: f.node ?? "",
+      container: f.container ?? "",
+    };
     const group = "if({g:String} = '', '', if(mapContains(Attributes, {g:String}), Attributes[{g:String}], ResourceAttributes[{g:String}]))";
     const where = [
       "MetricName = {name:String}",
       "TimeUnix BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)",
       "({service:String} = '' OR ServiceName = {service:String})",
       "({namespace:String} = '' OR " + NS + " = {namespace:String})",
+      "({pod:String} = '' OR " + POD + " = {pod:String})",
+      "({node:String} = '' OR " + NODE + " = {node:String})",
+      "({container:String} = '' OR " + CONTAINER + " = {container:String})",
       "(1 = 1" + this.of().where + ")",
     ];
     // A series is one source within a group (a pod, a container…), so counters are differenced per source first.

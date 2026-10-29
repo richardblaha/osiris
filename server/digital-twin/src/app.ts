@@ -11,7 +11,7 @@ import type { Cache } from "./cache.ts";
 import type { Config } from "./config.ts";
 import type { HistoryReader } from "./history.ts";
 import type { TwinStore } from "./store.ts";
-import { errorsByTwin, type TwinSource } from "./twin.ts";
+import { errorsByTwin, valuesByTwin, type TwinSource } from "./twin.ts";
 import type { MetricType, Telemetry } from "./telemetry.ts";
 
 const HOUR = 3_600_000;
@@ -23,6 +23,8 @@ const rangeQuery = z
     return { from: Math.max(from ?? end - HOUR, end - 31 * 24 * HOUR), to: end };
   });
 const text = z.string().trim().max(200).optional();
+/** Whose telemetry: OpenTelemetry's k8s namespace, pod, node or container. */
+const scope = { namespace: text, pod: text, node: text, container: text };
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const r = schema.safeParse(value, { reportInput: true });
   if (!r.success) throw new ValidationError(r.error);
@@ -179,6 +181,18 @@ export function createApp(config: Config, options: AppOptions) {
       });
       return c.json({ value });
     })
+    // The models' `network` telemetry: each node's and pod's bytes per second over the 5 minutes before `at`.
+    .get("/api/telemetry/network", async (c) => {
+      const { at } = parse(atQuery, c.req.query());
+      const value = await cached("network", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
+        if (!telemetry || !source.networkMetrics?.length) return {};
+        const [{ twins }, ...rates] = await Promise.all([stateAt(at), ...source.networkMetrics.map((m) => failing(() => telemetry.rates(m.metric, m.attributes, at)))]);
+        const out: Record<string, number> = {};
+        source.networkMetrics.forEach((m, i) => valuesByTwin(twins, m.attributes, rates[i]!, out));
+        return out;
+      });
+      return c.json({ value });
+    })
     .get("/api/facets", async (c) => {
       const f = parse(rangeQuery, c.req.query());
       return c.json(await cached("facets", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().facets(f))));
@@ -188,8 +202,7 @@ export function createApp(config: Config, options: AppOptions) {
         rangeQuery.and(
           z.object({
             service: text,
-            namespace: text,
-            pod: text,
+            ...scope,
             severity: z.enum(["debug", "info", "warn", "error", "fatal"]).optional(),
             q: text,
             traceId: z.string().regex(/^[0-9a-f]{32}$/).optional(),
@@ -205,7 +218,7 @@ export function createApp(config: Config, options: AppOptions) {
         rangeQuery.and(
           z.object({
             service: text,
-            namespace: text,
+            ...scope,
             q: text,
             minMs: z.coerce.number().int().min(0).optional(),
             errors: z.enum(["true", "false"]).optional(),
@@ -232,7 +245,7 @@ export function createApp(config: Config, options: AppOptions) {
             type: z.enum(["gauge", "sum", "histogram"]),
             groupBy: z.string().max(100).regex(/^[A-Za-z0-9_.\-/]*$/).optional(),
             service: text,
-            namespace: text,
+            ...scope,
           }),
         ),
         c.req.query(),

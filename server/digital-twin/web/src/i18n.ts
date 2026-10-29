@@ -84,6 +84,19 @@ export const formatDateTime = (value: string | number | Date, options: Intl.Date
   new Intl.DateTimeFormat(formatLocale(), options).format(new Date(value));
 export const formatNumber = (value: number, options?: Intl.NumberFormatOptions) => new Intl.NumberFormat(formatLocale(), options).format(value);
 
+const BYTE_UNITS = ["byte", "kilobyte", "megabyte", "gigabyte", "terabyte"] as const;
+/** Bytes in the largest unit that keeps them at least 1 (decimal: kB, MB, GB…), `suffix` for rates. */
+function bytesIn(bytes: number, suffix = "") {
+  let i = 0;
+  let v = Math.max(0, bytes);
+  while (v >= 1000 && i < BYTE_UNITS.length - 1) (v /= 1000), i++;
+  return formatNumber(v, { style: "unit", unit: `${BYTE_UNITS[i]}${suffix}`, unitDisplay: "short", maximumFractionDigits: v < 10 && i > 0 ? 1 : 0 });
+}
+/** A size, as "1.2 GB". */
+export const formatBytes = (bytes: number) => bytesIn(bytes);
+/** Bytes per second, as "1.2 MB/s". */
+export const formatBytesRate = (bytes: number) => bytesIn(bytes, "-per-second");
+
 export default i18n;
 
 declare module "i18next" {

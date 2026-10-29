@@ -7,14 +7,8 @@
   "properties": "Properties",
   "model": "DTDL model",
   "errors15m": "Error log records of the last 15 minutes.",
-  "open": {
-    "logs": "Logs",
-    "metrics": "Metrics",
-    "traces": "Traces"
-  },
-  "noSelection": "Click a box to see its detail; double-click to fly to it.",
   "empty": "The twin has nothing to show.",
-  "hint": "Drag to orbit, wheel to zoom, click to select.",
+  "hint": "Drag to orbit, wheel to zoom, click a box to focus it.",
   "counts": {
     "twins_one": "{{count}} twin",
     "twins_other": "{{count}} twins"
@@ -35,5 +29,24 @@
   "more_one": "and {{count}} more",
   "more_other": "and {{count}} more",
   "yes": "yes",
-  "no": "no"
+  "no": "no",
+  "escHint": "Esc: back to the whole twin",
+  "view3d": "The digital twin in 3D",
+  "inside": "in",
+  "errorCount_one": "{{count}} error",
+  "errorCount_other": "{{count}} errors",
+  "openPage": "Open the full page",
+  "panel": {
+    "logs": "Logs",
+    "metrics": "Metrics",
+    "traces": "Traces"
+  },
+  "measure": {
+    "cpu": "CPU",
+    "memory": "Memory",
+    "network": "Network"
+  },
+  "peak": "max {{value}}",
+  "scrollOlder": "Scroll up for older records",
+  "logsStart": "No older records"
 }

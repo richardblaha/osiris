@@ -1,5 +1,5 @@
 import type { DtdlModelData } from "@osiris/shared/dtdl.ts";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildScene, type TwinScene } from "./scene.ts";
 import { t } from "i18next";
 import { api } from "./api.ts";
@@ -7,9 +7,9 @@ import { authOff, getAccessToken, login, logout } from "./auth.ts";
 import { applyLanguageSetting, currentLocale } from "./i18n.ts";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
-import { Twin3D } from "./Twin3D.tsx";
+import { Twin3D, type Point } from "./Twin3D.tsx";
 import { Timeline } from "./Timeline.tsx";
-import { TwinDetail } from "./TwinDetail.tsx";
+import { FocusPanels } from "./FocusPanels.tsx";
 
 /** The views, in the URL's hash so a selection or a page survives reloading and signing in. */
 type View =
@@ -42,8 +42,18 @@ export function App() {
   const [view, setView] = useState<View>(parseHash);
   /** The DTDL models, loaded once; the twins, their relationships and error counts, live or at `at`. */
   const [models, setModels] = useState<DtdlModelData[]>();
-  const [data, setData] = useState<{ twins: Awaited<ReturnType<typeof api.twins>>; relationships: Awaited<ReturnType<typeof api.relationships>>; errors: Record<string, number>; at: number | null }>();
+  const [data, setData] = useState<{
+    twins: Awaited<ReturnType<typeof api.twins>>;
+    relationships: Awaited<ReturnType<typeof api.relationships>>;
+    errors: Record<string, number>;
+    network: Record<string, number>;
+    at: number | null;
+  }>();
   const [selectedId, setSelectedId] = useState<string>();
+  /** Bumped by Escape with nothing selected: the camera flies back to the whole twin. */
+  const [home, setHome] = useState(0);
+  /** The selected box's corners on screen (the 3D view's), for the panels' lines. */
+  const anchor = useRef<(() => Point[] | null) | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   // undefined while the stored token is being checked: nothing asks the API before it's known whether there is one.
@@ -72,17 +82,18 @@ export function App() {
   /** The twin loads once signed in and, live, refreshes every minute (the server syncs every 30 s). */
   const loadTwin = () =>
     attempt(setBusy, setError, async () => {
-      const [m, twins, relationships, errors] = await Promise.all([
+      const [m, twins, relationships, errors, network] = await Promise.all([
         models ? Promise.resolve(models) : api.models(),
         api.twins(at),
         api.relationships(at),
         api.errorLogs(at).catch(() => ({})),
+        api.network(at).catch(() => ({})),
       ]);
       setModels(m);
-      setData({ twins, relationships, errors, at });
+      setData({ twins, relationships, errors, network, at });
     });
   const scene: TwinScene | undefined = useMemo(
-    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.at) : undefined),
+    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.at) : undefined),
     [models, data],
   );
   // The selection follows the refreshed scene (its new status and properties), or goes when its twin is gone.
@@ -102,6 +113,18 @@ export function App() {
       if (token) void api.me().then(setUser, () => {});
     });
   }, []);
+
+  // Escape: the selection goes and the camera flies back to the whole twin.
+  useEffect(() => {
+    if (view.kind !== "twin") return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      setSelectedId(undefined);
+      setHome((h) => h + 1);
+    };
+    addEventListener("keydown", onKey);
+    return () => removeEventListener("keydown", onKey);
+  }, [view.kind]);
 
   const openFromNode = (page: "logs" | "metrics" | "traces") => {
     // Pages filter by the attributes that name the twin's telemetry (its otelResource: OpenTelemetry's k8s
@@ -161,26 +184,38 @@ export function App() {
         ) : !signedIn ? (
           <div className="grid h-full place-items-center text-sm text-fg-muted">{t("common:signIn")}</div>
         ) : view.kind === "twin" ? (
-          <div className="flex h-full">
-            <div className="flex min-w-0 flex-1 flex-col">
-              <div className="relative min-h-0 flex-1">
-                <Loading show={busy && !scene} />
-                <ErrorNotice error={error} />
-                {scene ? (
-                  scene.top.length ? (
-                    <Twin3D scene={scene} selected={selected} onSelect={(node) => setSelectedId(node.id)} />
-                  ) : (
-                    <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
-                  )
-                ) : null}
-                <p className="pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:hint")}</p>
-                <p className="pointer-events-none absolute top-2 start-4 text-xs text-fg-muted">
-                  {scene ? t("twin:counts.twins", { count: scene.byId.size }) : ""}
-                </p>
-              </div>
-              {historyFrom !== undefined && <Timeline from={historyFrom} at={at} onChange={setAt} />}
+          <div className="flex h-full flex-col">
+            <div className="relative min-h-0 flex-1">
+              <Loading show={busy && !scene} />
+              <ErrorNotice error={error} />
+              {scene ? (
+                scene.top.length ? (
+                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} />
+                ) : (
+                  <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
+                )
+              ) : null}
+              {selected && scene ? (
+                <>
+                  <FocusPanels
+                    key={selected.id}
+                    node={selected}
+                    scene={scene}
+                    anchor={anchor}
+                    onSelect={setSelectedId}
+                    onOpenPage={openFromNode}
+                    onOpenTrace={(traceId) => navigate({ kind: "traces", preset: {}, traceId })}
+                  />
+                  <p className="twin-hint pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 text-xs text-fg-muted">{t("twin:escHint")}</p>
+                </>
+              ) : (
+                <>
+                  <p className="pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:hint")}</p>
+                  <p className="pointer-events-none absolute top-2 start-4 text-xs text-fg-muted">{scene ? t("twin:counts.twins", { count: scene.byId.size }) : ""}</p>
+                </>
+              )}
             </div>
-            {selected && scene ? <TwinDetail node={selected} scene={scene} onSelect={setSelectedId} onOpen={openFromNode} /> : <p className="pointer-events-none absolute end-4 top-2 hidden text-xs text-fg-muted md:block">{t("twin:noSelection")}</p>}
+            {historyFrom !== undefined && <Timeline from={historyFrom} at={at} onChange={setAt} />}
           </div>
         ) : view.kind === "logs" ? (
           <Logs

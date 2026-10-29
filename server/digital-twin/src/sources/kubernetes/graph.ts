@@ -7,6 +7,7 @@ import { instanceId, MODEL } from "./models.ts";
 export const NAMESPACE_ATTR = "k8s.namespace.name";
 export const POD_ATTR = "k8s.pod.name";
 export const CONTAINER_ATTR = "k8s.container.name";
+export const NODE_ATTR = "k8s.node.name";
 
 /** A pod's phase, lowercased the way the twin's DTDL enum spells it. */
 const phase = (pod: PodObject) => (pod.status?.phase ?? "unknown").toLowerCase();
@@ -57,11 +58,15 @@ function owner(pod: PodObject, deploymentOf: Map<string, string>): { kind: strin
   return { kind: ownerRef.kind, name: ownerRef.name };
 }
 
+const STATUSES: TwinStatus[] = ["ok", "warn", "error"];
+const worst = (statuses: TwinStatus[]): TwinStatus => statuses.reduce((a, b) => (STATUSES.indexOf(b) > STATUSES.indexOf(a) ? b : a), "ok");
+
 /**
- * The cluster as twins: the cluster contains its namespaces, a namespace its workloads (pods grouped by owner), a
- * workload its pods, a pod its containers; the cluster has its nodes and every pod runs on one. Each twin is an
- * instance of its DTDL interface (property values typed as the model says), with the OpenTelemetry attributes that
- * name its telemetry.
+ * The cluster as twins, nested the way the machines are: the cluster contains its nodes, a node the pods scheduled on
+ * it (a pod no node runs yet is the cluster's own), a pod its containers. Namespaces and workloads (pods grouped by
+ * owner) are twins too, related to their pods rather than containing them, with their worst pod's status. Each twin
+ * is an instance of its DTDL interface (property values typed as the model says), with the OpenTelemetry attributes
+ * that name its telemetry.
  */
 export function clusterGraph(input: ClusterInput): SourceSnapshot {
   const cluster = input.clusterName;
@@ -102,9 +107,9 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
         cpu: node.status?.capacity?.cpu ?? "",
         memory: node.status?.capacity?.memory ?? "",
       },
-      { "k8s.node.name": node.metadata.name },
+      { [NODE_ATTR]: node.metadata.name },
     );
-    link("hasNode", root, id);
+    link(CONTAINS, root, id);
   }
 
   // Pods by workload, so each workload's pods come out together and sorted.
@@ -120,15 +125,30 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
   for (const ns of [...input.namespaces].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))) {
     const namespace = ns.metadata.name;
     const nsId = instanceId(cluster, ["namespace", namespace]);
-    add(nsId, MODEL.Namespace, namespace, "ok", { phase: (ns.status?.phase ?? "active").toLowerCase() === "terminating" ? "terminating" : "active" }, { [NAMESPACE_ATTR]: namespace });
-    link(CONTAINS, root, nsId);
-
     const workloads = [...byWorkload.values()].filter((w) => w.namespace === namespace).sort((a, b) => a.owner.name.localeCompare(b.owner.name));
+    const nsPods = workloads.flatMap((w) => w.pods);
+    add(
+      nsId,
+      MODEL.Namespace,
+      namespace,
+      worst(nsPods.map(podStatus)),
+      { phase: (ns.status?.phase ?? "active").toLowerCase() === "terminating" ? "terminating" : "active", podCount: nsPods.length },
+      { [NAMESPACE_ATTR]: namespace },
+    );
+    link("hasNamespace", root, nsId);
+
     for (const { owner: o, pods } of workloads) {
       // `workload-<kind>`: a lone pod is its own workload, and the two must not share an id.
       const workloadId = instanceId(cluster, ["namespace", namespace], [`workload-${o.kind.toLowerCase()}`, o.name]);
-      add(workloadId, MODEL.Workload, o.name, "ok", { ownerKind: o.kind, podCount: pods.length, readyCount: pods.filter((p) => podStatus(p) === "ok").length }, { [NAMESPACE_ATTR]: namespace });
-      link(CONTAINS, nsId, workloadId);
+      add(
+        workloadId,
+        MODEL.Workload,
+        o.name,
+        worst(pods.map(podStatus)),
+        { ownerKind: o.kind, podCount: pods.length, readyCount: pods.filter((p) => podStatus(p) === "ok").length },
+        { [NAMESPACE_ATTR]: namespace },
+      );
+      link("hasWorkload", nsId, workloadId);
 
       for (const pod of [...pods].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name))) {
         const podId = instanceId(cluster, ["namespace", namespace], ["pod", pod.metadata.name]);
@@ -142,6 +162,7 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
           {
             phase: ["pending", "running", "succeeded", "failed"].includes(p) ? p : "unknown",
             nodeName: pod.spec.nodeName ?? "",
+            namespace,
             ip: pod.status?.podIP ?? "",
             readyCount: containers.filter((c) => c.ready).length,
             containerCount: containers.length,
@@ -149,9 +170,8 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
           },
           { [NAMESPACE_ATTR]: namespace, [POD_ATTR]: pod.metadata.name },
         );
-        link(CONTAINS, workloadId, podId);
-        const nodeId = pod.spec.nodeName && nodeIds.get(pod.spec.nodeName);
-        if (nodeId) link("runsOn", podId, nodeId);
+        link("hasPod", workloadId, podId);
+        link(CONTAINS, (pod.spec.nodeName && nodeIds.get(pod.spec.nodeName)) || root, podId);
 
         for (const c of containers) {
           const containerId = instanceId(cluster, ["namespace", namespace], ["pod", pod.metadata.name], ["container", c.name]);

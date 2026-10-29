@@ -31,13 +31,25 @@ body,
   }
 }
 
-/* A node label over the 3D canvas (three.js CSS2DRenderer): small, muted, never interactive. */
+/* A node label over the 3D canvas (three.js CSS2DRenderer): small, never interactive; the outer shells' bolder. */
 .twin-label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 10px;
   white-space: nowrap;
   pointer-events: none;
   user-select: none;
+  transform-origin: left bottom;
+  text-shadow: 0 0 4px var(--bg-editor);
+}
+.twin-label[data-level="0"] {
+  color: var(--accent-primary);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+}
+.twin-label[data-level="1"] {
+  color: var(--text-primary);
+  font-size: 11px;
 }
 .twin-label[data-status="error"] {
   color: var(--state-error);
@@ -46,7 +58,159 @@ body,
   color: var(--state-warning);
 }
 .twin-label[data-selected="true"] {
+  color: var(--accent-secondary);
+}
+
+/* The hover tip next to the pointer: what's under it. */
+.twin-tip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  max-width: 22rem;
+  padding: 0.375rem 0.625rem;
+  border: 1px solid var(--accent-secondary);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sidebar) 92%, transparent);
+  box-shadow: 0 0 0 3px var(--accent-secondary-soft);
+  font-size: 12px;
+  pointer-events: none;
+}
+.twin-tip strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.twin-tip-kind {
+  color: var(--accent-secondary);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.twin-tip [data-status] {
+  color: var(--text-secondary);
+}
+.twin-tip [data-status="error"] {
+  color: var(--state-error);
+}
+.twin-tip [data-status="warn"] {
+  color: var(--state-warning);
+}
+
+/* The selected twin's panels in the view's corners, with SVG lines to its box. */
+.focus-panels {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+}
+.focus-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.focus-lines path {
+  fill: none;
+  stroke: var(--accent-primary);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+  animation: line-flow 1.2s linear infinite, fade-in 0.4s ease 0.5s both;
+}
+.focus-lines circle {
+  fill: var(--accent-primary);
+  animation: fade-in 0.4s ease 0.5s both;
+}
+.focus-lines .focus-line-target {
+  fill: var(--accent-secondary);
+}
+.focus-panel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  width: clamp(17rem, 27vw, 26rem);
+  height: calc(50% - 1.25rem);
+  border: 1px solid var(--border-strong);
+  border-top: 2px solid var(--accent-primary);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sidebar) 90%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-popup);
+  pointer-events: auto;
+  animation: panel-in 0.35s ease both;
+}
+.focus-panel[data-slot="tl"] {
+  top: 0.75rem;
+  left: 0.75rem;
+  border-top-color: var(--accent-secondary);
+  animation-delay: 0.45s;
+}
+.focus-panel[data-slot="tr"] {
+  top: 0.75rem;
+  right: 0.75rem;
+  animation-delay: 0.55s;
+}
+.focus-panel[data-slot="br"] {
+  bottom: 0.75rem;
+  right: 0.75rem;
+  animation-delay: 0.65s;
+}
+.focus-panel[data-slot="bl"] {
+  bottom: 0.75rem;
+  left: 0.75rem;
+  animation-delay: 0.75s;
+}
+.focus-panel-open {
   color: var(--accent-primary);
+  padding: 0 0.25rem;
+  border-radius: var(--radius);
+}
+.focus-panel-open:hover {
+  background: var(--bg-hover);
+}
+/* Narrow screens: the panels scroll in a column over the lower half, without lines. */
+@media (max-width: 900px) {
+  .focus-panels {
+    top: 45%;
+    overflow-y: auto;
+    padding: 0.5rem;
+    pointer-events: auto;
+  }
+  .focus-panel {
+    position: static;
+    width: 100%;
+    height: 18rem;
+    margin-bottom: 0.5rem;
+  }
+  .twin-hint {
+    display: none;
+  }
+}
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+}
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes line-flow {
+  to {
+    stroke-dashoffset: -18;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-panel,
+  .focus-lines path,
+  .focus-lines circle {
+    animation: none;
+  }
 }
 
 @layer components {
