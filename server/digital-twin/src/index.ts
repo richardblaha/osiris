@@ -38,6 +38,7 @@ const source = kubernetesSource(
     fetchFn: kubeFetch,
   }),
   config.CLUSTER_NAME,
+  { cephManagers: config.CEPH_MANAGERS },
 );
 const clickhouse = config.CLICKHOUSE_URL ? new ClickHouse(config.CLICKHOUSE_URL, config.CLICKHOUSE_USER, config.CLICKHOUSE_PASSWORD ?? "") : undefined;
 const telemetry = clickhouse ? new Telemetry(clickhouse, config.CLICKHOUSE_CLUSTER) : undefined;

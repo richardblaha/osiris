@@ -15,13 +15,25 @@ const CONTAINER = {
 
 /** Workloads by the kind of what owns their pods. */
 const WORKLOADS: Record<string, string> = { Deployment: "deploy", StatefulSet: "sts", DaemonSet: "ds", Job: "job", CronJob: "cronjob", ReplicaSet: "rs", Pod: "pod" };
-/** The icon of each Kubernetes model, by the DTMI's last segment. */
-const MODELS: Record<string, string> = { Cluster: "control-plane", Node: "node", Namespace: "ns", Pod: "pod", PersistentVolumeClaim: "pvc" };
+/** The icon of each model, by its DTMI without the version: Kubernetes' own, and Ceph's in the storage ones. */
+const MODELS: Record<string, string> = {
+  "dtmi:osiris:k8s:Cluster": "control-plane",
+  "dtmi:osiris:k8s:Node": "node",
+  "dtmi:osiris:k8s:Namespace": "ns",
+  "dtmi:osiris:k8s:Pod": "pod",
+  "dtmi:osiris:k8s:PersistentVolumeClaim": "pvc",
+  "dtmi:osiris:ceph:Cluster": "sc",
+  "dtmi:osiris:ceph:Pool": "vol",
+  "dtmi:osiris:ceph:Osd": "pv",
+};
 
 /** A twin's Kubernetes icon (outline SVG markup), or undefined for a model it has none for. */
 export function iconOf(node: TwinView): string | undefined {
-  const kind = node.model.replace(/;.*$/, "").split(":").pop() ?? "";
-  const icon = kind === "Container" ? CONTAINER : K8S_ICONS[kind === "Workload" ? (WORKLOADS[String(node.twin.ownerKind)] ?? "rs") : (MODELS[kind] ?? "")];
+  const model = node.model.replace(/;.*$/, "");
+  const icon =
+    model === "dtmi:osiris:k8s:Container"
+      ? CONTAINER
+      : K8S_ICONS[model === "dtmi:osiris:k8s:Workload" ? (WORKLOADS[String(node.twin.ownerKind)] ?? "rs") : (MODELS[model] ?? "")];
   return icon ? `<svg class="k8s-icon" viewBox="${icon.viewBox}" aria-hidden="true">${icon.body}</svg>` : undefined;
 }
 

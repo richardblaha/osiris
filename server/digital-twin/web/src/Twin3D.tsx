@@ -7,7 +7,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { formatBytes, formatBytesRate, formatNumber } from "./i18n.ts";
 import { iconOf, kindOf } from "./icons.ts";
-import { fillOf, hasNetwork, interfacesOf, isStorage, type TwinScene, type TwinView } from "./scene.ts";
+import { fillOf, hasNetwork, interfacesOf, isStorage, storageOf, type TwinScene, type TwinView } from "./scene.ts";
 import { layoutTwin, type Box, type Link, type Scene } from "./TwinLayout.ts";
 
 /** A point on the view, in CSS pixels from its top left corner. */
@@ -20,11 +20,19 @@ export interface Point {
 function themeColors() {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => new THREE.Color(css.getPropertyValue(name).trim() || "#888888");
-  return { cyan: v("--accent-primary"), magenta: v("--accent-secondary"), warn: v("--state-warning"), error: v("--state-error") };
+  // Cyan for what is well, bright cyan for what is selected or hovered, magenta for errors (the theme's --state-error).
+  return { cyan: v("--accent-primary"), active: v("--accent-active"), neutral: v("--text-secondary"), warn: v("--state-warning"), error: v("--state-error") };
 }
 
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const easeInOut = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
+
+/** How full a storage twin is, in words: bytes of its size where they're known, else the share (an estimate). */
+export function storageText(node: TwinView, full = fillOf(node)): string {
+  const bytes = storageOf(node);
+  if (bytes && full !== undefined) return t("twin:storageUse", { used: formatBytes(bytes.used), size: formatBytes(bytes.size), share: formatNumber(full, { style: "percent" }) });
+  return full !== undefined ? t("twin:fillEstimate", { share: formatNumber(full, { style: "percent" }) }) : "";
+}
 
 /** A twin's basic state in one line: its status, traffic, how full it is, its recent errors. */
 function infoOf(node: TwinView): string {
@@ -32,7 +40,7 @@ function infoOf(node: TwinView): string {
   return [
     t(`twin:status.${node.status}`),
     node.network !== undefined ? formatBytesRate(node.network) : "",
-    full !== undefined && node.storage ? t("twin:storageUse", { used: formatBytes(node.storage.used), size: formatBytes(node.storage.fsCapacity), share: formatNumber(full, { style: "percent" }) }) : "",
+    storageText(node, full),
     node.errors ? t("twin:errorCount", { count: node.errors }) : "",
   ]
     .filter(Boolean)
@@ -139,6 +147,8 @@ interface Content {
   links: LinkPath[];
   lines: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
   packets: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+  /** The interfaces' addresses (an IP) beside their dots, each shown while its owner is big enough on screen. */
+  portLabels: { object: CSS2DObject; owner: string }[];
   /** The interfaces: a dot where each link meets a wall or a mantle. */
   ports: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   labels: Map<string, CSS2DObject>;
@@ -256,6 +266,7 @@ export function Twin3D({
       content.packets.geometry.dispose();
       content.packets.material.dispose();
       for (const label of content.labels.values()) label.removeFromParent();
+      for (const p of content.portLabels) p.object.removeFromParent();
       for (const g of content.globes) {
         world.remove(g.lines);
         g.lines.geometry.dispose();
@@ -357,6 +368,7 @@ export function Twin3D({
         lines,
         packets,
         ports,
+        portLabels: portLabelsOf(links, byId),
         labels: new Map(),
         globes,
         bounds: { center: new THREE.Vector3(...b.center), radius: Math.hypot(...b.size) / 2 },
@@ -370,11 +382,43 @@ export function Twin3D({
       const focus = chosen.current;
       // Nothing selected, or a twin the view has no box for (a namespace): everything is in view.
       if (!focus || !content?.boxes.has(focus.id)) return true;
-      for (let n = node; n; n = n.parent) if (n.id === focus.id) return true;
+      for (let n = node; n; n = n.parent) {
+        if (n.id === focus.id) return true;
+        // A band (a namespace) selected: what belongs to it, in whichever container.
+        if (focus.isBand && n.band === focus.of) return true;
+      }
       return false;
     };
     /** Each link's load from 0 to 1 (by index), against its siblings' highest (at least 100 kB/s, so quiet stays calm). */
     let loads: number[] = [];
+
+    /**
+     * The addresses at the interfaces: a network link's end on a twin with an IP (a pod, a disk's OSD) and its hub on
+     * a container with one (a node), once per hub.
+     */
+    const portLabelsOf = (links: LinkPath[], byId: Map<string, TwinView>) => {
+      const out: Content["portLabels"] = [];
+      const hubs = new Set<string>();
+      const add = (owner: string, point: number[], placement: "start" | "end") => {
+        const ip = byId.get(owner)?.twin.ip;
+        if (typeof ip !== "string" || !ip) return;
+        const div = document.createElement("div");
+        div.className = "twin-port";
+        div.dataset.placement = placement;
+        div.textContent = ip;
+        const object = new CSS2DObject(div);
+        object.position.set(point[0]!, point[1]!, point[2]!);
+        object.visible = false;
+        world.add(object);
+        out.push({ object, owner });
+      };
+      for (const l of links) {
+        if (l.kind !== "network") continue;
+        add(l.id, l.path.at(-1)!, "end");
+        if (!hubs.has(l.parent)) (hubs.add(l.parent), add(l.parent, l.path[0]!, "start"));
+      }
+      return out;
+    };
 
     /** A label's content: the Kubernetes icon, the name, and a line of kind and state. */
     const fillLabel = (el: HTMLElement, node: TwinView) => {
@@ -428,6 +472,7 @@ export function Twin3D({
       const h = element.clientHeight;
       const scale = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
       const focus = chosen.current && content.boxes.has(chosen.current.id) ? chosen.current : undefined;
+      const levels = new Map<string, number>();
       for (const m of content.meshes) {
         const node = content.byId.get(m.id);
         if (!node) continue;
@@ -435,15 +480,19 @@ export function Twin3D({
         const px = (Math.max(m.box.size[0], m.box.size[2]) / distance) * scale;
         const near = !focus || inFocus(node) || isAncestor(node, focus);
         const level = !near ? 0 : px >= LOD.info ? 3 : px >= LOD.name ? 2 : px >= LOD.icon ? 1 : 0;
+        levels.set(m.id, level);
         let label = content.labels.get(m.id);
         if (!level && !label) continue;
         label ??= labelOf(node, m.box);
         label.visible = level > 0;
         if (label.element.dataset.lod !== String(level)) label.element.dataset.lod = String(level);
       }
+      // An address shows once its owner shows its name.
+      for (const p of content.portLabels) p.object.visible = (levels.get(p.owner) ?? 0) >= 2;
     };
+    /** Whether `node` is around `of`: a container it's in, or the band (namespace) it belongs to. */
     const isAncestor = (node: TwinView, of: TwinView) => {
-      for (let n = of.parent; n; n = n.parent) if (n.id === node.id) return true;
+      for (let n: TwinView | undefined = of; n; n = n.parent) if ((n !== of && n.id === node.id) || (node.isBand && n.band === node.of)) return true;
       return false;
     };
 
@@ -459,7 +508,7 @@ export function Twin3D({
         // Outside the selection a box is a faint ghost; its ancestors stay as thin shells around it.
         const fade = inFocus(node) ? 1 : 0.18;
         const strong = isChosen || isHovered;
-        const color = strong ? colors.magenta : statusColor(node.status);
+        const color = strong ? colors.active : statusColor(node.status);
         m.edges.material.color = color;
         m.edges.material.opacity = (strong ? 1 : node.depth === 0 ? 0.9 : leaf ? 0.8 : 0.6) * fade;
         m.mesh.material.color = color;
@@ -493,8 +542,8 @@ export function Twin3D({
       let v = 0;
       content.links.forEach((l, k) => {
         const shown = inFocus(content!.byId.get(l.parent)) || inFocus(content!.byId.get(l.id));
-        // Networks in cyan by load; interfaces (a mount) in magenta.
-        const c = l.kind === "interface" ? colors.magenta : colors.cyan;
+        // Networks in cyan by load; interfaces (a mount) in the text's grey.
+        const c = l.kind === "interface" ? colors.neutral : colors.cyan;
         const alpha = (l.kind === "interface" ? 0.7 : 0.18 + 0.5 * loads[k]!) * (shown ? 1 : 0.15);
         for (let i = 0; i < (l.path.length - 1) * 2; i++, v++) color.setXYZW(v, c.r, c.g, c.b, alpha);
         for (const e of [2 * k, 2 * k + 1]) portColor.setXYZW(e, c.r, c.g, c.b, (shown ? 0.95 : 0.15));
@@ -599,6 +648,7 @@ export function Twin3D({
         for (const child of node.children) walk(child);
       };
       for (const node of twin.top) walk(node);
+      for (const band of twin.bands) byId.set(band.id, band);
       const scene = layoutTwin(twin.top, { networked: (node) => hasNetwork(node, twin.models), storage: (node) => isStorage(node, twin.models), interfaces: interfacesOf(twin) });
       const shape = scene.boxes.map((x) => `${x.id}@${x.center.join(",")}:${x.size.join(",")}`).join("|");
       if (content && content.shape === shape) content.byId = byId;

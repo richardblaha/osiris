@@ -30,7 +30,12 @@ interface Terminated {
 
 export interface NodeObject {
   metadata: { name: string; uid?: string };
-  status?: { nodeInfo?: { kubeletVersion?: string; osImage?: string }; capacity?: Record<string, string>; conditions?: { type: string; status: string }[] };
+  status?: {
+    nodeInfo?: { kubeletVersion?: string; osImage?: string };
+    capacity?: Record<string, string>;
+    conditions?: { type: string; status: string }[];
+    addresses?: { type: string; address: string }[];
+  };
 }
 
 /** A claim on storage: its size, class and whether a volume backs it. */
@@ -38,6 +43,12 @@ export interface PvcObject {
   metadata: { name: string; namespace: string; uid?: string };
   spec?: { storageClassName?: string; accessModes?: string[]; volumeName?: string; resources?: { requests?: { storage?: string } } };
   status?: { phase?: string; capacity?: { storage?: string } };
+}
+
+/** A volume: which CSI pool it is an image in. */
+export interface PvObject {
+  metadata: { name: string };
+  spec?: { csi?: { driver?: string; volumeAttributes?: Record<string, string> } };
 }
 
 /** ReplicaSets matter only to find the Deployment a pod's owner belongs to. */
@@ -100,6 +111,10 @@ export class Kube {
 
   persistentVolumeClaims() {
     return this.list<PvcObject>("/api/v1/persistentvolumeclaims");
+  }
+
+  persistentVolumes() {
+    return this.list<PvObject>("/api/v1/persistentvolumes");
   }
 
   replicasets() {

@@ -52,5 +52,6 @@
   "scrollOlder": "Scroll up for older records",
   "logsStart": "No older records",
   "internet": "Internet",
-  "storageUse": "{{used}} of {{size}} used ({{share}})"
+  "storageUse": "{{used}} of {{size}} used ({{share}})",
+  "fillEstimate": "≈ {{share}} full (cluster average)"
 }

@@ -28,8 +28,12 @@ export interface TwinView {
    * `of`, the twin it projects. Projections roll up only what they hold here.
    */
   of?: string;
-  /** Drawn with dashed edges: the outermost projection (a namespace), a grouping rather than a thing. */
+  /** Drawn with dashed edges: a band (a namespace), a grouping rather than a thing. */
   dashed?: boolean;
+  /** The outermost group this twin belongs to (a namespace's id): its band across the containers. */
+  band?: string;
+  /** A band itself: one solid across the containers around what belongs to the group (`of`). */
+  isBand?: boolean;
 }
 
 /** Everything the views draw: the models, every twin by id, the tree's top and every relationship. */
@@ -38,6 +42,8 @@ export interface TwinScene {
   byId: Map<string, TwinView>;
   /** The outermost boxes of the 3D view: the twins nothing contains but which contain others (a cluster). */
   top: TwinView[];
+  /** The bands: one per outermost group (a namespace) and outermost twin, across the containers in it. */
+  bands: TwinView[];
   relationships: DigitalTwinRelationship[];
   /** The past time the scene shows; null when live. */
   at: number | null;
@@ -87,7 +93,7 @@ export function buildScene(
     parent.children.push(child);
   }
   const roots = [...byId.values()].filter((v) => !v.parent && v.children.length).sort((a, b) => a.name.localeCompare(b.name));
-  project(roots, byId, relationships);
+  const bands = project(roots, byId, relationships);
   const roll = (v: TwinView, depth: number) => {
     v.depth = depth;
     for (const c of v.children) {
@@ -104,7 +110,21 @@ export function buildScene(
   // The cluster carries its nodes' traffic too: its traffic to the internet, as near as the counters tell (they count
   // traffic between nodes as well).
   for (const r of roots) roll(r, 0);
-  return { models: modelMap, byId, top: roots, relationships, at };
+  // A band's state is its members': the worst status, their errors and traffic.
+  const members = (band: TwinView) => {
+    const out: TwinView[] = [];
+    const walk = (v: TwinView) => (v.band === band.of && !v.isBand ? out.push(v) : v.children.forEach(walk));
+    walk(band.parent!);
+    return out;
+  };
+  for (const b of bands) {
+    const list = members(b);
+    for (const m of list) (b.status = worse(b.status, m.status)), (b.errors += m.errors);
+    const known = list.filter((m) => m.network !== undefined);
+    if (known.length) b.network = known.reduce((n, m) => n + m.network!, 0);
+    b.depth = 1;
+  }
+  return { models: modelMap, byId, top: roots, bands, relationships, at };
 }
 
 /**
@@ -129,6 +149,25 @@ function project(roots: TwinView[], byId: Map<string, TwinView>, relationships: 
     return chain;
   };
 
+  const bands = new Map<string, TwinView>();
+  /** The band of `group` across `root`: one per group and outermost twin. */
+  const bandOf = (root: TwinView, group: string) => {
+    const id = `${root.id}~${group}`;
+    let band = bands.get(id);
+    if (!band) {
+      const g = byId.get(group)!;
+      band = { id, twin: g.twin, model: g.model, modelName: g.modelName, name: g.name, ownStatus: "ok", status: "ok", ownErrors: 0, errors: 0, depth: 1, parent: root, children: [], of: group, dashed: true, isBand: true };
+      bands.set(id, band);
+      byId.set(id, band);
+    }
+    return band;
+  };
+  const rootOf = (v: TwinView) => {
+    let r = v;
+    while (r.parent) r = r.parent;
+    return r;
+  };
+
   const walk = (container: TwinView, around: Set<string>) => {
     const kids = container.children;
     container.children = [];
@@ -137,6 +176,13 @@ function project(roots: TwinView[], byId: Map<string, TwinView>, relationships: 
       let chain = chainOf(child.id).filter((g) => !around.has(g));
       const innermost = chain.at(-1) && byId.get(chain.at(-1)!);
       if (innermost && innermost.name === child.name) chain = chain.slice(0, -1);
+      // The outermost group (a namespace) is a band across the containers, not a box in each.
+      let band: string | undefined;
+      if (chain.length && !groupOf.has(chain[0]!)) {
+        band = chain[0];
+        bandOf(rootOf(container), band!);
+        chain = chain.slice(1);
+      }
       let parent = container;
       for (const g of chain) {
         const key = `${parent.id}>${g}`;
@@ -157,13 +203,14 @@ function project(roots: TwinView[], byId: Map<string, TwinView>, relationships: 
             parent,
             children: [],
             of: g,
-            dashed: !groupOf.has(g),
+            band,
           };
           slices.set(key, slice);
           parent.children.push(slice);
         }
         parent = slice;
       }
+      if (parent === container && band) child.band = band;
       child.parent = parent;
       parent.children.push(child);
       walk(child, new Set([...around, ...chainOf(child.id)]));
@@ -171,6 +218,7 @@ function project(roots: TwinView[], byId: Map<string, TwinView>, relationships: 
     for (const slice of slices.values()) byId.set(slice.id, slice);
   };
   for (const r of roots) walk(r, new Set());
+  return [...bands.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 /** The twin a view shows: itself, or for a projection the grouping twin it projects. */
@@ -194,12 +242,27 @@ export function scopeOf(node: TwinView): { namespace?: string; pod?: string; nod
   return { namespace: r["k8s.namespace.name"], pod: r["k8s.pod.name"], node: r["k8s.node.name"], container: r["k8s.container.name"], claim: r["k8s.persistentvolumeclaim.name"] };
 }
 
-/** Whether a twin is storage (its model declares the `used` telemetry): the view draws it as a cylinder filled so far. */
+/**
+ * Whether a twin is storage (its model declares `used`, as telemetry or a property, or a `fill`): a disk, a pool, a
+ * volume claim. The view draws such a leaf as a cylinder filled as far as it is full.
+ */
 export const isStorage = (node: TwinView, models: Map<string, DtdlInterface>) =>
-  resolveContents(node.model, models).some((c) => c["@type"] === "Telemetry" && c.name === "used");
+  !node.isBand && resolveContents(node.model, models).some((c) => (c["@type"] === "Telemetry" || c["@type"] === "Property") && (c.name === "used" || c.name === "fill"));
 
-/** How full a storage twin is, 0 to 1; undefined without its telemetry. */
-export const fillOf = (node: TwinView) => (node.storage && node.storage.fsCapacity > 0 ? Math.min(1, node.storage.used / node.storage.fsCapacity) : undefined);
+/** A storage twin's bytes: used of its size (its telemetry, else its properties); undefined when only a share is known. */
+export function storageOf(node: TwinView): { used: number; size: number } | undefined {
+  if (node.storage && node.storage.fsCapacity > 0) return { used: node.storage.used, size: node.storage.fsCapacity };
+  const { used, size } = node.twin as { used?: unknown; size?: unknown };
+  return typeof used === "number" && typeof size === "number" && size > 0 ? { used, size } : undefined;
+}
+
+/** How full a storage twin is, 0 to 1: its storage telemetry, else its `used` of its `size`, else its `fill`. */
+export function fillOf(node: TwinView): number | undefined {
+  if (node.storage && node.storage.fsCapacity > 0) return Math.min(1, node.storage.used / node.storage.fsCapacity);
+  const { used, size, fill } = node.twin as { used?: unknown; size?: unknown; fill?: unknown };
+  if (typeof used === "number" && typeof size === "number" && size > 0) return Math.min(1, used / size);
+  return typeof fill === "number" ? Math.min(1, Math.max(0, fill)) : undefined;
+}
 
 /**
  * The interfaces between twins in one container: every relationship but containment whose two ends sit side by side

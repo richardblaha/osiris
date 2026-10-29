@@ -463,7 +463,7 @@ export function Logs({
           <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("telemetry:searchPlaceholder")} data-set={!!q} className="field filter-select w-56 py-1 text-sm" />
         </label>
         {picked && (
-          <button type="button" onClick={() => setPicked(undefined)} className="badge badge-accent self-center" title={t("telemetry:clearWindow")}>
+          <button type="button" onClick={() => setPicked(undefined)} className="badge self-center" title={t("telemetry:clearWindow")}>
             {windowLabel(picked.from)} – {windowLabel(picked.to)} ×
           </button>
         )}

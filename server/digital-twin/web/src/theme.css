@@ -5,7 +5,8 @@
    Light is the baseline; dark applies under `prefers-color-scheme: dark`,
    the same pattern as the theme's Forgejo `auto` variant.
    The digital twin wears cyan and magenta in both schemes: its light accents are
-   the dark ones darkened until text in them reads on white.
+   the dark ones darkened until text in them reads on white. What is selected or
+   hovered glows in a brighter cyan (--accent-active); magenta marks errors.
    ========================================================================== */
 
 /* Fira Code (SIL OFL-1.1, see fonts/FiraCode-LICENSE.txt): the single OSIRIS typeface. */
@@ -48,11 +49,13 @@
   --accent-primary-soft: rgba(0, 131, 143, 0.1);
   --accent-secondary: #c2007a;
   --accent-secondary-soft: rgba(194, 0, 122, 0.1);
+  --accent-active: #00b8cc;
+  --accent-active-soft: rgba(0, 184, 204, 0.18);
 
   --state-info: #00838f;
   --state-success: #1a7f37;
   --state-warning: #9a6700;
-  --state-error: #cf222e;
+  --state-error: #c2007a;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -79,11 +82,13 @@
     --accent-primary-soft: rgba(0, 242, 254, 0.14);
     --accent-secondary: #ff2a85;
     --accent-secondary-soft: rgba(255, 42, 133, 0.14);
+    --accent-active: #7dfcff;
+    --accent-active-soft: rgba(125, 252, 255, 0.2);
 
     --state-info: #00f2fe;
     --state-success: #3fb950;
     --state-warning: #d29922;
-    --state-error: #ff5555;
+    --state-error: #ff2a85;
   }
 }
 

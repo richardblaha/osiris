@@ -6,7 +6,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-const ICONS = ["ns", "pod", "sts", "deploy", "ds", "job", "cronjob", "rs", "pvc", "node", "control-plane"];
+const ICONS = ["ns", "pod", "sts", "deploy", "ds", "job", "cronjob", "rs", "pvc", "pv", "sc", "vol", "node", "control-plane"];
 const SHAPES = new Set(["path", "rect", "circle", "ellipse", "polygon", "polyline"]);
 const GEOMETRY = ["d", "x", "y", "width", "height", "rx", "ry", "cx", "cy", "r", "points", "transform"];
 const SKIP = new Set(["metadata", "defs", "sodipodi:namedview", "title", "desc", "text", "tspan", "flowRoot", "script", "style"]);

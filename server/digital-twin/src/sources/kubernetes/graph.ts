@@ -1,6 +1,7 @@
 import type { TwinStatus } from "@osiris/shared";
 import { CONTAINS, type SourceRelationship, type SourceSnapshot, type SourceTwin } from "../../twin.ts";
-import type { NamespaceObject, NodeObject, PodObject, PvcObject, ReplicaSetObject } from "./kube.ts";
+import type { CephState } from "./ceph.ts";
+import type { NamespaceObject, NodeObject, PodObject, PvcObject, PvObject, ReplicaSetObject } from "./kube.ts";
 import { instanceId, MODEL } from "./models.ts";
 
 /** OpenTelemetry's Kubernetes resource attributes, as the collector's k8sattributes processor sets them. */
@@ -45,7 +46,11 @@ export interface ClusterInput {
   pods: PodObject[];
   nodes: NodeObject[];
   pvcs?: PvcObject[];
+  /** PersistentVolumes: which pool a claim's volume is an image in. */
+  pvs?: PvObject[];
   replicasets: ReplicaSetObject[];
+  /** The Ceph cluster the volumes live on, when its manager is known. */
+  ceph?: CephState;
   version: string | null;
 }
 
@@ -109,6 +114,7 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
         os: node.status?.nodeInfo?.osImage ?? "",
         cpu: node.status?.capacity?.cpu ?? "",
         memory: node.status?.capacity?.memory ?? "",
+        ip: node.status?.addresses?.find((a) => a.type === "InternalIP")?.address ?? "",
       },
       { [NODE_ATTR]: node.metadata.name },
     );
@@ -221,6 +227,49 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
       }
     }
   }
+  // Ceph: its pools in it, its OSDs in the nodes they're on (a disk of a host the cluster doesn't know: in Ceph).
+  if (input.ceph) {
+    const c = input.ceph;
+    const cephId = instanceId(cluster, ["ceph", "ceph"]);
+    add(cephId, MODEL.Ceph, "Ceph", c.health >= 2 ? "error" : c.health === 1 ? "warn" : "ok", {
+      health: c.health >= 2 ? "error" : c.health === 1 ? "warn" : "ok",
+      version: c.version,
+      osdCount: c.osds.length,
+      size: c.size,
+      used: c.used,
+    });
+    link(CONTAINS, root, cephId);
+    const fill = c.size > 0 ? c.used / c.size : 0;
+    for (const o of c.osds) {
+      const id = instanceId(cluster, ["ceph", "ceph"], ["osd", String(o.id)]);
+      add(id, MODEL.CephOsd, `osd.${o.id}`, !o.up ? "error" : !o.in ? "warn" : "ok", {
+        osdId: o.id,
+        device: o.device,
+        model: o.model,
+        dbDevice: o.dbDevice,
+        deviceClass: o.deviceClass,
+        ip: o.address,
+        up: o.up,
+        in: o.in,
+        fill,
+      });
+      link(CONTAINS, nodeIds.get(o.host) ?? cephId, id);
+      link("hasOsd", cephId, id);
+    }
+    // A claim's pool: its volume's CSI attribute.
+    const poolOfVolume = new Map((input.pvs ?? []).flatMap((pv) => (pv.spec?.csi?.volumeAttributes?.pool ? [[pv.metadata.name, pv.spec.csi.volumeAttributes.pool] as const] : [])));
+    for (const p of c.pools) {
+      const id = instanceId(cluster, ["ceph", "ceph"], ["pool", p.name]);
+      add(id, MODEL.CephPool, p.name, "ok", { poolId: p.id, size: p.stored + p.maxAvailable, used: p.stored });
+      link(CONTAINS, cephId, id);
+      for (const pvc of input.pvcs ?? [])
+        if (pvc.spec?.volumeName && poolOfVolume.get(pvc.spec.volumeName) === p.name) {
+          const claim = claimIds.get(`${pvc.metadata.namespace}/${pvc.metadata.name}`);
+          if (claim) link("holds", id, claim);
+        }
+    }
+  }
+
   // A claim no pod mounts (or whose pod is gone) is the cluster's.
   const held = new Set(relationships.filter((r) => r.name === CONTAINS).map((r) => r.target));
   for (const id of claimIds.values()) if (!held.has(id)) link(CONTAINS, root, id);

@@ -79,7 +79,7 @@ metadata:
   name: osiris-digital-twin
 rules:
   - apiGroups: [""]
-    resources: [namespaces, pods, nodes, persistentvolumeclaims]
+    resources: [namespaces, pods, nodes, persistentvolumeclaims, persistentvolumes]
     verbs: [get, list]
   - apiGroups: [apps]
     resources: [replicasets]

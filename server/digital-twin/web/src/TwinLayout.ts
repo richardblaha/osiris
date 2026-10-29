@@ -100,27 +100,20 @@ function port(p: Placed, toward: Vec, y: number): Vec {
   return Math.abs(dx) / p.size[0] > Math.abs(dz) / p.size[2] ? [x + Math.sign(dx) * (p.size[0] / 2), y, z] : [x, y, z + (Math.sign(dz) || -1) * (p.size[2] / 2)];
 }
 
-/**
- * Measures one node: its children grouped by model (siblings of a kind share a layer), each group a near-square grid
- * of uniform cells with gaps between them, the groups one behind another, all of it floating inside the node's own
- * solid with a margin on every side — shells within shells. Networked children get a link from the node's hub (on
- * its back wall, between its floor and theirs) to their own facing wall; related children a link wall to wall.
- */
-function measure(node: TwinView, rules: LayoutRules): Measured {
-  const storage = rules.storage(node);
-  if (!node.children.length) {
-    const size = leafOf(node, storage);
-    return { size, boxes: [{ id: node.id, shape: storage ? "cylinder" : "box", center: [0, size[1] / 2, 0], size, radius: roundness(size) }], links: [] };
-  }
-  const gap = gapAt(node.depth);
-  const pad = padAt(node.depth);
+/** Children laid out: their footprint, and each one's floor center relative to the footprint's center. */
+interface Arranged {
+  inner: Vec;
+  placed: { node: TwinView; m: Measured; at: Vec }[];
+}
 
+/**
+ * Children grouped by model (siblings of a kind share a layer), each group a near-square grid of uniform cells with
+ * `gap` between them, the groups one behind another; short last rows centered.
+ */
+function arrange(children: { node: TwinView; m: Measured }[], gap: number): Arranged {
+  if (!children.length) return { inner: [0, 0, 0], placed: [] };
   const groups = new Map<string, { node: TwinView; m: Measured }[]>();
-  for (const child of node.children) {
-    const list = groups.get(child.model) ?? groups.set(child.model, []).get(child.model)!;
-    list.push({ node: child, m: measure(child, rules) });
-  }
-  // Each group as a grid: its cell (the largest child's size), columns and footprint.
+  for (const c of children) (groups.get(c.node.model) ?? groups.set(c.node.model, []).get(c.node.model)!).push(c);
   const grids = [...groups.values()]
     .sort((a, b) => b.length - a.length)
     .map((items) => {
@@ -132,43 +125,182 @@ function measure(node: TwinView, rules: LayoutRules): Measured {
   const innerW = Math.max(...grids.map((g) => g.width));
   const innerD = grids.reduce((n, g) => n + g.depth, 0) + gap * (grids.length - 1);
   const innerH = Math.max(...grids.map((g) => g.cell[1]));
-  const size: Vec = [innerW + 2 * pad, innerH + 2 * pad, innerD + 2 * pad];
+  const placed: Arranged["placed"] = [];
+  let z = -innerD / 2;
+  for (const g of grids) {
+    g.items.forEach((item, i) => {
+      const col = i % g.cols;
+      const row = Math.floor(i / g.cols);
+      const inRow = row === g.rows - 1 ? g.items.length - row * g.cols : g.cols;
+      const rowW = (g.cell[0] + gap) * inRow - gap;
+      placed.push({ ...item, at: [-rowW / 2 + g.cell[0] / 2 + col * (g.cell[0] + gap), 0, z + g.cell[2] / 2 + row * (g.cell[2] + gap)] });
+    });
+    z += g.depth + gap;
+  }
+  return { inner: [innerW, innerH, innerD], placed };
+}
+
+/** Puts a measured child's solids and links at `at` (its floor center) and remembers where it is. */
+function place(child: TwinView, m: Measured, at: Vec, boxes: Box[], links: Link[], placed: Map<string, Placed>) {
+  for (const b of m.boxes) boxes.push({ ...b, center: shift(b.center, at) });
+  for (const l of m.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
+  placed.set(child.id, { at, size: m.size, shape: m.boxes[0]!.shape });
+}
+
+/** A network link: along the floor from the hub to the foot of the child's facing wall, then up it to its middle. */
+function networkLink(id: string, parent: string, hub: Vec, p: Placed): Link {
+  const end = port(p, hub, p.at[1] + p.size[1] / 2);
+  return { kind: "network", id, parent, path: [hub, [end[0], hub[1], end[2]], end] };
+}
+
+/**
+ * Measures one node: its children grouped by model (siblings of a kind share a layer), each group a near-square grid
+ * of uniform cells with gaps between them, the groups one behind another, all of it floating inside the node's own
+ * solid with a margin on every side — shells within shells. Networked children get a link from the node's hub (on
+ * its back wall, between its floor and theirs) to their own facing wall; related children a link wall to wall.
+ */
+function measure(node: TwinView, rules: LayoutRules): Measured {
+  if (isBanded(node)) return measureBanded(node, rules);
+  // Storage is a cylinder when it holds nothing (a disk, a claim); one that holds things (Ceph and its pools) a box.
+  const storage = rules.storage(node) && !node.children.length;
+  if (!node.children.length) {
+    const size = leafOf(node, storage);
+    return { size, boxes: [{ id: node.id, shape: storage ? "cylinder" : "box", center: [0, size[1] / 2, 0], size, radius: roundness(size) }], links: [] };
+  }
+  const gap = gapAt(node.depth);
+  const pad = padAt(node.depth);
+
+  const { inner, placed: items } = arrange(node.children.map((child) => ({ node: child, m: measure(child, rules) })), gap);
+  const size: Vec = [inner[0] + 2 * pad, inner[1] + 2 * pad, inner[2] + 2 * pad];
 
   const boxes: Box[] = [{ id: node.id, shape: storage ? "cylinder" : "box", center: [0, size[1] / 2, 0], size, radius: roundness(size) }];
   const links: Link[] = [];
   const placed = new Map<string, Placed>();
   // The hub: the node's interface on its back wall, halfway between its floor and its children's.
   const hub: Vec = [0, pad * 0.5, -size[2] / 2];
-  let z = -innerD / 2;
-  for (const g of grids) {
-    g.items.forEach(({ node: child, m }, i) => {
-      const col = i % g.cols;
-      const row = Math.floor(i / g.cols);
-      // Centered in its row: a short last row doesn't hug one side.
-      const inRow = row === g.rows - 1 ? g.items.length - row * g.cols : g.cols;
-      const rowW = (g.cell[0] + gap) * inRow - gap;
-      const at: Vec = [-rowW / 2 + g.cell[0] / 2 + col * (g.cell[0] + gap), pad, z + g.cell[2] / 2 + row * (g.cell[2] + gap)];
-      for (const b of m.boxes) boxes.push({ ...b, center: shift(b.center, at) });
-      for (const l of m.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
-      const p: Placed = { at, size: m.size, shape: m.boxes[0]!.shape };
-      placed.set(child.id, p);
-      if (rules.networked(child)) {
-        // Along the floor to the foot of the child's facing wall, then up that wall to its middle.
-        const end = port(p, hub, at[1] + m.size[1] / 2);
-        links.push({ kind: "network", id: child.id, parent: node.id, path: [hub, [end[0], hub[1], end[2]], end] });
+  for (const { node: child, m, at: rel } of items) {
+    const at: Vec = [rel[0], pad, rel[2]];
+    place(child, m, at, boxes, links, placed);
+    if (rules.networked(child)) links.push(networkLink(child.id, node.id, hub, placed.get(child.id)!));
+  }
+  addInterfaces(rules, placed, links, node.id, pad);
+  return { size, boxes, links };
+}
+
+/** A twin whose contents' contents belong to bands (a cluster: its nodes' pods to namespaces). */
+const isBanded = (node: TwinView) => node.children.some((c) => c.band !== undefined || c.children.some((g) => g.band !== undefined));
+/** The id of the band of `group` across `root` (scene.ts makes it the same way). */
+export const bandId = (root: string, group: string) => `${root}~${group}`;
+
+/**
+ * A container laid out in bands: its children that hold things (the nodes, Ceph) are columns side by side, and every
+ * band (a namespace) a row across them — the cell of a column and a row holds what of that column belongs to that
+ * band, so one dashed solid around the row takes in all of the band, through the columns' walls and the gaps between
+ * them. What belongs to a band but no column (a pod no node runs yet) has a column of its own without walls, behind
+ * the others; what belongs to no band (disks, pools) has the last row. Columns share their depth and height, rows
+ * their depth across the columns.
+ */
+function measureBanded(node: TwinView, rules: LayoutRules): Measured {
+  const pad = padAt(node.depth);
+  const colPad = padAt(node.depth + 1);
+  const colGap = gapAt(node.depth);
+  // A band's margin inside the columns' (so a band in one column stays in it), and the space between bands.
+  const bandPad = colPad * 0.5;
+  const rowGap = Math.max(gapAt(node.depth + 1), 2 * bandPad + 0.5);
+  const itemGap = gapAt(node.depth + 2);
+
+  const columns = node.children.filter((c) => c.band === undefined && c.children.length > 0);
+  const loose = node.children.filter((c) => !columns.includes(c));
+  const keyOf = (v: TwinView) => v.band ?? "";
+  const rows = [...new Set([...columns.flatMap((c) => c.children.map(keyOf)), ...loose.map(keyOf)])].sort((a, b) =>
+    a === "" ? 1 : b === "" ? -1 : a.localeCompare(b),
+  );
+  // Each cell's contents, arranged; the loose column is the last.
+  const holders: (TwinView | undefined)[] = [...columns, ...(loose.length ? [undefined] : [])];
+  const cells = holders.map((holder) =>
+    rows.map((row) => arrange((holder ? holder.children : loose).filter((v) => keyOf(v) === row).map((v) => ({ node: v, m: measure(v, rules) })), itemGap)),
+  );
+  const colW = holders.map((_, c) => Math.max(1, ...cells[c]!.map((cell) => cell.inner[0])));
+  const rowD = rows.map((_, r) => Math.max(1, ...cells.map((col) => col[r]!.inner[2])));
+  const rowH = rows.map((_, r) => Math.max(0, ...cells.map((col) => col[r]!.inner[1])));
+  const innerH = Math.max(1, ...rowH);
+
+  // x of each column's inside, z of each row, all from 0; centered at the end.
+  const colX: number[] = [];
+  let x = pad;
+  holders.forEach((holder, c) => {
+    if (!holder && c > 0) x += bandPad; // The loose column has no walls: just past the last one.
+    colX.push(x + (holder ? colPad : 0));
+    x += colW[c]! + (holder ? 2 * colPad : 0) + colGap;
+  });
+  const width = x - colGap + pad;
+  const rowZ: number[] = [];
+  let z = pad + colPad;
+  rows.forEach((_, r) => (rowZ.push(z), (z += rowD[r]! + rowGap)));
+  const depth = z - rowGap + colPad + pad;
+  const colFloor = pad;
+  const itemFloor = pad + colPad;
+  const height = itemFloor + innerH + colPad + pad;
+  const cx = width / 2;
+  const cz = depth / 2;
+  const at = (px: number, py: number, pz: number): Vec => [px - cx, py, pz - cz];
+
+  const boxes: Box[] = [{ id: node.id, shape: "box", center: [0, height / 2, 0], size: [width, height, depth], radius: roundness([width, height, depth]) }];
+  const links: Link[] = [];
+  const placed = new Map<string, Placed>();
+  const hub: Vec = [0, pad * 0.5, -depth / 2];
+  holders.forEach((holder, c) => {
+    // The column's own solid (a node), with its hub on its back wall.
+    let colHub: Vec | undefined;
+    if (holder) {
+      const size: Vec = [colW[c]! + 2 * colPad, innerH + 2 * colPad, depth - 2 * pad];
+      const floor = at(colX[c]! - colPad + size[0] / 2, colFloor, depth / 2);
+      boxes.push({ id: holder.id, shape: "box", center: [floor[0], floor[1] + size[1] / 2, floor[2]], size, radius: roundness(size) });
+      placed.set(holder.id, { at: floor, size, shape: "box" });
+      colHub = [floor[0], colFloor + colPad * 0.5, floor[2] - size[2] / 2];
+      if (rules.networked(holder)) links.push(networkLink(holder.id, node.id, hub, placed.get(holder.id)!));
+    }
+    rows.forEach((_, r) => {
+      const cell = cells[c]![r]!;
+      // The cell's contents centered in it.
+      const center = at(colX[c]! + colW[c]! / 2, itemFloor, rowZ[r]! + rowD[r]! / 2);
+      for (const { node: item, m, at: rel } of cell.placed) {
+        const spot: Vec = [center[0] + rel[0], itemFloor, center[2] + rel[2]];
+        place(item, m, spot, boxes, links, placed);
+        if (rules.networked(item)) links.push(networkLink(item.id, holder?.id ?? node.id, colHub ?? hub, placed.get(item.id)!));
       }
     });
-    z += g.depth + gap;
-  }
-  // Related children: wall to wall, at the lower one's middle height.
+  });
+  // The bands: one solid per row of a band, across the columns that hold any of it.
+  rows.forEach((row, r) => {
+    if (!row) return;
+    const used = holders.map((_, c) => cells[c]![r]!.placed.length > 0);
+    const first = used.indexOf(true);
+    const last = used.lastIndexOf(true);
+    if (first < 0) return;
+    const x0 = colX[first]! - bandPad;
+    const x1 = colX[last]! + colW[last]! + bandPad;
+    const y0 = itemFloor - bandPad;
+    const y1 = itemFloor + rowH[r]! + bandPad;
+    const z0 = rowZ[r]! - bandPad;
+    const z1 = rowZ[r]! + rowD[r]! + bandPad;
+    const size: Vec = [x1 - x0, y1 - y0, z1 - z0];
+    const c0 = at((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
+    boxes.push({ id: bandId(node.id, row), shape: "box", center: c0, size, radius: roundness(size) * 0.5 });
+  });
+  addInterfaces(rules, placed, links, node.id, itemFloor);
+  return { size: [width, height, depth], boxes, links };
+}
+
+/** Related siblings (a container mounting a claim): wall to wall, at the lower one's middle height. */
+function addInterfaces(rules: LayoutRules, placed: Map<string, Placed>, links: Link[], parent: string, floor: number) {
   for (const [a, b] of rules.interfaces) {
     const pa = placed.get(a);
     const pb = placed.get(b);
     if (!pa || !pb) continue;
-    const y = pad + Math.min(pa.size[1], pb.size[1]) / 2;
-    links.push({ kind: "interface", id: a, parent: node.id, path: [port(pa, pb.at, y), port(pb, pa.at, y)] });
+    const y = floor + Math.min(pa.size[1], pb.size[1]) / 2;
+    links.push({ kind: "interface", id: a, parent, path: [port(pa, pb.at, y), port(pb, pa.at, y)] });
   }
-  return { size, boxes, links };
 }
 
 /**

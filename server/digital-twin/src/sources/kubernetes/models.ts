@@ -16,6 +16,9 @@ export const MODEL = {
   Container: "dtmi:osiris:k8s:Container;3",
   Node: "dtmi:osiris:k8s:Node;3",
   PersistentVolumeClaim: "dtmi:osiris:k8s:PersistentVolumeClaim;1",
+  Ceph: "dtmi:osiris:ceph:Cluster;1",
+  CephPool: "dtmi:osiris:ceph:Pool;1",
+  CephOsd: "dtmi:osiris:ceph:Osd;1",
 } as const;
 
 const enumOf = (...values: string[]): DtdlSchema => ({ "@type": "Enum", valueSchema: "string", enumValues: values.map((v) => ({ name: v, enumValue: v })) });
@@ -111,6 +114,32 @@ export function dtdlModel(): DtdlInterface[] {
       property("restarts", "integer", l("Restarts", "Restarty")),
       relationship("mounts", MODEL.PersistentVolumeClaim, l("mounts", "připojuje"), "The volume claims the container mounts."),
     ]),
+    iface(MODEL.Ceph, l("Ceph cluster", "Ceph cluster"), "The Ceph storage the cluster's volumes live on, as its active manager reports it: its pools, and its OSDs (disks) in the nodes they're in.", [
+      property("health", enumOf("ok", "warn", "error"), l("Health", "Zdraví")),
+      property("version", "string", l("Version", "Verze")),
+      property("osdCount", "integer", l("OSDs", "OSD")),
+      property("size", "double", l("Raw capacity", "Hrubá kapacita"), "Bytes of all OSDs."),
+      property("used", "double", l("Raw used", "Hrubě obsazeno"), "Bytes used on all OSDs."),
+      contains(undefined, "The cluster's pools, and the disks of hosts the Kubernetes cluster doesn't know."),
+      relationship("hasOsd", MODEL.CephOsd, l("has OSD", "má OSD"), "The cluster's OSDs."),
+    ]),
+    iface(MODEL.CephPool, l("Ceph pool", "Ceph pool"), "A pool: what it stores and what it may still take.", [
+      property("poolId", "integer", l("Pool id", "ID poolu")),
+      property("size", "double", l("Usable size", "Využitelná velikost"), "Stored bytes plus the bytes it may still take."),
+      property("used", "double", l("Stored", "Uloženo")),
+      relationship("holds", MODEL.PersistentVolumeClaim, l("holds", "drží"), "The volume claims whose volumes are images in the pool."),
+    ]),
+    iface(MODEL.CephOsd, l("Disk (OSD)", "Disk (OSD)"), "A disk Ceph stores data on, in the node it is in: down is an error, out a warning.", [
+      property("osdId", "integer", l("OSD id", "ID OSD")),
+      property("device", "string", l("Device", "Zařízení")),
+      property("model", "string", l("Model", "Model")),
+      property("dbDevice", "string", l("DB device", "Zařízení DB")),
+      property("deviceClass", "string", l("Device class", "Třída zařízení")),
+      property("ip", "string", l("IP address", "IP adresa"), "The OSD's public address."),
+      property("up", "boolean", l("Up", "Běží")),
+      property("in", "boolean", l("In", "V clusteru")),
+      property("fill", "double", l("Fill (cluster average)", "Zaplnění (průměr clusteru)"), "The manager publishes no per-OSD bytes: Ceph spreads data by weight, so the cluster's raw fill stands for each disk's."),
+    ]),
     iface(MODEL.PersistentVolumeClaim, l("Volume claim", "Svazek (PVC)"), "A PersistentVolumeClaim: storage a pod mounts; pending is a warning, lost an error.", [
       property("phase", enumOf("pending", "bound", "lost"), l("Phase", "Fáze")),
       property("capacity", "string", l("Capacity", "Kapacita"), "The bound volume's size as Kubernetes states it (else the request), e.g. 10Gi."),
@@ -137,7 +166,8 @@ export function dtdlModel(): DtdlInterface[] {
       property("os", "string", l("Operating system", "Operační systém")),
       property("cpu", "string", l("CPU capacity", "Kapacita CPU")),
       property("memory", "string", l("Memory capacity", "Kapacita paměti")),
-      contains(MODEL.Pod, "The pods scheduled on the node."),
+      property("ip", "string", l("IP address", "IP adresa"), "The node's InternalIP."),
+      contains(undefined, "The pods scheduled on the node, and the disks (Ceph's OSDs) in it."),
       network,
     ]),
   ];

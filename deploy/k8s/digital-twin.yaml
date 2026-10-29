@@ -51,6 +51,8 @@ spec:
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
             - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
             - { name: CLUSTER_NAME, value: busiris }
+            # Ceph's managers (microceph on the nodes; the active one answers): pools and the OSDs (disks) in the twin.
+            - { name: CEPH_MANAGERS, value: "http://192.168.0.231:9283/metrics,http://192.168.0.241:9283/metrics,http://192.168.0.242:9283/metrics" }
             - { name: STATIC_DIR, value: /app/server/digital-twin/web/dist }
             - { name: AUTH_URL, value: https://auth.k6labs.cz }
             - { name: AUTH_REQUIRED_GROUP, value: admin }

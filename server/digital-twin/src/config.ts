@@ -10,6 +10,12 @@ const schema = z
 
     // The twin's root label; the cluster's own name in the k8s API has no single place to read it from.
     CLUSTER_NAME: z.string().min(1).default("k8s"),
+    // Ceph's managers' Prometheus pages (`http://<host>:9283/metrics`, comma-separated; the active one answers):
+    // the twin then shows Ceph's pools and its OSDs (disks) in their nodes.
+    CEPH_MANAGERS: z
+      .string()
+      .optional()
+      .transform((v) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean)),
 
     // The Kubernetes API: the pod's ServiceAccount in the cluster (read-only ClusterRole, deploy/k8s/rbac.yaml), or a
     // kubeconfig of any other cluster: KUBECONFIG is its path (a `:`-separated list takes the first that exists) and

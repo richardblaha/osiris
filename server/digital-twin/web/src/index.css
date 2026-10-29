@@ -58,7 +58,17 @@ body,
   color: var(--state-error);
 }
 .twin-label[data-selected="true"] .twin-label-body {
-  color: var(--accent-secondary);
+  color: var(--accent-active);
+  text-shadow: 0 0 6px var(--accent-active-soft), 0 0 4px var(--bg-editor);
+}
+/* An interface's address (an IP) beside its dot on a wall. */
+.twin-port {
+  color: var(--text-secondary);
+  font-size: 9px;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 0 3px var(--bg-editor);
+  transform: translate(4px, -9px);
 }
 .twin-label-text {
   display: none;
@@ -126,10 +136,10 @@ body,
   flex-direction: column;
   max-width: 22rem;
   padding: 0.375rem 0.625rem;
-  border: 1px solid var(--accent-secondary);
+  border: 1px solid var(--accent-active);
   border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-sidebar) 92%, transparent);
-  box-shadow: 0 0 0 3px var(--accent-secondary-soft);
+  box-shadow: 0 0 0 3px var(--accent-active-soft);
   font-size: 12px;
   pointer-events: none;
 }
@@ -139,7 +149,7 @@ body,
   white-space: nowrap;
 }
 .twin-tip-kind {
-  color: var(--accent-secondary);
+  color: var(--accent-active);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -217,10 +227,10 @@ body,
   width: 2rem;
   height: 2rem;
   overflow: hidden;
-  border: 2px solid var(--accent-secondary);
+  border: 2px solid var(--accent-primary);
   border-radius: 999px;
-  background: var(--accent-secondary-soft);
-  color: var(--accent-secondary);
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
   font-size: 12px;
   font-weight: 600;
 }
@@ -230,7 +240,7 @@ body,
   object-fit: cover;
 }
 .avatar[aria-expanded="true"] {
-  box-shadow: 0 0 0 3px var(--accent-secondary-soft);
+  box-shadow: 0 0 0 3px var(--accent-active-soft);
 }
 /* A small menu or pop-up under its button. */
 .menu-popup {
@@ -320,7 +330,7 @@ body,
   animation: fade-in 0.4s ease 0.5s both;
 }
 .focus-lines .focus-line-target {
-  fill: var(--accent-secondary);
+  fill: var(--accent-active);
 }
 .focus-panel {
   position: absolute;
@@ -340,7 +350,7 @@ body,
 .focus-panel[data-slot="tl"] {
   top: calc(var(--app-bar) + 0.5rem);
   left: 0.75rem;
-  border-top-color: var(--accent-secondary);
+  border-top-color: var(--accent-active);
   animation-delay: 0.45s;
 }
 .focus-panel[data-slot="tr"] {

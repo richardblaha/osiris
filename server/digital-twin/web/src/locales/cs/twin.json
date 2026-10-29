@@ -58,5 +58,6 @@
   "scrollOlder": "Posuň nahoru pro starší záznamy",
   "logsStart": "Žádné starší záznamy",
   "internet": "Internet",
-  "storageUse": "obsazeno {{used}} z {{size}} ({{share}})"
+  "storageUse": "obsazeno {{used}} z {{size}} ({{share}})",
+  "fillEstimate": "≈ {{share}} zaplněno (průměr clusteru)"
 }
