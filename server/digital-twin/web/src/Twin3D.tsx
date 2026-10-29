@@ -6,6 +6,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { formatBytes, formatBytesRate, formatNumber } from "./i18n.ts";
+import { iconOf, kindOf } from "./icons.ts";
 import { fillOf, hasNetwork, interfacesOf, isStorage, type TwinScene, type TwinView } from "./scene.ts";
 import { layoutTwin, type Box, type Link, type Scene } from "./TwinLayout.ts";
 
@@ -25,12 +26,28 @@ function themeColors() {
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const easeInOut = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
 
+/** A twin's basic state in one line: its status, traffic, how full it is, its recent errors. */
+function infoOf(node: TwinView): string {
+  const full = fillOf(node);
+  return [
+    t(`twin:status.${node.status}`),
+    node.network !== undefined ? formatBytesRate(node.network) : "",
+    full !== undefined && node.storage ? t("twin:storageUse", { used: formatBytes(node.storage.used), size: formatBytes(node.storage.fsCapacity), share: formatNumber(full, { style: "percent" }) }) : "",
+    node.errors ? t("twin:errorCount", { count: node.errors }) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+/** How much a label shows by its solid's size on screen (px): nothing, the icon, with the name, with the kind and state. */
+const LOD = { icon: 26, name: 70, info: 150 } as const;
+
 /** One solid of the scene: its translucent body, its outline and, for storage, how full it is. */
 interface BoxMesh {
   id: string;
   box: Box;
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
-  edges: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  edges: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial | THREE.LineDashedMaterial>;
   /** A cylinder's content: a smaller cylinder from its floor up to how full it is, with a ring at the level. */
   fill?: { body: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>; level: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial> };
 }
@@ -262,7 +279,13 @@ export function Twin3D({
         const mesh = new THREE.Mesh(geometry as THREE.BufferGeometry, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
         mesh.position.set(...box.center);
         mesh.userData = { id: box.id };
-        const edges = new THREE.LineSegments(cylinder ? cylinderEdges(r, box.size[1]) : roundedEdges(box.size, box.radius), new THREE.LineBasicMaterial({ transparent: true }));
+        // A grouping (a namespace) has dashed edges: a set of things, not a thing.
+        const dashed = byId.get(box.id)?.dashed;
+        const edges = new THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial | THREE.LineDashedMaterial>(
+          cylinder ? cylinderEdges(r, box.size[1]) : roundedEdges(box.size, box.radius),
+          dashed ? new THREE.LineDashedMaterial({ transparent: true, dashSize: 0.6, gapSize: 0.4 }) : new THREE.LineBasicMaterial({ transparent: true }),
+        );
+        if (dashed) edges.computeLineDistances();
         edges.position.set(...box.center);
         world.add(mesh, edges);
         let fill: BoxMesh["fill"];
@@ -317,8 +340,7 @@ export function Twin3D({
         const lines = new THREE.LineSegments(new THREE.WireframeGeometry(new THREE.SphereGeometry(n.radius, 18, 12)), new THREE.LineBasicMaterial({ transparent: true, depthWrite: false }));
         lines.position.set(...n.center);
         const div = document.createElement("div");
-        div.className = "twin-label";
-        div.dataset.level = "0";
+        div.className = "twin-label-globe";
         div.textContent = t("twin:internet");
         const label = new CSS2DObject(div);
         label.position.set(n.center[0], n.center[1] + n.radius * 1.25, n.center[2]);
@@ -354,11 +376,75 @@ export function Twin3D({
     /** Each link's load from 0 to 1 (by index), against its siblings' highest (at least 100 kB/s, so quiet stays calm). */
     let loads: number[] = [];
 
-    /** The labels shown: the outer two levels, or the selected twin and what it holds. */
-    const labelled = (node: TwinView) => {
+    /** A label's content: the Kubernetes icon, the name, and a line of kind and state. */
+    const fillLabel = (el: HTMLElement, node: TwinView) => {
       const focus = chosen.current;
-      if (!focus || !content?.boxes.has(focus.id)) return node.depth <= 1;
-      return node.id === focus.id || (node.parent?.id === focus.id && focus.children.length <= 64);
+      el.dataset.status = node.status;
+      el.dataset.selected = String(focus?.id === node.id);
+      el.dataset.dashed = String(!!node.dashed);
+      const name = el.querySelector(".twin-label-name")!;
+      const info = el.querySelector(".twin-label-info")!;
+      if (name.textContent !== node.name) name.textContent = node.name;
+      const line = `${kindOf(node)} · ${infoOf(node)}`;
+      if (info.textContent !== line) info.textContent = line;
+    };
+    /** A twin's label, made the first time it shows: at its solid's top front left corner, growing up and right. */
+    const labelOf = (node: TwinView, box: Box) => {
+      let label = content!.labels.get(node.id);
+      if (label) return label;
+      const el = document.createElement("div");
+      el.className = "twin-label";
+      const inner = document.createElement("div");
+      inner.className = "twin-label-body";
+      // The icon is the generated, geometry-only markup of `k8s-icons.ts` (no data from the twin).
+      inner.innerHTML = iconOf(node) ?? "";
+      const text = document.createElement("div");
+      text.className = "twin-label-text";
+      const name = document.createElement("span");
+      name.className = "twin-label-name";
+      const info = document.createElement("span");
+      info.className = "twin-label-info";
+      text.append(name, info);
+      inner.append(text);
+      el.append(inner);
+      label = new CSS2DObject(el);
+      const left = box.center[0] - box.size[0] / 2 + Math.min(box.radius, box.size[0] / 4);
+      label.position.set(left, box.center[1] + box.size[1] / 2, box.center[2] + box.size[2] / 2);
+      world.add(label);
+      content!.labels.set(node.id, label);
+      fillLabel(el, node);
+      return label;
+    };
+
+    /**
+     * Level of detail: each solid's size on screen decides what its label shows — nothing when small, the icon, then
+     * the name, then the kind and state. Outside the selection only its surroundings keep labels.
+     */
+    let lodAt = 0;
+    const tmp = new THREE.Vector3();
+    const updateLod = (time: number) => {
+      if (!content || time - lodAt < 120) return;
+      lodAt = time;
+      const h = element.clientHeight;
+      const scale = h / (2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2));
+      const focus = chosen.current && content.boxes.has(chosen.current.id) ? chosen.current : undefined;
+      for (const m of content.meshes) {
+        const node = content.byId.get(m.id);
+        if (!node) continue;
+        const distance = Math.max(0.1, tmp.set(...m.box.center).distanceTo(camera.position));
+        const px = (Math.max(m.box.size[0], m.box.size[2]) / distance) * scale;
+        const near = !focus || inFocus(node) || isAncestor(node, focus);
+        const level = !near ? 0 : px >= LOD.info ? 3 : px >= LOD.name ? 2 : px >= LOD.icon ? 1 : 0;
+        let label = content.labels.get(m.id);
+        if (!level && !label) continue;
+        label ??= labelOf(node, m.box);
+        label.visible = level > 0;
+        if (label.element.dataset.lod !== String(level)) label.element.dataset.lod = String(level);
+      }
+    };
+    const isAncestor = (node: TwinView, of: TwinView) => {
+      for (let n = of.parent; n; n = n.parent) if (n.id === node.id) return true;
+      return false;
     };
 
     const paint = () => {
@@ -422,26 +508,12 @@ export function Twin3D({
         g.label.visible = !focus || !content.boxes.has(focus.id);
       }
 
-      for (const node of content.byId.values()) {
-        const box = content.boxes.get(node.id);
-        if (!box) continue;
-        const want = labelled(node);
-        let label = content.labels.get(node.id);
-        if (want && !label) {
-          const div = document.createElement("div");
-          div.className = "twin-label";
-          label = new CSS2DObject(div);
-          label.position.set(box.center[0], box.center[1] + box.size[1] / 2 + 0.3, box.center[2] - box.size[2] / 2);
-          world.add(label);
-          content.labels.set(node.id, label);
-        }
-        if (!label) continue;
-        label.visible = want;
-        label.element.textContent = node.name;
-        label.element.dataset.status = node.status;
-        label.element.dataset.selected = String(focus?.id === node.id);
-        label.element.dataset.level = String(Math.min(node.depth, 2));
+      // The labels' content follows the twin; how much of it shows is the level of detail's (every few frames).
+      for (const [id, label] of content.labels) {
+        const node = content.byId.get(id);
+        if (node) fillLabel(label.element, node);
       }
+      lodAt = 0;
     };
 
     /** The packets' positions now: each link's packets spread along it, half going out and half coming in. */
@@ -515,8 +587,8 @@ export function Twin3D({
       const box = content?.boxes.get(node.id);
       if (!box || flownTo === node.id) return;
       flownTo = node.id;
-      // A little room around it for the panels' lines.
-      fly(new THREE.Vector3(...box.center), Math.hypot(...box.size) / 2, 1.05);
+      // Centered with room around it, so what is next to it stays in view.
+      fly(new THREE.Vector3(...box.center), Math.hypot(...box.size) / 2, 2.4);
     };
 
     /** Shows a (new or refreshed) twin: the same structure only repaints, a changed one rebuilds the boxes. */
@@ -595,20 +667,12 @@ export function Twin3D({
       tip.replaceChildren();
       const kind = document.createElement("span");
       kind.className = "twin-tip-kind";
-      kind.textContent = node.modelName;
+      kind.textContent = kindOf(node);
       const name = document.createElement("strong");
       name.textContent = node.name;
       const meta = document.createElement("span");
       meta.dataset.status = node.status;
-      const full = fillOf(node);
-      meta.textContent = [
-        t(`twin:status.${node.status}`),
-        node.network !== undefined ? formatBytesRate(node.network) : "",
-        full !== undefined && node.storage ? t("twin:storageUse", { used: formatBytes(node.storage.used), size: formatBytes(node.storage.fsCapacity), share: formatNumber(full, { style: "percent" }) }) : "",
-        node.errors ? t("twin:errorCount", { count: node.errors }) : "",
-      ]
-        .filter(Boolean)
-        .join(" · ");
+      meta.textContent = infoOf(node);
       tip.append(kind, name, meta);
       const x = event.clientX - rect.left + 14;
       const y = event.clientY - rect.top + 14;
@@ -637,6 +701,7 @@ export function Twin3D({
       if (!running) return;
       controls.update();
       movePackets(time);
+      updateLod(time);
       if (content && !reducedMotion()) for (const g of content.globes) g.lines.rotation.y = time / 12_000;
       renderer.render(world, camera);
       labelRenderer.render(world, camera);

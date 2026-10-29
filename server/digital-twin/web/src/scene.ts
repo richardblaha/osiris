@@ -23,6 +23,13 @@ export interface TwinView {
   depth: number;
   parent?: TwinView;
   children: TwinView[];
+  /**
+   * A projection: the part of a grouping twin (a namespace, a workload) that lies inside this container — its id is
+   * `of`, the twin it projects. Projections roll up only what they hold here.
+   */
+  of?: string;
+  /** Drawn with dashed edges: the outermost projection (a namespace), a grouping rather than a thing. */
+  dashed?: boolean;
 }
 
 /** Everything the views draw: the models, every twin by id, the tree's top and every relationship. */
@@ -79,6 +86,8 @@ export function buildScene(
     child.parent = parent;
     parent.children.push(child);
   }
+  const roots = [...byId.values()].filter((v) => !v.parent && v.children.length).sort((a, b) => a.name.localeCompare(b.name));
+  project(roots, byId, relationships);
   const roll = (v: TwinView, depth: number) => {
     v.depth = depth;
     for (const c of v.children) {
@@ -86,9 +95,11 @@ export function buildScene(
       v.status = worse(v.status, c.status);
       v.errors += c.errors;
     }
+    // A projection's traffic is what goes to what it holds here.
+    const known = v.children.filter((c) => c.network !== undefined);
+    if (v.of && known.length) v.network = known.reduce((n, c) => n + c.network!, 0);
     v.children.sort((a, b) => a.name.localeCompare(b.name));
   };
-  const roots = [...byId.values()].filter((v) => !v.parent && v.children.length).sort((a, b) => a.name.localeCompare(b.name));
   for (const r of roots) {
     roll(r, 0);
     // An outermost twin without its own network (a cluster) carries its children's: its traffic to the internet,
@@ -99,13 +110,90 @@ export function buildScene(
   return { models: modelMap, byId, top: roots, relationships, at };
 }
 
-/** Whether a twin's model declares the `network` telemetry: its box gets a link to its container's network. */
-export const hasNetwork = (node: TwinView, models: Map<string, DtdlInterface>) =>
-  resolveContents(node.model, models).some((c) => c["@type"] === "Telemetry" && c.name === "network");
+/**
+ * The groupings inside each container: a twin outside the containment tree that relates to a twin inside it (a
+ * workload `hasPod`, a namespace `hasWorkload`, `hasClaim`) groups it, and its own group groups it further. Each
+ * container gets a projection of each group for the children it holds of it (a node: a namespace, in it a
+ * StatefulSet, in that its pods), nested the way the groups are. A group already around the container (the pod's
+ * namespace around its volume claim) isn't repeated, and a group of one child of its own name (a lone pod's
+ * workload) is left out.
+ */
+function project(roots: TwinView[], byId: Map<string, TwinView>, relationships: DigitalTwinRelationship[]) {
+  const inTree = new Set<string>();
+  const mark = (v: TwinView) => (inTree.add(v.id), v.children.forEach(mark));
+  roots.forEach(mark);
+  const groupOf = new Map<string, string>();
+  for (const r of relationships)
+    if (r.$relationshipName !== TWIN_CONTAINS && !inTree.has(r.$sourceId) && byId.has(r.$sourceId) && !groupOf.has(r.$targetId)) groupOf.set(r.$targetId, r.$sourceId);
+  /** A twin's groups, outermost first. */
+  const chainOf = (id: string) => {
+    const chain: string[] = [];
+    for (let g = groupOf.get(id); g && chain.length < 6 && !chain.includes(g); g = groupOf.get(g)) chain.unshift(g);
+    return chain;
+  };
 
-/** Whose telemetry a twin's `otelResource` names, as the telemetry API filters it. */
+  const walk = (container: TwinView, around: Set<string>) => {
+    const kids = container.children;
+    container.children = [];
+    const slices = new Map<string, TwinView>();
+    for (const child of kids) {
+      let chain = chainOf(child.id).filter((g) => !around.has(g));
+      const innermost = chain.at(-1) && byId.get(chain.at(-1)!);
+      if (innermost && innermost.name === child.name) chain = chain.slice(0, -1);
+      let parent = container;
+      for (const g of chain) {
+        const key = `${parent.id}>${g}`;
+        let slice = slices.get(key);
+        if (!slice) {
+          const group = byId.get(g)!;
+          slice = {
+            id: key,
+            twin: group.twin,
+            model: group.model,
+            modelName: group.modelName,
+            name: group.name,
+            ownStatus: "ok",
+            status: "ok",
+            ownErrors: 0,
+            errors: 0,
+            depth: 0,
+            parent,
+            children: [],
+            of: g,
+            dashed: !groupOf.has(g),
+          };
+          slices.set(key, slice);
+          parent.children.push(slice);
+        }
+        parent = slice;
+      }
+      child.parent = parent;
+      parent.children.push(child);
+      walk(child, new Set([...around, ...chainOf(child.id)]));
+    }
+    for (const slice of slices.values()) byId.set(slice.id, slice);
+  };
+  for (const r of roots) walk(r, new Set());
+}
+
+/** The twin a view shows: itself, or for a projection the grouping twin it projects. */
+export const twinIdOf = (node: TwinView) => node.of ?? node.id;
+
+/**
+ * Whether a twin has a network (its model declares the `network` telemetry), or a projection holds something that
+ * has: its box gets a link to its container's network.
+ */
+export const hasNetwork = (node: TwinView, models: Map<string, DtdlInterface>): boolean =>
+  node.of ? node.children.some((c) => hasNetwork(c, models)) : resolveContents(node.model, models).some((c) => c["@type"] === "Telemetry" && c.name === "network");
+
+/**
+ * Whose telemetry a twin's `otelResource` names, as the telemetry API filters it; a projection's is its group's
+ * within the real twin around it (a namespace on one node).
+ */
 export function scopeOf(node: TwinView): { namespace?: string; pod?: string; node?: string; container?: string; claim?: string } {
-  const r = (node.twin.otelResource ?? {}) as Record<string, string>;
+  let host = node.parent;
+  while (node.of && host?.of) host = host.parent;
+  const r = { ...(node.of ? ((host?.twin.otelResource ?? {}) as Record<string, string>) : {}), ...((node.twin.otelResource ?? {}) as Record<string, string>) };
   return { namespace: r["k8s.namespace.name"], pod: r["k8s.pod.name"], node: r["k8s.node.name"], container: r["k8s.container.name"], claim: r["k8s.persistentvolumeclaim.name"] };
 }
 

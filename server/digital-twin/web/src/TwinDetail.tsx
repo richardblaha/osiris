@@ -4,7 +4,7 @@ import { t } from "i18next";
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
 import { currentLocale, formatBytes, formatBytesRate, formatDateTime, formatNumber } from "./i18n.ts";
-import type { TwinScene, TwinView } from "./scene.ts";
+import { twinIdOf, type TwinScene, type TwinView } from "./scene.ts";
 
 const WEEK = 7 * 24 * 3_600_000;
 const statusClass = (s: TwinView["status"]) => (s === "error" ? "text-error" : s === "warn" ? "text-warning" : "text-fg-secondary");
@@ -37,8 +37,10 @@ export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: T
   const declared = new Map(contents.filter((c): c is DtdlRelationship => c["@type"] === "Relationship").map((r) => [r.name, r]));
   const name = (id: string) => scene.byId.get(id)?.name ?? id;
   // Relationships other than containment (the 3D view shows that), both ways; and what contains the twin.
-  const outgoing = scene.relationships.filter((r) => r.$sourceId === node.id && r.$relationshipName !== "contains");
-  const incoming = scene.relationships.filter((r) => r.$targetId === node.id && r.$relationshipName !== "contains");
+  // A projection (a namespace on a node) shows the twin it projects.
+  const id = twinIdOf(node);
+  const outgoing = scene.relationships.filter((r) => r.$sourceId === id && r.$relationshipName !== "contains");
+  const incoming = scene.relationships.filter((r) => r.$targetId === id && r.$relationshipName !== "contains");
   const relName = (rel: string, model?: string) => {
     const d = model ? resolveContents(model, scene.models).find((c) => c["@type"] === "Relationship" && c.name === rel) : declared.get(rel);
     return localized(d?.displayName, locale) ?? rel;
@@ -49,14 +51,14 @@ export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: T
   useEffect(() => {
     const to = scene.at ?? Date.now();
     let current = true;
-    void api.history(node.id, { from: to - WEEK, to, limit: 30 }).then(
+    void api.history(id, { from: to - WEEK, to, limit: 30 }).then(
       (list) => current && setChanges(list),
       () => current && setChanges(undefined),
     );
     return () => {
       current = false;
     };
-  }, [node.id, scene.at]);
+  }, [id, scene.at]);
 
   return (
     <>
@@ -132,7 +134,7 @@ export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: T
                   <li key={`${c.ts}:${c.dtId}:${c.change}`} className="flex flex-wrap items-baseline gap-x-2">
                     <span className="text-fg-muted">{formatDateTime(c.ts)}</span>
                     <span className="truncate" title={c.dtId}>
-                      {c.dtId === node.id ? "" : `${c.name} · `}
+                      {c.dtId === id ? "" : `${c.name} · `}
                       {t(`twin:history.change.${c.change}`)}
                     </span>
                     {c.previousStatus && c.previousStatus !== c.status ? (
@@ -150,7 +152,7 @@ export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: T
         <p className="mt-4 break-all font-mono text-[10px] text-fg-muted" title={t("twin:model")}>
           {node.model}
           <br />
-          {node.id}
+          {id}
         </p>
       </div>
     </>

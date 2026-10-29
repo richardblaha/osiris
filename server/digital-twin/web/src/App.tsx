@@ -195,7 +195,7 @@ export function App() {
               ) : (
                 <>
                   <p className="pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:hint")}</p>
-                  <p className="twin-count pointer-events-none absolute start-4 text-xs text-fg-muted">{scene ? t("twin:counts.twins", { count: scene.byId.size }) : ""}</p>
+                  <p className="twin-count pointer-events-none absolute start-4 text-xs text-fg-muted">{scene ? t("twin:counts.twins", { count: [...scene.byId.values()].filter((v) => !v.of).length }) : ""}</p>
                 </>
               )}
             </div>

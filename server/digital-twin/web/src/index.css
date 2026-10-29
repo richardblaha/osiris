@@ -31,34 +31,89 @@ body,
   }
 }
 
-/* A node label over the 3D canvas (three.js CSS2DRenderer): small, never interactive; the outer shells' bolder. */
+/* A twin's label over the 3D canvas (three.js CSS2DRenderer), anchored at its solid's top front left corner and
+   growing up and right from it. Its level of detail (data-lod, by the solid's size on screen): 1 the Kubernetes icon,
+   2 with the name, 3 with the kind and state. Never interactive. */
 .twin-label {
-  color: var(--text-secondary);
-  font-size: 10px;
-  white-space: nowrap;
+  width: 0;
+  height: 0;
   pointer-events: none;
   user-select: none;
-  transform-origin: left bottom;
+}
+.twin-label-body {
+  position: absolute;
+  left: 0;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-primary);
+  white-space: nowrap;
   text-shadow: 0 0 4px var(--bg-editor);
 }
-.twin-label[data-level="0"] {
+.twin-label[data-status="warn"] .twin-label-body {
+  color: var(--state-warning);
+}
+.twin-label[data-status="error"] .twin-label-body {
+  color: var(--state-error);
+}
+.twin-label[data-selected="true"] .twin-label-body {
+  color: var(--accent-secondary);
+}
+.twin-label-text {
+  display: none;
+  flex-direction: column;
+  line-height: 1.15;
+}
+.twin-label[data-lod="2"] .twin-label-text,
+.twin-label[data-lod="3"] .twin-label-text {
+  display: flex;
+}
+.twin-label-name {
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+}
+.twin-label-info {
+  display: none;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+.twin-label[data-lod="3"] .twin-label-info {
+  display: inline;
+}
+.twin-label[data-lod="3"] .k8s-icon {
+  width: 22px;
+  height: 22px;
+}
+/* The globe's name: no icon, a bit bigger. */
+.twin-label-globe {
   color: var(--accent-primary);
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 0.06em;
+  white-space: nowrap;
+  pointer-events: none;
+  text-shadow: 0 0 4px var(--bg-editor);
 }
-.twin-label[data-level="1"] {
-  color: var(--text-primary);
-  font-size: 11px;
+/* A Kubernetes icon as an outline (k8s-icons.ts): the heptagon and the symbol stroked in the text's colour. */
+.k8s-icon {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  overflow: visible;
 }
-.twin-label[data-status="error"] {
-  color: var(--state-error);
+.k8s-icon .bg,
+.k8s-icon .glyph,
+.k8s-icon .line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.1px;
+  vector-effect: non-scaling-stroke;
 }
-.twin-label[data-status="warn"] {
-  color: var(--state-warning);
-}
-.twin-label[data-selected="true"] {
-  color: var(--accent-secondary);
+.k8s-icon .bg {
+  fill: color-mix(in srgb, var(--bg-editor) 55%, transparent);
+  stroke-width: 1.3px;
 }
 
 /* The hover tip next to the pointer: what's under it. */
