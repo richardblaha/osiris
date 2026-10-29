@@ -74,5 +74,14 @@
   "histogram": "Log records over time",
   "histogramTip": "errors {{error}}, warnings {{warn}}, other {{other}}",
   "histogramMax": "max {{value}} per bar",
-  "claim": "Volume claim"
+  "claim": "Volume claim",
+  "bars": {
+    "error": "errors {{n}}",
+    "warn": "warnings {{n}}",
+    "other": "other {{n}}",
+    "hint": "Click: this time (and level) · drag: a span"
+  },
+  "debugUp": "debug and above",
+  "clearWindow": "Back to the range",
+  "clearFilters": "Clear filters ({{n}})"
 }

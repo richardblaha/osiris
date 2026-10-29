@@ -146,6 +146,10 @@ export interface WebStats {
 export interface TelemetryFacets {
   services: string[];
   namespaces: string[];
+  /** The digital twin's: nodes, and pods and containers (of the asked namespace). */
+  nodes?: string[];
+  pods?: string[];
+  containers?: string[];
 }
 
 export interface LogRecord {

@@ -2,7 +2,7 @@ import type { DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildScene, scopeOf, type TwinScene } from "./scene.ts";
 import { t } from "i18next";
-import { api } from "./api.ts";
+import { api, type DashboardSummary } from "./api.ts";
 import { authOff, autoSignIn, getAccessToken, login, profile, signedInOk } from "./auth.ts";
 import { UserMenu, type Profile } from "./UserMenu.tsx";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
@@ -10,24 +10,34 @@ import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
 import { Twin3D, type Point } from "./Twin3D.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { FocusPanels } from "./FocusPanels.tsx";
+import { Dashboard, DashboardMenu } from "./Dashboard.tsx";
 
 /** The views, in the URL's hash so a selection or a page survives reloading and signing in: the twin is always there,
  * a telemetry page lies over it. */
 type View =
   | { kind: "twin" }
-  | { kind: "logs"; preset: Preset; traceId?: string }
+  | { kind: "dashboard"; id?: string }
+  | { kind: "logs"; preset: Preset; filter?: Record<string, string>; traceId?: string }
   | { kind: "metrics"; preset: Preset }
   | { kind: "traces"; preset: Preset; traceId?: string };
 
 const SCOPE = ["namespace", "pod", "node", "container", "claim"] as const;
-type Page = "logs" | "metrics" | "traces";
-const PAGES: Page[] = ["logs", "metrics", "traces"];
+/** The logs page's own filters (besides the scope), kept in the URL. */
+const LOG_FILTERS = ["service", "severity", "q", "range", "from", "to"] as const;
+type Page = "dashboard" | "logs" | "metrics" | "traces";
+const PAGES: Page[] = ["dashboard", "logs", "metrics", "traces"];
+const split = (values: Record<string, string>) => ({
+  preset: Object.fromEntries(SCOPE.filter((k) => values[k]).map((k) => [k, values[k]])) as Preset,
+  filter: Object.fromEntries(LOG_FILTERS.filter((k) => values[k]).map((k) => [k, values[k]!])),
+});
 
 const parseHash = (): View => {
   const params = new URLSearchParams(location.hash.replace(/^#\/?/, ""));
   const preset: Preset = Object.fromEntries(SCOPE.map((k) => [k, params.get(k) ?? undefined]));
   const kind = params.get("view");
-  if (kind === "logs") return { kind: "logs", preset, traceId: params.get("traceId") ?? undefined };
+  if (kind === "dashboard") return { kind: "dashboard", id: params.get("id") ?? undefined };
+  if (kind === "logs")
+    return { kind: "logs", preset, filter: Object.fromEntries(LOG_FILTERS.flatMap((k) => (params.get(k) ? [[k, params.get(k)!]] : []))), traceId: params.get("traceId") ?? undefined };
   if (kind === "metrics") return { kind: "metrics", preset };
   if (kind === "traces") return { kind: "traces", preset, traceId: params.get("traceId") ?? undefined };
   return { kind: "twin" };
@@ -39,6 +49,8 @@ const toHash = (view: View) => {
   for (const k of SCOPE) if (preset?.[k]) params.set(k, preset[k]);
   if (view.kind !== "twin") params.set("view", view.kind);
   if ("traceId" in view && view.traceId) params.set("traceId", view.traceId);
+  if (view.kind === "logs") for (const [k, v] of Object.entries(view.filter ?? {})) params.set(k, v);
+  if (view.kind === "dashboard" && view.id) params.set("id", view.id);
   return `#/?${params}`;
 };
 
@@ -147,11 +159,33 @@ export function App() {
     // Logs and traces name no volume claims, traces no containers.
     return page === "metrics" ? scope : { ...scope, claim: undefined, container: page === "traces" ? undefined : scope.container };
   };
-  const openPage = (page: Page) => navigate({ kind: page, preset: presetOf(page) } as View);
-  /** A tab opens its page; the open page's tab closes it. */
-  const toggle = (page: Page) => (view.kind === page ? navigate({ kind: "twin" }) : openPage(page));
+  const openPage = (page: Exclude<Page, "dashboard">) => navigate({ kind: page, preset: presetOf(page) } as View);
 
-  const tabLabel = (page: Page) => (page === "logs" ? t("common:nav.logs") : page === "metrics" ? t("common:nav.metrics") : t("common:nav.traces"));
+  /** The dashboards' names, for the Overview tab's choice; reloaded when one is made, renamed or deleted. */
+  const [dashboards, setDashboards] = useState<DashboardSummary[]>([]);
+  const [choosing, setChoosing] = useState(false);
+  const loadDashboards = () => api.dashboards().then((l) => (setDashboards(l), l));
+  useEffect(() => {
+    if (signedIn) void loadDashboards().catch(() => {});
+  }, [signedIn]);
+  /** Overview: with several dashboards a choice first, with one that one, with none a new one. */
+  const openOverview = async () => {
+    const list = await loadDashboards().catch(() => dashboards);
+    if (list.length > 1) setChoosing(true);
+    else navigate({ kind: "dashboard", id: list[0]?.id });
+  };
+  /** A tab opens its page; the open page's tab closes it. */
+  const toggle = (page: Page) => {
+    setChoosing(false);
+    if (view.kind === page) navigate({ kind: "twin" });
+    else if (page === "dashboard") void openOverview();
+    else openPage(page);
+  };
+  /** The logs page with a filter's values (from a dashboard): its scope and its own filters. */
+  const openLogs = (values: Record<string, string>) => navigate({ kind: "logs", ...split(values) });
+
+  const tabLabel = (page: Page) =>
+    page === "dashboard" ? t("common:nav.dashboard") : page === "logs" ? t("common:nav.logs") : page === "metrics" ? t("common:nav.metrics") : t("common:nav.traces");
 
   return (
     <div className="relative h-full overflow-hidden">
@@ -207,8 +241,25 @@ export function App() {
 
       {signedIn && view.kind !== "twin" && (
         <section className="page-overlay" aria-label={tabLabel(view.kind)}>
-          {view.kind === "logs" ? (
-            <Logs key={toHash(view)} preset={view.preset} traceId={view.traceId} onOpenTrace={(traceId) => navigate({ kind: "traces", preset: view.preset, traceId })} />
+          {view.kind === "dashboard" ? (
+            <Dashboard
+              id={view.id}
+              list={dashboards}
+              onSwitch={(id) => navigate({ kind: "dashboard", id })}
+              onListChanged={(id) => void loadDashboards().then(() => navigate({ kind: "dashboard", id }))}
+              onOpenLogs={openLogs}
+              onOpenTrace={(traceId) => navigate({ kind: "traces", preset: {}, traceId })}
+            />
+          ) : view.kind === "logs" ? (
+            <Logs
+              key={toHash(view)}
+              preset={view.preset}
+              initial={view.filter}
+              traceId={view.traceId}
+              onOpenTrace={(traceId) => navigate({ kind: "traces", preset: view.preset, traceId })}
+              // The filters stay in the URL (reloading or sharing keeps them) without opening the page again.
+              onFilters={(values) => history.replaceState(null, "", toHash({ kind: "logs", ...split(values), traceId: view.traceId }))}
+            />
           ) : view.kind === "metrics" ? (
             <Metrics key={toHash(view)} preset={view.preset} />
           ) : (
@@ -231,9 +282,24 @@ export function App() {
         </span>
         <nav className="app-bar-tabs" aria-label={t("common:nav.label")}>
           {PAGES.map((page) => (
-            <button key={page} type="button" onClick={() => toggle(page)} data-active={view.kind === page} aria-pressed={view.kind === page} disabled={!signedIn} className="app-tab">
-              {tabLabel(page)}
-            </button>
+            <span key={page} className="relative">
+              <button
+                type="button"
+                onClick={() => toggle(page)}
+                data-active={view.kind === page}
+                aria-pressed={view.kind === page}
+                aria-haspopup={page === "dashboard" && dashboards.length > 1 ? "menu" : undefined}
+                aria-expanded={page === "dashboard" ? choosing : undefined}
+                disabled={!signedIn}
+                className="app-tab"
+              >
+                {tabLabel(page)}
+                {page === "dashboard" && dashboards.length > 1 && <span aria-hidden="true"> ▾</span>}
+              </button>
+              {page === "dashboard" && choosing && (
+                <DashboardMenu list={dashboards} onPick={(id) => (setChoosing(false), navigate({ kind: "dashboard", id }))} onClose={() => setChoosing(false)} />
+              )}
+            </span>
           ))}
         </nav>
         <span className="app-bar-user">{signedIn && <UserMenu user={user} />}</span>

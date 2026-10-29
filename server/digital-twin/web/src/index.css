@@ -270,6 +270,30 @@ body,
   top: calc(var(--app-bar) + 0.25rem);
 }
 
+/* The log bar chart's tip over the hovered bar: its time span and counts. */
+.bar-tip {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sidebar);
+  box-shadow: var(--shadow-popup);
+  font-size: 11px;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+/* A filter that is set wears the accent, so what filters the page shows at a glance. */
+.filter-select[data-set="true"] {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-primary-soft);
+}
+
 /* The selected twin's panels in the view's corners, with SVG lines to its box. */
 .focus-panels {
   position: absolute;

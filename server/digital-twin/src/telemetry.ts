@@ -59,7 +59,7 @@ export interface LogBucket {
 function logFilters(f: Scope & { service?: string; severity?: string; q?: string; traceId?: string }, where: string[], params: Record<string, string | number>) {
   if (f.service) (where.push("ServiceName = {service:String}"), (params.service = f.service));
   scope(f, where, params);
-  if (f.severity) (where.push("SeverityNumber >= {severity:UInt8}"), (params.severity = SEVERITY[f.severity] ?? 0));
+  if (f.severity) (where.push(`${SEVERITY_EXPR} >= {severity:UInt8}`), (params.severity = SEVERITY[f.severity] ?? 0));
   if (f.q) (where.push("positionCaseInsensitiveUTF8(Body, {q:String}) > 0"), (params.q = f.q));
   if (f.traceId) (where.push("TraceId = {traceId:String}"), (params.traceId = f.traceId));
 }
@@ -76,6 +76,27 @@ function scope(f: Scope, where: string[], params: Record<string, string | number
 const CLUSTER = "ResourceAttributes['k8s.cluster.name']";
 const METRIC_TABLES = { gauge: "otel_metrics_gauge", sum: "otel_metrics_sum", histogram: "otel_metrics_histogram" } as const;
 export type MetricType = keyof typeof METRIC_TABLES;
+
+/** The start of a `level=…` / `"level":"…"` / `severity: …` field in a log line (RE2, case-insensitive). */
+const LEVEL = String.raw`(?i)"?(?:level|severity|lvl)"?\\s*[=:]\\s*"?`;
+/**
+ * A record's level read from its text, for the many records collected from pods' output without one
+ * (SeverityNumber 0): klog's E/W/I prefix, a level field, the level's word in capitals, a Kubernetes Warning event;
+ * 0 when nothing says.
+ */
+const INFERRED = String.raw`multiIf(
+  match(Body, '^[EF]\\d{4} ') OR match(Body, '${LEVEL}(?:error|err|fatal|crit|critical|panic|alert|emerg)\\b') OR match(Body, '\\b(?:ERROR|FATAL|PANIC|CRITICAL)\\b'), 17,
+  match(Body, '^W\\d{4} ') OR match(Body, '${LEVEL}(?:warn|warning)\\b') OR match(Body, '\\b(?:WARN|WARNING)\\b') OR position(Body, '"type":"Warning"') > 0, 13,
+  match(Body, '^I\\d{4} ') OR match(Body, '${LEVEL}(?:info|notice)\\b') OR match(Body, '\\bINFO\\b'), 9,
+  match(Body, '${LEVEL}(?:debug|trace)\\b') OR match(Body, '\\b(?:DEBUG|TRACE)\\b'), 5,
+  0)`;
+/**
+ * A record's severity: its own SeverityNumber, else the one its text says, else info (a line that says nothing is
+ * ordinary output) — so the level filters, the bar chart and the twin's error counts see pods' plain output too.
+ */
+export const SEVERITY_EXPR = `if(SeverityNumber > 0, SeverityNumber, if((${INFERRED} AS inferred) > 0, inferred, 9))`;
+/** The level's name to show: the record's own, else the one its text says, else none. */
+const SEVERITY_TEXT = `if(SeverityText <> '', SeverityText, multiIf(SeverityNumber >= 21, 'FATAL', SeverityNumber >= 17, 'ERROR', SeverityNumber >= 13, 'WARN', SeverityNumber >= 9, 'INFO', SeverityNumber >= 1, 'DEBUG', inferred >= 17, 'ERROR', inferred >= 13, 'WARN', inferred >= 9, 'INFO', inferred >= 5, 'DEBUG', ''))`;
 
 /** Lowest SeverityNumber of each level (OpenTelemetry log data model). */
 export const SEVERITY: Record<string, number> = { debug: 5, info: 9, warn: 13, error: 17, fatal: 21 };
@@ -103,20 +124,35 @@ export class Telemetry {
   }
 
   /** Services and namespaces seen in the range, for the filters. */
-  async facets(r: Range): Promise<TelemetryFacets> {
-    const p = { ...this.of().params, ...range(r) };
+  /**
+   * The values the pages' filters offer, seen in the range: services (logs and traces), and from the logs the
+   * namespaces, nodes, and the pods and containers (of `namespace` when given).
+   */
+  async facets(r: Range & { namespace?: string }): Promise<TelemetryFacets> {
+    const p = { ...this.of().params, ...range(r), namespace: r.namespace ?? "" };
     const cluster = this.of().where;
-    const [services, namespaces] = await Promise.all([
+    const window = `Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)${cluster}`;
+    const inNamespace = `({namespace:String} = '' OR ${NS} = {namespace:String})`;
+    const [services, scopes] = await Promise.all([
       this.ch.query<{ s: string }>(
-        `SELECT DISTINCT ServiceName AS s FROM (\n           SELECT ServiceName FROM otel_logs WHERE Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)${cluster}\n           UNION ALL SELECT ServiceName FROM otel_traces WHERE Timestamp BETWEEN toDateTime({from:UInt32}) AND toDateTime({to:UInt32})${cluster})\n         WHERE s <> '' ORDER BY s LIMIT 500`,
+        `SELECT DISTINCT ServiceName AS s FROM (
+           SELECT ServiceName FROM otel_logs WHERE ${window}
+           UNION ALL SELECT ServiceName FROM otel_traces WHERE Timestamp BETWEEN toDateTime({from:UInt32}) AND toDateTime({to:UInt32})${cluster})
+         WHERE s <> '' ORDER BY s LIMIT 500`,
         p,
       ),
-      this.ch.query<{ s: string }>(
-        `SELECT DISTINCT ${NS} AS s FROM otel_logs WHERE Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)${cluster} AND s <> '' ORDER BY s LIMIT 500`,
+      this.ch.query<{ namespaces: string[]; nodes: string[]; pods: string[]; containers: string[] }>(
+        `SELECT groupUniqArrayIf(500)(${NS}, ${NS} <> '') AS namespaces,
+                groupUniqArrayIf(100)(${NODE}, ${NODE} <> '') AS nodes,
+                groupUniqArrayIf(500)(${POD}, ${POD} <> '' AND ${inNamespace}) AS pods,
+                groupUniqArrayIf(200)(${CONTAINER}, ${CONTAINER} <> '' AND ${inNamespace}) AS containers
+         FROM otel_logs WHERE ${window}`,
         p,
       ),
     ]);
-    return { services: services.map((x) => x.s), namespaces: namespaces.map((x) => x.s) };
+    const sorted = (list: string[] | undefined) => [...(list ?? [])].sort();
+    const f = scopes[0];
+    return { services: services.map((x) => x.s), namespaces: sorted(f?.namespaces), nodes: sorted(f?.nodes), pods: sorted(f?.pods), containers: sorted(f?.containers) };
   }
 
   /** Error log records of the last 15 minutes per pod, the twin's status overlay (a pod logs for itself, 0 with none). */
@@ -133,7 +169,7 @@ export class Telemetry {
     attributes.forEach((a, i) => (params[`a${i}`] = a));
     if (at !== undefined) params.at = at;
     const rows = await this.ch.query<Record<string, string>>(
-      `SELECT ${columns.join(", ")}, count() AS count FROM otel_logs\n       WHERE ${at === undefined ? "Timestamp >= now() - INTERVAL 15 MINUTE" : "Timestamp BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 15 MINUTE AND fromUnixTimestamp64Milli({at:Int64})"} AND SeverityNumber >= {severity:UInt8} AND ${present}${this.of().where}\n       GROUP BY ${attributes.map((_, i) => `k${i}`).join(", ")}`,
+      `SELECT ${columns.join(", ")}, count() AS count FROM otel_logs\n       WHERE ${at === undefined ? "Timestamp >= now() - INTERVAL 15 MINUTE" : "Timestamp BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 15 MINUTE AND fromUnixTimestamp64Milli({at:Int64})"} AND ${SEVERITY_EXPR} >= {severity:UInt8} AND ${present}${this.of().where}\n       GROUP BY ${attributes.map((_, i) => `k${i}`).join(", ")}`,
       params,
     );
     return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.count)]));
@@ -204,10 +240,11 @@ export class Telemetry {
     logFilters(f, where, params);
     const rows = await this.ch.query<{ t: string; error: string; warn: string; other: string }>(
       `SELECT toUnixTimestamp(toStartOfInterval(Timestamp, toIntervalSecond({step:UInt32}))) AS t,
-              countIf(SeverityNumber >= {error:UInt8}) AS error,
-              countIf(SeverityNumber >= {warn:UInt8} AND SeverityNumber < {error:UInt8}) AS warn,
-              countIf(SeverityNumber < {warn:UInt8}) AS other
-       FROM otel_logs WHERE ${where.join(" AND ")} GROUP BY t ORDER BY t`,
+              countIf(sev >= {error:UInt8}) AS error,
+              countIf(sev >= {warn:UInt8} AND sev < {error:UInt8}) AS warn,
+              countIf(sev < {warn:UInt8}) AS other
+       FROM (SELECT Timestamp, ${SEVERITY_EXPR} AS sev FROM otel_logs WHERE ${where.join(" AND ")})
+       GROUP BY t ORDER BY t`,
       params,
     );
     return rows.map((r) => ({ ts: Number(r.t) * 1000, error: Number(r.error), warn: Number(r.warn), other: Number(r.other) }));
@@ -219,7 +256,7 @@ export class Telemetry {
     const params: Record<string, string | number> = { ...this.of().params, ...range(f), toMs: f.to, limit: f.limit };
     logFilters(f, where, params);
     const rows = await this.ch.query<Omit<LogRecord, "ts"> & { ts: string }>(
-      `SELECT toUnixTimestamp64Milli(Timestamp) AS ts, SeverityText AS severity, SeverityNumber AS severityNumber, ServiceName AS service,\n              ${NS} AS namespace, ${POD} AS pod, Body AS body, TraceId AS traceId, SpanId AS spanId,\n              LogAttributes AS attributes, ResourceAttributes AS resource\n       FROM otel_logs WHERE ${where.join(" AND ")} ORDER BY Timestamp DESC LIMIT {limit:UInt32}`,
+      `SELECT toUnixTimestamp64Milli(Timestamp) AS ts, ${SEVERITY_EXPR} AS severityNumber, ${SEVERITY_TEXT} AS severity, ServiceName AS service,\n              ${NS} AS namespace, ${POD} AS pod, Body AS body, TraceId AS traceId, SpanId AS spanId,\n              LogAttributes AS attributes, ResourceAttributes AS resource\n       FROM otel_logs WHERE ${where.join(" AND ")} ORDER BY Timestamp DESC LIMIT {limit:UInt32}`,
       params,
     );
     return rows.map((r) => ({ ...r, ts: Number(r.ts), severityNumber: Number(r.severityNumber) }));

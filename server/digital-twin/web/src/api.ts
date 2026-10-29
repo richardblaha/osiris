@@ -30,6 +30,31 @@ async function send<T>(method: "PUT" | "DELETE", path: string, body?: unknown): 
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
+/** One panel of a dashboard: logs, their bar chart, a metric or traces, with the page's filter values. */
+export interface DashboardPanel {
+  id: string;
+  kind: "logs" | "logBars" | "metric" | "traces";
+  title: string;
+  /** Columns of four it spans. */
+  width: number;
+  filter: Record<string, string>;
+}
+export interface DashboardSummary {
+  id: string;
+  name: string;
+  updatedAt: number;
+}
+/** A named dashboard, shared by everyone who sees the twin. */
+export interface Dashboard {
+  id: string;
+  name: string;
+  /** The time range its panels show, ms back from now. */
+  range: number;
+  panels: DashboardPanel[];
+  updatedAt: number;
+  updatedBy: string;
+}
+
 /** A filter the user saved for the logs page: the page's own filter values. */
 export interface SavedFilter {
   id: string;
@@ -62,7 +87,12 @@ export const api = {
   range: () => call<{ from: number | null; to: number }>("/api/history/range"),
   history: async (dtId: string, f: { from: number; to: number; limit?: number }) =>
     (await call<{ value: TwinChange[] }>(`/api/digitaltwins/${encodeURIComponent(dtId)}/history?${new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))}`)).value,
-  facets: (range: { from: number; to: number }) => call<TelemetryFacets>(`/api/facets?from=${range.from}&to=${range.to}`),
+  facets: (f: { from: number; to: number; namespace?: string }) => call<TelemetryFacets>(`/api/facets?${query(f)}`),
+  dashboards: async () => (await call<{ value: DashboardSummary[] }>("/api/dashboards")).value,
+  dashboard: (id: string) => call<Dashboard>(`/api/dashboards/${encodeURIComponent(id)}`),
+  saveDashboard: (d: Omit<Dashboard, "updatedAt" | "updatedBy">) =>
+    send<Dashboard>("PUT", `/api/dashboards/${encodeURIComponent(d.id)}`, { name: d.name, range: d.range, panels: d.panels }),
+  deleteDashboard: (id: string) => send<void>("DELETE", `/api/dashboards/${encodeURIComponent(id)}`),
   logHistogram: (f: Scope & { from: number; to: number; service?: string; severity?: string; q?: string; traceId?: string }) =>
     call<{ step: number; buckets: { ts: number; error: number; warn: number; other: number }[] }>(`/api/logs/histogram?${query(f)}`),
   savedFilters: async () => (await call<{ value: SavedFilter[] }>("/api/me/filters?kind=logs")).value,

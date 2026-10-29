@@ -2,6 +2,7 @@
   "title": "Digital Twin",
   "nav": {
     "label": "Pages",
+    "dashboard": "Overview",
     "logs": "Logs",
     "metrics": "Metrics",
     "traces": "Traces"

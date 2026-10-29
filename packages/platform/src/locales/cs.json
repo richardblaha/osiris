@@ -136,7 +136,9 @@
       "historyOff": "Historie dvojčete není zapnutá.",
       "historyMissing": "Historie dvojčete tak daleko nesahá.",
       "filterNotFound": "Takový uložený filtr neexistuje.",
-      "tooManyFilters": "Uložených filtrů je příliš mnoho; nejdřív některé smažte."
+      "tooManyFilters": "Uložených filtrů je příliš mnoho; nejdřív některé smažte.",
+      "dashboardNotFound": "Takový dashboard neexistuje.",
+      "tooManyDashboards": "Dashboardů je příliš mnoho; nejdřív některé smažte."
     },
     "validation": {
       "invalid": "Neplatný požadavek",

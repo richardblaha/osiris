@@ -124,7 +124,9 @@
       "historyOff": "The twin's history is not switched on.",
       "historyMissing": "The twin's history doesn't reach that far back.",
       "filterNotFound": "There is no such saved filter.",
-      "tooManyFilters": "You have saved too many filters; delete some first."
+      "tooManyFilters": "You have saved too many filters; delete some first.",
+      "dashboardNotFound": "There is no such dashboard.",
+      "tooManyDashboards": "There are too many dashboards; delete some first."
     },
     "validation": {
       "invalid": "Invalid request.",

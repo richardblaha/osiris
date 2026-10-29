@@ -2,6 +2,7 @@
   "title": "Digitální dvojče",
   "nav": {
     "label": "Stránky",
+    "dashboard": "Přehled",
     "logs": "Logy",
     "metrics": "Metriky",
     "traces": "Trasy"

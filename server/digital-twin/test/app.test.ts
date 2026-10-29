@@ -213,6 +213,20 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     expect(((await (await as("alice", "/api/me/filters?kind=logs")).json()) as { value: unknown[] }).value).toEqual([]);
   });
 
+  it("keeps named dashboards everyone shares, their panels validated", async () => {
+    const instance = app();
+    const put = (id: string, body: unknown) => instance.request(`/api/dashboards/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    const ops = { name: "Provoz", range: 3_600_000, panels: [{ id: "p1", kind: "logBars", title: "Chyby", width: 4, filter: { severity: "error" } }] };
+    expect((await put("ops", ops)).status).toBe(200);
+    expect((await put("db", { ...ops, name: "Databáze", panels: [] })).status).toBe(200);
+    const list = await json<{ value: { id: string; name: string }[] }>("/api/dashboards");
+    expect(list.value.map((d) => d.name)).toEqual(["Databáze", "Provoz"]);
+    expect(await json("/api/dashboards/ops")).toMatchObject({ name: "Provoz", panels: [{ kind: "logBars", filter: { severity: "error" } }], updatedBy: "dev" });
+    expect((await put("bad", { ...ops, panels: [{ ...ops.panels[0], kind: "pie" }] })).status).toBe(400);
+    expect((await instance.request("/api/dashboards/db", { method: "DELETE" })).status).toBe(204);
+    expect((await instance.request("/api/dashboards/db")).status).toBe(404);
+  });
+
   it("refuses a bad query", async () => {
     const res = await app().request("/api/logs?limit=9999");
     expect(res.status).toBe(400);

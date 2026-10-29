@@ -76,3 +76,20 @@ describe("Telemetry's error counts", () => {
     expect(calls).toHaveLength(0);
   });
 });
+
+describe("the logs' severity", () => {
+  it("is read from the text when a record has none (pods' plain output), for the filter, the chart and the errors", async () => {
+    const { calls, ch } = spy();
+    const t = new Telemetry(ch);
+    await t.logs({ ...RANGE, severity: "warn", limit: 10 });
+    await t.logHistogram({ ...RANGE, step: 60 });
+    await t.errorCounts(["k8s.namespace.name", "k8s.pod.name"]);
+    for (const { sql } of calls) {
+      expect(sql).toContain("if(SeverityNumber > 0, SeverityNumber");
+      // klog's prefix and a level field, escaped once for ClickHouse's string literal.
+      expect(sql).toContain(String.raw`'^[EF]\\d{4} '`);
+      expect(sql).toContain(String.raw`(?:level|severity|lvl)"?\\s*[=:]`);
+    }
+    expect(calls[0]!.params.severity).toBe("13");
+  });
+});

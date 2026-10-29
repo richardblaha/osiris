@@ -33,6 +33,26 @@ const logFilters = z.object({
   q: text,
   traceId: z.string().regex(/^[0-9a-f]{32}$/).optional(),
 });
+/** A filter's values: the pages' query parameters by name. */
+const filterValues = z.record(z.string().regex(/^[A-Za-z]{1,32}$/), z.string().max(300)).refine((f) => Object.keys(f).length <= 20);
+/** A dashboard as the PWA saves it. */
+const dashboardBody = z.object({
+  name: z.string().trim().min(1).max(80),
+  range: z.number().int().min(60_000).max(31 * 24 * 3_600_000),
+  panels: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/),
+        kind: z.enum(["logs", "logBars", "metric", "traces"]),
+        title: z.string().trim().max(120),
+        width: z.number().int().min(1).max(4),
+        filter: filterValues,
+      }),
+    )
+    .max(40),
+});
+/** How many dashboards the twin keeps. */
+const MAX_DASHBOARDS = 50;
 /** The pages a filter can be saved for. */
 const filterKind = z.enum(["logs"]);
 /** How many filters one user may keep. */
@@ -227,7 +247,7 @@ export function createApp(config: Config, options: AppOptions) {
       return c.json({ value });
     })
     .get("/api/facets", async (c) => {
-      const f = parse(rangeQuery, c.req.query());
+      const f = parse(rangeQuery.and(z.object({ namespace: text })), c.req.query());
       return c.json(await cached("facets", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().facets(f))));
     })
     // How many log records match the logs page's filters over time, by severity (about 60 bars across the range).
@@ -235,6 +255,26 @@ export function createApp(config: Config, options: AppOptions) {
       const f = parse(rangeQuery.and(logFilters), c.req.query());
       const step = Math.max(10, Math.round((f.to - f.from) / 1000 / 60 / 10) * 10);
       return c.json({ step, buckets: await cached("log-histogram", { ...f, step }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().logHistogram({ ...f, step }))) });
+    })
+    // Dashboards: named sets of panels over the telemetry, shared by everyone who may see the twin.
+    .get("/api/dashboards", async (c) => c.json({ value: await store.dashboards() }))
+    .get("/api/dashboards/:id", async (c) => {
+      const d = await store.dashboard(c.req.param("id"));
+      if (!d) throw new HttpError(404, "errors.digitalTwin.dashboardNotFound");
+      return c.json(d);
+    })
+    .put("/api/dashboards/:id", async (c) => {
+      const id = parse(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), c.req.param("id"));
+      const body = parse(dashboardBody, await c.req.json().catch(() => null));
+      if (!(await store.dashboard(id)) && (await store.countDashboards()) >= MAX_DASHBOARDS) throw new HttpError(409, "errors.digitalTwin.tooManyDashboards");
+      const who = c.get("identity");
+      const saved = { id, ...body, updatedAt: Date.now(), updatedBy: who?.name ?? who?.email ?? who?.sub ?? "dev" };
+      await store.saveDashboard(saved);
+      return c.json(saved);
+    })
+    .delete("/api/dashboards/:id", async (c) => {
+      if (!(await store.deleteDashboard(c.req.param("id")))) throw new HttpError(404, "errors.digitalTwin.dashboardNotFound");
+      return c.body(null, 204);
     })
     // The signed-in user's saved filters of a telemetry page (their own, never another's).
     .get("/api/me/filters", async (c) => {
@@ -247,7 +287,7 @@ export function createApp(config: Config, options: AppOptions) {
         z.object({
           kind: filterKind,
           name: z.string().trim().min(1).max(80),
-          filter: z.record(z.string().regex(/^[A-Za-z]{1,32}$/), z.string().max(300)).refine((f) => Object.keys(f).length <= 20),
+          filter: filterValues,
         }),
         await c.req.json().catch(() => null),
       );

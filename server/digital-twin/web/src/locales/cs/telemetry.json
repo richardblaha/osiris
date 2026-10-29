@@ -78,5 +78,14 @@
   "histogram": "Počet logů v čase",
   "histogramTip": "chyby {{error}}, varování {{warn}}, ostatní {{other}}",
   "histogramMax": "max {{value}} na sloupec",
-  "claim": "Svazek (PVC)"
+  "claim": "Svazek (PVC)",
+  "bars": {
+    "error": "chyby {{n}}",
+    "warn": "varování {{n}}",
+    "other": "ostatní {{n}}",
+    "hint": "Klik: tento čas (a úroveň) · tažení: úsek"
+  },
+  "debugUp": "debug a vyšší",
+  "clearWindow": "Zpět na rozsah",
+  "clearFilters": "Zrušit filtry ({{n}})"
 }

@@ -11,8 +11,30 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS relationships (source_id TEXT NOT NULL, relationship_id TEXT NOT NULL, name TEXT NOT NULL, target_id TEXT NOT NULL, source TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (source_id, relationship_id))`,
   `CREATE INDEX IF NOT EXISTS relationships_target ON relationships (target_id)`,
   `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+  `CREATE TABLE IF NOT EXISTS dashboards (id TEXT PRIMARY KEY, name TEXT NOT NULL, definition TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS saved_filters (owner TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, filter TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (owner, id))`,
 ];
+
+/** One panel of a dashboard: what it shows (logs, their bar chart, a metric, traces), its filter and width. */
+export interface DashboardPanel {
+  id: string;
+  kind: "logs" | "logBars" | "metric" | "traces";
+  title: string;
+  /** Columns of four it spans. */
+  width: number;
+  /** The page's own filter values (service, namespace, pod, severity, q; a metric's name, type and grouping…). */
+  filter: Record<string, string>;
+}
+/** A named dashboard everyone who sees the twin shares: its time range and its panels in order. */
+export interface Dashboard {
+  id: string;
+  name: string;
+  /** The time range its panels show, ms back from now. */
+  range: number;
+  panels: DashboardPanel[];
+  updatedAt: number;
+  updatedBy: string;
+}
 
 /** A filter a user saved for a telemetry page (`kind`: logs), as the page's own query values. */
 export interface SavedFilter {
@@ -124,6 +146,44 @@ export class TwinStore {
 
   async meta(key: string): Promise<string | undefined> {
     return (await this.db.query<{ value: string }>(`SELECT value FROM meta WHERE key = ?`, [key]))[0]?.value;
+  }
+
+  /** The dashboards by name, without their panels. */
+  async dashboards(): Promise<{ id: string; name: string; updatedAt: number }[]> {
+    const rows = await this.db.query<{ id: string; name: string; updated_at: number }>(`SELECT id, name, updated_at FROM dashboards ORDER BY name COLLATE NOCASE, id`);
+    return rows.map((r) => ({ id: r.id, name: r.name, updatedAt: r.updated_at }));
+  }
+
+  async dashboard(id: string): Promise<Dashboard | undefined> {
+    const [r] = await this.db.query<{ id: string; name: string; definition: string; updated_at: number; updated_by: string }>(
+      `SELECT id, name, definition, updated_at, updated_by FROM dashboards WHERE id = ?`,
+      [id],
+    );
+    if (!r) return undefined;
+    const d = JSON.parse(r.definition) as { range: number; panels: DashboardPanel[] };
+    return { id: r.id, name: r.name, range: d.range, panels: d.panels, updatedAt: r.updated_at, updatedBy: r.updated_by };
+  }
+
+  async countDashboards(): Promise<number> {
+    return Number((await this.db.query<{ n: number }>(`SELECT count(*) AS n FROM dashboards`))[0]?.n ?? 0);
+  }
+
+  async saveDashboard(d: Dashboard): Promise<void> {
+    await this.db.execute([
+      run(
+        `INSERT OR REPLACE INTO dashboards (id, name, definition, updated_at, updated_by) VALUES (?, ?, ?, ?, ?)`,
+        d.id,
+        d.name,
+        JSON.stringify({ range: d.range, panels: d.panels }),
+        d.updatedAt,
+        d.updatedBy,
+      ),
+    ]);
+  }
+
+  async deleteDashboard(id: string): Promise<boolean> {
+    const [r] = await this.db.execute([run(`DELETE FROM dashboards WHERE id = ?`, id)]);
+    return (r?.rowsAffected ?? 0) > 0;
   }
 
   /** A user's saved filters of one page, oldest first. */
