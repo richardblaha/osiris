@@ -62,6 +62,10 @@ data:
         endpoint: https://${env:K8S_NODE_IP}:10250
         insecure_skip_verify: true
         metric_groups: [node, pod, container, volume]
+        # Volume metrics name their claim (k8s.volume.type, k8s.persistentvolumeclaim.name): the digital twin's fill
+        # of each PVC. The API lookup finds a claim's volume (the ClusterRole may get pvcs and pvs).
+        extra_metadata_labels: [k8s.volume.type]
+        k8s_api_config: { auth_type: serviceAccount }
     processors:
       memory_limiter: { check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20 }
       # The node's own logs: which node.
@@ -112,7 +116,7 @@ spec:
     metadata:
       labels: { app: otel-agent }
       annotations:
-        config/version: "4"
+        config/version: "5"
     spec:
       serviceAccountName: otel-collector
       tolerations:

@@ -58,6 +58,8 @@ describe("the twin's view", () => {
     expect(scopeOf(ns)).toMatchObject({ namespace: "osiris", node: "n1" });
     expect(ns.network).toBe(100);
     expect(hasNetwork(ns, scene.models)).toBe(true);
+    // The node's kubelet reports no node network here: it carries its pods'.
+    expect(scene.byId.get("k8s:c/node/n1")!.network).toBe(100);
   });
 
   it("lays out volume claims as cylinders, mounts as interfaces between siblings", () => {

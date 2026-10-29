@@ -95,18 +95,15 @@ export function buildScene(
       v.status = worse(v.status, c.status);
       v.errors += c.errors;
     }
-    // A projection's traffic is what goes to what it holds here.
+    // A projection's traffic is what goes to what it holds here; a twin without its own counter (a node whose kubelet
+    // reports no node network) carries its children's.
     const known = v.children.filter((c) => c.network !== undefined);
-    if (v.of && known.length) v.network = known.reduce((n, c) => n + c.network!, 0);
+    if ((v.of || v.network === undefined) && known.length) v.network = known.reduce((n, c) => n + c.network!, 0);
     v.children.sort((a, b) => a.name.localeCompare(b.name));
   };
-  for (const r of roots) {
-    roll(r, 0);
-    // An outermost twin without its own network (a cluster) carries its children's: its traffic to the internet,
-    // as near as the nodes' counters tell (they count traffic between nodes too).
-    const known = r.children.filter((c) => c.network !== undefined);
-    if (r.network === undefined && known.length) r.network = known.reduce((n, c) => n + c.network!, 0);
-  }
+  // The cluster carries its nodes' traffic too: its traffic to the internet, as near as the counters tell (they count
+  // traffic between nodes as well).
+  for (const r of roots) roll(r, 0);
   return { models: modelMap, byId, top: roots, relationships, at };
 }
 
