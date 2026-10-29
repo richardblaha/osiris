@@ -65,12 +65,13 @@ export class HistoryStore {
 
   /** The newest checkpoint at or before `at` (epoch ms), or null when there's none yet. */
   async checkpointBefore(at: number): Promise<number | null> {
-    const [row] = await this.ch.query<{ ts: string; n: string }>(
-      `SELECT toUnixTimestamp64Milli(max(ts)) AS ts, count() AS n FROM ${ENTITIES} WHERE twin = {twin:String} AND change = 'checkpoint' AND ts <= fromUnixTimestamp64Milli({at:Int64})`,
+    // Aliases never reuse a column's name: ClickHouse would read the alias in WHERE.
+    const [row] = await this.ch.query<{ last_ms: string; n: string }>(
+      `SELECT toUnixTimestamp64Milli(max(ts)) AS last_ms, count() AS n FROM ${ENTITIES} WHERE twin = {twin:String} AND change = 'checkpoint' AND ts <= fromUnixTimestamp64Milli({at:Int64})`,
       { twin: this.twin, at },
     );
     // max() of nothing is the epoch, so a missing checkpoint shows as the count.
-    return row && Number(row.n) > 0 ? Number(row.ts) : null;
+    return row && Number(row.n) > 0 ? Number(row.last_ms) : null;
   }
 
   /** The twin as it was at `at`: the newest checkpoint before it and every change after, the latest per entity. */
@@ -118,11 +119,11 @@ export class HistoryStore {
 
   /** How far back the history goes: the first checkpoint, or null before any. */
   async range(): Promise<{ from: number | null; to: number }> {
-    const [row] = await this.ch.query<{ ts: string; n: string }>(
-      `SELECT toUnixTimestamp64Milli(min(ts)) AS ts, count() AS n FROM ${ENTITIES} WHERE twin = {twin:String} AND change = 'checkpoint'`,
+    const [row] = await this.ch.query<{ first_ms: string; n: string }>(
+      `SELECT toUnixTimestamp64Milli(min(ts)) AS first_ms, count() AS n FROM ${ENTITIES} WHERE twin = {twin:String} AND change = 'checkpoint'`,
       { twin: this.twin },
     );
-    return { from: row && Number(row.n) > 0 ? Number(row.ts) : null, to: Date.now() };
+    return { from: row && Number(row.n) > 0 ? Number(row.first_ms) : null, to: Date.now() };
   }
 
   /** The changes of an entity and its descendants (or of the whole twin), newest first. */
@@ -137,13 +138,13 @@ export class HistoryStore {
       where.push("(entity_id = {entity:String} OR has(ancestors, {entity:String}))");
       params.entity = f.entity;
     }
-    const rows = await this.ch.query<EntityRow & { ts: string; previous_status: string; changed: string[] }>(
-      `SELECT toUnixTimestamp64Milli(ts) AS ts, entity_id, change, kind, name, status, previous_status, changed, properties
+    const rows = await this.ch.query<EntityRow & { at_ms: string; previous_status: string; changed: string[] }>(
+      `SELECT toUnixTimestamp64Milli(ts) AS at_ms, entity_id, change, kind, name, status, previous_status, changed, properties
        FROM ${ENTITIES} WHERE ${where.join(" AND ")} ORDER BY ts DESC, entity_id LIMIT {limit:UInt32}`,
       params,
     );
     return rows.map((r) => ({
-      ts: Number(r.ts),
+      ts: Number(r.at_ms),
       entityId: r.entity_id,
       kind: r.kind,
       name: r.name,

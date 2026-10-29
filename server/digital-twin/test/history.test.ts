@@ -68,7 +68,7 @@ describe("HistoryStore's queries", () => {
   it("rebuild the state from the newest checkpoint and the changes after it, per twin", async () => {
     const { ch, queries } = fakeClickHouse((sql) =>
       sql.includes("count() AS n")
-        ? [{ ts: "500", n: "1" }]
+        ? [{ last_ms: "500", n: "1" }]
         : sql.includes("entity_events")
           ? [{ entity_id: "root", change: "checkpoint", model: "m", kind: "thing", name: "root", status: "ok", properties: {}, telemetry: {} }]
           : [{ name: "contains", source_id: "root", target_id: "a", change: "added" }],
@@ -85,14 +85,14 @@ describe("HistoryStore's queries", () => {
   });
 
   it("know there is no state before the first checkpoint", async () => {
-    const { ch, queries } = fakeClickHouse(() => [{ ts: "0", n: "0" }]);
+    const { ch, queries } = fakeClickHouse(() => [{ last_ms: "0", n: "0" }]);
     expect((await new HistoryStore(ch, "busiris", "test").stateAt(900)).checkpoint).toBeNull();
     expect(queries).toHaveLength(1);
   });
 
   it("list an entity's changes with its descendants', never the checkpoints", async () => {
     const { ch, queries } = fakeClickHouse(() => [
-      { ts: "900", entity_id: "a", change: "changed", kind: "thing", name: "a", status: "warn", previous_status: "ok", changed: ["status"], properties: {} },
+      { at_ms: "900", entity_id: "a", change: "changed", kind: "thing", name: "a", status: "warn", previous_status: "ok", changed: ["status"], properties: {} },
     ]);
     const changes = await new HistoryStore(ch, "busiris", "test").changes({ entity: "root", from: 0, to: 1000, limit: 10 });
     expect(changes).toEqual([{ ts: 900, entityId: "a", kind: "thing", name: "a", change: "changed", status: "warn", previousStatus: "ok", changed: ["status"], properties: {} }]);
@@ -105,7 +105,7 @@ describe("the recorder", () => {
   it("records only while it holds the lease, and checkpoints once a day", async () => {
     vi.useFakeTimers();
     try {
-      const { ch, inserted } = fakeClickHouse((sql) => (sql.includes("count() AS n") ? [{ ts: "0", n: "0" }] : []));
+      const { ch, inserted } = fakeClickHouse((sql) => (sql.includes("count() AS n") ? [{ last_ms: "0", n: "0" }] : []));
       let held = false;
       let ts = 1_000;
       const r = startRecorder({
