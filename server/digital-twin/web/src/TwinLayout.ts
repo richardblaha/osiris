@@ -2,20 +2,28 @@ import type { TwinView } from "./scene.ts";
 
 type Vec = [number, number, number];
 
-/** A node's box in the twin's 3D scene: the center and the full size, in scene units. */
+/** A node's solid in the twin's 3D scene: a rounded box, or a cylinder (storage); its center and full size. */
 export interface Box {
   id: string;
+  shape: "box" | "cylinder";
   center: Vec;
+  /** Width, height, depth; a cylinder's width and depth are its diameter. */
   size: Vec;
+  /** How round a box's edges are. */
+  radius: number;
 }
 
 /**
- * A network link: from the hub on its container's floor, along the floor to the box's side that faces the hub, then
- * up that side to its middle. The view animates traffic along it by the box's load.
+ * A line between two interfaces, both on a solid's surface (a wall or a cylinder's mantle), never inside one:
+ * `network` from the container's hub on its back wall to the child's wall facing it (traffic animated by the child's
+ * load), `interface` between two siblings that are related (a container mounting a volume), `internet` from the
+ * outermost twin's back wall to the globe.
  */
 export interface Link {
-  /** The twin whose traffic the link carries, and the one whose network it joins. */
+  kind: "network" | "interface" | "internet";
+  /** The twin whose load the link carries (network, internet), or the relationship's source (interface). */
   id: string;
+  /** The container whose network it joins; the internet's links have their own. */
   parent: string;
   path: Vec[];
 }
@@ -32,7 +40,7 @@ export interface Internet {
 export const INTERNET = "@internet";
 
 export interface Scene {
-  /** Every node's box, outermost first. */
+  /** Every node's solid, outermost first. */
   boxes: Box[];
   links: Link[];
   internet: Internet[];
@@ -40,7 +48,15 @@ export interface Scene {
   bounds: { center: Vec; size: Vec };
 }
 
-/** What a node's own layout measured: its size, with boxes and links relative to its floor center. */
+/** What the layout asks of the twin: which twins have a network, which are storage, and the siblings' interfaces. */
+export interface LayoutRules {
+  networked: (node: TwinView) => boolean;
+  storage: (node: TwinView) => boolean;
+  /** Related siblings, as id pairs. */
+  interfaces: [string, string][];
+}
+
+/** What a node's own layout measured: its size, with solids and links relative to its floor center. */
 interface Measured {
   size: Vec;
   boxes: Box[];
@@ -51,39 +67,50 @@ interface Measured {
 const gapAt = (depth: number) => Math.max(0.5, 4 / 2.4 ** depth);
 /** The margin of a shell around what it holds, on every side: children float inside it, never touching it. */
 const padAt = (depth: number) => gapAt(depth) * 0.55 + 0.45;
+/** How round a box's edges are: a little, more for the big shells, never more than a fifth of its least side. */
+const roundness = (size: Vec) => Math.min(Math.min(...size) * 0.2, Math.min(...size) * 0.06 + 0.1, 1.2);
 
-/** A leaf's box: a small cube at the bottom of the tree, a bigger one higher up. */
-const leafOf = (node: TwinView): Vec => (node.depth >= 3 ? [1, 1, 1] : node.depth === 2 ? [1.6, 1.2, 1.6] : [3, 2, 3]);
+/** A leaf's size: a small cube (or cylinder) at the bottom of the tree, a bigger one higher up. */
+const leafOf = (node: TwinView, storage: boolean): Vec =>
+  storage ? (node.depth >= 3 ? [1.3, 1.5, 1.3] : [2, 2.2, 2]) : node.depth >= 3 ? [1, 1, 1] : node.depth === 2 ? [1.6, 1.2, 1.6] : [3, 2, 3];
 
 const shift = (v: Vec, by: Vec): Vec => [v[0] + by[0], v[1] + by[1], v[2] + by[2]];
 
+/** A solid placed in its container: its floor center and its size. */
+interface Placed {
+  at: Vec;
+  size: Vec;
+  shape: Box["shape"];
+}
+
 /**
- * A link from the hub (the container's floor center, at `hubY`) to a child's side that faces it, never into the
- * child: along the floor to the foot of that side's middle, then up the side to half the child's height. `at` is the
- * child's floor center, `size` its box.
+ * The interface of a solid toward a point (only x and z count), at height `y`: on a box, the middle of the wall facing
+ * it; on a cylinder, the mantle where it faces it.
  */
-function toSide(hubY: number, at: Vec, size: Vec): Vec[] {
-  const [x, floor, z] = at;
-  // The side the hub lies beyond: the axis on which the hub is farther out, relative to the box's extent.
-  const alongX = Math.abs(x) / size[0] > Math.abs(z) / size[2];
-  const side: [number, number] = alongX ? [x - Math.sign(x) * (size[0] / 2), z] : [x, z - (Math.sign(z) || 1) * (size[2] / 2)];
-  return [
-    [0, hubY, 0],
-    [side[0], hubY, side[1]],
-    [side[0], floor + size[1] / 2, side[1]],
-  ];
+function port(p: Placed, toward: Vec, y: number): Vec {
+  const [x, , z] = p.at;
+  const dx = toward[0] - x;
+  const dz = toward[2] - z;
+  if (p.shape === "cylinder") {
+    const r = p.size[0] / 2;
+    const d = Math.hypot(dx, dz);
+    return d ? [x + (dx / d) * r, y, z + (dz / d) * r] : [x, y, z - r];
+  }
+  // The wall the point lies beyond: the axis on which it is farther out, relative to the box's extent.
+  return Math.abs(dx) / p.size[0] > Math.abs(dz) / p.size[2] ? [x + Math.sign(dx) * (p.size[0] / 2), y, z] : [x, y, z + (Math.sign(dz) || -1) * (p.size[2] / 2)];
 }
 
 /**
  * Measures one node: its children grouped by model (siblings of a kind share a layer), each group a near-square grid
  * of uniform cells with gaps between them, the groups one behind another, all of it floating inside the node's own
- * box with a margin on every side — shells within shells. Children whose model has a network get a link to a hub
- * on the node's floor.
+ * solid with a margin on every side — shells within shells. Networked children get a link from the node's hub (on
+ * its back wall, between its floor and theirs) to their own facing wall; related children a link wall to wall.
  */
-function measure(node: TwinView, networked: (node: TwinView) => boolean): Measured {
+function measure(node: TwinView, rules: LayoutRules): Measured {
+  const storage = rules.storage(node);
   if (!node.children.length) {
-    const size = leafOf(node);
-    return { size, boxes: [{ id: node.id, center: [0, size[1] / 2, 0], size }], links: [] };
+    const size = leafOf(node, storage);
+    return { size, boxes: [{ id: node.id, shape: storage ? "cylinder" : "box", center: [0, size[1] / 2, 0], size, radius: roundness(size) }], links: [] };
   }
   const gap = gapAt(node.depth);
   const pad = padAt(node.depth);
@@ -91,7 +118,7 @@ function measure(node: TwinView, networked: (node: TwinView) => boolean): Measur
   const groups = new Map<string, { node: TwinView; m: Measured }[]>();
   for (const child of node.children) {
     const list = groups.get(child.model) ?? groups.set(child.model, []).get(child.model)!;
-    list.push({ node: child, m: measure(child, networked) });
+    list.push({ node: child, m: measure(child, rules) });
   }
   // Each group as a grid: its cell (the largest child's size), columns and footprint.
   const grids = [...groups.values()]
@@ -107,10 +134,11 @@ function measure(node: TwinView, networked: (node: TwinView) => boolean): Measur
   const innerH = Math.max(...grids.map((g) => g.cell[1]));
   const size: Vec = [innerW + 2 * pad, innerH + 2 * pad, innerD + 2 * pad];
 
-  const boxes: Box[] = [{ id: node.id, center: [0, size[1] / 2, 0], size }];
+  const boxes: Box[] = [{ id: node.id, shape: storage ? "cylinder" : "box", center: [0, size[1] / 2, 0], size, radius: roundness(size) }];
   const links: Link[] = [];
-  // The hub: on the node's floor, halfway up to its children's.
-  const hubY = pad * 0.5;
+  const placed = new Map<string, Placed>();
+  // The hub: the node's interface on its back wall, halfway between its floor and its children's.
+  const hub: Vec = [0, pad * 0.5, -size[2] / 2];
   let z = -innerD / 2;
   for (const g of grids) {
     g.items.forEach(({ node: child, m }, i) => {
@@ -120,11 +148,25 @@ function measure(node: TwinView, networked: (node: TwinView) => boolean): Measur
       const inRow = row === g.rows - 1 ? g.items.length - row * g.cols : g.cols;
       const rowW = (g.cell[0] + gap) * inRow - gap;
       const at: Vec = [-rowW / 2 + g.cell[0] / 2 + col * (g.cell[0] + gap), pad, z + g.cell[2] / 2 + row * (g.cell[2] + gap)];
-      for (const b of m.boxes) boxes.push({ id: b.id, center: shift(b.center, at), size: b.size });
+      for (const b of m.boxes) boxes.push({ ...b, center: shift(b.center, at) });
       for (const l of m.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
-      if (networked(child)) links.push({ id: child.id, parent: node.id, path: toSide(hubY, at, m.size) });
+      const p: Placed = { at, size: m.size, shape: m.boxes[0]!.shape };
+      placed.set(child.id, p);
+      if (rules.networked(child)) {
+        // Along the floor to the foot of the child's facing wall, then up that wall to its middle.
+        const end = port(p, hub, at[1] + m.size[1] / 2);
+        links.push({ kind: "network", id: child.id, parent: node.id, path: [hub, [end[0], hub[1], end[2]], end] });
+      }
     });
     z += g.depth + gap;
+  }
+  // Related children: wall to wall, at the lower one's middle height.
+  for (const [a, b] of rules.interfaces) {
+    const pa = placed.get(a);
+    const pb = placed.get(b);
+    if (!pa || !pb) continue;
+    const y = pad + Math.min(pa.size[1], pb.size[1]) / 2;
+    links.push({ kind: "interface", id: a, parent: node.id, path: [port(pa, pb.at, y), port(pb, pa.at, y)] });
   }
   return { size, boxes, links };
 }
@@ -133,8 +175,8 @@ function measure(node: TwinView, networked: (node: TwinView) => boolean): Measur
  * The twin's whole scene: the outermost twins (a cluster) side by side, each with what it contains nested inside as
  * translucent shells, all the way down; behind each with a network, the internet it talks to.
  */
-export function layoutTwin(top: TwinView[], networked: (node: TwinView) => boolean): Scene {
-  const roots = top.map((node) => measure(node, networked));
+export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
+  const roots = top.map((node) => measure(node, rules));
   if (!roots.length) return { boxes: [], links: [], internet: [], bounds: { center: [0, 1, 0], size: [4, 2, 4] } };
   const gap = gapAt(0) * 2;
   const boxes: Box[] = [];
@@ -144,31 +186,25 @@ export function layoutTwin(top: TwinView[], networked: (node: TwinView) => boole
   top.forEach((node, i) => {
     const r = roots[i]!;
     const at: Vec = [x + r.size[0] / 2, 0, 0];
-    for (const b of r.boxes) boxes.push({ id: b.id, center: shift(b.center, at), size: b.size });
+    for (const b of r.boxes) boxes.push({ ...b, center: shift(b.center, at) });
     for (const l of r.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
-    // Behind the twin, up in the air: the internet, and a link from the twin's hub out through its back wall.
-    if (r.links.length) {
-      const hubY = padAt(0) * 0.5;
+    // Behind the twin, up in the air: the internet, from the hub on the twin's back wall to the globe's surface.
+    if (r.links.some((l) => l.kind === "network")) {
+      const hub: Vec = [at[0], padAt(0) * 0.5, -r.size[2] / 2];
       const radius = Math.max(2.5, Math.min(r.size[0], r.size[2]) * 0.07);
       const center: Vec = [at[0], r.size[1] + radius * 1.5, -r.size[2] / 2 - radius * 3 - gap];
       internet.push({ id: node.id, center, radius });
-      links.push({
-        id: node.id,
-        parent: INTERNET,
-        path: [
-          [at[0], hubY, 0],
-          [at[0], hubY, -r.size[2] / 2 - gap / 2],
-          [center[0], center[1] - radius, center[2] + radius * 0.5],
-        ],
-      });
+      const out: Vec = [hub[0], hub[1], hub[2] - gap / 2];
+      const d: Vec = [out[0] - center[0], out[1] - center[1], out[2] - center[2]];
+      const len = Math.hypot(...d) || 1;
+      links.push({ kind: "internet", id: node.id, parent: INTERNET, path: [hub, out, shift(center, [(d[0] / len) * radius, (d[1] / len) * radius, (d[2] / len) * radius])] });
     }
     x += r.size[0] + gap;
   });
   const minX = Math.min(...boxes.map((b) => b.center[0] - b.size[0] / 2));
   const maxX = Math.max(...boxes.map((b) => b.center[0] + b.size[0] / 2));
-  const minZ = Math.min(...boxes.map((b) => b.center[2] - b.size[2] / 2));
+  const minZ = Math.min(...boxes.map((b) => b.center[2] - b.size[2] / 2), ...internet.map((n) => n.center[2] - n.radius));
   const maxZ = Math.max(...boxes.map((b) => b.center[2] + b.size[2] / 2));
-  const minZ2 = Math.min(minZ, ...internet.map((n) => n.center[2] - n.radius));
   const maxY = Math.max(...boxes.map((b) => b.center[1] + b.size[1] / 2), ...internet.map((n) => n.center[1] + n.radius));
-  return { boxes, links, internet, bounds: { center: [(minX + maxX) / 2, maxY / 2, (minZ2 + maxZ) / 2], size: [maxX - minX, maxY, maxZ - minZ2] } };
+  return { boxes, links, internet, bounds: { center: [(minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxY, maxZ - minZ] } };
 }

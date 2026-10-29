@@ -18,6 +18,8 @@ export interface TwinView {
   errors: number;
   /** Bytes per second through the twin's network (its `network` telemetry); undefined without it. */
   network?: number;
+  /** The storage's filesystem (its `used` and `fsCapacity` telemetry); undefined without it. */
+  storage?: { used: number; fsCapacity: number };
   depth: number;
   parent?: TwinView;
   children: TwinView[];
@@ -54,6 +56,7 @@ export function buildScene(
   relationships: DigitalTwinRelationship[],
   errors: Record<string, number>,
   network: Record<string, number>,
+  storage: Record<string, { used: number; fsCapacity: number }>,
   at: number | null,
 ): TwinScene {
   const modelMap = new Map(models.map((m) => [m.id, m.model]));
@@ -61,7 +64,7 @@ export function buildScene(
     twins.map((t) => {
       const own = statusOf(t);
       const ownErrors = errors[t.$dtId] ?? 0;
-      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], depth: 0, children: [] }];
+      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], depth: 0, children: [] }];
     }),
   );
   for (const r of relationships) {
@@ -101,7 +104,34 @@ export const hasNetwork = (node: TwinView, models: Map<string, DtdlInterface>) =
   resolveContents(node.model, models).some((c) => c["@type"] === "Telemetry" && c.name === "network");
 
 /** Whose telemetry a twin's `otelResource` names, as the telemetry API filters it. */
-export function scopeOf(node: TwinView): { namespace?: string; pod?: string; node?: string; container?: string } {
+export function scopeOf(node: TwinView): { namespace?: string; pod?: string; node?: string; container?: string; claim?: string } {
   const r = (node.twin.otelResource ?? {}) as Record<string, string>;
-  return { namespace: r["k8s.namespace.name"], pod: r["k8s.pod.name"], node: r["k8s.node.name"], container: r["k8s.container.name"] };
+  return { namespace: r["k8s.namespace.name"], pod: r["k8s.pod.name"], node: r["k8s.node.name"], container: r["k8s.container.name"], claim: r["k8s.persistentvolumeclaim.name"] };
+}
+
+/** Whether a twin is storage (its model declares the `used` telemetry): the view draws it as a cylinder filled so far. */
+export const isStorage = (node: TwinView, models: Map<string, DtdlInterface>) =>
+  resolveContents(node.model, models).some((c) => c["@type"] === "Telemetry" && c.name === "used");
+
+/** How full a storage twin is, 0 to 1; undefined without its telemetry. */
+export const fillOf = (node: TwinView) => (node.storage && node.storage.fsCapacity > 0 ? Math.min(1, node.storage.used / node.storage.fsCapacity) : undefined);
+
+/**
+ * The interfaces between twins in one container: every relationship but containment whose two ends sit side by side
+ * (a container mounting its pod's volume claim), as pairs of ids.
+ */
+export function interfacesOf(scene: Pick<TwinScene, "byId" | "relationships">): [string, string][] {
+  const seen = new Set<string>();
+  const out: [string, string][] = [];
+  for (const r of scene.relationships) {
+    if (r.$relationshipName === TWIN_CONTAINS) continue;
+    const a = scene.byId.get(r.$sourceId);
+    const b = scene.byId.get(r.$targetId);
+    if (!a?.parent || a.parent !== b?.parent) continue;
+    const key = [a.id, b.id].sort().join("\u0000");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push([a.id, b.id]);
+  }
+  return out;
 }

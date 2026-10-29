@@ -3,9 +3,10 @@ import { t } from "i18next";
 import { useEffect, useRef, type RefObject } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import { formatBytesRate } from "./i18n.ts";
-import { hasNetwork, type TwinScene, type TwinView } from "./scene.ts";
+import { formatBytes, formatBytesRate, formatNumber } from "./i18n.ts";
+import { fillOf, hasNetwork, interfacesOf, isStorage, type TwinScene, type TwinView } from "./scene.ts";
 import { layoutTwin, type Box, type Link, type Scene } from "./TwinLayout.ts";
 
 /** A point on the view, in CSS pixels from its top left corner. */
@@ -24,12 +25,87 @@ function themeColors() {
 const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 const easeInOut = (x: number) => (x < 0.5 ? 4 * x ** 3 : 1 - (-2 * x + 2) ** 3 / 2);
 
-/** One box of the scene: its fill and edges. */
+/** One solid of the scene: its translucent body, its outline and, for storage, how full it is. */
 interface BoxMesh {
   id: string;
   box: Box;
-  mesh: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
-  edges: THREE.LineSegments<THREE.EdgesGeometry, THREE.LineBasicMaterial>;
+  mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+  edges: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  /** A cylinder's content: a smaller cylinder from its floor up to how full it is, with a ring at the level. */
+  fill?: { body: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>; level: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial> };
+}
+
+/**
+ * A rounded box's outline: each of the 12 edges along the middle of its rounding, joined at every corner by three arcs
+ * over the corner's sphere — the box's silhouette, without the facets of the rounding.
+ */
+function roundedEdges([w, h, d]: [number, number, number], r: number): THREE.BufferGeometry {
+  const points: number[] = [];
+  const k = Math.SQRT1_2 * r;
+  const inner = [w / 2 - r, h / 2 - r, d / 2 - r];
+  const corner = (sx: number, sy: number, sz: number) => new THREE.Vector3(sx * inner[0]!, sy * inner[1]!, sz * inner[2]!);
+  const push = (a: THREE.Vector3, b: THREE.Vector3) => points.push(a.x, a.y, a.z, b.x, b.y, b.z);
+  for (const sa of [-1, 1])
+    for (const sb of [-1, 1]) {
+      // Edges along x, y and z, each at the middle of its quarter-cylinder.
+      push(new THREE.Vector3(-inner[0]!, sa * (inner[1]! + k), sb * (inner[2]! + k)), new THREE.Vector3(inner[0]!, sa * (inner[1]! + k), sb * (inner[2]! + k)));
+      push(new THREE.Vector3(sa * (inner[0]! + k), -inner[1]!, sb * (inner[2]! + k)), new THREE.Vector3(sa * (inner[0]! + k), inner[1]!, sb * (inner[2]! + k)));
+      push(new THREE.Vector3(sa * (inner[0]! + k), sb * (inner[1]! + k), -inner[2]!), new THREE.Vector3(sa * (inner[0]! + k), sb * (inner[1]! + k), inner[2]!));
+    }
+  // At each corner, arcs between the three edges' ends, over the sphere of radius r.
+  const SEGMENTS = 6;
+  for (const sx of [-1, 1])
+    for (const sy of [-1, 1])
+      for (const sz of [-1, 1]) {
+        const c = corner(sx, sy, sz);
+        const ends = [new THREE.Vector3(0, sy, sz), new THREE.Vector3(sx, 0, sz), new THREE.Vector3(sx, sy, 0)].map((v) => v.normalize());
+        for (const [a, b] of [
+          [0, 1],
+          [1, 2],
+          [2, 0],
+        ] as const) {
+          let prev = ends[a]!.clone().multiplyScalar(r).add(c);
+          for (let i = 1; i <= SEGMENTS; i++) {
+            const next = ends[a]!.clone().lerp(ends[b]!, i / SEGMENTS).normalize().multiplyScalar(r).add(c);
+            push(prev, next);
+            prev = next;
+          }
+        }
+      }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
+/** A cylinder's outline: its top and bottom rims and four lines down its mantle. */
+function cylinderEdges(radius: number, height: number): THREE.BufferGeometry {
+  const points: number[] = [];
+  const N = 48;
+  for (const y of [-height / 2, height / 2])
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const b = ((i + 1) / N) * Math.PI * 2;
+      points.push(Math.cos(a) * radius, y, Math.sin(a) * radius, Math.cos(b) * radius, y, Math.sin(b) * radius);
+    }
+  for (let i = 0; i < 4; i++) {
+    const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+    points.push(Math.cos(a) * radius, -height / 2, Math.sin(a) * radius, Math.cos(a) * radius, height / 2, Math.sin(a) * radius);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
+/** A ring of `radius` at height 0, for a storage's fill level. */
+function ring(radius: number): THREE.BufferGeometry {
+  const points: number[] = [];
+  for (let i = 0; i < 48; i++) {
+    const a = (i / 48) * Math.PI * 2;
+    points.push(Math.cos(a) * radius, 0, Math.sin(a) * radius);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
 }
 
 /** A network link as drawn: its path's lengths, for the packets that travel it. */
@@ -46,6 +122,8 @@ interface Content {
   links: LinkPath[];
   lines: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
   packets: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
+  /** The interfaces: a dot where each link meets a wall or a mantle. */
+  ports: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   labels: Map<string, CSS2DObject>;
   /** The internet's globes and their labels. */
   globes: { lines: THREE.LineSegments<THREE.WireframeGeometry, THREE.LineBasicMaterial>; label: CSS2DObject }[];
@@ -74,8 +152,11 @@ function dotTexture() {
 /**
  * The twin as a 3D WebGL scene (three.js): nested translucent shells — the cluster, its nodes inside, their pods
  * inside those, down to the containers — with gaps between siblings and edges coloured by status in the theme's cyan.
- * Where twins have a network (DTDL telemetry `network`), a line joins each to a hub on its container's floor, and
- * packets travel it as fast and as many as its load says; the cluster's hub reaches the internet, a globe behind it. Hovering highlights a box in magenta and names it; a click
+ * Boxes have slightly rounded edges; storage (DTDL telemetry `used`) is a cylinder filled as far as it is full. Where
+ * twins have a network (DTDL telemetry `network`), a line runs from a hub on their container's back wall to each one's
+ * facing wall, and packets travel it as fast and as many as its load says; the cluster's hub reaches the internet, a
+ * globe behind it. Related siblings (a container mounting a volume) are joined wall to wall. Every line ends on a
+ * surface, marked with a dot: an interface, never the inside of a solid. Hovering highlights a box in magenta and names it; a click
  * selects it, and the camera flies to it until it fills the view; deselecting leaves the camera where it is, and
  * `home` changing (a second Escape) flies back to the whole twin. `anchor` gives the selected box's corners on screen, for the panels' callout lines.
  */
@@ -136,14 +217,23 @@ export function Twin3D({
 
     const clear = () => {
       if (!content) return;
-      for (const { mesh, edges } of content.meshes) {
+      for (const { mesh, edges, fill } of content.meshes) {
         world.remove(mesh, edges);
         mesh.geometry.dispose();
         mesh.material.dispose();
         edges.geometry.dispose();
         edges.material.dispose();
+        if (fill) {
+          world.remove(fill.body, fill.level);
+          fill.body.geometry.dispose();
+          fill.body.material.dispose();
+          fill.level.geometry.dispose();
+          fill.level.material.dispose();
+        }
       }
-      world.remove(content.lines, content.packets);
+      world.remove(content.lines, content.packets, content.ports);
+      content.ports.geometry.dispose();
+      content.ports.material.dispose();
       content.lines.geometry.dispose();
       content.lines.material.dispose();
       content.packets.geometry.dispose();
@@ -158,17 +248,34 @@ export function Twin3D({
       content = undefined;
     };
 
-    /** Every box (a fill and the edges that carry its status, outer shells drawn first) and the network. */
+    /**
+     * Every solid (a translucent body and the outline that carries its status, outer shells drawn first; storage a
+     * cylinder with its content), the links and their interfaces.
+     */
     const build = (scene: Scene, byId: Map<string, TwinView>, shape: string): Content => {
       const meshes: BoxMesh[] = scene.boxes.map((box) => {
-        const geometry = new THREE.BoxGeometry(...box.size);
-        const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+        const cylinder = box.shape === "cylinder";
+        const r = box.size[0] / 2;
+        const geometry = cylinder
+          ? new THREE.CylinderGeometry(r, r, box.size[1], 40)
+          : new RoundedBoxGeometry(box.size[0], box.size[1], box.size[2], 3, box.radius);
+        const mesh = new THREE.Mesh(geometry as THREE.BufferGeometry, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
         mesh.position.set(...box.center);
         mesh.userData = { id: box.id };
-        const edges = new THREE.LineSegments(new THREE.EdgesGeometry(geometry), new THREE.LineBasicMaterial({ transparent: true }));
+        const edges = new THREE.LineSegments(cylinder ? cylinderEdges(r, box.size[1]) : roundedEdges(box.size, box.radius), new THREE.LineBasicMaterial({ transparent: true }));
         edges.position.set(...box.center);
         world.add(mesh, edges);
-        return { id: box.id, box, mesh, edges };
+        let fill: BoxMesh["fill"];
+        if (cylinder) {
+          // A unit-high cylinder standing on the floor, scaled to the level in `paint`.
+          const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.86, r * 0.86, 1, 40).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+          const level = new THREE.LineLoop(ring(r * 0.86), new THREE.LineBasicMaterial({ transparent: true }));
+          body.position.set(box.center[0], box.center[1] - box.size[1] / 2, box.center[2]);
+          level.position.copy(body.position);
+          world.add(body, level);
+          fill = { body, level };
+        }
+        return { id: box.id, box, mesh, edges, fill };
       });
       // Outer shells behind inner ones, so transparency stacks whole cuboids in the right order.
       meshes.forEach((m, i) => {
@@ -196,7 +303,14 @@ export function Twin3D({
       );
       packets.renderOrder = 2 * meshes.length;
       packets.frustumCulled = false;
-      world.add(lines, packets);
+      // The interfaces: both ends of every link, each on a wall, a mantle or the globe.
+      const portGeometry = new THREE.BufferGeometry();
+      const ends = links.flatMap((l) => [l.path[0]!, l.path.at(-1)!]);
+      portGeometry.setAttribute("position", new THREE.Float32BufferAttribute(ends.flat(), 3));
+      portGeometry.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(ends.length * 4), 4));
+      const ports = new THREE.Points(portGeometry, new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, map: dot, vertexColors: true, transparent: true, depthWrite: false }));
+      ports.renderOrder = packets.renderOrder;
+      world.add(lines, packets, ports);
 
       // The internet: a wireframe globe behind each outermost twin, named.
       const globes = scene.internet.map((n) => {
@@ -220,6 +334,7 @@ export function Twin3D({
         links,
         lines,
         packets,
+        ports,
         labels: new Map(),
         globes,
         bounds: { center: new THREE.Vector3(...b.center), radius: Math.hypot(...b.size) / 2 },
@@ -236,8 +351,8 @@ export function Twin3D({
       for (let n = node; n; n = n.parent) if (n.id === focus.id) return true;
       return false;
     };
-    /** Each link's load from 0 to 1, against its siblings' highest (and at least 100 kB/s, so quiet stays calm). */
-    let loads = new Map<string, number>();
+    /** Each link's load from 0 to 1 (by index), against its siblings' highest (at least 100 kB/s, so quiet stays calm). */
+    let loads: number[] = [];
 
     /** The labels shown: the outer two levels, or the selected twin and what it holds. */
     const labelled = (node: TwinView) => {
@@ -263,25 +378,43 @@ export function Twin3D({
         m.edges.material.opacity = (strong ? 1 : node.depth === 0 ? 0.9 : leaf ? 0.8 : 0.6) * fade;
         m.mesh.material.color = color;
         m.mesh.material.opacity = (leaf ? (strong ? 0.4 : 0.2) : strong ? 0.1 : 0.035) * fade;
+        if (m.fill) {
+          // A storage's content: as high as it is full, cyan up to 80 %, then warning, then error from 95 %.
+          const full = fillOf(node);
+          m.mesh.material.opacity = (strong ? 0.18 : 0.08) * fade;
+          const level = full === undefined ? 0 : Math.max(0.001, full * m.box.size[1]);
+          const fillColor = full === undefined ? colors.cyan : full >= 0.95 ? colors.error : full >= 0.8 ? colors.warn : colors.cyan;
+          m.fill.body.scale.y = level;
+          m.fill.body.visible = full !== undefined;
+          m.fill.body.material.color = fillColor;
+          m.fill.body.material.opacity = 0.45 * fade;
+          m.fill.level.position.y = m.box.center[1] - m.box.size[1] / 2 + level;
+          m.fill.level.visible = full !== undefined;
+          m.fill.level.material.color = fillColor;
+          m.fill.level.material.opacity = 0.9 * fade;
+        }
       }
 
-      // Each link's share of its network's load.
+      // Each network link's share of its network's load (interfaces carry no traffic).
       const byParent = new Map<string, number>();
-      for (const l of content.links) byParent.set(l.parent, Math.max(byParent.get(l.parent) ?? 0, content.byId.get(l.id)?.network ?? 0));
-      loads = new Map(
-        content.links.map((l) => {
-          const load = content!.byId.get(l.id)?.network;
-          return [l.id, load === undefined || load <= 0 ? 0 : Math.min(1, Math.log1p(load) / Math.log1p(Math.max(byParent.get(l.parent) ?? 0, 100_000)))];
-        }),
-      );
+      for (const l of content.links) if (l.kind !== "interface") byParent.set(l.parent, Math.max(byParent.get(l.parent) ?? 0, content.byId.get(l.id)?.network ?? 0));
+      loads = content.links.map((l) => {
+        const load = l.kind === "interface" ? undefined : content!.byId.get(l.id)?.network;
+        return load === undefined || load <= 0 ? 0 : Math.min(1, Math.log1p(load) / Math.log1p(Math.max(byParent.get(l.parent) ?? 0, 100_000)));
+      });
       const color = content.lines.geometry.getAttribute("color") as THREE.BufferAttribute;
+      const portColor = content.ports.geometry.getAttribute("color") as THREE.BufferAttribute;
       let v = 0;
-      for (const l of content.links) {
-        const shown = inFocus(content.byId.get(l.parent)) || inFocus(content.byId.get(l.id));
-        const alpha = (0.18 + 0.5 * (loads.get(l.id) ?? 0)) * (shown ? 1 : 0.15);
-        for (let i = 0; i < (l.path.length - 1) * 2; i++, v++) color.setXYZW(v, colors.cyan.r, colors.cyan.g, colors.cyan.b, alpha);
-      }
+      content.links.forEach((l, k) => {
+        const shown = inFocus(content!.byId.get(l.parent)) || inFocus(content!.byId.get(l.id));
+        // Networks in cyan by load; interfaces (a mount) in magenta.
+        const c = l.kind === "interface" ? colors.magenta : colors.cyan;
+        const alpha = (l.kind === "interface" ? 0.7 : 0.18 + 0.5 * loads[k]!) * (shown ? 1 : 0.15);
+        for (let i = 0; i < (l.path.length - 1) * 2; i++, v++) color.setXYZW(v, c.r, c.g, c.b, alpha);
+        for (const e of [2 * k, 2 * k + 1]) portColor.setXYZW(e, c.r, c.g, c.b, (shown ? 0.95 : 0.15));
+      });
       color.needsUpdate = true;
+      portColor.needsUpdate = true;
       content.packets.material.color = colors.cyan;
       for (const g of content.globes) {
         g.lines.material.color = colors.cyan;
@@ -317,8 +450,8 @@ export function Twin3D({
       const position = content.packets.geometry.getAttribute("position") as THREE.BufferAttribute;
       const still = reducedMotion();
       let n = 0;
-      for (const l of content.links) {
-        const load = loads.get(l.id) ?? 0;
+      for (const [k, l] of content.links.entries()) {
+        const load = loads[k] ?? 0;
         if (load <= 0) continue;
         if (!inFocus(content.byId.get(l.parent)) && !inFocus(content.byId.get(l.id))) continue;
         const count = 1 + Math.round(load * (MAX_PACKETS - 1));
@@ -394,7 +527,7 @@ export function Twin3D({
         for (const child of node.children) walk(child);
       };
       for (const node of twin.top) walk(node);
-      const scene = layoutTwin(twin.top, (node) => hasNetwork(node, twin.models));
+      const scene = layoutTwin(twin.top, { networked: (node) => hasNetwork(node, twin.models), storage: (node) => isStorage(node, twin.models), interfaces: interfacesOf(twin) });
       const shape = scene.boxes.map((x) => `${x.id}@${x.center.join(",")}:${x.size.join(",")}`).join("|");
       if (content && content.shape === shape) content.byId = byId;
       else {
@@ -467,7 +600,15 @@ export function Twin3D({
       name.textContent = node.name;
       const meta = document.createElement("span");
       meta.dataset.status = node.status;
-      meta.textContent = [t(`twin:status.${node.status}`), node.network !== undefined ? formatBytesRate(node.network) : "", node.errors ? t("twin:errorCount", { count: node.errors }) : ""].filter(Boolean).join(" · ");
+      const full = fillOf(node);
+      meta.textContent = [
+        t(`twin:status.${node.status}`),
+        node.network !== undefined ? formatBytesRate(node.network) : "",
+        full !== undefined && node.storage ? t("twin:storageUse", { used: formatBytes(node.storage.used), size: formatBytes(node.storage.fsCapacity), share: formatNumber(full, { style: "percent" }) }) : "",
+        node.errors ? t("twin:errorCount", { count: node.errors }) : "",
+      ]
+        .filter(Boolean)
+        .join(" · ");
       tip.append(kind, name, meta);
       const x = event.clientX - rect.left + 14;
       const y = event.clientY - rect.top + 14;

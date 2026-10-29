@@ -8,7 +8,11 @@ export interface NamespaceObject {
 
 export interface PodObject {
   metadata: { name: string; namespace: string; uid?: string; ownerReferences?: { kind: string; name: string; apiVersion: string }[] };
-  spec: { nodeName?: string };
+  spec: {
+    nodeName?: string;
+    volumes?: { name: string; persistentVolumeClaim?: { claimName: string } }[];
+    containers?: { name: string; volumeMounts?: { name: string; mountPath: string; readOnly?: boolean }[] }[];
+  };
   status?: {
     phase?: string;
     podIP?: string;
@@ -27,6 +31,13 @@ interface Terminated {
 export interface NodeObject {
   metadata: { name: string; uid?: string };
   status?: { nodeInfo?: { kubeletVersion?: string; osImage?: string }; capacity?: Record<string, string>; conditions?: { type: string; status: string }[] };
+}
+
+/** A claim on storage: its size, class and whether a volume backs it. */
+export interface PvcObject {
+  metadata: { name: string; namespace: string; uid?: string };
+  spec?: { storageClassName?: string; accessModes?: string[]; volumeName?: string; resources?: { requests?: { storage?: string } } };
+  status?: { phase?: string; capacity?: { storage?: string } };
 }
 
 /** ReplicaSets matter only to find the Deployment a pod's owner belongs to. */
@@ -85,6 +96,10 @@ export class Kube {
 
   nodes() {
     return this.list<NodeObject>("/api/v1/nodes");
+  }
+
+  persistentVolumeClaims() {
+    return this.list<PvcObject>("/api/v1/persistentvolumeclaims");
   }
 
   replicasets() {

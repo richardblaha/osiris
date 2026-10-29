@@ -50,10 +50,13 @@
   "measure": {
     "cpu": "CPU",
     "memory": "Paměť",
-    "network": "Síť"
+    "network": "Síť",
+    "free": "Volné místo",
+    "size": "Velikost souborového systému"
   },
   "peak": "max {{value}}",
   "scrollOlder": "Posuň nahoru pro starší záznamy",
   "logsStart": "Žádné starší záznamy",
-  "internet": "Internet"
+  "internet": "Internet",
+  "storageUse": "obsazeno {{used}} z {{size}} ({{share}})"
 }

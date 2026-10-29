@@ -19,7 +19,7 @@ type View =
   | { kind: "metrics"; preset: Preset }
   | { kind: "traces"; preset: Preset; traceId?: string };
 
-const SCOPE = ["namespace", "pod", "node", "container"] as const;
+const SCOPE = ["namespace", "pod", "node", "container", "claim"] as const;
 type Page = "logs" | "metrics" | "traces";
 const PAGES: Page[] = ["logs", "metrics", "traces"];
 
@@ -51,6 +51,7 @@ export function App() {
     relationships: Awaited<ReturnType<typeof api.relationships>>;
     errors: Record<string, number>;
     network: Record<string, number>;
+    storage: Record<string, { used: number; fsCapacity: number }>;
     at: number | null;
   }>();
   const [selectedId, setSelectedId] = useState<string>();
@@ -86,18 +87,19 @@ export function App() {
   /** The twin loads once signed in and, live, refreshes every minute (the server syncs every 30 s). */
   const loadTwin = () =>
     attempt(setBusy, setError, async () => {
-      const [m, twins, relationships, errors, network] = await Promise.all([
+      const [m, twins, relationships, errors, network, storage] = await Promise.all([
         models ? Promise.resolve(models) : api.models(),
         api.twins(at),
         api.relationships(at),
         api.errorLogs(at).catch(() => ({})),
         api.network(at).catch(() => ({})),
+        api.storage(at).catch(() => ({})),
       ]);
       setModels(m);
-      setData({ twins, relationships, errors, network, at });
+      setData({ twins, relationships, errors, network, storage, at });
     });
   const scene: TwinScene | undefined = useMemo(
-    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.at) : undefined),
+    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.storage, data.at) : undefined),
     [models, data],
   );
   // The selection follows the refreshed scene (its new status and properties), or goes when its twin is gone.
@@ -141,8 +143,8 @@ export function App() {
   /** A page opens filtered by the selected twin's telemetry (its namespace, pod, node or container). */
   const presetOf = (page: Page): Preset => {
     const scope = selected ? scopeOf(selected) : {};
-    // Traces carry no container.
-    return page === "traces" ? { ...scope, container: undefined } : scope;
+    // Logs and traces name no volume claims, traces no containers.
+    return page === "metrics" ? scope : { ...scope, claim: undefined, container: page === "traces" ? undefined : scope.container };
   };
   const openPage = (page: Page) => navigate({ kind: page, preset: presetOf(page) } as View);
   /** A tab opens its page; the open page's tab closes it. */

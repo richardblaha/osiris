@@ -45,6 +45,11 @@ export interface TwinSource {
    * to the twins whose `otelResource` holds exactly its attributes (a node by its name, a pod by namespace and pod).
    */
   networkMetrics?: { metric: string; attributes: string[] }[];
+  /**
+   * The gauges of the twins' storage (models' Telemetry `used` and `fsCapacity`): the filesystem's size and its free
+   * bytes, for the twins whose `otelResource` holds exactly these attributes (a claim by namespace and name).
+   */
+  storageMetrics?: { capacity: string; available: string; attributes: string[] };
 }
 
 /** A relationship's id (ADT's `$relationshipId`, unique per source twin): its name and its target, hashed. */
@@ -75,7 +80,7 @@ export function valuesByTwin(twins: { $dtId: string; otelResource?: unknown }[],
     const r = otelResourceOf(t);
     if (Object.keys(r).length !== attributes.length || !attributes.every((a) => r[a])) continue;
     const n = counts.get(errorKey(attributes.map((a) => r[a]!)));
-    if (n) out[t.$dtId] = n;
+    if (n !== undefined) out[t.$dtId] = n;
   }
   return out;
 }

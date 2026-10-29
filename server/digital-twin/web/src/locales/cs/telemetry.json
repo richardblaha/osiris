@@ -77,5 +77,6 @@
   },
   "histogram": "Počet logů v čase",
   "histogramTip": "chyby {{error}}, varování {{warn}}, ostatní {{other}}",
-  "histogramMax": "max {{value}} na sloupec"
+  "histogramMax": "max {{value}} na sloupec",
+  "claim": "Svazek (PVC)"
 }

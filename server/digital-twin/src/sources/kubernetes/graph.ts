@@ -1,6 +1,6 @@
 import type { TwinStatus } from "@osiris/shared";
 import { CONTAINS, type SourceRelationship, type SourceSnapshot, type SourceTwin } from "../../twin.ts";
-import type { NamespaceObject, NodeObject, PodObject, ReplicaSetObject } from "./kube.ts";
+import type { NamespaceObject, NodeObject, PodObject, PvcObject, ReplicaSetObject } from "./kube.ts";
 import { instanceId, MODEL } from "./models.ts";
 
 /** OpenTelemetry's Kubernetes resource attributes, as the collector's k8sattributes processor sets them. */
@@ -8,6 +8,7 @@ export const NAMESPACE_ATTR = "k8s.namespace.name";
 export const POD_ATTR = "k8s.pod.name";
 export const CONTAINER_ATTR = "k8s.container.name";
 export const NODE_ATTR = "k8s.node.name";
+export const PVC_ATTR = "k8s.persistentvolumeclaim.name";
 
 /** A pod's phase, lowercased the way the twin's DTDL enum spells it. */
 const phase = (pod: PodObject) => (pod.status?.phase ?? "unknown").toLowerCase();
@@ -43,6 +44,7 @@ export interface ClusterInput {
   namespaces: NamespaceObject[];
   pods: PodObject[];
   nodes: NodeObject[];
+  pvcs?: PvcObject[];
   replicasets: ReplicaSetObject[];
   version: string | null;
 }
@@ -63,7 +65,8 @@ const worst = (statuses: TwinStatus[]): TwinStatus => statuses.reduce((a, b) => 
 
 /**
  * The cluster as twins, nested the way the machines are: the cluster contains its nodes, a node the pods scheduled on
- * it (a pod no node runs yet is the cluster's own), a pod its containers. Namespaces and workloads (pods grouped by
+ * it (a pod no node runs yet is the cluster's own), a pod its containers and the volume claims it mounts (the first
+ * pod's, by name; an unmounted claim is the cluster's), and containers mount claims. Namespaces and workloads (pods grouped by
  * owner) are twins too, related to their pods rather than containing them, with their worst pod's status. Each twin
  * is an instance of its DTDL interface (property values typed as the model says), with the OpenTelemetry attributes
  * that name its telemetry.
@@ -110,6 +113,37 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
       { [NODE_ATTR]: node.metadata.name },
     );
     link(CONTAINS, root, id);
+  }
+
+  // Volume claims: each a twin, in the first pod (by name) that mounts it, else in the cluster.
+  const claimIds = new Map<string, string>();
+  const claimHolder = new Map<string, string>();
+  for (const pod of [...input.pods].sort((a, b) => a.metadata.name.localeCompare(b.metadata.name)))
+    for (const v of pod.spec.volumes ?? [])
+      if (v.persistentVolumeClaim) {
+        const key = `${pod.metadata.namespace}/${v.persistentVolumeClaim.claimName}`;
+        if (!claimHolder.has(key)) claimHolder.set(key, instanceId(cluster, ["namespace", pod.metadata.namespace], ["pod", pod.metadata.name]));
+      }
+  for (const pvc of [...(input.pvcs ?? [])].sort((a, b) => `${a.metadata.namespace}/${a.metadata.name}`.localeCompare(`${b.metadata.namespace}/${b.metadata.name}`))) {
+    const { name, namespace } = pvc.metadata;
+    const id = instanceId(cluster, ["namespace", namespace], ["pvc", name]);
+    claimIds.set(`${namespace}/${name}`, id);
+    const p = (pvc.status?.phase ?? "pending").toLowerCase();
+    add(
+      id,
+      MODEL.PersistentVolumeClaim,
+      name,
+      p === "lost" ? "error" : p === "bound" ? "ok" : "warn",
+      {
+        phase: ["pending", "bound", "lost"].includes(p) ? p : "pending",
+        capacity: pvc.status?.capacity?.storage ?? pvc.spec?.resources?.requests?.storage ?? "",
+        storageClass: pvc.spec?.storageClassName ?? "",
+        accessModes: (pvc.spec?.accessModes ?? []).join(", "),
+        volumeName: pvc.spec?.volumeName ?? "",
+      },
+      { [NAMESPACE_ATTR]: namespace, [PVC_ATTR]: name },
+    );
+    link("hasClaim", instanceId(cluster, ["namespace", namespace]), id);
   }
 
   // Pods by workload, so each workload's pods come out together and sorted.
@@ -173,14 +207,22 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
         link("hasPod", workloadId, podId);
         link(CONTAINS, (pod.spec.nodeName && nodeIds.get(pod.spec.nodeName)) || root, podId);
 
+        // The pod's volumes that are claims, by volume name.
+        const claimOf = new Map((pod.spec.volumes ?? []).flatMap((v) => (v.persistentVolumeClaim ? [[v.name, `${namespace}/${v.persistentVolumeClaim.claimName}`] as const] : [])));
         for (const c of containers) {
           const containerId = instanceId(cluster, ["namespace", namespace], ["pod", pod.metadata.name], ["container", c.name]);
           // A container's log records count for its pod (the error attributes name pods).
           add(containerId, MODEL.Container, c.name, c.ready ? "ok" : "warn", { image: c.image, ready: c.ready, restarts: c.restartCount }, { [NAMESPACE_ATTR]: namespace, [POD_ATTR]: pod.metadata.name, [CONTAINER_ATTR]: c.name });
           link(CONTAINS, podId, containerId);
+          const mounted = new Set((pod.spec.containers?.find((s) => s.name === c.name)?.volumeMounts ?? []).flatMap((m) => (claimOf.has(m.name) ? [claimIds.get(claimOf.get(m.name)!)] : [])));
+          for (const claim of mounted) if (claim) link("mounts", containerId, claim);
         }
+        for (const key of new Set(claimOf.values())) if (claimIds.has(key) && claimHolder.get(key) === podId) link(CONTAINS, podId, claimIds.get(key)!);
       }
     }
   }
+  // A claim no pod mounts (or whose pod is gone) is the cluster's.
+  const held = new Set(relationships.filter((r) => r.name === CONTAINS).map((r) => r.target));
+  for (const id of claimIds.values()) if (!held.has(id)) link(CONTAINS, root, id);
   return { twins, relationships };
 }

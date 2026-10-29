@@ -3,7 +3,7 @@ import { localized, resolveContents, type DtdlProperty, type DtdlRelationship, t
 import { t } from "i18next";
 import { useEffect, useState } from "react";
 import { api } from "./api.ts";
-import { currentLocale, formatBytesRate, formatDateTime, formatNumber } from "./i18n.ts";
+import { currentLocale, formatBytes, formatBytesRate, formatDateTime, formatNumber } from "./i18n.ts";
 import type { TwinScene, TwinView } from "./scene.ts";
 
 const WEEK = 7 * 24 * 3_600_000;
@@ -70,6 +70,11 @@ export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: T
             </span>
           )}
           {node.network !== undefined && <span className="text-fg-secondary">{formatBytesRate(node.network)}</span>}
+          {node.storage && node.storage.fsCapacity > 0 && (
+            <span className="text-fg-secondary">
+              {t("twin:storageUse", { used: formatBytes(node.storage.used), size: formatBytes(node.storage.fsCapacity), share: formatNumber(node.storage.used / node.storage.fsCapacity, { style: "percent" }) })}
+            </span>
+          )}
           {node.parent && (
             <span className="text-fg-muted">
               {t("twin:inside")}{" "}

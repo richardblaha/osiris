@@ -24,7 +24,7 @@ const rangeQuery = z
   });
 const text = z.string().trim().max(200).optional();
 /** Whose telemetry: OpenTelemetry's k8s namespace, pod, node or container. */
-const scope = { namespace: text, pod: text, node: text, container: text };
+const scope = { namespace: text, pod: text, node: text, container: text, claim: text };
 /** The logs page's filters. */
 const logFilters = z.object({
   service: text,
@@ -204,6 +204,25 @@ export function createApp(config: Config, options: AppOptions) {
         const out: Record<string, number> = {};
         source.networkMetrics.forEach((m, i) => valuesByTwin(twins, m.attributes, rates[i]!, out));
         return out;
+      });
+      return c.json({ value });
+    })
+    // The models' storage telemetry (`used`, `fsCapacity`): each volume claim's filesystem, its size and used bytes.
+    .get("/api/telemetry/storage", async (c) => {
+      const { at } = parse(atQuery, c.req.query());
+      const value = await cached("storage", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
+        const m = source.storageMetrics;
+        if (!telemetry || !m) return {};
+        const [{ twins }, capacity, available] = await Promise.all([
+          stateAt(at),
+          failing(() => telemetry.latest(m.capacity, m.attributes, at)),
+          failing(() => telemetry.latest(m.available, m.attributes, at)),
+        ]);
+        const fs = valuesByTwin(twins, m.attributes, capacity);
+        const free = valuesByTwin(twins, m.attributes, available);
+        return Object.fromEntries(
+          Object.entries(fs).flatMap(([id, size]) => (free[id] === undefined ? [] : [[id, { used: Math.max(0, size - free[id]), fsCapacity: size }]])),
+        );
       });
       return c.json({ value });
     })

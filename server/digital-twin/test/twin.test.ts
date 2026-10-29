@@ -24,6 +24,14 @@ const input: ClusterInput = {
       status: { phase: "Pending", containerStatuses: [] },
     }),
     pod({ metadata: { name: "lonely", namespace: "osiris" } }),
+    pod({
+      metadata: { name: "db-0", namespace: "osiris", ownerReferences: [{ kind: "StatefulSet", name: "db", apiVersion: "apps/v1" }] },
+      spec: { nodeName: "node1", volumes: [{ name: "data", persistentVolumeClaim: { claimName: "data-db-0" } }, { name: "tmp" }], containers: [{ name: "app", volumeMounts: [{ name: "data", mountPath: "/var/lib/db" }, { name: "tmp", mountPath: "/tmp" }] }] },
+    }),
+  ],
+  pvcs: [
+    { metadata: { name: "data-db-0", namespace: "osiris" }, spec: { storageClassName: "local", accessModes: ["ReadWriteOnce"], resources: { requests: { storage: "5Gi" } } }, status: { phase: "Bound", capacity: { storage: "10Gi" } } },
+    { metadata: { name: "orphan", namespace: "osiris" }, spec: { resources: { requests: { storage: "500M" } } }, status: { phase: "Pending" } },
   ],
   nodes: [{ metadata: { name: "node1" }, status: { nodeInfo: { kubeletVersion: "v1.33.0" }, conditions: [{ type: "Ready", status: "True" }] } }],
   replicasets: [{ metadata: { name: "gateway-rs", namespace: "osiris", ownerReferences: [{ kind: "Deployment", name: "gateway" }] } }],
@@ -70,6 +78,17 @@ describe("the cluster's twins", () => {
     // Every twin has at most one container.
     const parents = snapshot.relationships.filter((r) => r.name === "contains").map((r) => r.target);
     expect(new Set(parents).size).toBe(parents.length);
+  });
+
+  it("put a volume claim in the pod that mounts it, mounted by its containers; an unmounted one in the cluster", () => {
+    const claim = twin(MODEL.PersistentVolumeClaim, "data-db-0");
+    expect(claim).toMatchObject({ phase: "bound", capacity: "10Gi", storageClass: "local", accessModes: "ReadWriteOnce", status: "ok" });
+    expect(claim.otelResource).toEqual({ "k8s.namespace.name": "osiris", "k8s.persistentvolumeclaim.name": "data-db-0" });
+    const has = (name: string, from: string, to: string) => expect(snapshot.relationships).toContainEqual({ name, source: from, target: to });
+    has("contains", twin(MODEL.Pod, "db-0").$dtId, claim.$dtId);
+    has("mounts", instanceId("busiris", ["namespace", "osiris"], ["pod", "db-0"], ["container", "app"]), claim.$dtId);
+    has("contains", twin(MODEL.Cluster, "busiris").$dtId, twin(MODEL.PersistentVolumeClaim, "orphan").$dtId);
+    expect(twin(MODEL.PersistentVolumeClaim, "orphan")).toMatchObject({ status: "warn", capacity: "500M" });
   });
 
   it("group pods by owner: a Deployment through its ReplicaSet, an ownerless pod as its own workload", () => {

@@ -4,7 +4,8 @@ import { TWIN_CONTAINS, TWIN_ENTITY_MODEL } from "@osiris/shared";
 /**
  * The Kubernetes adapter's models in DTDL v3 (https://github.com/Azure/opendigitaltwins-dtdl): one interface per kind
  * of object, each extending the twin's base Entity. Containment is physical: the cluster contains its nodes, a node
- * the pods scheduled on it, a pod its containers. Namespaces and workloads group pods by relationships instead.
+ * the pods scheduled on it, a pod its containers and the claims it mounts (a claim mounted by several pods sits in the
+ * first; one no pod mounts, in the cluster). Namespaces and workloads group pods by relationships instead.
  */
 export const MODEL = {
   Entity: TWIN_ENTITY_MODEL,
@@ -14,6 +15,7 @@ export const MODEL = {
   Pod: "dtmi:osiris:k8s:Pod;3",
   Container: "dtmi:osiris:k8s:Container;3",
   Node: "dtmi:osiris:k8s:Node;3",
+  PersistentVolumeClaim: "dtmi:osiris:k8s:PersistentVolumeClaim;1",
 } as const;
 
 const enumOf = (...values: string[]): DtdlSchema => ({ "@type": "Enum", valueSchema: "string", enumValues: values.map((v) => ({ name: v, enumValue: v })) });
@@ -84,6 +86,7 @@ export function dtdlModel(): DtdlInterface[] {
       property("phase", enumOf("active", "terminating"), l("Phase", "Fáze")),
       property("podCount", "integer", l("Pods", "Pody")),
       relationship("hasWorkload", MODEL.Workload, l("has workload", "má workload"), "The namespace's workloads, as its pods group by owner."),
+      relationship("hasClaim", MODEL.PersistentVolumeClaim, l("has volume claim", "má svazek"), "The namespace's PersistentVolumeClaims."),
     ]),
     iface(MODEL.Workload, l("Workload", "Workload"), "What a group of pods belongs to: a Deployment (through its ReplicaSet), a StatefulSet, a DaemonSet, a Job or a lone Pod. Its status is its worst pod's.", [
       property("ownerKind", "string", l("Kind", "Druh")),
@@ -99,13 +102,35 @@ export function dtdlModel(): DtdlInterface[] {
       property("containerCount", "integer", l("Containers", "Kontejnery")),
       property("restarts", "integer", l("Restarts", "Restarty"), "Container restarts, summed over the pod."),
       property("namespace", "string", l("Namespace", "Namespace")),
-      contains(MODEL.Container, "The pod's containers."),
+      contains(undefined, "The pod's containers, and the volume claims it mounts."),
       network,
     ]),
     iface(MODEL.Container, l("Container", "Kontejner"), "One container of a pod.", [
       property("image", "string", l("Image", "Image")),
       property("ready", "boolean", l("Ready", "Připraven")),
       property("restarts", "integer", l("Restarts", "Restarty")),
+      relationship("mounts", MODEL.PersistentVolumeClaim, l("mounts", "připojuje"), "The volume claims the container mounts."),
+    ]),
+    iface(MODEL.PersistentVolumeClaim, l("Volume claim", "Svazek (PVC)"), "A PersistentVolumeClaim: storage a pod mounts; pending is a warning, lost an error.", [
+      property("phase", enumOf("pending", "bound", "lost"), l("Phase", "Fáze")),
+      property("capacity", "string", l("Capacity", "Kapacita"), "The bound volume's size as Kubernetes states it (else the request), e.g. 10Gi."),
+      property("storageClass", "string", l("Storage class", "Třída úložiště")),
+      property("accessModes", "string", l("Access modes", "Režimy přístupu")),
+      property("volumeName", "string", l("Volume", "Svazek")),
+      {
+        "@type": "Telemetry",
+        name: "used",
+        schema: "double",
+        displayName: l("Used", "Obsazeno"),
+        description: "Bytes used on the filesystem the volume is on (kubeletstats).",
+      },
+      {
+        "@type": "Telemetry",
+        name: "fsCapacity",
+        schema: "double",
+        displayName: l("Filesystem size", "Velikost souborového systému"),
+        description: "Bytes of the filesystem the volume is on (kubeletstats); with local volumes, the node's disk.",
+      },
     ]),
     iface(MODEL.Node, l("Node", "Node"), "A machine of the cluster: not Ready is an error, memory, disk or PID pressure a warning.", [
       property("kubelet", "string", l("Kubelet version", "Verze kubeletu")),

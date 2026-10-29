@@ -27,10 +27,16 @@ const kubeFetch = vi.fn(async (url: string | URL | Request): Promise<Response> =
     return items([
       {
         metadata: { name: "gateway-abc", namespace: "osiris", ownerReferences: [{ kind: "ReplicaSet", name: "gateway-rs", apiVersion: "apps/v1" }] },
-        spec: { nodeName: "node1" },
+        spec: {
+          nodeName: "node1",
+          volumes: [{ name: "data", persistentVolumeClaim: { claimName: "gateway-data" } }],
+          containers: [{ name: "app", volumeMounts: [{ name: "data", mountPath: "/data" }] }],
+        },
         status: { phase: "Running", podIP: "10.0.0.1", containerStatuses: [{ name: "app", ready: true, restartCount: 0, image: "osiris:main" }] },
       },
     ]);
+  if (path === "/api/v1/persistentvolumeclaims")
+    return items([{ metadata: { name: "gateway-data", namespace: "osiris" }, spec: { storageClassName: "local" }, status: { phase: "Bound", capacity: { storage: "1Gi" } } }]);
   if (path === "/api/v1/nodes") return items([{ metadata: { name: "node1" }, status: { nodeInfo: { kubeletVersion: "v1.33.0" } } }]);
   if (path === "/apis/apps/v1/replicasets")
     return items([{ metadata: { name: "gateway-rs", namespace: "osiris", ownerReferences: [{ kind: "Deployment", name: "gateway" }] } }]);
@@ -43,7 +49,9 @@ const chFetch = vi.fn(async (_url: unknown, init?: { body?: string }): Promise<R
   Response.json({
     data: init?.body?.includes("count() AS count")
       ? [{ k0: "osiris", k1: "gateway-abc", count: "3" }]
-      : init?.body?.includes("countIf(")
+      : init?.body?.includes("AS latest")
+        ? [{ k0: "osiris", k1: "gateway-data", latest: new URL(String(_url)).searchParams.get("param_metric") === "k8s.volume.capacity" ? "1000" : "250" }]
+        : init?.body?.includes("countIf(")
         ? [{ t: "1730000000", error: "2", warn: "1", other: "7" }]
         : init?.body?.includes("AS rate")
         ? new URL(String(_url)).searchParams.get("param_metric") === "k8s.node.network.io"
@@ -121,7 +129,7 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     const models = new Map((await json<{ value: DtdlModelData[] }>("/api/models")).value.map((m): [string, DtdlInterface] => [m.id, m.model]));
     const { value: twins } = await json<{ value: DigitalTwin[] }>("/api/digitaltwins");
     const { value: relationships } = await json<{ value: DigitalTwinRelationship[] }>("/api/relationships");
-    expect(twins.length).toBe(6); // cluster, node, namespace, workload, pod, container
+    expect(twins.length).toBe(7); // cluster, node, namespace, workload, pod, container, volume claim
     for (const t of twins) expect(twinErrors(t, models)).toEqual([]);
     const byId = new Map(twins.map((t) => [t.$dtId, t]));
     for (const r of relationships) expect(relationshipErrors(r, byId, models)).toEqual([]);
@@ -135,7 +143,7 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     const pod = await json<DigitalTwin>(`/api/digitaltwins/${encodeURIComponent(id)}`);
     expect(pod.$dtId).toBe(id);
     const out = await json<{ value: DigitalTwinRelationship[] }>(`/api/digitaltwins/${encodeURIComponent(id)}/relationships`);
-    expect(out.value.map((r) => r.$relationshipName).sort()).toEqual(["contains"]);
+    expect(out.value.map((r) => r.$relationshipName).sort()).toEqual(["contains", "contains"]);
     const incoming = await json<{ value: { $sourceId: string; $relationshipName: string }[] }>(`/api/digitaltwins/${encodeURIComponent(id)}/incomingrelationships`);
     expect(incoming.value).toEqual(
       expect.arrayContaining([
@@ -154,6 +162,11 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
   it("answers each node's and pod's network load from the kubeletstats counters", async () => {
     const { value } = await json<{ value: Record<string, number> }>("/api/telemetry/network");
     expect(value).toEqual({ "k8s:k8s/node/node1": 2048, "k8s:k8s/namespace/osiris/pod/gateway-abc": 512.5 });
+  });
+
+  it("answers each volume claim's filesystem: its size and the bytes used", async () => {
+    const { value } = await json<{ value: Record<string, unknown> }>("/api/telemetry/storage");
+    expect(value).toEqual({ "k8s:k8s/namespace/osiris/pvc/gateway-data": { used: 750, fsCapacity: 1000 } });
   });
 
   it("answers the history endpoints with 503 while the history is off", async () => {

@@ -73,5 +73,6 @@
   },
   "histogram": "Log records over time",
   "histogramTip": "errors {{error}}, warnings {{warn}}, other {{other}}",
-  "histogramMax": "max {{value}} per bar"
+  "histogramMax": "max {{value}} per bar",
+  "claim": "Volume claim"
 }

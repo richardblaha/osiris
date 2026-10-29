@@ -44,10 +44,13 @@
   "measure": {
     "cpu": "CPU",
     "memory": "Memory",
-    "network": "Network"
+    "network": "Network",
+    "free": "Free space",
+    "size": "Filesystem size"
   },
   "peak": "max {{value}}",
   "scrollOlder": "Scroll up for older records",
   "logsStart": "No older records",
-  "internet": "Internet"
+  "internet": "Internet",
+  "storageUse": "{{used}} of {{size}} used ({{share}})"
 }

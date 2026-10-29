@@ -37,13 +37,15 @@ const NS = "ResourceAttributes['k8s.namespace.name']";
 const POD = "ResourceAttributes['k8s.pod.name']";
 const NODE = "ResourceAttributes['k8s.node.name']";
 const CONTAINER = "ResourceAttributes['k8s.container.name']";
+const CLAIM = "ResourceAttributes['k8s.persistentvolumeclaim.name']";
 
-/** Whose telemetry: a namespace, a pod, a node or a container (OpenTelemetry's k8s resource attributes). */
+/** Whose telemetry: a namespace, a pod, a node, a container or a volume claim (OpenTelemetry's k8s resource attributes). */
 export interface Scope {
   namespace?: string;
   pod?: string;
   node?: string;
   container?: string;
+  claim?: string;
 }
 /** Log records per bucket of a histogram, by severity. */
 export interface LogBucket {
@@ -68,6 +70,7 @@ function scope(f: Scope, where: string[], params: Record<string, string | number
   if (f.pod) (where.push(`${POD} = {pod:String}`), (params.pod = f.pod));
   if (f.node) (where.push(`${NODE} = {node:String}`), (params.node = f.node));
   if (f.container) (where.push(`${CONTAINER} = {container:String}`), (params.container = f.container));
+  if (f.claim) (where.push(`${CLAIM} = {claim:String}`), (params.claim = f.claim));
 }
 /** Which cluster a record belongs to (the collector's resource/cluster processor sets it). */
 const CLUSTER = "ResourceAttributes['k8s.cluster.name']";
@@ -164,6 +167,34 @@ export class Telemetry {
       params,
     );
     return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.rate)]));
+  }
+
+  /**
+   * A gauge's newest value in the 10 minutes before `at` (now without it), by the values of the given resource
+   * attributes (keyed with `errorKey`); several sources of one key (a claim mounted by two pods) give the largest.
+   */
+  async latest(metric: string, attributes: string[], at?: number): Promise<Map<string, number>> {
+    if (!attributes.length) return new Map();
+    const columns = attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`);
+    const keys = attributes.map((_, i) => `k${i}`).join(", ");
+    const params: Record<string, string | number> = { ...this.of().params, metric };
+    attributes.forEach((a, i) => (params[`a${i}`] = a));
+    if (at !== undefined) params.at = at;
+    const window =
+      at === undefined
+        ? "TimeUnix >= now() - INTERVAL 10 MINUTE"
+        : "TimeUnix BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 10 MINUTE AND fromUnixTimestamp64Milli({at:Int64})";
+    const rows = await this.ch.query<Record<string, string>>(
+      `SELECT ${keys}, max(v) AS latest FROM (
+         SELECT ${columns.join(", ")}, cityHash64(ResourceAttributes) AS src, argMax(Value, TimeUnix) AS v
+         FROM otel_metrics_gauge
+         WHERE MetricName = {metric:String} AND ${window}${this.of().where}
+         GROUP BY ${keys}, src)
+       WHERE ${attributes.map((_, i) => `k${i} <> ''`).join(" AND ")}
+       GROUP BY ${keys}`,
+      params,
+    );
+    return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.latest)]));
   }
 
   /** How many log records match the filters per `step` seconds, split by severity (errors, warnings, the rest). */
@@ -264,6 +295,7 @@ export class Telemetry {
       pod: f.pod ?? "",
       node: f.node ?? "",
       container: f.container ?? "",
+      claim: f.claim ?? "",
     };
     const group = "if({g:String} = '', '', if(mapContains(Attributes, {g:String}), Attributes[{g:String}], ResourceAttributes[{g:String}]))";
     const where = [
@@ -274,6 +306,7 @@ export class Telemetry {
       "({pod:String} = '' OR " + POD + " = {pod:String})",
       "({node:String} = '' OR " + NODE + " = {node:String})",
       "({container:String} = '' OR " + CONTAINER + " = {container:String})",
+      "({claim:String} = '' OR " + CLAIM + " = {claim:String})",
       "(1 = 1" + this.of().where + ")",
     ];
     // A series is one source within a group (a pod, a container…), so counters are differenced per source first.

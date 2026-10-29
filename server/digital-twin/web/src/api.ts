@@ -43,6 +43,8 @@ export interface Scope {
   pod?: string;
   node?: string;
   container?: string;
+  /** A PersistentVolumeClaim. */
+  claim?: string;
 }
 /** A query string of the set values (no empty strings, no `false`). */
 const query = (f: object) => new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined && v !== "" && v !== false).map(([k, v]) => [k, String(v)]));
@@ -54,6 +56,8 @@ export const api = {
   twins: async (at: number | null) => (await call<{ value: DigitalTwin[] }>(`/api/digitaltwins${at === null ? "" : `?at=${at}`}`)).value,
   relationships: async (at: number | null) => (await call<{ value: DigitalTwinRelationship[] }>(`/api/relationships${at === null ? "" : `?at=${at}`}`)).value,
   errorLogs: async (at: number | null) => (await call<{ value: Record<string, number> }>(`/api/telemetry/errorLogs${at === null ? "" : `?at=${at}`}`)).value,
+  storage: async (at: number | null) =>
+    (await call<{ value: Record<string, { used: number; fsCapacity: number }> }>(`/api/telemetry/storage${at === null ? "" : `?at=${at}`}`)).value,
   network: async (at: number | null) => (await call<{ value: Record<string, number> }>(`/api/telemetry/network${at === null ? "" : `?at=${at}`}`)).value,
   range: () => call<{ from: number | null; to: number }>("/api/history/range"),
   history: async (dtId: string, f: { from: number; to: number; limit?: number }) =>

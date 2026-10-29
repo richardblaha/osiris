@@ -103,10 +103,10 @@ function Attributes({ title, values }: { title: string; values: Record<string, s
 export const SEVERITY_CLASS = (n: number) => (n >= 17 ? "text-error" : n >= 13 ? "text-warning" : n >= 9 ? "text-fg" : "text-fg-muted");
 
 /** Removable chips for the scope's pod, node and container (the namespace has its own select). */
-function ScopeChips({ scope, onClear }: { scope: Scope; onClear: (key: "pod" | "node" | "container") => void }) {
+function ScopeChips({ scope, onClear }: { scope: Scope; onClear: (key: "pod" | "node" | "container" | "claim") => void }) {
   return (
     <>
-      {(["node", "pod", "container"] as const).map((key) =>
+      {(["node", "pod", "container", "claim"] as const).map((key) =>
         scope[key] ? (
           <button key={key} type="button" onClick={() => onClear(key)} className="badge self-center" title={t("telemetry:all")}>
             {t(`telemetry:${key}`)}: {scope[key]} ×
@@ -321,7 +321,7 @@ export function Logs({ preset, traceId: initialTrace, onOpenTrace }: { preset: P
       <Toolbar range={range} setRange={setRange} onRefresh={() => void load()} busy={busy}>
         <Select label={t("telemetry:service")} value={service} onChange={setService} options={facets.services} />
         <Select label={t("telemetry:namespace")} value={namespace} onChange={setNamespace} options={facets.namespaces} />
-        <ScopeChips scope={{ pod, node, container }} onClear={(key) => (key === "pod" ? setPod("") : key === "node" ? setNode("") : setContainer(""))} />
+        <ScopeChips scope={{ pod, node, container }} onClear={(key) => (key === "pod" ? setPod("") : key === "node" ? setNode("") : key === "container" ? setContainer("") : undefined)} />
         <label className="flex flex-col text-xs text-fg-secondary">
           {t("telemetry:severity")}
           <select value={severity} onChange={(e) => setSeverity(e.target.value)} className="field w-auto py-1 text-sm">
@@ -411,7 +411,7 @@ export function Traces({ preset, traceId, onOpenTrace, onOpenLogs }: { preset: P
       <Toolbar range={range} setRange={setRange} onRefresh={() => void load()} busy={busy}>
         <Select label={t("telemetry:service")} value={service} onChange={setService} options={facets.services} />
         <Select label={t("telemetry:namespace")} value={namespace} onChange={setNamespace} options={facets.namespaces} />
-        <ScopeChips scope={{ pod, node }} onClear={(key) => (key === "pod" ? setPod("") : setNode(""))} />
+        <ScopeChips scope={{ pod, node }} onClear={(key) => (key === "pod" ? setPod("") : key === "node" ? setNode("") : undefined)} />
         <form onSubmit={(e) => (e.preventDefault(), void load())} className="flex items-end gap-2">
           <label className="flex flex-col text-xs text-fg-secondary">
             {t("telemetry:name")}

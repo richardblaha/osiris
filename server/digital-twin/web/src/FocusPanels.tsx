@@ -109,13 +109,13 @@ export function FocusPanels({
         <TwinDetail node={node} scene={scene} onSelect={onSelect} />
       </Panel>
       <Panel slot="tr" bind={bind("tr")} title={t("twin:panel.logs")} action={open("logs")} flush>
-        <LogTail scope={scope} at={scene.at} />
+        <LogTail scope={{ ...scope, claim: undefined }} at={scene.at} />
       </Panel>
       <Panel slot="br" bind={bind("br")} title={t("twin:panel.metrics")} action={open("metrics")}>
         <MetricsPanel scope={scope} at={scene.at} />
       </Panel>
       <Panel slot="bl" bind={bind("bl")} title={t("twin:panel.traces")} action={open("traces")} flush>
-        <TraceList scope={{ ...scope, container: undefined }} at={scene.at} onOpen={onOpenTrace} />
+        <TraceList scope={{ ...scope, container: undefined, claim: undefined }} at={scene.at} onOpen={onOpenTrace} />
       </Panel>
     </div>
   );
@@ -317,8 +317,9 @@ const CANDIDATES = {
   node: { cpu: ["k8s.node.cpu.usage", "k8s.node.cpu.utilization"], memory: ["k8s.node.memory.working_set", "k8s.node.memory.usage"], network: ["k8s.node.network.io"] },
   pod: { cpu: ["k8s.pod.cpu.usage", "k8s.pod.cpu.utilization"], memory: ["k8s.pod.memory.working_set", "k8s.pod.memory.usage"], network: ["k8s.pod.network.io"] },
   container: { cpu: ["container.cpu.usage", "container.cpu.utilization"], memory: ["container.memory.working_set", "container.memory.usage"], network: [] },
+  volume: { free: ["k8s.volume.available"], size: ["k8s.volume.capacity"] },
 } as const;
-type Measure = "cpu" | "memory" | "network";
+type Measure = "cpu" | "memory" | "network" | "free" | "size";
 
 /** The metrics seen in the last hours, asked once a while (every panel picks its names from them). */
 let available: { at: number; list: Promise<Map<string, MetricInfo>> } | undefined;
@@ -336,6 +337,7 @@ const metricList = () => {
  * namespace's pods side by side; the cluster's nodes side by side.
  */
 function plan(scope: Scope): { level: keyof typeof CANDIDATES; filter: Scope; groupBy: string } {
+  if (scope.claim) return { level: "volume", filter: { namespace: scope.namespace, claim: scope.claim }, groupBy: "" };
   if (scope.container) return { level: "container", filter: { namespace: scope.namespace, pod: scope.pod, container: scope.container }, groupBy: "" };
   if (scope.pod) return { level: "pod", filter: { namespace: scope.namespace, pod: scope.pod }, groupBy: "" };
   if (scope.node) return { level: "node", filter: { node: scope.node }, groupBy: "" };
@@ -346,6 +348,7 @@ function plan(scope: Scope): { level: keyof typeof CANDIDATES; filter: Scope; gr
 /** A value in its metric's unit: bytes, bytes per second, cores or a share. */
 function formatValue(v: number, unit: string, measure: Measure): string {
   if (measure === "network") return formatBytesRate(v);
+  if (measure === "free" || measure === "size") return formatBytes(v);
   if (unit === "By") return formatBytes(v);
   if (unit === "1") return formatNumber(v, { style: "percent", maximumFractionDigits: 1 });
   return formatNumber(v, { maximumFractionDigits: v < 1 ? 3 : 2 });
@@ -363,7 +366,7 @@ function MetricsPanel({ scope, at }: { scope: Scope; at: number | null }) {
       try {
         const names = await metricList();
         const to = at ?? Date.now();
-        const picked = (Object.entries(CANDIDATES[level]) as [Measure, readonly string[]][]).flatMap(([measure, list]) => {
+        const picked = (Object.entries(CANDIDATES[level] as Partial<Record<Measure, readonly string[]>>) as [Measure, readonly string[]][]).flatMap(([measure, list]) => {
           const info = list.map((n) => names.get(n)).find(Boolean);
           return info ? [{ measure, info }] : [];
         });
