@@ -13,6 +13,8 @@ import type { HistoryReader } from "./history.ts";
 import type { TwinStore } from "./store.ts";
 import { errorsByTwin, valuesByTwin, type TwinSource } from "./twin.ts";
 import type { MetricType, Telemetry } from "./telemetry.ts";
+import { availableTools, ceph, kubectl, OpsRefused, type CommandResult, type OpsTools } from "./ops.ts";
+import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
 
 const HOUR = 3_600_000;
 /** At most 31 days back (the data's retention is 30). */
@@ -82,6 +84,10 @@ export interface AppOptions {
   staticDir?: string;
   /** The twin's history in OpenTelemetry's logs; without it the history endpoints answer 503. */
   history?: HistoryReader;
+  /** kubectl and ceph for the agents of `projects`, whose runtimes `identity` recognizes. */
+  ops?: { tools: OpsTools; identity: RuntimeIdentityVerifier; projects: string[] };
+  /** Replaces global fetch for the Osiris proxy (tests). */
+  fetchFn?: typeof fetch;
 }
 
 /**
@@ -93,7 +99,7 @@ export interface AppOptions {
  * API introspects the token and answers members of the configured group.
  */
 export function createApp(config: Config, options: AppOptions) {
-  const { source, store, telemetry, verifier, cache, staticDir, history } = options;
+  const { source, store, telemetry, verifier, cache, staticDir, history, ops } = options;
   const CSP = csp(config.AUTH_URL);
   const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
   const prefix = `twin:${config.CLUSTER_NAME}`;
@@ -155,6 +161,70 @@ export function createApp(config: Config, options: AppOptions) {
       return c.json({ error: "Internal server error" }, 500);
     })
     .get("/healthz", (c) => c.json({ ok: true }))
+
+    // Ops for Osiris's agent: only a runtime of an allowed project (its projected token, by TokenReview) may run
+    // kubectl and ceph here; every command is logged with the project.
+    .use("/ops/*", async (c, next) => {
+      if (!ops?.projects.length) throw new HttpError(404, "errors.digitalTwin.notFound");
+      const token = /^Bearer (.+)$/.exec(c.req.header("authorization") ?? "")?.[1];
+      let project: string;
+      try {
+        if (!token) throw new RuntimeIdentityError("no token");
+        project = (await ops.identity.verify(token)).project;
+      } catch (err) {
+        if (err instanceof RuntimeIdentityError) throw new HttpError(401, "errors.digitalTwin.signedIn");
+        throw err;
+      }
+      if (!ops.projects.includes(project)) throw new HttpError(403, "errors.digitalTwin.opsProject");
+      c.set("project" as never, project as never);
+      await next();
+    })
+    .get("/ops/tools", async (c) => c.json(await availableTools(ops!.tools)))
+    .post("/ops/:tool{kubectl|ceph}", async (c) => {
+      const body = parse(
+        z.object({ args: z.array(z.string().max(4000)).min(1).max(80), stdin: z.string().max(1_000_000).optional() }),
+        await c.req.json().catch(() => null),
+      );
+      const tool = c.req.param("tool") as "kubectl" | "ceph";
+      const project = c.get("project" as never) as string;
+      let result: CommandResult;
+      try {
+        result = await (tool === "kubectl" ? kubectl : ceph)(ops!.tools, body.args, body.stdin);
+      } catch (err) {
+        if (err instanceof OpsRefused) return c.json({ refused: err.message }, 400);
+        throw err;
+      }
+      // The audit: who ran what, and how it ended (the input itself may hold secrets: only its size).
+      console.log(JSON.stringify({ event: "ops.command", project, tool, args: body.args, stdinBytes: body.stdin?.length ?? 0, exitCode: result.exitCode, durationMs: result.durationMs }));
+      return c.json(result);
+    })
+
+    // Osiris's API for the twin's chat: the signed-in user's own calls, passed on to Osiris's gateway (which checks
+    // the token itself) with the twin's project unless the PWA names one.
+    .all("/osiris/api/*", async (c) => {
+      if (!config.OSIRIS_URL) throw new HttpError(404, "errors.digitalTwin.notFound");
+      const url = new URL(c.req.url);
+      const headers = new Headers();
+      for (const name of ["authorization", "content-type", "accept", "accept-language", "x-project-id"]) {
+        const value = c.req.header(name);
+        if (value) headers.set(name, value);
+      }
+      if (!headers.has("x-project-id") && config.OSIRIS_PROJECT) headers.set("x-project-id", config.OSIRIS_PROJECT);
+      const res = await (options.fetchFn ?? fetch)(`${config.OSIRIS_URL}${url.pathname.slice("/osiris".length)}${url.search}`, {
+        method: c.req.method,
+        headers,
+        body: ["GET", "HEAD"].includes(c.req.method) ? undefined : c.req.raw.body,
+        // @ts-expect-error Node's fetch streams a request body only half-duplex.
+        duplex: "half",
+        signal: c.req.raw.signal,
+      });
+      const out = new Headers();
+      for (const name of ["content-type", "content-disposition", "cache-control", "x-osiris-sleeping"]) {
+        const value = res.headers.get(name);
+        if (value) out.set(name, value);
+      }
+      return new Response(res.body, { status: res.status, headers: out });
+    })
 
     // The PWA reads this before signing in (oidc-client-ts): where osiris-auth is and who to sign in as.
     .get("/auth-config.json", (c) => c.json(config.AUTH_URL ? { issuer: config.AUTH_URL, clientId: config.WEB_CLIENT_ID } : null))

@@ -61,6 +61,11 @@ spec:
             # The busiris cluster's telemetry, as the collector's resource/cluster processor stamps it; keep the
             # two values in step (CLICKHOUSE_CLUSTER also appears in deploy/observability/collector.yaml).
             - { name: CLICKHOUSE_CLUSTER, value: busiris }
+            # The twin's chat: Osiris's gateway and the project of its agent.
+            - { name: OSIRIS_URL, value: https://osiris.k6labs.cz }
+            - { name: OSIRIS_PROJECT, value: twin }
+            # kubectl (the osiris-ops account) and ceph (the ceph-ops secret) for that project's agent only.
+            - { name: OPS_PROJECTS, value: twin }
           envFrom:
             - secretRef: { name: osiris-digital-twin }
           securityContext:
@@ -75,14 +80,23 @@ spec:
             periodSeconds: 30
           resources:
             requests: { cpu: 20m, memory: 192Mi }
-            limits: { memory: 384Mi }
+            limits: { memory: 512Mi }
           volumeMounts:
             # Read-only root filesystem: tsx caches in /tmp.
             - { name: tmp, mountPath: /tmp }
             - { name: data, mountPath: /data }
+            - { name: ops-token, mountPath: /var/run/secrets/osiris-ops, readOnly: true }
+            - { name: ceph-ops, mountPath: /etc/ceph-ops, readOnly: true }
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 1Gi }
+        # The osiris-ops ServiceAccount's token (cluster-admin) for the agent's kubectl, only in this pod.
+        - name: ops-token
+          secret: { secretName: osiris-ops-token, items: [{ key: token, path: token }] }
+        # Ceph's admin config and keyring for the agent's ceph (not in git; see deploy/README.md). Optional: without
+        # it the agent has no ceph tool.
+        - name: ceph-ops
+          secret: { secretName: ceph-ops, optional: true, items: [{ key: ceph.conf, path: ceph.conf }, { key: keyring, path: keyring }] }
         - name: data
           persistentVolumeClaim: { claimName: digital-twin-data }
 ---
@@ -120,7 +134,8 @@ spec:
     - hosts: [twin.k6labs.cz]
       secretName: twin-k6labs-cz-tls
 ---
-# Traefik only; everything the twin reads (the Kubernetes API, Redis, ClickHouse, osiris-auth) is egress.
+# Traefik, and project runtimes (their agents' kubectl and ceph, checked per project); everything the twin reads
+# (the Kubernetes API, ClickHouse, Ceph's managers, osiris-auth, Osiris) is egress.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -132,4 +147,6 @@ spec:
     - from:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress } }
           podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+        - namespaceSelector: { matchExpressions: [{ key: osiris.k6labs.cz/project, operator: Exists }] }
+          podSelector: { matchLabels: { app: runtime } }
       ports: [{ port: 3004, protocol: TCP }]

@@ -91,3 +91,32 @@ metadata:
   name: osiris-digital-twin
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: osiris-digital-twin }
 subjects: [{ kind: ServiceAccount, name: digital-twin, namespace: osiris }]
+---
+# The twin checks which project a runtime is (TokenReview) before its agent may run kubectl or ceph there.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: osiris-digital-twin-token-review
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator }
+subjects: [{ kind: ServiceAccount, name: digital-twin, namespace: osiris }]
+---
+# The account the agent's kubectl runs as (in the twin's pod, for OPS_PROJECTS only; every change is the user's yes
+# in the chat first). Its token is a secret mounted only into the twin.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: osiris-ops
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: osiris-ops-token
+  annotations: { kubernetes.io/service-account.name: osiris-ops }
+type: kubernetes.io/service-account-token
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: osiris-ops
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cluster-admin }
+subjects: [{ kind: ServiceAccount, name: osiris-ops, namespace: osiris }]

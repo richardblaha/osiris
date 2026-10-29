@@ -55,6 +55,26 @@ const schema = z
 
     // Development only: any bearer token signs in as `dev` (refused in production).
     AUTH_DEV_BYPASS: bool,
+
+    // Osiris: its gateway, where the twin's chat sends the signed-in user's messages (the PWA calls /osiris/api/…),
+    // and its project the chat talks to.
+    OSIRIS_URL: z.url().optional().transform((v) => v?.replace(/\/$/, "")),
+    OSIRIS_PROJECT: z.string().min(1).optional(),
+
+    // Ops: kubectl and ceph for the agents of OPS_PROJECTS (comma-separated; their runtimes prove who they are with
+    // their projected token, checked by TokenReview). kubectl uses the token at OPS_KUBE_TOKEN_PATH (the osiris-ops
+    // ServiceAccount's), ceph the config and keyring of a secret. A tool whose files are missing is off.
+    OPS_PROJECTS: z
+      .string()
+      .optional()
+      .transform((v) => (v ?? "").split(",").map((s) => s.trim()).filter(Boolean)),
+    OPS_KUBE_TOKEN_PATH: z.string().default("/var/run/secrets/osiris-ops/token"),
+    OPS_KUBE_CA_PATH: z.string().default("/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"),
+    OPS_CEPH_CONF: z.string().default("/etc/ceph-ops/ceph.conf"),
+    OPS_CEPH_KEYRING: z.string().default("/etc/ceph-ops/keyring"),
+    OPS_CEPH_USER: z.string().default("client.admin"),
+    // Development only: runtimes are `dev-runtime:<project>` (refused in production).
+    DEV_RUNTIME_AUTH: bool,
   })
   .superRefine((env, ctx) => {
     const prod = env.NODE_ENV === "production";
@@ -64,6 +84,7 @@ const schema = z
       // The cluster can be anywhere (a kubeconfig of another cluster), but its telemetry has to be reachable.
       if (!env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["CLICKHOUSE_URL"], message: "is required in production" });
       if (env.AUTH_DEV_BYPASS) ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
+      if (env.DEV_RUNTIME_AUTH) ctx.addIssue({ code: "custom", path: ["DEV_RUNTIME_AUTH"], message: "must not be enabled in production" });
     }
   });
 

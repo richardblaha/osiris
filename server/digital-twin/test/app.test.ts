@@ -15,6 +15,7 @@ import type { Cache } from "../src/cache.ts";
 import { interfaceErrors, relationshipErrors, twinErrors, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { TwinStore } from "../src/store.ts";
 import { startSync } from "../src/sync.ts";
+import { seedDashboards } from "../src/dashboards.ts";
 
 const config = loadConfig({ NODE_ENV: "test", AUTH_URL: "http://localhost:3003", CLICKHOUSE_URL: "http://ch", CLICKHOUSE_PASSWORD: "pw" });
 
@@ -225,6 +226,15 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     expect((await put("bad", { ...ops, panels: [{ ...ops.panels[0], kind: "pie" }] })).status).toBe(400);
     expect((await instance.request("/api/dashboards/db", { method: "DELETE" })).status).toBe(204);
     expect((await instance.request("/api/dashboards/db")).status).toBe(404);
+  });
+
+  it("seeds the Osiris dashboard once: deleted, it stays deleted", async () => {
+    const own = await TwinStore.open(join(tmpdir(), `twin-seed-${process.pid}-${Date.now()}.db`));
+    await seedDashboards(own);
+    expect((await own.dashboard("osiris"))?.panels.length).toBeGreaterThan(5);
+    await own.deleteDashboard("osiris");
+    await seedDashboards(own);
+    expect(await own.dashboard("osiris")).toBeUndefined();
   });
 
   it("refuses a bad query", async () => {

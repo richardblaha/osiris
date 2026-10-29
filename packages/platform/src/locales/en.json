@@ -126,7 +126,8 @@
       "filterNotFound": "There is no such saved filter.",
       "tooManyFilters": "You have saved too many filters; delete some first.",
       "dashboardNotFound": "There is no such dashboard.",
-      "tooManyDashboards": "There are too many dashboards; delete some first."
+      "tooManyDashboards": "There are too many dashboards; delete some first.",
+      "opsProject": "This project may not manage the cluster."
     },
     "validation": {
       "invalid": "Invalid request.",

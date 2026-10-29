@@ -8,6 +8,8 @@ import { introspection, devVerifier } from "./auth.ts";
 import { memoryCache } from "./cache.ts";
 import { TwinStore } from "./store.ts";
 import { startSync } from "./sync.ts";
+import { seedDashboards } from "./dashboards.ts";
+import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";
 import { Kube } from "./sources/kubernetes/kube.ts";
 import { loadKubeconfig } from "./sources/kubernetes/kubeconfig.ts";
 import { kubernetesSource } from "./sources/kubernetes/source.ts";
@@ -46,6 +48,7 @@ const telemetry = clickhouse ? new Telemetry(clickhouse, config.CLICKHOUSE_CLUST
 // The structure in SQLite, kept in step with the source; its changes go out as OpenTelemetry events (only when the
 // service sends telemetry) and come back from ClickHouse's otel_logs.
 const store = await TwinStore.open(join(config.DATA_DIR, "twin.db"));
+await seedDashboards(store);
 const recording = !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
 await startSync({
   source,
@@ -54,7 +57,19 @@ await startSync({
   intervalMs: config.SYNC_INTERVAL_SECONDS * 1000,
 });
 
+// Ops: kubectl and ceph for the agents of the allowed projects (their runtimes checked by TokenReview).
+const ops = config.OPS_PROJECTS.length
+  ? {
+      projects: config.OPS_PROJECTS,
+      identity: config.DEV_RUNTIME_AUTH ? devRuntimeVerifier() : tokenReviewVerifier(),
+      tools: {
+        kubectl: { server: config.KUBE_API_SERVER, tokenPath: config.OPS_KUBE_TOKEN_PATH, caPath: config.OPS_KUBE_CA_PATH },
+        ceph: { confPath: config.OPS_CEPH_CONF, keyringPath: config.OPS_CEPH_KEYRING, user: config.OPS_CEPH_USER },
+      },
+    }
+  : undefined;
 const app = createApp(config, {
+  ops,
   source,
   store,
   telemetry,

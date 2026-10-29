@@ -154,9 +154,20 @@ COPY packages/shared packages/shared
 COPY server/digital-twin/web server/digital-twin/web
 RUN pnpm --filter @osiris/digital-twin-web build
 
-# Osiris Digital Twin: the cluster's digital twin — structure from the Kubernetes API, telemetry from ClickHouse,
-# both cached in Redis — serving its PWA.
+# Osiris Digital Twin: the cluster's digital twin — structure from the Kubernetes API, telemetry from ClickHouse —
+# serving its PWA, and the ops API: kubectl (the cluster's minor version) and ceph (Ceph's Squid client, else the
+# distribution's) for Osiris's agent.
 FROM base AS digital-twin
+ARG KUBECTL_VERSION=v1.35.6
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+ && . /etc/os-release \
+ && curl -fsSL https://download.ceph.com/keys/release.asc | gpg --dearmor -o /usr/share/keyrings/ceph.gpg \
+ && echo "deb [signed-by=/usr/share/keyrings/ceph.gpg] https://download.ceph.com/debian-squid/ ${VERSION_CODENAME} main" > /etc/apt/sources.list.d/ceph.list \
+ && (apt-get update && apt-get install -y --no-install-recommends ceph-common \
+     || (rm /etc/apt/sources.list.d/ceph.list && apt-get update && apt-get install -y --no-install-recommends ceph-common)) \
+ && curl -fsSLo /usr/local/bin/kubectl "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/$(dpkg --print-architecture)/kubectl" \
+ && chmod 0755 /usr/local/bin/kubectl \
+ && apt-get purge -y gnupg curl && apt-get autoremove -y && rm -rf /var/lib/apt/lists/*
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/digital-twin..." && pnpm store prune
 COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src

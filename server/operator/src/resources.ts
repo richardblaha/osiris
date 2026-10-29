@@ -192,6 +192,11 @@ export function projectResources(t: ProjectResource, s: OperatorSettings, replic
               },
             ],
           },
+          // The digital twin's ops API (kubectl, ceph): it answers only the projects it is told to.
+          {
+            to: [{ namespaceSelector: { matchLabels: { "kubernetes.io/metadata.name": s.namespace } }, podSelector: { matchLabels: { app: "digital-twin" } } }],
+            ports: [{ port: 3004, protocol: "TCP" }],
+          },
           // Telemetry (OTLP over HTTP) to the cluster's collector.
           {
             to: [
