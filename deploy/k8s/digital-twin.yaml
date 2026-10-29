@@ -63,6 +63,12 @@ spec:
           resources:
             requests: { cpu: 20m, memory: 192Mi }
             limits: { memory: 384Mi }
+          volumeMounts:
+            # Read-only root filesystem: tsx caches in /tmp.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 1Gi }
 ---
 apiVersion: v1
 kind: Service
