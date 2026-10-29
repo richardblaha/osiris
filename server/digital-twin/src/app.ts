@@ -30,9 +30,11 @@ const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   return r.data;
 };
 
-// Own scripts and styles only; data and pictures from this origin (the theme's data-URI icons).
-const CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
+// Own scripts and styles only; data and pictures from this origin (the theme's data-URI icons). The PWA signs in
+// from the browser (oidc-client-ts reads osiris-auth's discovery and redeems the code there), so it may also call
+// osiris-auth's origin.
+const csp = (authUrl?: string) =>
+  `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${authUrl ? ` ${new URL(authUrl).origin}` : ""}; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'`;
 
 export interface AppOptions {
   kube: Kube;
@@ -50,6 +52,7 @@ export interface AppOptions {
  */
 export function createApp(config: Config, options: AppOptions) {
   const { kube, telemetry, verifier, cache, staticDir } = options;
+  const CSP = csp(config.AUTH_URL);
   const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
 
   /** The twin's tree: k8s structure (and ClickHouse's error counts), cached for CACHE_TTL_SECONDS. */

@@ -163,6 +163,8 @@ describe("the PWA's static files", () => {
       const page = await instance.request(path);
       expect(page.status).toBe(200);
       expect(await page.text()).toContain("twin index"); // the fallback, not a missing file
+      // The PWA signs in from the browser: its discovery and code redemption go to osiris-auth's origin.
+      expect(page.headers.get("content-security-policy")).toContain("connect-src 'self' http://localhost:3003;");
     }
     const svg = await instance.request("/favicon.svg");
     expect(await svg.text()).toContain("twin index"); // a missing file is also the index.html
