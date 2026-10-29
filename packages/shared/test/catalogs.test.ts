@@ -100,7 +100,8 @@ function references(sources: string[]) {
 function serverCatalog(): Catalog {
   const dir = join(ROOT, "packages/platform/src/locales");
   const languages = readdirSync(dir).map((f) => f.replace(/\.json$/, ""));
-  const sources = ["server/auth/src", "server/control/src", "server/gateway/src", "server/digital-twin/src", "apps/osiris/src", "packages/core/src", "packages/platform/src"];
+  const tools = readdirSync(join(ROOT, "packages/tools")).map((name) => `packages/tools/${name}/src`);
+  const sources = ["server/auth/src", "server/control/src", "server/gateway/src", "server/digital-twin/src", "apps/osiris/src", "packages/core/src", "packages/platform/src", ...tools];
   const refs = references(sources);
   return {
     name: "services (packages/platform/src/locales)",
