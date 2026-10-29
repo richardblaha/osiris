@@ -5,6 +5,8 @@ export interface Identity {
   sub: string;
   name: string | null;
   email: string | null;
+  /** The profile picture's public URL at osiris-auth. */
+  picture: string | null;
   groups: string[];
 }
 
@@ -23,6 +25,7 @@ interface Introspected {
   sub?: string;
   email?: string | null;
   name?: string | null;
+  picture?: string | null;
   groups?: string[];
   exp?: number;
   active?: boolean;
@@ -50,7 +53,7 @@ export function introspection(options: { url: string; clientId: string; clientSe
       if (!res.ok) throw new ServiceError(`osiris-auth refused the introspection: ${res.status}`, 502);
       const answer = (await res.json()) as Introspected;
       if (!answer.active || !answer.sub) throw new ServiceError("Inactive token", 401);
-      const identity: Identity = { sub: answer.sub, name: answer.name ?? null, email: answer.email ?? null, groups: answer.groups ?? [] };
+      const identity: Identity = { sub: answer.sub, name: answer.name ?? null, email: answer.email ?? null, picture: answer.picture ?? null, groups: answer.groups ?? [] };
       if (!identity.groups.includes(options.requiredGroup))
         throw new ServiceError(`Not a member of ${options.requiredGroup}`, 403);
       if (cache.size >= IDENTITY_CACHE_MAX) {
@@ -68,7 +71,7 @@ export function devVerifier(): TokenVerifier {
   return {
     optional: true,
     async identify() {
-      return { sub: "dev", name: "dev", email: null, groups: ["admin"] };
+      return { sub: "dev", name: "dev", email: null, picture: null, groups: ["admin"] };
     },
   };
 }

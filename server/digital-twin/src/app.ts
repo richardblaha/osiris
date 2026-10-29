@@ -49,7 +49,7 @@ const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
 // from the browser (oidc-client-ts reads osiris-auth's discovery and redeems the code there), so it may also call
 // osiris-auth's origin.
 const csp = (authUrl?: string) =>
-  `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'${authUrl ? ` ${new URL(authUrl).origin}` : ""}; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'`;
+  `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:${authUrl ? ` ${new URL(authUrl).origin}` : ""}; connect-src 'self'${authUrl ? ` ${new URL(authUrl).origin}` : ""}; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'`;
 
 export interface AppOptions {
   /** The adapter the twin mirrors (Kubernetes): its error attributes name the twins' logs. */

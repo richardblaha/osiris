@@ -198,7 +198,7 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
 
   it("keeps each user's saved filters their own", async () => {
     // The token is the user.
-    const users: TokenVerifier = { identify: async (token) => ({ sub: token, name: token, email: null, groups: ["admin"] }) };
+    const users: TokenVerifier = { identify: async (token) => ({ sub: token, name: token, email: null, picture: null, groups: ["admin"] }) };
     const instance = app({ verifier: users });
     const as = (who: string, path: string, init: RequestInit = {}) =>
       instance.request(path, { ...init, headers: { authorization: `Bearer ${who}`, "content-type": "application/json", ...init.headers } });
@@ -256,7 +256,7 @@ describe("sign-in", () => {
   const allow: TokenVerifier = {
     async identify(token: string) {
       if (token !== "good") throw new ServiceError("bad token", 401);
-      return { sub: "u", name: "User", email: null, groups: ["admin"] };
+      return { sub: "u", name: "User", email: null, picture: "https://auth.example/pictures/u/1", groups: ["admin"] };
     },
   };
 
@@ -265,7 +265,10 @@ describe("sign-in", () => {
     expect((await instance.request("/api/digitaltwins")).status).toBe(401);
     expect((await instance.request("/api/digitaltwins", { headers: { authorization: "Bearer bad" } })).status).toBe(401);
     expect((await instance.request("/api/digitaltwins", { headers: { authorization: "Bearer good" } })).status).toBe(200);
-    expect((await instance.request("/api/me", { headers: { authorization: "Bearer good" } })).status).toBe(200);
+    const me = await instance.request("/api/me", { headers: { authorization: "Bearer good" } });
+    expect(me.status).toBe(200);
+    // The avatar: osiris-auth's picture, as its introspection names it.
+    expect(((await me.json()) as { picture: string }).picture).toBe("https://auth.example/pictures/u/1");
   });
 
   it("the public auth config is readable without signing in, the API is not", async () => {

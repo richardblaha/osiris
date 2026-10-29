@@ -50,7 +50,7 @@ export interface Scope {
 const query = (f: object) => new URLSearchParams(Object.entries(f).filter(([, v]) => v !== undefined && v !== "" && v !== false).map(([k, v]) => [k, String(v)]));
 
 export const api = {
-  me: () => call<{ sub: string; name: string | null; email: string | null } | null>("/api/me"),
+  me: () => call<{ sub: string; name: string | null; email: string | null; picture: string | null } | null>("/api/me"),
   // The twin, in the shape of the Azure Digital Twins API (`at`: a past time from the history).
   models: async () => (await call<{ value: DtdlModelData[] }>("/api/models")).value,
   twins: async (at: number | null) => (await call<{ value: DigitalTwin[] }>(`/api/digitaltwins${at === null ? "" : `?at=${at}`}`)).value,

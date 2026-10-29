@@ -245,7 +245,7 @@ body,
   animation: panel-in 0.15s ease both;
 }
 
-/* A telemetry page over the twin: half see-through, under the bar; its tab or Escape closes it. */
+/* A telemetry page over the twin, under the bar; its tab or Escape closes it. */
 .page-overlay {
   position: absolute;
   top: calc(var(--app-bar) + 0.25rem);
@@ -255,8 +255,7 @@ body,
   overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-editor) 80%, transparent);
-  backdrop-filter: blur(8px);
+  background: var(--bg-editor);
   box-shadow: var(--shadow-popup);
   animation: panel-in 0.2s ease both;
 }

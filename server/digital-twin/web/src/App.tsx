@@ -120,7 +120,8 @@ export function App() {
         signedInOk();
         setSignedIn(true);
         const [p, me] = await Promise.all([profile(), api.me().catch(() => null)]);
-        setUser({ name: p?.name ?? me?.name ?? undefined, email: p?.email ?? me?.email ?? undefined, picture: p?.picture });
+        // The picture osiris-auth's introspection names (the ID token's when the API has none).
+        setUser({ name: me?.name ?? p?.name ?? undefined, email: me?.email ?? p?.email ?? undefined, picture: me?.picture ?? p?.picture });
         return;
       }
       if (!autoSignIn()) setSignedIn(false);

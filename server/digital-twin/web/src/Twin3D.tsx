@@ -752,5 +752,5 @@ export function Twin3D({
     if (home) view.current?.home();
   }, [home]);
 
-  return <div ref={host} className="relative h-full w-full overflow-hidden" role="application" aria-label={t("twin:view3d")} />;
+  return <div ref={host} className="relative isolate h-full w-full overflow-hidden" role="application" aria-label={t("twin:view3d")} />;
 }
