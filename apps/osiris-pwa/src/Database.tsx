@@ -1,5 +1,6 @@
 import { DB_COLUMN_TYPES, type DbColumn, type DbColumnType, type DbQueryResult, type DbRows, type DbTable } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
+import { Icon } from "./Icon.tsx";
 import { api, saveBlob, type DbColumnInput, type DbTableChange } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
 import { MasterDetail } from "./MasterDetail.tsx";
@@ -159,7 +160,7 @@ function TableView({ table, tables, isAdmin, onChanged }: { table: DbTable; tabl
                     <th key={c.name} className="whitespace-nowrap px-3 py-2 font-medium">
                       <button onClick={() => sortBy(c.name)} title={typeLabel(c.type)} className={c.system && c.name !== "id" ? "text-fg-muted" : ""}>
                         {c.name}
-                        {order.column === c.name ? (order.desc ? " ↓" : " ↑") : ""}
+                        {order.column === c.name && <Icon name={order.desc ? "arrow_downward" : "arrow_upward"} className="ms-1 h-3.5 w-3.5 align-[-0.15em]" />}
                       </button>
                     </th>
                   ))}
@@ -175,7 +176,7 @@ function TableView({ table, tables, isAdmin, onChanged }: { table: DbTable; tabl
                   >
                     {columns.map((c) => (
                       <td key={c.name} className={`max-w-xs truncate px-3 py-1.5 ${c.system && c.name !== "id" ? "text-fg-muted" : ""}`} title={cell(r[c.name])}>
-                        {c.type === "datetime" && r[c.name] ? formatDateTime(String(r[c.name])) : cell(r[c.name])}
+                        {r[c.name] === true ? <Icon name="check" className="h-4 w-4" label={t("chat:yes")} /> : c.type === "datetime" && r[c.name] ? formatDateTime(String(r[c.name])) : cell(r[c.name])}
                       </td>
                     ))}
                   </tr>
@@ -187,20 +188,20 @@ function TableView({ table, tables, isAdmin, onChanged }: { table: DbTable; tabl
           {page.total > PAGE && (
             <div className="flex items-center gap-3 text-sm">
               <button disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - PAGE))} className="btn-secondary text-sm" aria-label={t("database:previous")}>
-                ←
+                <Icon name="chevron_left" className="h-4 w-4" />
               </button>
               <span className="text-fg-secondary">
                 {t("database:range", { from: formatNumber(offset + 1), to: formatNumber(Math.min(offset + PAGE, page.total)), total: formatNumber(page.total) })}
               </span>
               <button disabled={offset + PAGE >= page.total} onClick={() => setOffset(offset + PAGE)} className="btn-secondary text-sm" aria-label={t("database:next")}>
-                →
+                <Icon name="chevron_right" className="h-4 w-4" />
               </button>
             </div>
           )}
         </>
       )}
       <button onClick={() => (setStructure(false), setEditing("new"))} className="btn-primary text-sm">
-        + {t("database:row")}
+        <Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("database:row")}
       </button>
     </div>
   );
@@ -385,12 +386,12 @@ function StructureForm({ table, tables, onSaved }: { table?: DbTable; tables: Db
               ))}
             </select>
             <button type="button" onClick={() => setAdded(added.filter((x) => x.key !== c.key))} className="btn-link text-fg-muted" aria-label={t("remove")}>
-              ×
+              <Icon name="close" className="h-4 w-4" />
             </button>
           </div>
         ))}
         <button type="button" onClick={() => setAdded([...added, newColumn(Math.max(0, ...added.map((x) => x.key)) + 1)])} className="btn-link text-sm">
-          + {t("database:column")}
+          <Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("database:column")}
         </button>
       </div>
 

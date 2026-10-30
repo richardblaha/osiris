@@ -99,8 +99,8 @@ function leafOf(node: TwinView, shape: Shape): Vec {
   if (shape === "port") return PORT;
   if (shape === "hex") return [1.4, 0.8, 1.4];
   if (shape === "gate") return [1.8, 1.5, 0.5];
-  if (shape === "cylinder") return node.depth >= 3 ? [1.3, 1.5, 1.3] : [2, 2.2, 2];
-  return node.depth >= 3 ? [1, 1, 1] : node.depth === 2 ? [1.6, 1.2, 1.6] : [3, 2, 3];
+  if (shape === "cylinder") return node.depth >= 3 ? [1.2, 1.2, 1.2] : [2, 2, 2];
+  return node.depth >= 3 ? [1, 1, 1] : node.depth === 2 ? [1.6, 1.6, 1.6] : [3, 3, 3];
 }
 
 const shift = (v: Vec, by: Vec): Vec => [v[0] + by[0], v[1] + by[1], v[2] + by[2]];
@@ -158,9 +158,35 @@ interface Arranged {
   placed: { node: TwinView; m: Measured; at: Vec }[];
 }
 
+/** How far a box is from a cube: its longest side over its shortest (1 is a cube). */
+const aspect = (v: Vec) => Math.max(...v) / Math.max(0.01, Math.min(...v));
+
 /**
- * Children grouped by model (siblings of a kind share a layer), each group a near-square grid of uniform cells with
- * `gap` between them, the groups one behind another; short last rows centered.
+ * The cube-most grid for `n` cells of size `cell` with `gap` between them: columns (x), rows (z) and layers (y),
+ * filled a layer at a time from the floor up, so only the top layer can be short.
+ */
+function cubeGrid(n: number, cell: Vec, gap: number): { cols: number; rows: number; layers: number; size: Vec } {
+  let best: { cols: number; rows: number; layers: number; size: Vec; score: number } | undefined;
+  const extent = (k: number, c: number) => k * (c + gap) - gap;
+  for (let layers = 1; layers <= n; layers++) {
+    const perLayer = Math.ceil(n / layers);
+    if (layers > 1 && perLayer * (layers - 1) >= n) break; // an empty layer
+    for (let cols = 1; cols <= perLayer; cols++) {
+      const rows = Math.ceil(perLayer / cols);
+      if (cols > 1 && (cols - 1) * rows >= perLayer) continue; // an empty column
+      const size: Vec = [extent(cols, cell[0]), extent(layers, cell[1]), extent(rows, cell[2])];
+      // As near a cube as can be; of equals, the lower one (fewer layers) and the one with fewer empty cells.
+      const score = aspect(size) + layers * 0.01 + (cols * rows * layers - n) * 0.02;
+      if (!best || score < best.score) best = { cols, rows, layers, size, score };
+    }
+  }
+  return best!;
+}
+
+/**
+ * Children grouped by model (siblings of a kind together), each group a cube-like grid of uniform cells with `gap`
+ * between them — columns, rows and layers stacked from the floor; short rows centered. The groups go side by side,
+ * one behind another or one on top of another, whichever keeps the whole nearest a cube.
  */
 function arrange(children: { node: TwinView; m: Measured }[], gap: number): Arranged {
   if (!children.length) return { inner: [0, 0, 0], placed: [] };
@@ -170,26 +196,43 @@ function arrange(children: { node: TwinView; m: Measured }[], gap: number): Arra
     .sort((a, b) => b.length - a.length)
     .map((items) => {
       const cell: Vec = [0, 1, 2].map((i) => Math.max(...items.map((x) => x.m.size[i]!))) as Vec;
-      const cols = Math.ceil(Math.sqrt(items.length));
-      const rows = Math.ceil(items.length / cols);
-      return { items, cell, cols, rows, width: (cell[0] + gap) * cols - gap, depth: (cell[2] + gap) * rows - gap };
+      return { items, cell, ...cubeGrid(items.length, cell, gap) };
     });
-  const innerW = Math.max(...grids.map((g) => g.width));
-  const innerD = grids.reduce((n, g) => n + g.depth, 0) + gap * (grids.length - 1);
-  const innerH = Math.max(...grids.map((g) => g.cell[1]));
+  // The axis the groups line up along: the one that leaves the whole most like a cube.
+  const total = (axis: number): Vec =>
+    [0, 1, 2].map((i) => (i === axis ? grids.reduce((n, g) => n + g.size[i]!, 0) + gap * (grids.length - 1) : Math.max(...grids.map((g) => g.size[i]!)))) as Vec;
+  const axis = [2, 0, 1].reduce((a, b) => (aspect(total(b)) < aspect(total(a)) - 1e-9 ? b : a));
+  const inner = total(axis);
   const placed: Arranged["placed"] = [];
-  let z = -innerD / 2;
+  let along = axis === 1 ? 0 : -inner[axis]! / 2;
   for (const g of grids) {
+    // The group's own origin: its floor center.
+    const origin: Vec = [0, 0, 0];
+    if (axis === 1) origin[1] = along;
+    else origin[axis] = along + g.size[axis]! / 2;
+    const perLayer = g.cols * g.rows;
     g.items.forEach((item, i) => {
-      const col = i % g.cols;
-      const row = Math.floor(i / g.cols);
-      const inRow = row === g.rows - 1 ? g.items.length - row * g.cols : g.cols;
+      const layer = Math.floor(i / perLayer);
+      const k = i % perLayer;
+      const col = k % g.cols;
+      const row = Math.floor(k / g.cols);
+      const inLayer = Math.min(perLayer, g.items.length - layer * perLayer);
+      const rowsHere = Math.ceil(inLayer / g.cols);
+      const inRow = row === rowsHere - 1 ? inLayer - row * g.cols : g.cols;
       const rowW = (g.cell[0] + gap) * inRow - gap;
-      placed.push({ ...item, at: [-rowW / 2 + g.cell[0] / 2 + col * (g.cell[0] + gap), 0, z + g.cell[2] / 2 + row * (g.cell[2] + gap)] });
+      const layerD = (g.cell[2] + gap) * rowsHere - gap;
+      placed.push({
+        ...item,
+        at: [
+          origin[0] - rowW / 2 + g.cell[0] / 2 + col * (g.cell[0] + gap),
+          origin[1] + layer * (g.cell[1] + gap),
+          origin[2] - layerD / 2 + g.cell[2] / 2 + row * (g.cell[2] + gap),
+        ],
+      });
     });
-    z += g.depth + gap;
+    along += g.size[axis]! + gap;
   }
-  return { inner: [innerW, innerH, innerD], placed };
+  return { inner, placed };
 }
 
 /** Puts a measured child's solids and links at `at` (its floor center) and remembers where it is and its port. */
@@ -240,10 +283,10 @@ function measure(node: TwinView, rules: LayoutRules): Measured {
   // A pod's eth0 sits higher, in the middle of its back wall: the end of the link from its node's router.
   const mounted = ports.length ? mountPorts(ports, rules.networked(node) ? [0, size[1] / 2, -size[2] / 2] : hub, rules, boxes) : new Map<string, Vec>();
   for (const { node: child, m, at: rel } of items) {
-    place(child, m, [rel[0], pad, rel[2]], boxes, links, placed);
+    place(child, m, [rel[0], pad + rel[1], rel[2]], boxes, links, placed);
     if (rules.networked(child)) links.push(networkLink(child.id, node.id, hub, placed.get(child.id)!));
   }
-  addInterfaces(rules, placed, links, node.id, pad);
+  addInterfaces(rules, placed, links, node.id);
   return { size, boxes, links, port: rules.networked(node) ? mounted.values().next().value : undefined };
 }
 
@@ -254,7 +297,8 @@ export const bandId = (root: string, group: string) => `${root}~${group}`;
 
 /**
  * A container laid out in bands: its children that hold things (the nodes, Ceph) are columns side by side, and every
- * band (a namespace) a row across them — the cell of a column and a row holds what of that column belongs to that
+ * band (a namespace) a row across them, the rows one behind another in levels stacked as high as keeps the whole
+ * nearest a cube — the cell of a column and a row holds what of that column belongs to that
  * band, so one dashed solid around the row takes in all of the band, through the columns' walls and the gaps between
  * them. What belongs to a band but no column (a pod no node runs yet, a Service, an Ingress) has a column of its own
  * without walls, behind the others; what belongs to no band (disks, pools) has the last row. Each column's
@@ -284,7 +328,6 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const colW = holders.map((holder, c) => Math.max(1, (holder?.children.filter((v) => isPort(v, rules)).length ?? 0) * (PORT[0] + 0.6), ...cells[c]!.map((cell) => cell.inner[0])));
   const rowD = rows.map((_, r) => Math.max(1, ...cells.map((col) => col[r]!.inner[2])));
   const rowH = rows.map((_, r) => Math.max(0, ...cells.map((col) => col[r]!.inner[1])));
-  const innerH = Math.max(1, ...rowH);
 
   // x of each column's inside, z of each row, all from 0; centered at the end.
   const colX: number[] = [];
@@ -295,12 +338,37 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     x += colW[c]! + (holder ? 2 * colPad : 0) + colGap;
   });
   const width = Math.max(x - colGap + pad, ownPorts.length * (PORT[0] + 0.6) + 2 * pad);
-  const rowZ: number[] = [];
-  let z = pad + colPad;
-  rows.forEach((_, r) => (rowZ.push(z), (z += rowD[r]! + rowGap)));
-  const depth = z - rowGap + colPad + pad;
+  // The bands in levels: rows one behind another, levels one on top of another, as many levels as keep the whole
+  // nearest a cube (the rows in order, a level filled before the next).
+  const levelsOf = (count: number) => {
+    const per = Math.ceil(rows.length / count);
+    const levels = Array.from({ length: count }, (_, l) => rows.map((_, r) => r).slice(l * per, (l + 1) * per)).filter((l) => l.length);
+    const depthIn = Math.max(1, ...levels.map((l) => l.reduce((n, r) => n + rowD[r]!, 0) + rowGap * (l.length - 1)));
+    const heights = levels.map((l) => Math.max(0, ...l.map((r) => rowH[r]!)));
+    const heightIn = Math.max(1, heights.reduce((n, h) => n + h, 0) + rowGap * (levels.length - 1));
+    return { levels, heights, depthIn, heightIn };
+  };
+  let plan = levelsOf(1);
+  for (let count = 2; count <= rows.length; count++) {
+    const next = levelsOf(count);
+    if (aspect([width, next.heightIn, next.depthIn]) < aspect([width, plan.heightIn, plan.depthIn])) plan = next;
+  }
+  const innerH = plan.heightIn;
   const colFloor = pad;
   const itemFloor = pad + colPad;
+  const rowZ: number[] = [];
+  const rowY: number[] = [];
+  let y = itemFloor;
+  plan.levels.forEach((level, l) => {
+    let z = pad + colPad;
+    for (const r of level) {
+      rowZ[r] = z;
+      rowY[r] = y;
+      z += rowD[r]! + rowGap;
+    }
+    y += plan.heights[l]! + rowGap;
+  });
+  const depth = pad + colPad + plan.depthIn + colPad + pad;
   const height = itemFloor + innerH + colPad + pad;
   const cx = width / 2;
   const cz = depth / 2;
@@ -330,9 +398,9 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     rows.forEach((_, r) => {
       const cell = cells[c]![r]!;
       // The cell's contents centered in it.
-      const center = at(colX[c]! + colW[c]! / 2, itemFloor, rowZ[r]! + rowD[r]! / 2);
+      const center = at(colX[c]! + colW[c]! / 2, rowY[r]!, rowZ[r]! + rowD[r]! / 2);
       for (const { node: item, m, at: rel } of cell.placed) {
-        place(item, m, [center[0] + rel[0], itemFloor, center[2] + rel[2]], boxes, links, placed);
+        place(item, m, [center[0] + rel[0], rowY[r]! + rel[1], center[2] + rel[2]], boxes, links, placed);
         if (rules.networked(item)) links.push(networkLink(item.id, holder?.id ?? node.id, colHub ?? hub, placed.get(item.id)!));
       }
     });
@@ -346,25 +414,25 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     if (first < 0) return;
     const x0 = colX[first]! - bandPad;
     const x1 = colX[last]! + colW[last]! + bandPad;
-    const y0 = itemFloor - bandPad;
-    const y1 = itemFloor + rowH[r]! + bandPad;
+    const y0 = rowY[r]! - bandPad;
+    const y1 = rowY[r]! + rowH[r]! + bandPad;
     const z0 = rowZ[r]! - bandPad;
     const z1 = rowZ[r]! + rowD[r]! + bandPad;
     const size: Vec = [x1 - x0, y1 - y0, z1 - z0];
     boxes.push({ id: bandId(node.id, row), shape: "box", center: at((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), size, radius: roundness(size) * 0.5 });
   });
-  addInterfaces(rules, placed, links, node.id, itemFloor);
+  addInterfaces(rules, placed, links, node.id);
   return { size: [width, height, depth], boxes, links, outside };
 }
 
-/** Related siblings (a container mounting a claim): wall to wall, at the lower one's middle height. */
-function addInterfaces(rules: LayoutRules, placed: Map<string, Placed>, links: Link[], parent: string, floor: number) {
+/** Related siblings (a container mounting a claim): wall to wall, each end halfway up its own solid (they may be on
+ * different layers of the grid). */
+function addInterfaces(rules: LayoutRules, placed: Map<string, Placed>, links: Link[], parent: string) {
   for (const [a, b] of rules.interfaces) {
     const pa = placed.get(a);
     const pb = placed.get(b);
     if (!pa || !pb) continue;
-    const y = floor + Math.min(pa.size[1], pb.size[1]) / 2;
-    links.push({ kind: "interface", id: a, to: b, parent, path: [port(pa, pb.at, y), port(pb, pa.at, y)] });
+    links.push({ kind: "interface", id: a, to: b, parent, path: [port(pa, pb.at, pa.at[1] + pa.size[1] / 2), port(pb, pa.at, pb.at[1] + pb.size[1] / 2)] });
   }
 }
 

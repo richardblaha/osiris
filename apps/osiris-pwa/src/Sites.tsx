@@ -1,5 +1,6 @@
 import type { SiteTarget } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
+import { Icon } from "./Icon.tsx";
 import { api } from "./api.ts";
 import { Files, fileSize } from "./Files.tsx";
 import { attempt, ErrorNotice, Field } from "./Scope.tsx";
@@ -50,7 +51,7 @@ export function Sites({ isAdmin }: { isAdmin: boolean }) {
           title: t("sites:targets"),
           items: [
             ...(targets ?? []).map((x) => ({ key: `target:${x.name}`, label: x.name, hint: `${x.username}@${x.host}${x.remoteDir}` })),
-            { key: NEW_TARGET, label: <span className="text-primary">+ {t("sites:addTarget")}</span> },
+            { key: NEW_TARGET, label: <span className="text-primary"><Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("sites:addTarget")}</span> },
           ],
         },
       ]}

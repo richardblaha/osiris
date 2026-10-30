@@ -1,8 +1,9 @@
 import type { ChatQuestion, RunEvent } from "@osiris/shared";
 import { api, connect } from "@osiris/client/api.ts";
+import { Icon } from "./Icon.tsx";
 import { answerMessage, applyEvent, fromHistory, pendingQuestion, type ChatMessage } from "@osiris/client/chat.ts";
 import { t } from "i18next";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { autoSignIn, getAccessToken } from "./auth.ts";
 import { currentLocale } from "./i18n.ts";
 
@@ -38,13 +39,18 @@ const store = (key: string, value?: string) => {
 };
 const textOf = (m: ChatMessage) => m.parts.flatMap((p) => (p.type === "text" ? [p.text] : [])).join("");
 /** A user's message as people read it: the text of an attachments envelope, a voice message as a mark. */
-const shown = (m: ChatMessage) => {
+const shown = (m: ChatMessage): ReactNode => {
   const text = textOf(m);
   if (text.startsWith("@osiris-answer:")) return t("twin:chat.answered");
   if (!text.startsWith("@osiris-attachments:")) return text;
   try {
     const a = JSON.parse(text.slice("@osiris-attachments:".length)) as { text?: string; voice?: string };
-    return a.voice ? `🎤 ${a.text || t("twin:chat.voice")}` : (a.text ?? "");
+    return a.voice ? (
+      <>
+        <Icon name="mic" className="me-1 h-4 w-4 align-[-0.2em]" />
+        {a.text || t("twin:chat.voice")}
+      </>
+    ) : (a.text ?? "");
   } catch {
     return text;
   }
@@ -212,7 +218,7 @@ export function OsirisChat({ onTwin }: { onTwin: (actions: TwinAction[]) => void
               {t("twin:chat.new")}
             </button>
             <button type="button" className="px-1 text-fg-muted hover:text-fg" onClick={() => setOpen(false)} aria-label={t("twin:chat.hide")} title={t("twin:chat.hide")}>
-              ×
+              <Icon name="close" className="h-4 w-4" />
             </button>
           </header>
           <div ref={list} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-2 text-sm">
@@ -226,7 +232,7 @@ export function OsirisChat({ onTwin }: { onTwin: (actions: TwinAction[]) => void
                   {m.parts.map((p, j) =>
                     p.type === "tool" ? (
                       <span key={j} className="osiris-step" data-state={p.failed ? "failed" : p.done ? "done" : "running"}>
-                        {p.done ? (p.failed ? "✗" : "✓") : "…"} {p.name}
+                        {p.done ? <Icon name={p.failed ? "close" : "check"} className="h-3.5 w-3.5 align-[-0.15em]" /> : "…"} {p.name}
                       </span>
                     ) : (
                       <p key={j} className="whitespace-pre-wrap">
@@ -245,7 +251,7 @@ export function OsirisChat({ onTwin }: { onTwin: (actions: TwinAction[]) => void
       )}
       <form className="osiris-input" onSubmit={submit}>
         <button type="button" onClick={() => setOpen(!open)} className="osiris-icon" aria-pressed={open} title={t("twin:chat.title")} aria-label={t("twin:chat.title")}>
-          💬
+          <Icon name="chat" />
         </button>
         <input
           value={text}
@@ -257,18 +263,18 @@ export function OsirisChat({ onTwin }: { onTwin: (actions: TwinAction[]) => void
           disabled={recording}
         />
         <button type="button" onClick={toggleSpeak} className="osiris-icon" aria-pressed={speak} title={speak ? t("twin:chat.speakOff") : t("twin:chat.speakOn")} aria-label={speak ? t("twin:chat.speakOff") : t("twin:chat.speakOn")}>
-          {speak ? "🔊" : "🔈"}
+          <Icon name={speak ? "volume_up" : "volume_off"} />
         </button>
         <button type="button" onClick={() => void toggleRecording()} className="osiris-icon" data-recording={recording} disabled={busy && !recording} title={recording ? t("twin:chat.stop") : t("twin:chat.speakToMe")} aria-label={recording ? t("twin:chat.stop") : t("twin:chat.speakToMe")}>
-          {recording ? "⏹" : "🎤"}
+          <Icon name={recording ? "stop" : "mic"} />
         </button>
         {busy ? (
-          <button type="button" className="btn-secondary px-3 py-1 text-sm" onClick={() => abort.current?.abort()}>
-            {t("twin:chat.stop")}
+          <button type="button" className="osiris-icon" onClick={() => abort.current?.abort()} title={t("twin:chat.stop")} aria-label={t("twin:chat.stop")}>
+            <Icon name="stop" />
           </button>
         ) : (
-          <button className="btn-primary px-3 py-1 text-sm" disabled={!text.trim()}>
-            {t("twin:chat.send")}
+          <button className="osiris-icon osiris-send" disabled={!text.trim()} title={t("twin:chat.send")} aria-label={t("twin:chat.send")}>
+            <Icon name="send" />
           </button>
         )}
       </form>

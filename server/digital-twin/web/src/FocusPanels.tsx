@@ -1,5 +1,6 @@
 import type { LogRecord, MetricInfo, MetricSeries, TraceSummary } from "@osiris/shared";
 import { t } from "i18next";
+import { Icon } from "./Icon.tsx";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { api, type Scope } from "./api.ts";
 import { formatBytes, formatBytesRate, formatDateTime, formatNumber } from "./i18n.ts";
@@ -90,7 +91,7 @@ export function FocusPanels({
   const bind = (slot: Slot) => keep(panels.current, slot);
   const open = (page: Page) => (
     <button type="button" className="focus-panel-open" onClick={() => onOpenPage(page)} title={t("twin:openPage")} aria-label={t("twin:openPage")}>
-      ↗
+      <Icon name="open_in_new" className="h-4 w-4" />
     </button>
   );
 
@@ -299,7 +300,7 @@ function TraceList({ scope, at, onOpen }: { scope: Scope; at: number | null; onO
         <button key={tr.traceId} type="button" onClick={() => onOpen(tr.traceId)} className="list-row flex w-full items-baseline gap-2 px-3 py-1 text-start">
           <span className="shrink-0 font-mono text-[11px] text-fg-muted">{time(tr.ts)}</span>
           <span className="min-w-0 flex-1 truncate" title={`${tr.service}: ${tr.name}`}>
-            {tr.error && <span className="me-1 text-error" aria-label={t("telemetry:error")}>●</span>}
+            {tr.error && <Icon name="error" className="me-1 h-3.5 w-3.5 align-[-0.15em] text-error" label={t("telemetry:error")} />}
             <span className="text-fg-muted">{tr.service}</span> {tr.name}
           </span>
           <span className="shrink-0 font-mono text-[11px]">{duration(tr.durationMs)}</span>

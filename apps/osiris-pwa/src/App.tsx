@@ -13,6 +13,7 @@ import type {
   ThreadSummary,
 } from "@osiris/shared";
 import { t } from "i18next";
+import { Icon, type MaterialIcon } from "./Icon.tsx";
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, setProject } from "./api.ts";
 import { getAccessToken, login, logout } from "./auth.ts";
@@ -94,12 +95,12 @@ const LOADERS: { [S in Section]: () => Promise<Lists[S]> } = {
 };
 
 /** Labels are read when shown (`label()`, `add()`), so they follow the current language. */
-const SECTIONS: { id: Section; label: () => string; add: () => string; icon: string; enabled: (f: ProjectFeatures) => boolean }[] = [
-  { id: "knowledge", label: () => t("app:nav.knowledge"), add: () => t("app:add.knowledge"), icon: "M2 3h5l1 1 1-1h5v10H9l-1 1-1-1H2zM8 4v9", enabled: (f) => f.knowledge },
-  { id: "skills", label: () => t("app:nav.skills"), add: () => t("app:add.skills"), icon: "M3 4h10M3 8h10M3 12h6", enabled: (f) => f.skills },
-  { id: "memory", label: () => t("app:nav.memory"), add: () => t("app:add.memory"), icon: "M8 2a4 4 0 0 0-2 7.5V11h4V9.5A4 4 0 0 0 8 2zM6.5 13.5h3", enabled: (f) => f.memory },
-  { id: "mcp", label: () => t("app:nav.mcp"), add: () => t("app:add.mcp"), icon: "M6 2v3M10 2v3M4 5h8v3a4 4 0 0 1-8 0zM8 12v2", enabled: (f) => f.mcp },
-  { id: "secrets", label: () => t("app:nav.secrets"), add: () => t("app:add.secrets"), icon: "M10 2a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM7 9l-5 5M4 12l1.5 1.5", enabled: (f) => f.http || f.mcp },
+const SECTIONS: { id: Section; label: () => string; add: () => string; icon: MaterialIcon; enabled: (f: ProjectFeatures) => boolean }[] = [
+  { id: "knowledge", label: () => t("app:nav.knowledge"), add: () => t("app:add.knowledge"), icon: "menu_book", enabled: (f) => f.knowledge },
+  { id: "skills", label: () => t("app:nav.skills"), add: () => t("app:add.skills"), icon: "school", enabled: (f) => f.skills },
+  { id: "memory", label: () => t("app:nav.memory"), add: () => t("app:add.memory"), icon: "psychology", enabled: (f) => f.memory },
+  { id: "mcp", label: () => t("app:nav.mcp"), add: () => t("app:add.mcp"), icon: "extension", enabled: (f) => f.mcp },
+  { id: "secrets", label: () => t("app:nav.secrets"), add: () => t("app:add.secrets"), icon: "key", enabled: (f) => f.http || f.mcp },
 ];
 
 interface Row {
@@ -419,26 +420,23 @@ function Workspace() {
               </span>
             )}
             <button onClick={toggleSidebar} className="list-row p-1.5 text-fg-secondary" aria-label={collapsed ? t("app:expand") : t("app:collapse")} title={collapsed ? t("app:expand") : t("app:collapse")}>
-              <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
-                <path d={collapsed ? "M2 3h12v10H2zM6 3v10M8.5 6.5 10 8l-1.5 1.5" : "M2 3h12v10H2zM6 3v10M11 6.5 9.5 8 11 9.5"} fill="none" stroke="currentColor" strokeWidth="1.3" />
-              </svg>
+              <Icon name={collapsed ? "left_panel_open" : "left_panel_close"} />
             </button>
           </div>
           {project && collapsed && (
             <button onClick={() => openThread(null)} className="btn-primary mx-auto mt-3 flex h-10 w-10 items-center justify-center p-0" aria-label={t("app:newChat")} title={t("app:newChat")}>
-              <svg viewBox="0 0 16 16" className="h-5 w-5" aria-hidden="true">
-                <path d="M8 3v10M3 8h10" fill="none" stroke="currentColor" strokeWidth="1.6" />
-              </svg>
+              <Icon name="add" />
             </button>
           )}
           {project && !collapsed && (
-            <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3">
-              + {t("app:newChat")}
+            <button onClick={() => openThread(null)} className="btn-primary mx-3 mt-3 flex items-center justify-center gap-1.5">
+              <Icon name="add" className="h-4 w-4" />
+              {t("app:newChat")}
             </button>
           )}
           <nav className="mt-3 min-h-0 flex-1 overflow-y-auto px-2 pb-3">
             {project && collapsed && (
-              <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label={t("app:nav.conversations")} icon="M2 4h12v7H9l-3 3v-3H2z" />
+              <NavLink active={view.kind === "chat"} onClick={() => (toggleSidebar())} label={t("app:nav.conversations")} icon="forum" />
             )}
             {project && !collapsed && (
               <section className="relative min-h-16">
@@ -453,7 +451,7 @@ function Workspace() {
                       {th.title ?? t("app:newChat")}
                     </button>
                     <button onClick={() => removeThread(th.id)} className="hidden px-1 text-fg-muted hover:text-error group-hover:block" aria-label={t("delete")}>
-                      ×
+                      <Icon name="close" className="h-4 w-4" />
                     </button>
                   </div>
                 ))}
@@ -464,48 +462,48 @@ function Workspace() {
               <NavSection title={t("app:nav.context")}>
                 {sectionLink("knowledge")}
                 {sectionLink("memory")}
-                {project.features.files && <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label={t("app:nav.files")} icon="M2 4h4l1.5 1.5H14V13H2z" />}
+                {project.features.files && <NavLink active={view.kind === "files"} onClick={() => setView({ kind: "files" })} label={t("app:nav.files")} icon="folder" />}
                 {sectionLink("mcp")}
                 {sectionLink("skills")}
-                <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label={t("app:nav.guards")} icon="M8 1.5 13.5 3.5v4c0 3.2-2.3 5.8-5.5 7-3.2-1.2-5.5-3.8-5.5-7v-4zM5.5 8l2 2 3-3.5" />
+                <NavLink active={view.kind === "guards"} onClick={() => setView({ kind: "guards" })} label={t("app:nav.guards")} icon="verified_user" />
                 {sectionLink("secrets")}
               </NavSection>
             )}
             {project && (
               <NavSection title={t("app:nav.project")}>
-                {!local && <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label={t("app:nav.dashboard")} icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />}
-                {project.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label={t("app:nav.assistants")} icon="M2 4h12v7H6l-3 3V4z" />}
+                {!local && <NavLink active={view.kind === "dashboard"} onClick={() => setView({ kind: "dashboard" })} label={t("app:nav.dashboard")} icon="dashboard" />}
+                {project.features.public && <NavLink active={view.kind === "public"} onClick={() => setView({ kind: "public" })} label={t("app:nav.assistants")} icon="support_agent" />}
                 {project.features.database && (
-                  <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label={t("app:nav.database")} icon="M8 2c3.3 0 6 .9 6 2v8c0 1.1-2.7 2-6 2s-6-.9-6-2V4c0-1.1 2.7-2 6-2zM2 4c0 1.1 2.7 2 6 2s6-.9 6-2M2 8c0 1.1 2.7 2 6 2s6-.9 6-2" />
+                  <NavLink active={view.kind === "database"} onClick={() => setView({ kind: "database" })} label={t("app:nav.database")} icon="database" />
                 )}
                 {project.features.scheduler && (
-                  <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label={t("app:nav.schedules")} icon="M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2zm0 3v3.5l2.5 1.5" />
+                  <NavLink active={view.kind === "schedules"} onClick={() => setView({ kind: "schedules" })} label={t("app:nav.schedules")} icon="schedule" />
                 )}
                 {!local && (
                   <NavLink
                     active={view.kind === "users"}
                     onClick={() => (me.systemAdmin && void refreshProjects(), setView({ kind: "users" }))}
                     label={t("app:nav.users")}
-                    icon="M6 7a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5zM1.5 14c0-2.5 2-4.5 4.5-4.5s4.5 2 4.5 4.5M11 2.5a2.5 2.5 0 0 1 0 4.5M12.5 9.7c1.2.6 2 2 2 3.8"
+                    icon="group"
                   />
                 )}
                 {project.features.sites && (
-                  <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label={t("app:nav.sites")} icon="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12M8 2a6 6 0 1 0 0 12A6 6 0 0 0 8 2z" />
+                  <NavLink active={view.kind === "sites"} onClick={() => setView({ kind: "sites" })} label={t("app:nav.sites")} icon="language" />
                 )}
                 {project.features.sites && !local && (
-                  <NavLink active={view.kind === "analytics"} onClick={() => setView({ kind: "analytics" })} label={t("app:nav.analytics")} icon="M2 13.5h12M4 11V8M8 11V4M12 11V6.5" />
+                  <NavLink active={view.kind === "analytics"} onClick={() => setView({ kind: "analytics" })} label={t("app:nav.analytics")} icon="bar_chart" />
                 )}
               </NavSection>
             )}
             {me.systemAdmin && (
               <NavSection title={t("app:nav.system")}>
-                <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label={t("app:nav.dashboard")} icon="M2 2h5v6H2zM9 2h5v3H9zM9 7h5v7H9zM2 10h5v4H2z" />
-                <NavLink active={view.kind === "projects"} onClick={() => setView({ kind: "projects" })} label={t("app:nav.projects")} icon="M2 3h12v4H2zM2 9h12v4H2zM4.5 5h.01M4.5 11h.01" />
+                <NavLink active={view.kind === "sysdash"} onClick={() => setView({ kind: "sysdash" })} label={t("app:nav.dashboard")} icon="dashboard" />
+                <NavLink active={view.kind === "projects"} onClick={() => setView({ kind: "projects" })} label={t("app:nav.projects")} icon="inventory_2" />
                 <NavLink
                   active={view.kind === "settings"}
                   onClick={() => setView({ kind: "settings" })}
                   label={t("app:nav.settings")}
-                  icon="M12.83 6.72L14.51 6.92L14.51 9.08L12.83 9.28L12.32 10.51L13.37 11.84L11.84 13.37L10.51 12.32L9.28 12.83L9.08 14.51L6.92 14.51L6.72 12.83L5.49 12.32L4.16 13.37L2.63 11.84L3.68 10.51L3.17 9.28L1.49 9.08L1.49 6.92L3.17 6.72L3.68 5.49L2.63 4.16L4.16 2.63L5.49 3.68L6.72 3.17L6.92 1.49L9.08 1.49L9.28 3.17L10.51 3.68L11.84 2.63L13.37 4.16L12.32 5.49zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"
+                  icon="settings"
                 />
               </NavSection>
             )}
@@ -533,7 +531,7 @@ function Workspace() {
             <div className="notice notice-error absolute inset-x-3 top-3 z-10 flex items-start gap-3 px-3 py-2 text-sm">
               <span className="flex-1">{flash}</span>
               <button onClick={() => setFlash(undefined)} aria-label={t("close")} className="text-fg-secondary">
-                ×
+                <Icon name="close" className="h-4 w-4" />
               </button>
             </div>
           )}
@@ -745,7 +743,7 @@ function ProjectUsers({ me, isAdmin, projects }: { me: MeResponse; isAdmin: bool
 }
 
 /** A sidebar link: an icon with its label, only the icon (and a tooltip) while the sidebar is collapsed. */
-function NavLink({ active, onClick, label, icon, count }: { active: boolean; onClick: () => void; label: string; icon: string; count?: number }) {
+function NavLink({ active, onClick, label, icon, count }: { active: boolean; onClick: () => void; label: string; icon: MaterialIcon; count?: number }) {
   return (
     <button
       onClick={onClick}
@@ -754,9 +752,7 @@ function NavLink({ active, onClick, label, icon, count }: { active: boolean; onC
       aria-label={label}
       className="section-header list-row mt-1 flex w-full items-center gap-2 px-2 py-1.5 text-start group-data-[collapsed=true]/side:justify-center"
     >
-      <svg viewBox="0 0 16 16" className="h-5 w-5 shrink-0" aria-hidden="true">
-        <path d={icon} fill="none" stroke="currentColor" strokeWidth="1.3" />
-      </svg>
+      <Icon name={icon} />
       <span className="side-label truncate">{label}</span>
       {!!count && <span className="side-label font-normal text-fg-muted">{count}</span>}
     </button>

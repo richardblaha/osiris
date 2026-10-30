@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ComposerPrimitive, ThreadPrimitive, useAui, useAuiState } from "@assistant-ui/react";
+import { Icon } from "../Icon.tsx";
 import { t } from "i18next";
 import { setSpeechEnabled, useSpeechEnabled } from "./speech.ts";
 
@@ -10,15 +11,6 @@ const MAX_FILES = 5;
 const MAX_MB = 20;
 const MAX_RECORDING_MS = 5 * 60_000;
 
-const Icon = ({ d, className = "h-5 w-5" }: { d: string; className?: string }) => (
-  <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
-    <path d={d} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-const PAPERCLIP = "M21.4 11.1l-9.2 9.2a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.8-2.8l8.5-8.5";
-const MIC = "M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3zM19 10v2a7 7 0 0 1-14 0v-2M12 19v3";
-const SEND = "M12 19V5M5 12l7-7 7 7";
-const CLOSE = "M6 6l12 12M18 6L6 18";
 
 const clock = (ms: number) => `${Math.floor(ms / 60_000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}`;
 const fileName = (path: string) => path.replace(/^[0-9a-f-]{36}-/, "");
@@ -164,14 +156,14 @@ export function Composer({ placeholder }: { placeholder: string }) {
               aria-label={t("chat:attach")}
               title={t("chat:attach")}
             >
-              {busy && !recording ? <span className="tool-spinner" /> : <Icon d={PAPERCLIP} />}
+              {busy && !recording ? <span className="tool-spinner" /> : <Icon name="attach_file" />}
             </button>
           )}
           {paths.map((p) => (
             <span key={p} className="badge flex max-w-48 items-center gap-1">
               <span className="truncate">{fileName(p)}</span>
               <button type="button" className="text-fg-muted hover:text-fg" onClick={() => setPaths((current) => current.filter((x) => x !== p))} aria-label={t("chat:removeAttachment", { name: fileName(p) })}>
-                <Icon d={CLOSE} className="h-3 w-3" />
+                <Icon name="close" className="h-3 w-3" />
               </button>
             </span>
           ))}
@@ -185,7 +177,7 @@ export function Composer({ placeholder }: { placeholder: string }) {
         </div>
         {recording && (
           <button type="button" className="icon-button btn-secondary" onClick={() => stopRecording(false)} aria-label={t("chat:cancelRecording")} title={t("chat:cancelRecording")}>
-            <Icon d={CLOSE} className="h-4 w-4" />
+            <Icon name="close" className="h-4 w-4" />
           </button>
         )}
         {canVoice && (
@@ -198,7 +190,7 @@ export function Composer({ placeholder }: { placeholder: string }) {
             title={recording ? t("chat:stopAndSend") : t("chat:voiceHint")}
             aria-pressed={recording}
           >
-            <Icon d={MIC} />
+            <Icon name="mic" />
           </button>
         )}
         {/* Speech for signed-in users (the public chat has no uploads and no speech). */}
@@ -211,25 +203,23 @@ export function Composer({ placeholder }: { placeholder: string }) {
             aria-label={speaking ? t("chat:speakOff") : t("chat:speakOn")}
             title={speaking ? t("chat:speakOff") : t("chat:speakOn")}
           >
-            {speaking ? "🔊" : "🔈"}
+            <Icon name={speaking ? "volume_up" : "volume_off"} />
           </button>
         )}
         <ThreadPrimitive.If running={false}>
           {paths.length ? (
             <button type="button" className="icon-button btn-primary" disabled={busy || recording} onClick={() => sendWith(paths)} aria-label={t("chat:send")} title={t("chat:sendHint")}>
-              <Icon d={SEND} />
+              <Icon name="send" />
             </button>
           ) : (
             <ComposerPrimitive.Send className="icon-button btn-primary" disabled={recording} aria-label={t("chat:send")} title={t("chat:sendHint")}>
-              <Icon d={SEND} />
+              <Icon name="send" />
             </ComposerPrimitive.Send>
           )}
         </ThreadPrimitive.If>
         <ThreadPrimitive.If running>
           <ComposerPrimitive.Cancel className="icon-button btn-secondary" aria-label={t("chat:stop")} title={t("chat:stop")}>
-            <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden="true">
-              <rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" />
-            </svg>
+            <Icon name="stop" />
           </ComposerPrimitive.Cancel>
         </ThreadPrimitive.If>
       </div>

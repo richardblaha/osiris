@@ -1,5 +1,6 @@
 import type { Meter, ProjectQuotas, ProjectUsage } from "@osiris/shared";
 import { useState, type FormEvent } from "react";
+import { Icon } from "./Icon.tsx";
 import { Field } from "./Scope.tsx";
 import { fileSize } from "./Files.tsx";
 import { t } from "i18next";
@@ -74,7 +75,7 @@ export function StatusBar({ project, role, usage }: { project?: string; role?: s
           const label = meterLabel(m.key);
           return (
             <span key={m.key} title={state ? `${label}: ${state}` : label} className={state ? "font-bold" : "opacity-90"}>
-              {state && "⚠ "}
+              {state && <Icon name="warning" className="me-1 h-4 w-4 align-[-0.2em]" />}
               {label} {m.format(used)}
               {limit !== null && ` / ${m.format(limit)}`}
             </span>

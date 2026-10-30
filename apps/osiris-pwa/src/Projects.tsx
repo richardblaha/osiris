@@ -1,5 +1,6 @@
 import { FEATURES, type DirectoryUser, type Feature, type Role, type ProjectDetail, type ProjectSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
+import { Icon } from "./Icon.tsx";
 import { api } from "./api.ts";
 import { InviteForm } from "./Invite.tsx";
 import { attempt, ErrorNotice, Field, Pending } from "./Scope.tsx";
@@ -318,7 +319,7 @@ export function ProjectAdmin({
           ))}
           {!projects.length && <p className="px-2 py-1.5 text-fg-muted">{t("noneYet")}</p>}
           <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-start text-primary">
-            + {t("projects:create")}
+            <Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("projects:create")}
           </button>
         </div>
       </nav>

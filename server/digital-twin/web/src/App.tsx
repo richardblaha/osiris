@@ -1,5 +1,6 @@
 import type { DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Icon } from "./Icon.tsx";
 import { buildScene, scopeOf, type TwinScene } from "./scene.ts";
 import { t } from "i18next";
 import { api, currentInstance, setInstance, type DashboardSummary, type InstanceSummary } from "./api.ts";
@@ -415,7 +416,7 @@ export function App() {
                 className="app-tab"
               >
                 {tabLabel(page)}
-                {page === "dashboard" && dashboards.length > 1 && <span aria-hidden="true"> ▾</span>}
+                {page === "dashboard" && dashboards.length > 1 && <Icon name="keyboard_arrow_down" className="ms-0.5 h-4 w-4 align-[-0.2em]" />}
               </button>
               {page === "dashboard" && choosing && (
                 <DashboardMenu list={dashboards} onPick={(id) => (setChoosing(false), navigate({ kind: "dashboard", id }))} onClose={() => setChoosing(false)} />

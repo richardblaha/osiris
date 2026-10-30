@@ -1,5 +1,6 @@
 import type { AdminUser, Role, ProjectSummary } from "@osiris/shared";
 import { useEffect, useState, type FormEvent } from "react";
+import { Icon } from "./Icon.tsx";
 import { api } from "./api.ts";
 import { Avatar } from "./Profile.tsx";
 import { attempt, ErrorNotice, Field, Loading } from "./Scope.tsx";
@@ -33,7 +34,7 @@ export function UserAdmin({ self, projects }: { self: string; projects: ProjectS
             </button>
           ))}
           <button onClick={() => setSelected(null)} data-active={selected === null} className="list-row mt-1 w-full px-2 py-1.5 text-start text-primary">
-            + {t("users:add")}
+            <Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("users:add")}
           </button>
         </div>
       </nav>

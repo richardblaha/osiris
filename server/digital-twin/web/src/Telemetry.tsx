@@ -1,5 +1,6 @@
 import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary } from "@osiris/shared";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Icon } from "./Icon.tsx";
 import { api, type SavedFilter, type Scope } from "./api.ts";
 import { LineChart } from "./Chart.tsx";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
@@ -138,7 +139,7 @@ export function ScopeChips({ scope, onClear }: { scope: Scope; onClear: (key: "p
       {(["node", "pod", "container", "claim"] as const).map((key) =>
         scope[key] ? (
           <button key={key} type="button" onClick={() => onClear(key)} className="badge self-center" title={t("telemetry:all")}>
-            {t(`telemetry:${key}`)}: {scope[key]} ×
+            {t(`telemetry:${key}`)}: {scope[key]} <Icon name="close" className="ms-1 h-3.5 w-3.5 align-[-0.15em]" />
           </button>
         ) : null,
       )}
@@ -204,7 +205,7 @@ function SavedFilters({ current, onApply }: { current: LogFilter; onApply: (f: P
   return (
     <div ref={box} className="relative self-end">
       <button type="button" onClick={() => setOpen(!open)} data-active={open} className="btn-secondary py-1 text-sm" aria-expanded={open}>
-        ★ {t("telemetry:saved.title")}
+        <Icon name="star" className="me-1 h-4 w-4 align-[-0.2em]" />{t("telemetry:saved.title")}
         {list && list.length > 0 && <span className="ms-1 text-fg-muted">{formatNumber(list.length)}</span>}
       </button>
       {open && (
@@ -217,7 +218,7 @@ function SavedFilters({ current, onApply }: { current: LogFilter; onApply: (f: P
                   {f.name}
                 </button>
                 <button type="button" className="px-2 text-fg-muted hover:text-error" onClick={() => void remove(f.id)} aria-label={t("telemetry:saved.delete", { name: f.name })}>
-                  ×
+                  <Icon name="close" className="h-4 w-4" />
                 </button>
               </li>
             ))}
@@ -464,12 +465,12 @@ export function Logs({
         </label>
         {picked && (
           <button type="button" onClick={() => setPicked(undefined)} className="badge self-center" title={t("telemetry:clearWindow")}>
-            {windowLabel(picked.from)} – {windowLabel(picked.to)} ×
+            {windowLabel(picked.from)} – {windowLabel(picked.to)} <Icon name="close" className="ms-1 h-3.5 w-3.5 align-[-0.15em]" />
           </button>
         )}
         {traceId && (
           <button type="button" onClick={() => setTraceId("")} className="badge self-center" title={t("telemetry:clearTrace")}>
-            {t("telemetry:traceFilter", { id: traceId.slice(0, 8) })} ×
+            {t("telemetry:traceFilter", { id: traceId.slice(0, 8) })} <Icon name="close" className="ms-1 h-3.5 w-3.5 align-[-0.15em]" />
           </button>
         )}
         {active > 0 && (
@@ -599,7 +600,7 @@ export function Traces({ preset, traceId, onOpenTrace, onOpenLogs }: { preset: P
                   <td className="py-1 pe-3 font-mono text-xs whitespace-nowrap text-fg-muted">{time(tr.ts, range > 24 * 3_600_000)}</td>
                   <td className="py-1 pe-3 text-fg-secondary">{tr.service}</td>
                   <td className="py-1 pe-3">
-                    {tr.error && <span className="me-1 text-error" aria-label={t("telemetry:error")}>●</span>}
+                    {tr.error && <Icon name="error" className="me-1 h-3.5 w-3.5 align-[-0.15em] text-error" label={t("telemetry:error")} />}
                     {tr.name}
                   </td>
                   <td className="py-1 pe-3 text-end font-mono text-xs">{duration(tr.durationMs)}</td>
@@ -648,7 +649,7 @@ function TraceView({ traceId, onBack, onOpenLogs }: { traceId: string; onBack: (
     <div className="flex h-full flex-col">
       <div className="flex flex-wrap items-center gap-3 border-b border-line px-6 py-3 text-sm">
         <button onClick={onBack} className="btn-link">
-          ← {t("telemetry:tabs.traces")}
+          <Icon name="arrow_back" className="me-1 h-4 w-4 align-[-0.2em]" />{t("telemetry:tabs.traces")}
         </button>
         <code className="text-xs">{traceId}</code>
         {rows.length > 0 && (
@@ -670,7 +671,7 @@ function TraceView({ traceId, onBack, onOpenLogs }: { traceId: string; onBack: (
               <li key={s.spanId} className="border-b border-line">
                 <button onClick={() => setOpen(open === s.spanId ? undefined : s.spanId)} data-active={open === s.spanId} className="list-row flex w-full items-center gap-3 px-1 py-1 text-start">
                   <span className="w-80 shrink-0 truncate" style={{ paddingInlineStart: depth * 12 }} title={`${s.service}: ${s.name}`}>
-                    {s.error && <span className="me-1 text-error" aria-label={t("telemetry:error")}>●</span>}
+                    {s.error && <Icon name="error" className="me-1 h-3.5 w-3.5 align-[-0.15em] text-error" label={t("telemetry:error")} />}
                     <span className="text-fg-muted">{s.service}</span> {s.name}
                   </span>
                   <span className="relative h-3 min-w-0 flex-1">
@@ -763,7 +764,7 @@ export function Metrics({ preset }: { preset: Preset }) {
           </label>
           {scope.namespace && (
             <button type="button" onClick={() => setScope({ ...scope, namespace: undefined })} className="badge self-center" title={t("telemetry:all")}>
-              {t("telemetry:namespace")}: {scope.namespace} ×
+              {t("telemetry:namespace")}: {scope.namespace} <Icon name="close" className="ms-1 h-3.5 w-3.5 align-[-0.15em]" />
             </button>
           )}
           <ScopeChips scope={scope} onClear={(key) => setScope({ ...scope, [key]: undefined })} />

@@ -1,5 +1,6 @@
 import { t } from "i18next";
 import { useEffect, useState } from "react";
+import { Icon } from "./Icon.tsx";
 import { api, type InstanceRecord, type SourceField, type SourceType } from "./api.ts";
 import { ErrorNotice, Pending } from "./ui.tsx";
 
@@ -107,7 +108,7 @@ export function Instances({ onChanged }: { onChanged: (id?: string) => void }) {
           </button>
         ))}
         <button type="button" onClick={() => pick()} data-active={isNew} className="list-row mt-1 block w-full rounded border-t border-line px-2 py-1.5 text-start text-sm text-primary">
-          + {t("instances:new")}
+          <Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("instances:new")}
         </button>
       </nav>
 

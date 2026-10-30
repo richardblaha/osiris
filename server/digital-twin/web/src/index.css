@@ -360,6 +360,16 @@ button.instance-button:hover {
 .osiris-icon[aria-pressed="true"] {
   background: var(--accent-primary-soft);
 }
+.osiris-send {
+  color: var(--text-inverse);
+  background: var(--accent-primary);
+}
+.osiris-send:disabled {
+  opacity: 0.4;
+}
+.osiris-send:hover:not(:disabled) {
+  background: var(--accent-primary-hover, var(--accent-primary));
+}
 .osiris-icon[data-recording="true"] {
   background: var(--accent-secondary-soft);
   animation: fade-in 0.8s ease-in-out infinite alternate;

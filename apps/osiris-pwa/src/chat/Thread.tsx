@@ -1,5 +1,6 @@
 import { Composer, UploadContext } from "./Attachments.tsx";
 import { Question } from "./Question.tsx";
+import { Icon } from "../Icon.tsx";
 import {
   MessagePrimitive,
   ThreadPrimitive,
@@ -150,7 +151,7 @@ function ToolStep({ toolName, args, argsText, result }: ToolCallMessagePartProps
       <details>
         <summary>
           <span className="tool-step-icon" aria-hidden="true">
-            {state === "running" ? <span className="tool-spinner" /> : state === "done" ? "✓" : "✗"}
+            {state === "running" ? <span className="tool-spinner" /> : <Icon name={state === "done" ? "check" : "close"} className="h-4 w-4" />}
           </span>
           <span className="min-w-0 flex-1 truncate">{label}</span>
           <code className="tool-step-name">{toolName}</code>
@@ -220,7 +221,7 @@ function SpeakButton() {
   if (!signedIn || running || !text.trim()) return null;
   return (
     <button type="button" className="speak-button" onClick={() => void speak(text)} title={t("chat:speak")} aria-label={t("chat:speak")}>
-      🔊
+      <Icon name="volume_up" className="h-4 w-4" />
     </button>
   );
 }

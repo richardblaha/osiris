@@ -1,5 +1,6 @@
 import { WhatsAppDeliveries } from "./WhatsAppDeliveries.tsx";
 import type { MeResponse, ProjectFeatures, UserProfile, UserSettings } from "@osiris/shared";
+import { Icon } from "./Icon.tsx";
 import { useEffect, useState, type FormEvent } from "react";
 import { AssistantSettings } from "./Assistant.tsx";
 import { Integrations } from "./Integrations.tsx";
@@ -56,7 +57,7 @@ export function Profile({ me, features }: { me: MeResponse; notice?: { linked?: 
               ]
             : [
                 { key: "account", label: t("profile:parts.account") },
-                ...(accountUrl ? [{ key: "security", label: <span>{t("profile:parts.security")} ↗</span> }] : []),
+                ...(accountUrl ? [{ key: "security", label: <span>{t("profile:parts.security")} <Icon name="open_in_new" className="h-3.5 w-3.5 align-[-0.15em]" /></span> }] : []),
                 ...(features?.integrations ? [{ key: "linked", label: t("profile:parts.linked") }] : []),
                 { key: "personalization", label: t("profile:parts.personalization") },
                 { key: "activity", label: t("profile:parts.whatsapp") },

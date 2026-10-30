@@ -1,5 +1,6 @@
 import { fileType, type FileEntry, type FileScope, type FileSearchHit } from "@osiris/shared";
 import { useEffect, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { Icon } from "./Icon.tsx";
 import { api, saveBlob } from "./api.ts";
 import { LazyCodeEditor } from "./LazyCodeEditor.tsx";
 import { attempt, ErrorNotice, Loading, Pending } from "./Scope.tsx";
@@ -48,21 +49,10 @@ async function droppedFiles(e: DragEvent): Promise<{ path: string; file: File }[
   return out;
 }
 
-function Icon({ entry }: { entry: Pick<FileEntry, "type" | "name"> }) {
+function EntryIcon({ entry }: { entry: Pick<FileEntry, "type" | "name"> }) {
   const type = entry.type === "file" ? fileType(entry.name) : undefined;
-  const d =
-    entry.type === "dir"
-      ? "M2 4h4l1.5 1.5H14V13H2z"
-      : IMAGE.test(type?.mime ?? "")
-        ? "M2.5 2.5h11v11h-11zM2.5 11l3.5-3.5 3 3 2-2 2.5 2.5M10 5.5h.01"
-        : type?.text
-          ? "M4 1.5h5.5L12.5 4.5V14.5H4zM9.5 1.5v3h3M6 8h5M6 10.5h5M6 13h3"
-          : "M4 1.5h5.5L12.5 4.5V14.5H4zM9.5 1.5v3h3";
-  return (
-    <svg viewBox="0 0 16 16" className={`h-4 w-4 shrink-0 ${entry.type === "dir" ? "text-primary" : "text-fg-muted"}`} aria-hidden="true">
-      <path d={d} fill="none" stroke="currentColor" strokeWidth="1.2" />
-    </svg>
-  );
+  const name = entry.type === "dir" ? "folder" : IMAGE.test(type?.mime ?? "") ? "image" : type?.text ? "description" : "draft";
+  return <Icon name={name} className={`h-4 w-4 ${entry.type === "dir" ? "text-primary" : "text-fg-muted"}`} />;
 }
 
 /**
@@ -358,14 +348,14 @@ export function Files({ root = "", title = t("app:nav.files"), intro, hide = [],
             {dir !== root && (
               <li>
                 <button onClick={() => setDir(dir.slice(0, Math.max(dir.lastIndexOf("/"), 0)))} className="list-row flex w-full items-center gap-2 px-2 py-1.5 text-start text-fg-secondary">
-                  <span className="w-4 text-center">↑</span> ..
+                  <Icon name="arrow_upward" className="h-4 w-4" /> ..
                 </button>
               </li>
             )}
             {entries?.map((e) => (
               <li key={e.path} data-active={open?.path === e.path} className="list-row group flex items-center gap-2 px-2">
                 <button onClick={() => openEntry(e)} className="flex min-w-0 flex-1 items-center gap-2 py-1.5 text-start">
-                  <Icon entry={e} />
+                  <EntryIcon entry={e} />
                   <span className={`truncate ${e.type === "dir" ? "font-medium" : ""}`}>{e.name}</span>
                 </button>
                 {!open && (

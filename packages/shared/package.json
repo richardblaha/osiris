@@ -5,11 +5,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./theme.ts": "./src/theme.ts",
-    "./dtdl.ts": "./src/dtdl.ts"
+    "./dtdl.ts": "./src/dtdl.ts",
+    "./material-icons.ts": "./src/material-icons.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "icons": "node scripts/material-icons.mjs"
   },
   "devDependencies": {
     "@types/node": "26.6.4",

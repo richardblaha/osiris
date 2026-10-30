@@ -1,5 +1,6 @@
 import { t } from "i18next";
 import { useRef, useState } from "react";
+import { Icon } from "./Icon.tsx";
 import type { InstanceSummary } from "./api.ts";
 import { usePopupClose } from "./Telemetry.tsx";
 
@@ -28,7 +29,7 @@ export function InstanceMenu({
   return (
     <div ref={box} className="relative">
       <button type="button" className="instance-button" onClick={() => setOpen(!open)} aria-haspopup="menu" aria-expanded={open} title={t("instances:choose")}>
-        {shown?.name ?? t("instances:choose")} <span aria-hidden="true">▾</span>
+        {shown?.name ?? t("instances:choose")} <Icon name="keyboard_arrow_down" className="h-4 w-4 align-[-0.2em]" />
       </button>
       {open && (
         <div className="menu-popup start-0 w-64" role="menu" aria-label={t("instances:choose")}>

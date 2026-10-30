@@ -1,5 +1,6 @@
 import { UploadContext } from "./Attachments.tsx";
 import { Pending } from "../Scope.tsx";
+import { Icon } from "../Icon.tsx";
 import { AssistantRuntimeProvider, ExportedMessageRepository, useLocalRuntime, type ThreadMessageLike } from "@assistant-ui/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api.ts";
@@ -106,9 +107,7 @@ function Chat({ threadId, initial, onThreadCreated, onRunFinished }: Props & { i
               title={t("chat:scratchpad.hint")}
               aria-label={t("chat:scratchpad.open")}
             >
-              <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden="true">
-                <path d="M2 4h4l1.5 1.5H14V13H2z" fill="none" stroke="currentColor" strokeWidth="1.3" />
-              </svg>
+              <Icon name="folder" className="h-4 w-4" />
               <span className="hidden sm:inline">{t("chat:scratchpad.open")}</span>
             </button>
           )}

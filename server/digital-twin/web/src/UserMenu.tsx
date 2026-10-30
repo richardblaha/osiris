@@ -1,5 +1,6 @@
 import { t } from "i18next";
 import { useEffect, useRef, useState } from "react";
+import { Icon } from "./Icon.tsx";
 import { accountUrl, authOff, logout } from "./auth.ts";
 import { applyLanguageSetting, currentLocale } from "./i18n.ts";
 
@@ -55,7 +56,7 @@ export function UserMenu({ user }: { user?: Profile }) {
           </div>
           {accountUrl && (
             <a role="menuitem" href={accountUrl} target="_blank" rel="noopener" className="list-row block px-3 py-1.5 text-sm">
-              {t("common:account")} ↗
+              {t("common:account")} <Icon name="open_in_new" className="h-3.5 w-3.5 align-[-0.15em]" />
             </a>
           )}
           <button role="menuitem" type="button" className="list-row block w-full px-3 py-1.5 text-start text-sm" onClick={() => applyLanguageSetting(currentLocale() === "cs" ? "en" : "cs")}>

@@ -1,5 +1,6 @@
 import type { LogRecord, MetricInfo, MetricSeries, TraceSummary } from "@osiris/shared";
 import { t } from "i18next";
+import { Icon } from "./Icon.tsx";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { api, type Dashboard as DashboardData, type DashboardPanel, type DashboardSummary } from "./api.ts";
 import { LineChart } from "./Chart.tsx";
@@ -63,7 +64,7 @@ export function AddToDashboard({ kinds, title, filter, range }: { kinds: Kind[];
   return (
     <div ref={box} className="relative self-end">
       <button type="button" onClick={() => setOpen(!open)} data-active={open} className="btn-secondary py-1 text-sm" aria-expanded={open}>
-        + {t("dashboard:addShort")}
+        <Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("dashboard:addShort")}
       </button>
       {open && (
         <form onSubmit={(e) => void add(e)} className="menu-popup end-0 w-80 space-y-2 p-3" role="dialog" aria-label={t("dashboard:add")}>
@@ -118,7 +119,7 @@ export function DashboardMenu({ list, onPick, onClose }: { list: DashboardSummar
         </button>
       ))}
       <button role="menuitem" type="button" className="list-row block w-full border-t border-line px-3 py-1.5 text-start text-sm text-primary" onClick={() => onPick(undefined)}>
-        + {t("dashboard:newOne")}
+        <Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("dashboard:newOne")}
       </button>
     </div>
   );
@@ -243,7 +244,7 @@ export function Dashboard({
         {editing && data && (
           <>
             <button type="button" className="btn-secondary py-1 text-sm" onClick={() => void save({ ...data, panels: [...data.panels, { id: newId(), kind: "logBars", title: t("dashboard:kind.logBars"), width: 4, filter: {} }] })}>
-              + {t("dashboard:panel")}
+              <Icon name="add" className="me-1 h-4 w-4 align-[-0.2em]" />{t("dashboard:panel")}
             </button>
             <button type="button" className="btn-danger py-1 text-sm" onClick={() => void remove()}>
               {t("dashboard:delete")}
@@ -305,22 +306,22 @@ function PanelCard({
         {editing && (
           <span className="flex items-center gap-0.5 text-xs">
             <IconButton label={t("dashboard:moveBack")} disabled={first} onClick={() => onMove(-1)}>
-              ←
+              <Icon name="chevron_left" className="h-4 w-4" />
             </IconButton>
             <IconButton label={t("dashboard:moveOn")} disabled={last} onClick={() => onMove(1)}>
-              →
+              <Icon name="chevron_right" className="h-4 w-4" />
             </IconButton>
             <IconButton label={t("dashboard:narrower")} disabled={panel.width <= 1} onClick={() => onChange((p) => ({ ...p, width: p.width - 1 }))}>
-              −
+              <Icon name="remove" className="h-4 w-4" />
             </IconButton>
             <IconButton label={t("dashboard:wider")} disabled={panel.width >= 4} onClick={() => onChange((p) => ({ ...p, width: p.width + 1 }))}>
-              +
+              <Icon name="add" className="h-4 w-4" />
             </IconButton>
             <IconButton label={t("dashboard:settings")} onClick={() => setSettings(!settings)}>
-              ⚙
+              <Icon name="settings" className="h-4 w-4" />
             </IconButton>
             <IconButton label={t("dashboard:removePanel")} onClick={() => onChange(() => null)}>
-              ×
+              <Icon name="close" className="h-4 w-4" />
             </IconButton>
           </span>
         )}
@@ -480,7 +481,7 @@ function PanelBody({ panel, range, tick, onOpenLogs, onOpenTrace }: { panel: Das
           <button key={tr.traceId} type="button" onClick={() => onOpenTrace(tr.traceId)} className="list-row flex w-full items-baseline gap-2 px-3 py-1 text-start">
             <span className="shrink-0 font-mono text-[11px] text-fg-muted">{formatDateTime(tr.ts, { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
             <span className="min-w-0 flex-1 truncate">
-              {tr.error && <span className="me-1 text-error">●</span>}
+              {tr.error && <Icon name="error" className="me-1 h-3.5 w-3.5 align-[-0.15em] text-error" />}
               <span className="text-fg-muted">{tr.service}</span> {tr.name}
             </span>
             <span className="shrink-0 font-mono text-[11px]">{duration(tr.durationMs)}</span>
