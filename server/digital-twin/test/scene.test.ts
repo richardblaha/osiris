@@ -5,7 +5,7 @@ import { dtdlModel } from "../src/sources/kubernetes/models.ts";
 import { toRelationship } from "../src/twin.ts";
 import { buildScene, scopeOf, type TwinView } from "../web/src/scene.ts";
 import { layoutTwin } from "../web/src/TwinLayout.ts";
-import { hasNetwork, interfacesOf, isStorage } from "../web/src/scene.ts";
+import { hasNetwork, interfacesOf, isStorage, routingOf, wiresOf } from "../web/src/scene.ts";
 
 const pod = (name: string, namespace: string, owner: [string, string] | null, node?: string, claim?: string): PodObject => ({
   metadata: { name, namespace, ...(owner ? { ownerReferences: [{ kind: owner[0], name: owner[1], apiVersion: "v1" }] } : {}) },
@@ -39,16 +39,20 @@ describe("the twin's view", () => {
       "    pend",
       "      app",
       "  n1",
+      "    calico",
       "    (db) @osiris",
       "      db-0",
       "        app",
       "        data-db-0",
       "    lone @obs",
       "      app",
+      "    nic",
       "  n2",
+      "    calico",
       "    (db) @osiris",
       "      db-1",
       "        app",
+      "    nic",
     ]);
     expect(scene.bands.map((b) => [b.name, b.dashed, b.parent?.name])).toEqual([
       ["obs", true, "c"],
@@ -69,7 +73,15 @@ describe("the twin's view", () => {
   });
 
   it("draws each namespace as one solid around all of it, across the nodes, never overlapping another", () => {
-    const layout = layoutTwin(scene.top, { networked: (n) => hasNetwork(n, scene.models), storage: (n) => isStorage(n, scene.models), interfaces: interfacesOf(scene) });
+    const layout = layoutTwin(scene.top, {
+      networked: (n) => hasNetwork(n, scene.models),
+      storage: (n) => isStorage(n, scene.models),
+      shape: (n) => (n.model.startsWith("dtmi:osiris:net:Interface") ? "port" : undefined),
+      portKind: (n) => String(n.twin.kind),
+      interfaces: interfacesOf(scene),
+      wires: wiresOf(scene),
+      virtual: routingOf(scene),
+    });
     const box = new Map(layout.boxes.map((b) => [b.id, b]));
     const inside = (outer: { center: number[]; size: number[] }, inner: { center: number[]; size: number[] }) =>
       [0, 1, 2].every((i) => inner.center[i]! - inner.size[i]! / 2 >= outer.center[i]! - outer.size[i]! / 2 - 1e-9 && inner.center[i]! + inner.size[i]! / 2 <= outer.center[i]! + outer.size[i]! / 2 + 1e-9);
@@ -93,8 +105,24 @@ describe("the twin's view", () => {
   });
 
   it("lays out volume claims as cylinders, mounts as interfaces between siblings", () => {
-    const layout = layoutTwin(scene.top, { networked: (n) => hasNetwork(n, scene.models), storage: (n) => isStorage(n, scene.models), interfaces: interfacesOf(scene) });
+    const layout = layoutTwin(scene.top, {
+      networked: (n) => hasNetwork(n, scene.models),
+      storage: (n) => isStorage(n, scene.models),
+      shape: (n) => (n.model.startsWith("dtmi:osiris:net:Interface") ? "port" : undefined),
+      portKind: (n) => String(n.twin.kind),
+      interfaces: interfacesOf(scene),
+      wires: wiresOf(scene),
+      virtual: routingOf(scene),
+    });
     expect(layout.boxes.find((b) => b.id.endsWith("pvc/data-db-0"))?.shape).toBe("cylinder");
     expect(layout.links.filter((l) => l.kind === "interface")).toHaveLength(1);
+    // The node's card and router are ports on its back wall, wired together, not cells inside it.
+    const n1 = layout.boxes.find((b) => b.id === "k8s:c/node/n1")!;
+    for (const id of ["k8s:c/node/n1/if/nic", "k8s:c/node/n1/if/router"]) {
+      const p = layout.boxes.find((b) => b.id === id)!;
+      expect(p.shape).toBe("port");
+      expect(p.center[2]).toBeCloseTo(n1.center[2] - n1.size[2] / 2);
+    }
+    expect(layout.links.filter((l) => l.kind === "wire").map((l) => [l.id, l.to])).toContainEqual(["k8s:c/node/n1/if/router", "k8s:c/node/n1/if/nic"]);
   });
 });

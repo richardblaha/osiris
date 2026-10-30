@@ -272,7 +272,8 @@ export function interfacesOf(scene: Pick<TwinScene, "byId" | "relationships">): 
   const seen = new Set<string>();
   const out: [string, string][] = [];
   for (const r of scene.relationships) {
-    if (r.$relationshipName === TWIN_CONTAINS) continue;
+    // Not containment, and not the network's own lines (wires, routing): those are drawn their own way.
+    if ([TWIN_CONTAINS, "connectedTo", "routesTo", "exposes", "servedBy"].includes(r.$relationshipName)) continue;
     const a = scene.byId.get(r.$sourceId);
     const b = scene.byId.get(r.$targetId);
     if (!a?.parent || a.parent !== b?.parent) continue;
@@ -282,4 +283,57 @@ export function interfacesOf(scene: Pick<TwinScene, "byId" | "relationships">): 
     out.push([a.id, b.id]);
   }
   return out;
+}
+
+/** Relationships between twins anywhere, as id pairs. */
+const pairsOf = (scene: Pick<TwinScene, "byId" | "relationships">, names: string[]): [string, string][] =>
+  scene.relationships.filter((r) => names.includes(r.$relationshipName) && scene.byId.has(r.$sourceId) && scene.byId.has(r.$targetId)).map((r) => [r.$sourceId, r.$targetId]);
+
+/** Network interfaces connected to each other (a node's card, router and tunnel; the tunnels between nodes). */
+export const wiresOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["connectedTo"]);
+/** Routing: an Ingress to Services and its LoadBalancer, a Service to pods, a LoadBalancer to its Service. */
+export const routingOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["routesTo", "exposes", "servedBy"]);
+
+/**
+ * The path traffic takes through a twin, for showing it lit: the routing both ways (an Ingress's Services and their
+ * pods, the LoadBalancer serving it and its Service's pods, the public addresses forwarded to that LoadBalancer),
+ * and each pod's interface with its node's router. Empty for a twin no traffic is routed through.
+ */
+export function pathOf(scene: Pick<TwinScene, "byId" | "relationships">, id: string): Set<string> {
+  const routing = new Set(["routesTo", "exposes", "servedBy"]);
+  const out = new Map<string, string[]>();
+  const into = new Map<string, string[]>();
+  for (const r of scene.relationships) {
+    const add = (m: Map<string, string[]>, k: string, v: string) => m.set(k, [...(m.get(k) ?? []), v]);
+    if (routing.has(r.$relationshipName)) (add(out, r.$sourceId, r.$targetId), add(into, r.$targetId, r.$sourceId));
+  }
+  if (!out.has(id) && !into.has(id)) return new Set();
+  const seen = new Set<string>([id]);
+  // Forward from the twin (to where its traffic goes), and backward (where it comes from), each its own way.
+  const follow = (from: string, next: Map<string, string[]>) => {
+    const queue = [from];
+    while (queue.length) for (const n of next.get(queue.shift()!) ?? []) if (!seen.has(n)) (seen.add(n), queue.push(n));
+  };
+  follow(id, out);
+  follow(id, into);
+  // What reached a LoadBalancer leads on: its Service, and the public addresses forwarded to it.
+  for (const v of [...seen]) {
+    if (String(scene.byId.get(v)?.twin.kind) !== "loadbalancer") continue;
+    follow(v, out);
+    for (const r of scene.relationships) if (r.$relationshipName === "connectedTo" && r.$targetId === v && String(scene.byId.get(r.$sourceId)?.twin.kind) === "public") seen.add(r.$sourceId);
+  }
+  // A public address reached: what is in front of it (a CDN) too.
+  for (const v of [...seen])
+    if (String(scene.byId.get(v)?.twin.kind) === "public")
+      for (const r of scene.relationships) if (r.$relationshipName === "connectedTo" && r.$targetId === v && String(scene.byId.get(r.$sourceId)?.twin.kind) === "public") seen.add(r.$sourceId);
+  // Each pod on the path with its eth0 and the router it is wired to.
+  for (const v of [...seen]) {
+    const pod = scene.byId.get(v);
+    for (const c of pod?.children ?? []) {
+      if (c.twin.kind === undefined) continue;
+      seen.add(c.id);
+      for (const r of scene.relationships) if (r.$relationshipName === "connectedTo" && r.$sourceId === c.id) seen.add(r.$targetId);
+    }
+  }
+  return seen;
 }

@@ -6,9 +6,17 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { formatBytes, formatBytesRate, formatNumber } from "./i18n.ts";
-import { iconOf, kindOf } from "./icons.ts";
-import { fillOf, hasNetwork, interfacesOf, isStorage, storageOf, type TwinScene, type TwinView } from "./scene.ts";
+import { iconOf, kindOf, lookOf, portKind } from "./icons.ts";
+import { fillOf, hasNetwork, interfacesOf, isStorage, pathOf, routingOf, storageOf, wiresOf, type TwinScene, type TwinView } from "./scene.ts";
 import { layoutTwin, type Box, type Link, type Scene } from "./TwinLayout.ts";
+
+/** What the view shows: the network (interfaces, Services, Ingresses, their lines), storage, the logical groupings. */
+export interface Layers {
+  network: boolean;
+  storage: boolean;
+  logical: boolean;
+}
+export const ALL_LAYERS: Layers = { network: true, storage: true, logical: true };
 
 /** Steering the camera around what it looks at: degrees about the vertical axis, degrees of tilt, a zoom factor. */
 export interface CameraControl {
@@ -65,6 +73,8 @@ interface BoxMesh {
   edges: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial | THREE.LineDashedMaterial>;
   /** A cylinder's content: a smaller cylinder from its floor up to how full it is, with a ring at the level. */
   fill?: { body: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>; level: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial> };
+  /** A node's status light: a strip along the bottom of its front. */
+  led?: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
 }
 
 /**
@@ -128,6 +138,48 @@ function cylinderEdges(radius: number, height: number): THREE.BufferGeometry {
   return g;
 }
 
+/** An Ingress's outline: a gate — two posts and a beam, seen from the front, with depth. */
+function gateEdges([w, h, d]: [number, number, number]): THREE.BufferGeometry {
+  const t = Math.min(w, h) * 0.16;
+  const points: number[] = [];
+  for (const z of [-d / 2, d / 2]) {
+    // The outer frame (no bottom: traffic walks through) and the inner one.
+    const outer = [[-w / 2, -h / 2], [-w / 2, h / 2], [w / 2, h / 2], [w / 2, -h / 2]];
+    const inner = [[-w / 2 + t, -h / 2], [-w / 2 + t, h / 2 - t], [w / 2 - t, h / 2 - t], [w / 2 - t, -h / 2]];
+    for (const line of [outer, inner]) for (let i = 0; i < line.length - 1; i++) points.push(line[i]![0]!, line[i]![1]!, z, line[i + 1]![0]!, line[i + 1]![1]!, z);
+    points.push(-w / 2, -h / 2, z, -w / 2 + t, -h / 2, z, w / 2 - t, -h / 2, z, w / 2, -h / 2, z);
+  }
+  for (const [x, y] of [[-w / 2, h / 2], [w / 2, h / 2], [-w / 2, -h / 2], [w / 2, -h / 2]]) points.push(x!, y!, -d / 2, x!, y!, d / 2);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
+/** A disk's outline: a cylinder with its platters (rings) inside. */
+function diskEdges(radius: number, height: number): THREE.BufferGeometry {
+  const base = cylinderEdges(radius, height).getAttribute("position").array as Float32Array;
+  const points = [...base];
+  const N = 40;
+  for (const k of [0.25, 0.5, 0.75])
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const b = ((i + 1) / N) * Math.PI * 2;
+      const y = -height / 2 + k * height;
+      const r = radius * 0.92;
+      points.push(Math.cos(a) * r, y, Math.sin(a) * r, Math.cos(b) * r, y, Math.sin(b) * r);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
+/** A soft, stable hue for a name (a namespace's tint). */
+const hueOf = (name: string) => {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return (h % 360) / 360;
+};
+
 /** A ring of `radius` at height 0, for a storage's fill level. */
 function ring(radius: number): THREE.BufferGeometry {
   const points: number[] = [];
@@ -153,6 +205,12 @@ interface Content {
   boxes: Map<string, Box>;
   links: LinkPath[];
   lines: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+  /** The dashed ones: the tunnels between nodes and the routing (Ingress → Service → pods). */
+  dashed: THREE.LineSegments<THREE.BufferGeometry, THREE.LineDashedMaterial>;
+  /** Where each link's vertices are: in `lines` or in `dashed`, from which vertex. */
+  vertexAt: { dashed: boolean; from: number }[];
+  /** Decorations without a twin of their own (the cluster's floor grid): removed with the scene. */
+  extras: THREE.Object3D[];
   packets: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   /** The interfaces' addresses (an IP) beside their dots, each shown while its owner is big enough on screen. */
   portLabels: { object: CSS2DObject; owner: string }[];
@@ -201,6 +259,7 @@ export function Twin3D({
   onSelect,
   anchor,
   control,
+  layers = ALL_LAYERS,
 }: {
   scene: TwinScene;
   selected?: TwinView;
@@ -209,12 +268,16 @@ export function Twin3D({
   anchor: RefObject<(() => Point[] | null) | null>;
   /** The camera, steered from outside (the agent's twin_view): turn, tilt and zoom, animated. */
   control?: RefObject<CameraControl | null>;
+  /** What the view shows. */
+  layers?: Layers;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const select = useRef(onSelect);
   select.current = onSelect;
   const chosen = useRef(selected);
   chosen.current = selected;
+  const shown = useRef(layers);
+  shown.current = layers;
   /** The mounted scene's entry points, for the effects below. */
   const view = useRef<{ show: (twin: TwinScene) => void; focus: () => void; home: () => void }>(undefined);
 
@@ -268,7 +331,18 @@ export function Twin3D({
           fill.level.material.dispose();
         }
       }
-      world.remove(content.lines, content.packets, content.ports);
+      world.remove(content.lines, content.dashed, content.packets, content.ports);
+      content.dashed.geometry.dispose();
+      content.dashed.material.dispose();
+      for (const x of content.extras) {
+        world.remove(x);
+        x.traverse((o) => {
+          const any = o as THREE.Mesh;
+          any.geometry?.dispose();
+          (any.material as THREE.Material | undefined)?.dispose();
+        });
+      }
+      for (const m of content.meshes) if (m.led) (world.remove(m.led), m.led.geometry.dispose(), m.led.material.dispose());
       content.ports.geometry.dispose();
       content.ports.material.dispose();
       content.lines.geometry.dispose();
@@ -291,24 +365,55 @@ export function Twin3D({
      * cylinder with its content), the links and their interfaces.
      */
     const build = (scene: Scene, byId: Map<string, TwinView>, shape: string): Content => {
+      const extras: THREE.Object3D[] = [];
       const meshes: BoxMesh[] = scene.boxes.map((box) => {
+        const node = byId.get(box.id);
+        const look = node ? lookOf(node) : "box";
         const cylinder = box.shape === "cylinder";
         const r = box.size[0] / 2;
-        const geometry = cylinder
-          ? new THREE.CylinderGeometry(r, r, box.size[1], 40)
-          : new RoundedBoxGeometry(box.size[0], box.size[1], box.size[2], 3, box.radius);
+        const geometry =
+          cylinder ? new THREE.CylinderGeometry(r, r, box.size[1], 40)
+          : box.shape === "hex" ? new THREE.CylinderGeometry(r, r, box.size[1], 6)
+          : box.shape === "gate" ? new THREE.BoxGeometry(...box.size)
+          : new RoundedBoxGeometry(box.size[0], box.size[1], box.size[2], box.shape === "port" ? 2 : 3, box.radius);
         const mesh = new THREE.Mesh(geometry as THREE.BufferGeometry, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
         mesh.position.set(...box.center);
         mesh.userData = { id: box.id };
-        // A grouping (a namespace) has dashed edges: a set of things, not a thing.
-        const dashed = byId.get(box.id)?.dashed;
+        // A grouping has broken edges: a namespace dashed, a workload dotted — sets of things, not things.
+        const dashed = node?.dashed ? { dashSize: 0.6, gapSize: 0.4 } : look === "workload" ? { dashSize: 0.12, gapSize: 0.14 } : undefined;
+        const outline =
+          box.shape === "gate" ? gateEdges(box.size)
+          : box.shape === "hex" ? new THREE.EdgesGeometry(geometry as THREE.BufferGeometry)
+          : look === "disk" ? diskEdges(r, box.size[1])
+          : cylinder ? cylinderEdges(r, box.size[1])
+          : roundedEdges(box.size, box.radius);
         const edges = new THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial | THREE.LineDashedMaterial>(
-          cylinder ? cylinderEdges(r, box.size[1]) : roundedEdges(box.size, box.radius),
-          dashed ? new THREE.LineDashedMaterial({ transparent: true, dashSize: 0.6, gapSize: 0.4 }) : new THREE.LineBasicMaterial({ transparent: true }),
+          outline,
+          dashed ? new THREE.LineDashedMaterial({ transparent: true, ...dashed }) : new THREE.LineBasicMaterial({ transparent: true }),
         );
         if (dashed) edges.computeLineDistances();
         edges.position.set(...box.center);
         world.add(mesh, edges);
+        // A node's status light along the bottom of its front; the cluster stands on a floor.
+        let led: BoxMesh["led"];
+        if (look === "node") {
+          led = new THREE.Mesh(new THREE.BoxGeometry(box.size[0] * 0.5, 0.14, 0.06), new THREE.MeshBasicMaterial({ transparent: true }));
+          led.position.set(box.center[0], box.center[1] - box.size[1] / 2 + 0.3, box.center[2] + box.size[2] / 2 + 0.04);
+          world.add(led);
+        }
+        if (look === "cluster") {
+          const span = Math.max(box.size[0], box.size[2]);
+          const grid = new THREE.GridHelper(span, Math.max(4, Math.round(span / 2)), colors.cyan, colors.cyan);
+          grid.scale.set(box.size[0] / span, 1, box.size[2] / span);
+          grid.position.set(box.center[0], box.center[1] - box.size[1] / 2 + 0.02, box.center[2]);
+          const material = grid.material as THREE.LineBasicMaterial;
+          material.transparent = true;
+          material.opacity = 0.07;
+          material.depthWrite = false;
+          grid.userData = { floor: true };
+          world.add(grid);
+          extras.push(grid);
+        }
         let fill: BoxMesh["fill"];
         if (cylinder) {
           // A unit-high cylinder standing on the floor, scaled to the level in `paint`.
@@ -319,7 +424,7 @@ export function Twin3D({
           world.add(body, level);
           fill = { body, level };
         }
-        return { id: box.id, box, mesh, edges, fill };
+        return { id: box.id, box, mesh, edges, fill, led };
       });
       // Outer shells behind inner ones, so transparency stacks whole cuboids in the right order.
       meshes.forEach((m, i) => {
@@ -331,13 +436,32 @@ export function Twin3D({
         const lengths = l.path.slice(1).map((p, i) => new THREE.Vector3(...p).distanceTo(new THREE.Vector3(...l.path[i]!)));
         return { ...l, lengths, total: lengths.reduce((a, b) => a + b, 0) || 1 };
       });
-      // The links as line segments with a colour (and alpha) per vertex, so each can fade on its own.
-      const segments = links.flatMap((l) => l.path.slice(1).flatMap((p, i) => [...l.path[i]!, ...p]));
-      const lineGeometry = new THREE.BufferGeometry();
-      lineGeometry.setAttribute("position", new THREE.Float32BufferAttribute(segments, 3));
-      lineGeometry.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array((segments.length / 3) * 4), 4));
-      const lines = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }));
+      // The links as line segments with a colour (and alpha) per vertex, so each can fade on its own; the tunnels and
+      // the routing dashed.
+      const isDashed = (l: Link) => l.kind === "overlay" || l.kind === "virtual";
+      const vertexAt: Content["vertexAt"] = [];
+      const counts = { solid: 0, dashed: 0 };
+      for (const l of links) {
+        const d = isDashed(l);
+        vertexAt.push({ dashed: d, from: d ? counts.dashed : counts.solid });
+        if (d) counts.dashed += (l.path.length - 1) * 2;
+        else counts.solid += (l.path.length - 1) * 2;
+      }
+      const geometryOf = (list: LinkPath[]) => {
+        const segments = list.flatMap((l) => l.path.slice(1).flatMap((p, i) => [...l.path[i]!, ...p]));
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(segments, 3));
+        g.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array((segments.length / 3) * 4), 4));
+        return g;
+      };
+      const lines = new THREE.LineSegments(geometryOf(links.filter((l) => !isDashed(l))), new THREE.LineBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false }));
       lines.renderOrder = -1;
+      const dashed = new THREE.LineSegments(
+        geometryOf(links.filter(isDashed)),
+        new THREE.LineDashedMaterial({ vertexColors: true, transparent: true, depthWrite: false, dashSize: 0.35, gapSize: 0.25 }),
+      );
+      dashed.computeLineDistances();
+      dashed.renderOrder = -1;
       const packetGeometry = new THREE.BufferGeometry();
       packetGeometry.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(links.length * MAX_PACKETS * 3), 3));
       packetGeometry.setDrawRange(0, 0);
@@ -354,7 +478,7 @@ export function Twin3D({
       portGeometry.setAttribute("color", new THREE.Float32BufferAttribute(new Float32Array(ends.length * 4), 4));
       const ports = new THREE.Points(portGeometry, new THREE.PointsMaterial({ size: 5, sizeAttenuation: false, map: dot, vertexColors: true, transparent: true, depthWrite: false }));
       ports.renderOrder = packets.renderOrder;
-      world.add(lines, packets, ports);
+      world.add(lines, dashed, packets, ports);
 
       // The internet: a wireframe globe behind each outermost twin, named.
       const globes = scene.internet.map((n) => {
@@ -376,9 +500,12 @@ export function Twin3D({
         boxes: new Map(scene.boxes.map((x) => [x.id, x])),
         links,
         lines,
+        dashed,
+        vertexAt,
+        extras,
         packets,
         ports,
-        portLabels: portLabelsOf(links, byId),
+        portLabels: portLabelsOf(scene.boxes, byId),
         labels: new Map(),
         globes,
         bounds: { center: new THREE.Vector3(...b.center), radius: Math.hypot(...b.size) / 2 },
@@ -387,13 +514,26 @@ export function Twin3D({
     };
 
     const statusColor = (status: TwinStatus) => (status === "error" ? colors.error : status === "warn" ? colors.warn : colors.cyan);
+    /** The twins traffic through the selection passes (an Ingress's Services and pods, its LoadBalancer, the public address). */
+    let path = new Set<string>();
+    let scenePaths: TwinScene | undefined;
+    /** Whether a twin is in a layer the view hides (the network, storage, the logical groupings). */
+    const hidden = (node: TwinView | undefined): boolean => {
+      if (!node) return false;
+      const l = shown.current;
+      const look = lookOf(node);
+      if (!l.network && (look === "port" || look === "hex" || look === "gate")) return true;
+      if (!l.storage && (look === "cylinder" || look === "disk" || node.model.startsWith("dtmi:osiris:ceph:"))) return true;
+      if (!l.logical && (node.isBand || look === "workload")) return true;
+      return false;
+    };
     /** Whether a twin is the selected one or inside it: outside the selection everything fades. */
     const inFocus = (node: TwinView | undefined) => {
       const focus = chosen.current;
       // Nothing selected, or a twin the view has no box for (a namespace): everything is in view.
       if (!focus || !content?.boxes.has(focus.id)) return true;
       for (let n = node; n; n = n.parent) {
-        if (n.id === focus.id) return true;
+        if (n.id === focus.id || path.has(n.of ?? n.id)) return true;
         // A band (a namespace) selected: what belongs to it, in whichever container.
         if (focus.isBand && n.band === focus.of) return true;
       }
@@ -403,29 +543,28 @@ export function Twin3D({
     let loads: number[] = [];
 
     /**
-     * The addresses at the interfaces: a network link's end on a twin with an IP (a pod, a disk's OSD) and its hub on
-     * a container with one (a node), once per hub.
+     * The addresses at the interfaces: each port's name and IP (eth0 10.1.0.10, vxlan.calico, the LoadBalancer's and
+     * the public address) and each Service's virtual address, shown while what they belong to shows its name.
      */
-    const portLabelsOf = (links: LinkPath[], byId: Map<string, TwinView>) => {
+    const portLabelsOf = (boxesOf: Box[], byId: Map<string, TwinView>) => {
       const out: Content["portLabels"] = [];
-      const hubs = new Set<string>();
-      const add = (owner: string, point: number[], placement: "start" | "end") => {
-        const ip = byId.get(owner)?.twin.ip;
-        if (typeof ip !== "string" || !ip) return;
+      // A twin with an address shown by its own solid: an interface's port (its owner is what it's mounted on), a
+      // Service's virtual address.
+      for (const b of boxesOf) {
+        const node = byId.get(b.id);
+        if (!node || (b.shape !== "port" && b.shape !== "hex")) continue;
+        const ip = String(node.twin.ip ?? node.twin.clusterIP ?? "");
+        const name = b.shape === "port" && node.name !== ip ? `${node.name} ` : "";
+        if (!ip && !name) continue;
         const div = document.createElement("div");
         div.className = "twin-port";
-        div.dataset.placement = placement;
-        div.textContent = ip;
+        div.dataset.kind = b.shape === "port" ? portKind(node) : "service";
+        div.textContent = `${name}${ip}`.trim();
         const object = new CSS2DObject(div);
-        object.position.set(point[0]!, point[1]!, point[2]!);
+        object.position.set(b.center[0], b.center[1] + b.size[1] / 2, b.center[2]);
         object.visible = false;
         world.add(object);
-        out.push({ object, owner });
-      };
-      for (const l of links) {
-        if (l.kind !== "network") continue;
-        add(l.id, l.path.at(-1)!, "end");
-        if (!hubs.has(l.parent)) (hubs.add(l.parent), add(l.parent, l.path[0]!, "start"));
+        out.push({ object, owner: node.parent && b.shape === "port" ? node.parent.id : node.id });
       }
       return out;
     };
@@ -488,7 +627,7 @@ export function Twin3D({
         if (!node) continue;
         const distance = Math.max(0.1, tmp.set(...m.box.center).distanceTo(camera.position));
         const px = (Math.max(m.box.size[0], m.box.size[2]) / distance) * scale;
-        const near = !focus || inFocus(node) || isAncestor(node, focus);
+        const near = (!focus || inFocus(node) || isAncestor(node, focus)) && !hidden(node);
         const level = !near ? 0 : px >= LOD.info ? 3 : px >= LOD.name ? 2 : px >= LOD.icon ? 1 : 0;
         levels.set(m.id, level);
         let label = content.labels.get(m.id);
@@ -498,7 +637,10 @@ export function Twin3D({
         if (label.element.dataset.lod !== String(level)) label.element.dataset.lod = String(level);
       }
       // An address shows once its owner shows its name.
-      for (const p of content.portLabels) p.object.visible = (levels.get(p.owner) ?? 0) >= 2;
+      for (const p of content.portLabels) {
+        const owner = content.byId.get(p.owner);
+        p.object.visible = !hidden(owner) && ((levels.get(p.owner) ?? 0) >= 2 || (!!focus && (focus.id === p.owner || path.has(p.owner))));
+      }
     };
     /** Whether `node` is around `of`: a container it's in, or the band (namespace) it belongs to. */
     const isAncestor = (node: TwinView, of: TwinView) => {
@@ -515,14 +657,42 @@ export function Twin3D({
         const isChosen = focus?.id === m.id;
         const isHovered = hovered === m.id;
         const leaf = !node.children.length;
-        // Outside the selection a box is a faint ghost; its ancestors stay as thin shells around it.
+        const look = lookOf(node);
+        const off = hidden(node);
+        m.mesh.visible = m.edges.visible = !off;
+        if (m.led) m.led.visible = !off;
+        // Outside the selection a box is a faint ghost; its ancestors stay as thin shells around it; on the path of
+        // the selection's traffic it glows.
+        const lit = focus && !isChosen && path.has(node.of ?? node.id);
         const fade = inFocus(node) ? 1 : 0.18;
-        const strong = isChosen || isHovered;
+        const strong = isChosen || isHovered || !!lit;
         const color = strong ? colors.active : statusColor(node.status);
         m.edges.material.color = color;
         m.edges.material.opacity = (strong ? 1 : node.depth === 0 ? 0.9 : leaf ? 0.8 : 0.6) * fade;
         m.mesh.material.color = color;
-        m.mesh.material.opacity = (leaf ? (strong ? 0.4 : 0.2) : strong ? 0.1 : 0.035) * fade;
+        // Each kind its own body: a container solid, a port a lit plate, a Service and an Ingress only outlines, a
+        // namespace tinted with its own hue.
+        const body =
+          look === "container" ? 0.38
+          : look === "port" ? 0.65
+          : look === "hex" || look === "gate" ? 0.02
+          : leaf ? 0.2
+          : 0.035;
+        m.mesh.material.opacity = (strong ? Math.max(body, leaf ? 0.4 : 0.1) : body) * fade;
+        if (node.isBand && !strong) {
+          m.mesh.material.color = new THREE.Color().setHSL(hueOf(node.name), 0.7, 0.55);
+          m.mesh.material.opacity = 0.045 * fade;
+        }
+        if (look === "port" && !strong && node.status === "ok") {
+          const kind = portKind(node);
+          const c = kind === "router" ? colors.neutral : kind === "loadbalancer" || kind === "public" ? colors.active : colors.cyan;
+          m.mesh.material.color = c;
+          m.edges.material.color = c;
+        }
+        if (m.led) {
+          m.led.material.color = statusColor(node.status);
+          m.led.material.opacity = 0.9 * fade;
+        }
         if (m.fill) {
           // A storage's content: as high as it is full, cyan up to 80 %, then warning, then error from 95 %.
           const full = fillOf(node);
@@ -544,21 +714,39 @@ export function Twin3D({
       const byParent = new Map<string, number>();
       for (const l of content.links) if (l.kind !== "interface") byParent.set(l.parent, Math.max(byParent.get(l.parent) ?? 0, content.byId.get(l.id)?.network ?? 0));
       loads = content.links.map((l) => {
+        // The selection's traffic moves along its path.
+        if (path.has(l.id) && (!l.to || path.has(l.to)) && focus) return 0.6;
+        if (l.kind === "wire" || l.kind === "overlay" || l.kind === "virtual") return 0;
         const load = l.kind === "interface" ? undefined : content!.byId.get(l.id)?.network;
         return load === undefined || load <= 0 ? 0 : Math.min(1, Math.log1p(load) / Math.log1p(Math.max(byParent.get(l.parent) ?? 0, 100_000)));
       });
-      const color = content.lines.geometry.getAttribute("color") as THREE.BufferAttribute;
+      const solid = content.lines.geometry.getAttribute("color") as THREE.BufferAttribute;
+      const broken = content.dashed.geometry.getAttribute("color") as THREE.BufferAttribute;
       const portColor = content.ports.geometry.getAttribute("color") as THREE.BufferAttribute;
-      let v = 0;
+      const networkOff = !shown.current.network;
       content.links.forEach((l, k) => {
-        const shown = inFocus(content!.byId.get(l.parent)) || inFocus(content!.byId.get(l.id));
-        // Networks in cyan by load; interfaces (a mount) in the text's grey.
-        const c = l.kind === "interface" ? colors.neutral : colors.cyan;
-        const alpha = (l.kind === "interface" ? 0.7 : 0.18 + 0.5 * loads[k]!) * (shown ? 1 : 0.15);
-        for (let i = 0; i < (l.path.length - 1) * 2; i++, v++) color.setXYZW(v, c.r, c.g, c.b, alpha);
-        for (const e of [2 * k, 2 * k + 1]) portColor.setXYZW(e, c.r, c.g, c.b, (shown ? 0.95 : 0.15));
+        const a = content!.byId.get(l.id);
+        const b = l.to ? content!.byId.get(l.to) : content!.byId.get(l.parent);
+        const onPath = path.has(l.id) && (!l.to || path.has(l.to));
+        const visible = !hidden(a) && !hidden(b) && !(networkOff && l.kind !== "interface");
+        const near = inFocus(content!.byId.get(l.parent)) || inFocus(a);
+        // Networks in cyan by load; a node's wiring and the tunnels quieter; mounts grey; routing only on the path
+        // of the selection's traffic, glowing.
+        const c = onPath ? colors.active : l.kind === "interface" ? colors.neutral : l.kind === "wire" ? colors.neutral : colors.cyan;
+        const alpha = !visible
+          ? 0
+          : l.kind === "virtual"
+            ? onPath ? 0.9 : 0
+            : l.kind === "interface" ? 0.7 * (near ? 1 : 0.15)
+            : l.kind === "wire" || l.kind === "overlay" ? 0.45 * (near ? 1 : 0.2)
+            : (onPath ? 0.9 : 0.18 + 0.5 * loads[k]!) * (near || onPath ? 1 : 0.15);
+        const at = content!.vertexAt[k]!;
+        const target = at.dashed ? broken : solid;
+        for (let i = 0; i < (l.path.length - 1) * 2; i++) target.setXYZW(at.from + i, c.r, c.g, c.b, alpha);
+        for (const e of [2 * k, 2 * k + 1]) portColor.setXYZW(e, c.r, c.g, c.b, alpha ? (near || onPath ? 0.95 : 0.15) : 0);
       });
-      color.needsUpdate = true;
+      solid.needsUpdate = true;
+      broken.needsUpdate = true;
       portColor.needsUpdate = true;
       content.packets.material.color = colors.cyan;
       for (const g of content.globes) {
@@ -638,8 +826,14 @@ export function Twin3D({
       flownTo = undefined;
       if (content) fly(content.bounds.center, content.bounds.radius, 0.9, homeDirection());
     };
+    /** The selection's traffic path, worked out again whenever the selection or the scene changes. */
+    const updatePath = () => {
+      const focus = chosen.current;
+      path = focus && scenePaths ? pathOf(scenePaths, focus.of ?? focus.id) : new Set();
+    };
     /** The selected twin fills the view (once per selection); none: the camera stays. */
     const focus = () => {
+      updatePath();
       paint();
       const node = chosen.current;
       if (!node) return void (flownTo = undefined);
@@ -659,7 +853,18 @@ export function Twin3D({
       };
       for (const node of twin.top) walk(node);
       for (const band of twin.bands) byId.set(band.id, band);
-      const scene = layoutTwin(twin.top, { networked: (node) => hasNetwork(node, twin.models), storage: (node) => isStorage(node, twin.models), interfaces: interfacesOf(twin) });
+      path = new Set();
+      scenePaths = twin;
+      const shapes = { port: "port", hex: "hex", gate: "gate" } as const;
+      const scene = layoutTwin(twin.top, {
+        networked: (node) => hasNetwork(node, twin.models),
+        storage: (node) => isStorage(node, twin.models),
+        shape: (node) => shapes[lookOf(node) as keyof typeof shapes],
+        portKind,
+        interfaces: interfacesOf(twin),
+        wires: wiresOf(twin),
+        virtual: routingOf(twin),
+      });
       const shape = scene.boxes.map((x) => `${x.id}@${x.center.join(",")}:${x.size.join(",")}`).join("|");
       if (content && content.shape === shape) content.byId = byId;
       else {
@@ -737,7 +942,7 @@ export function Twin3D({
       raycaster.setFromCamera(pointer, camera);
       const { meshes, byId } = content;
       const hits = raycaster.intersectObjects(
-        meshes.map((m) => m.mesh),
+        meshes.filter((m) => m.mesh.visible).map((m) => m.mesh),
         false,
       );
       const volume = (id: string) => content!.boxes.get(id)!.size.reduce((a, b) => a * b, 1);
@@ -840,6 +1045,7 @@ export function Twin3D({
 
   useEffect(() => view.current?.show(twin), [twin]);
   useEffect(() => view.current?.focus(), [selected]);
+  useEffect(() => view.current?.focus(), [layers.network, layers.storage, layers.logical]);
   useEffect(() => {
     if (home) view.current?.home();
   }, [home]);

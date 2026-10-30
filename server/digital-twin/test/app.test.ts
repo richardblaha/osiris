@@ -130,7 +130,8 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     const models = new Map((await json<{ value: DtdlModelData[] }>("/api/models")).value.map((m): [string, DtdlInterface] => [m.id, m.model]));
     const { value: twins } = await json<{ value: DigitalTwin[] }>("/api/digitaltwins");
     const { value: relationships } = await json<{ value: DigitalTwinRelationship[] }>("/api/relationships");
-    expect(twins.length).toBe(7); // cluster, node, namespace, workload, pod, container, volume claim
+    // cluster, node (and its card and router), namespace, workload, pod (and its eth0), container, volume claim
+    expect(twins.length).toBe(10);
     for (const t of twins) expect(twinErrors(t, models)).toEqual([]);
     const byId = new Map(twins.map((t) => [t.$dtId, t]));
     for (const r of relationships) expect(relationshipErrors(r, byId, models)).toEqual([]);
@@ -144,7 +145,8 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     const pod = await json<DigitalTwin>(`/api/digitaltwins/${encodeURIComponent(id)}`);
     expect(pod.$dtId).toBe(id);
     const out = await json<{ value: DigitalTwinRelationship[] }>(`/api/digitaltwins/${encodeURIComponent(id)}/relationships`);
-    expect(out.value.map((r) => r.$relationshipName).sort()).toEqual(["contains", "contains"]);
+    // Its container, its claim and its eth0.
+    expect(out.value.map((r) => r.$relationshipName).sort()).toEqual(["contains", "contains", "contains"]);
     const incoming = await json<{ value: { $sourceId: string; $relationshipName: string }[] }>(`/api/digitaltwins/${encodeURIComponent(id)}/incomingrelationships`);
     expect(incoming.value).toEqual(
       expect.arrayContaining([

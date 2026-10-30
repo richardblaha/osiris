@@ -79,5 +79,37 @@
     "yes": "Ano, spustit",
     "no": "Ne",
     "cancel": "Zrušit"
+  },
+  "legend": {
+    "title": "Legenda",
+    "layers": "Vrstvy",
+    "layer": {
+      "network": "Síť",
+      "storage": "Úložiště",
+      "logical": "Skupiny"
+    },
+    "solids": "Objekty",
+    "lines": "Čáry",
+    "solid": {
+      "cluster": "Cluster (podlaha s mřížkou)",
+      "node": "Node (stavové světlo)",
+      "namespace": "Namespace (čárkovaný, tónovaný)",
+      "workload": "Workload (tečkovaný)",
+      "pod": "Pod",
+      "container": "Kontejner (plný)",
+      "volume": "Svazek, pool (hladina)",
+      "disk": "Disk (Ceph OSD)",
+      "port": "Síťové rozhraní",
+      "service": "Služba (virtuální)",
+      "ingress": "Ingress (brána)",
+      "internet": "Internet, veřejná adresa"
+    },
+    "line": {
+      "network": "Síť, provoz podle zátěže",
+      "overlay": "VXLAN tunel",
+      "routing": "Směrování výběru",
+      "mount": "Připojení, zapojení nodu"
+    },
+    "hint": "Klikněte na Ingress, službu nebo pod: rozsvítí se cesta jeho provozu od veřejné adresy po pody."
   }
 }

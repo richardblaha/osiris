@@ -73,5 +73,37 @@
     "yes": "Yes, run it",
     "no": "No",
     "cancel": "Cancel"
+  },
+  "legend": {
+    "title": "Legend",
+    "layers": "Layers",
+    "layer": {
+      "network": "Network",
+      "storage": "Storage",
+      "logical": "Groupings"
+    },
+    "solids": "Objects",
+    "lines": "Lines",
+    "solid": {
+      "cluster": "Cluster (floor grid)",
+      "node": "Node (status light)",
+      "namespace": "Namespace (dashed, tinted)",
+      "workload": "Workload (dotted)",
+      "pod": "Pod",
+      "container": "Container (solid)",
+      "volume": "Volume claim, pool (fill)",
+      "disk": "Disk (Ceph OSD)",
+      "port": "Network interface",
+      "service": "Service (virtual)",
+      "ingress": "Ingress (gate)",
+      "internet": "Internet, public address"
+    },
+    "line": {
+      "network": "Network, traffic by load",
+      "overlay": "VXLAN tunnel",
+      "routing": "Routing of the selection",
+      "mount": "Mount, node wiring"
+    },
+    "hint": "Click an Ingress, a Service or a pod: its traffic's path lights up, from the public address to the pods."
   }
 }

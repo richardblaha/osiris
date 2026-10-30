@@ -7,7 +7,8 @@ import { authOff, autoSignIn, getAccessToken, login, profile, signedInOk } from 
 import { UserMenu, type Profile } from "./UserMenu.tsx";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
-import { Twin3D, type CameraControl, type Point } from "./Twin3D.tsx";
+import { ALL_LAYERS, Twin3D, type CameraControl, type Layers, type Point } from "./Twin3D.tsx";
+import { Legend } from "./Legend.tsx";
 import { OsirisChat, type TwinAction } from "./OsirisChat.tsx";
 import { Timeline } from "./Timeline.tsx";
 import { FocusPanels } from "./FocusPanels.tsx";
@@ -72,6 +73,22 @@ export function App() {
   const [home, setHome] = useState(0);
   /** The selected box's corners on screen (the 3D view's), for the panels' lines. */
   const anchor = useRef<(() => Point[] | null) | null>(null);
+  /** The layers the 3D view shows (network, storage, logical groupings), kept in this browser. */
+  const [layers, setLayers] = useState<Layers>(() => {
+    try {
+      return { ...ALL_LAYERS, ...(JSON.parse(localStorage.getItem("osiris.digital-twin.layers") ?? "{}") as Partial<Layers>) };
+    } catch {
+      return ALL_LAYERS;
+    }
+  });
+  const changeLayers = (next: Layers) => {
+    setLayers(next);
+    try {
+      localStorage.setItem("osiris.digital-twin.layers", JSON.stringify(next));
+    } catch {
+      // The choice lasts as long as the page.
+    }
+  };
   /** The camera, for the agent's turns, tilts and zooms. */
   const camera = useRef<CameraControl | null>(null);
   const [busy, setBusy] = useState(false);
@@ -247,7 +264,7 @@ export function App() {
               </div>
               {scene ? (
                 scene.top.length ? (
-                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} control={camera} />
+                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} control={camera} layers={layers} />
                 ) : (
                   <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
                 )
@@ -268,7 +285,7 @@ export function App() {
               ) : (
                 <>
                   <p className="pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:hint")}</p>
-                  <p className="twin-count pointer-events-none absolute start-4 text-xs text-fg-muted">{scene ? t("twin:counts.twins", { count: [...scene.byId.values()].filter((v) => !v.of).length }) : ""}</p>
+                  <Legend layers={layers} onLayers={changeLayers} count={scene ? t("twin:counts.twins", { count: [...scene.byId.values()].filter((v) => !v.of).length }) : ""} />
                 </>
               )}
             </div>

@@ -79,7 +79,16 @@ metadata:
   name: osiris-digital-twin
 rules:
   - apiGroups: [""]
-    resources: [namespaces, pods, nodes, persistentvolumeclaims, persistentvolumes]
+    resources: [namespaces, pods, nodes, persistentvolumeclaims, persistentvolumes, services]
+    verbs: [get, list]
+  - apiGroups: [discovery.k8s.io]
+    resources: [endpointslices]
+    verbs: [get, list]
+  - apiGroups: [networking.k8s.io]
+    resources: [ingresses]
+    verbs: [get, list]
+  - apiGroups: [traefik.io]
+    resources: [ingressroutes]
     verbs: [get, list]
   - apiGroups: [apps]
     resources: [replicasets]

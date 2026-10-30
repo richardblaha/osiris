@@ -10,6 +10,7 @@ export interface PodObject {
   metadata: { name: string; namespace: string; uid?: string; ownerReferences?: { kind: string; name: string; apiVersion: string }[] };
   spec: {
     nodeName?: string;
+    hostNetwork?: boolean;
     volumes?: { name: string; persistentVolumeClaim?: { claimName: string } }[];
     containers?: { name: string; volumeMounts?: { name: string; mountPath: string; readOnly?: boolean }[] }[];
   };
@@ -29,7 +30,7 @@ interface Terminated {
 }
 
 export interface NodeObject {
-  metadata: { name: string; uid?: string };
+  metadata: { name: string; uid?: string; annotations?: Record<string, string> };
   status?: {
     nodeInfo?: { kubeletVersion?: string; osImage?: string };
     capacity?: Record<string, string>;
@@ -43,6 +44,35 @@ export interface PvcObject {
   metadata: { name: string; namespace: string; uid?: string };
   spec?: { storageClassName?: string; accessModes?: string[]; volumeName?: string; resources?: { requests?: { storage?: string } } };
   status?: { phase?: string; capacity?: { storage?: string } };
+}
+
+/** A Service: its virtual address, ports, and (a LoadBalancer) the address it has outside. */
+export interface ServiceObject {
+  metadata: { name: string; namespace: string };
+  spec?: { type?: string; clusterIP?: string; ports?: { name?: string; port: number; protocol?: string; targetPort?: number | string }[]; selector?: Record<string, string> };
+  status?: { loadBalancer?: { ingress?: { ip?: string; hostname?: string }[] } };
+}
+
+/** Which pods a Service's traffic reaches (EndpointSlice). */
+export interface EndpointSliceObject {
+  metadata: { name: string; namespace: string; labels?: Record<string, string> };
+  endpoints?: { addresses?: string[]; conditions?: { ready?: boolean }; targetRef?: { kind?: string; name?: string; namespace?: string } }[];
+}
+
+/** An Ingress: hosts and paths to Services. */
+export interface IngressObject {
+  metadata: { name: string; namespace: string };
+  spec?: {
+    ingressClassName?: string;
+    tls?: { hosts?: string[]; secretName?: string }[];
+    rules?: { host?: string; http?: { paths?: { path?: string; backend?: { service?: { name: string; port?: { number?: number; name?: string } } } }[] } }[];
+  };
+}
+
+/** Traefik's IngressRoute: matches (Host(`…`) && PathPrefix(`…`)) to Services. */
+export interface IngressRouteObject {
+  metadata: { name: string; namespace: string };
+  spec?: { entryPoints?: string[]; routes?: { match?: string; services?: { name: string; namespace?: string; port?: number | string }[] }[]; tls?: unknown };
 }
 
 /** A volume: which CSI pool it is an image in. */
@@ -111,6 +141,23 @@ export class Kube {
 
   persistentVolumeClaims() {
     return this.list<PvcObject>("/api/v1/persistentvolumeclaims");
+  }
+
+  services() {
+    return this.list<ServiceObject>("/api/v1/services");
+  }
+
+  endpointSlices() {
+    return this.list<EndpointSliceObject>("/apis/discovery.k8s.io/v1/endpointslices");
+  }
+
+  ingresses() {
+    return this.list<IngressObject>("/apis/networking.k8s.io/v1/ingresses");
+  }
+
+  /** Traefik's IngressRoutes (a cluster without Traefik's CRDs has none). */
+  ingressRoutes() {
+    return this.list<IngressRouteObject>("/apis/traefik.io/v1alpha1/ingressroutes");
   }
 
   persistentVolumes() {

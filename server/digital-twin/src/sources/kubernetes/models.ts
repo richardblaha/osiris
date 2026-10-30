@@ -19,6 +19,9 @@ export const MODEL = {
   Ceph: "dtmi:osiris:ceph:Cluster;1",
   CephPool: "dtmi:osiris:ceph:Pool;1",
   CephOsd: "dtmi:osiris:ceph:Osd;1",
+  Interface: "dtmi:osiris:net:Interface;1",
+  Service: "dtmi:osiris:k8s:Service;1",
+  Ingress: "dtmi:osiris:k8s:Ingress;1",
 } as const;
 
 const enumOf = (...values: string[]): DtdlSchema => ({ "@type": "Enum", valueSchema: "string", enumValues: values.map((v) => ({ name: v, enumValue: v })) });
@@ -90,6 +93,8 @@ export function dtdlModel(): DtdlInterface[] {
       property("podCount", "integer", l("Pods", "Pody")),
       relationship("hasWorkload", MODEL.Workload, l("has workload", "má workload"), "The namespace's workloads, as its pods group by owner."),
       relationship("hasClaim", MODEL.PersistentVolumeClaim, l("has volume claim", "má svazek"), "The namespace's PersistentVolumeClaims."),
+      relationship("hasService", MODEL.Service, l("has service", "má službu"), "The namespace's Services."),
+      relationship("hasIngress", MODEL.Ingress, l("has ingress", "má ingress"), "The namespace's Ingresses and IngressRoutes."),
     ]),
     iface(MODEL.Workload, l("Workload", "Workload"), "What a group of pods belongs to: a Deployment (through its ReplicaSet), a StatefulSet, a DaemonSet, a Job or a lone Pod. Its status is its worst pod's.", [
       property("ownerKind", "string", l("Kind", "Druh")),
@@ -113,6 +118,31 @@ export function dtdlModel(): DtdlInterface[] {
       property("ready", "boolean", l("Ready", "Připraven")),
       property("restarts", "integer", l("Restarts", "Restarty")),
       relationship("mounts", MODEL.PersistentVolumeClaim, l("mounts", "připojuje"), "The volume claims the container mounts."),
+    ]),
+    iface(MODEL.Interface, l("Network interface", "Síťové rozhraní"), "A point where traffic enters or leaves: a node's network card, its router (Calico routes, no bridge) and VXLAN tunnel, a pod's eth0, a LoadBalancer address (MetalLB), the public address the internet reaches.", [
+      property("kind", enumOf("physical", "router", "tunnel", "veth", "loadbalancer", "public"), l("Kind", "Druh")),
+      property("ip", "string", l("IP address", "IP adresa")),
+      property("cidr", "string", l("Network", "Síť")),
+      property("ports", "string", l("Ports", "Porty")),
+      relationship("connectedTo", MODEL.Interface, l("connected to", "propojeno s"), "The interfaces traffic goes on to."),
+      relationship("exposes", MODEL.Service, l("exposes", "zpřístupňuje"), "The Service a LoadBalancer address belongs to."),
+    ]),
+    iface(MODEL.Service, l("Service", "Služba"), "A Service: a virtual address in front of pods. No ready endpoint while it selects pods is a warning.", [
+      property("type", "string", l("Type", "Typ")),
+      property("clusterIP", "string", l("Cluster IP", "Cluster IP")),
+      property("ports", "string", l("Ports", "Porty")),
+      property("externalIP", "string", l("External address", "Vnější adresa")),
+      property("readyEndpoints", "integer", l("Ready endpoints", "Připravené cíle")),
+      relationship("routesTo", MODEL.Pod, l("routes to", "směruje na"), "The pods its endpoints are."),
+    ]),
+    iface(MODEL.Ingress, l("Ingress", "Ingress"), "An Ingress or Traefik IngressRoute: hosts and paths from outside to Services. A route to a Service that doesn't exist is an error.", [
+      property("kind", "string", l("Kind", "Druh")),
+      property("hosts", "string", l("Hosts", "Hostitelé")),
+      property("routes", "string", l("Routes", "Trasy"), "One line per route: host and path → service:port."),
+      property("tls", "boolean", l("TLS", "TLS")),
+      property("ingressClass", "string", l("Ingress class", "Třída ingressu")),
+      relationship("routesTo", MODEL.Service, l("routes to", "směruje na"), "The Services its routes end at."),
+      relationship("servedBy", MODEL.Interface, l("served by", "obsluhuje"), "The LoadBalancer address its traffic comes in at."),
     ]),
     iface(MODEL.Ceph, l("Ceph cluster", "Ceph cluster"), "The Ceph storage the cluster's volumes live on, as its active manager reports it: its pools, and its OSDs (disks) in the nodes they're in.", [
       property("health", enumOf("ok", "warn", "error"), l("Health", "Zdraví")),

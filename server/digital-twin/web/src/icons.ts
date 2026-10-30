@@ -17,6 +17,8 @@ const CONTAINER = {
 const WORKLOADS: Record<string, string> = { Deployment: "deploy", StatefulSet: "sts", DaemonSet: "ds", Job: "job", CronJob: "cronjob", ReplicaSet: "rs", Pod: "pod" };
 /** The icon of each model, by its DTMI without the version: Kubernetes' own, and Ceph's in the storage ones. */
 const MODELS: Record<string, string> = {
+  "dtmi:osiris:k8s:Service": "svc",
+  "dtmi:osiris:k8s:Ingress": "ing",
   "dtmi:osiris:k8s:Cluster": "control-plane",
   "dtmi:osiris:k8s:Node": "node",
   "dtmi:osiris:k8s:Namespace": "ns",
@@ -39,3 +41,26 @@ export function iconOf(node: TwinView): string | undefined {
 
 /** What kind of thing a twin is, for people: a workload's owning kind (StatefulSet…), else its model's name. */
 export const kindOf = (node: TwinView) => (typeof node.twin.ownerKind === "string" && node.twin.ownerKind ? node.twin.ownerKind : node.modelName);
+
+/**
+ * How each kind of twin is drawn, by its model: a solid of its own shape, so a node, a pod, a disk and a Service are
+ * told apart before any label is read. `port`: a network interface mounted on its container's wall; `hex`: a
+ * Service (virtual, an outline only); `gate`: an Ingress, a frame traffic comes through; `cylinder`: storage.
+ */
+export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "box";
+const LOOKS: Record<string, Look> = {
+  "dtmi:osiris:k8s:Cluster": "cluster",
+  "dtmi:osiris:k8s:Node": "node",
+  "dtmi:osiris:k8s:Workload": "workload",
+  "dtmi:osiris:k8s:Pod": "pod",
+  "dtmi:osiris:k8s:Container": "container",
+  "dtmi:osiris:k8s:PersistentVolumeClaim": "cylinder",
+  "dtmi:osiris:ceph:Pool": "cylinder",
+  "dtmi:osiris:ceph:Osd": "disk",
+  "dtmi:osiris:net:Interface": "port",
+  "dtmi:osiris:k8s:Service": "hex",
+  "dtmi:osiris:k8s:Ingress": "gate",
+};
+export const lookOf = (node: TwinView): Look => LOOKS[node.model.replace(/;.*$/, "")] ?? "box";
+/** A network interface's kind (card, router, tunnel, veth, LoadBalancer, public address). */
+export const portKind = (node: TwinView) => String(node.twin.kind ?? "veth");

@@ -61,6 +61,33 @@ body,
   color: var(--accent-active);
   text-shadow: 0 0 6px var(--accent-active-soft), 0 0 4px var(--bg-editor);
 }
+/* The legend of the 3D view, under the bar on the left. */
+.twin-legend {
+  position: absolute;
+  top: calc(var(--app-bar) + 0.25rem);
+  left: 1rem;
+  z-index: 12;
+}
+.legend-button {
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-sidebar) 85%, transparent);
+  font-size: 12px;
+}
+.legend-button:hover,
+.legend-button[aria-expanded="true"] {
+  border-color: var(--accent-active);
+}
+.twin-port[data-kind="public"],
+.twin-port[data-kind="loadbalancer"] {
+  color: var(--accent-active);
+  font-weight: 600;
+}
+.twin-port[data-kind="service"] {
+  font-style: italic;
+}
+
 /* An interface's address (an IP) beside its dot on a wall. */
 .twin-port {
   color: var(--text-secondary);
