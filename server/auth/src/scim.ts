@@ -1,5 +1,5 @@
 import { Hono, type Context } from "hono";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import type { Credentials } from "./credentials.ts";
 import { newToken, sha256 } from "./secrets.ts";
 import { UserInputError, UserNotFoundError, type GroupRecord, type LinkPurpose, type UserChanges, type UserRecord, type Users } from "./users.ts";

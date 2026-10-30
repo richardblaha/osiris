@@ -1,5 +1,5 @@
 import type { SecretBox } from "@osiris/platform/secrets.ts";
-import { DbError, run, type Db } from "@osiris/platform/rqlite.ts";
+import { DbError, run, type Db } from "@osiris/platform/db.ts";
 import { normalizeEmail, type LinkPurpose } from "./users.ts";
 import {
   hashPassword,
@@ -69,7 +69,7 @@ const toPasskey = (r: PasskeyRow): Passkey => ({
 /**
  * Everything a user signs in with: password, TOTP and recovery codes, passkeys, linked social accounts, one-time
  * links, and the short-lived challenges of a sign-in. Single-use things (codes, links, challenges) are taken with one
- * conditional write whose row count says who won, as rqlite has no interactive transactions.
+ * conditional write whose row count says who won, as the database has no interactive transactions.
  */
 export class Credentials {
   constructor(

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { serve } from "@hono/node-server";
 import { InternalSigner, InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
 import { FsObjectStore, S3ObjectStore, type ObjectStore } from "@osiris/platform/objects.ts";
-import { LocalDb, migrate, type Db } from "@osiris/platform/rqlite.ts";
+import { LocalDb, migrate, type Db } from "@osiris/platform/db.ts";
 import { ClickHouse, Telemetry } from "./telemetry/clickhouse.ts";
 import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";

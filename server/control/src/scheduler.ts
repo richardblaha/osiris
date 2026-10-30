@@ -3,7 +3,7 @@ import { CronExpressionParser } from "cron-parser";
 import type { Schedule, ScheduleInput } from "@osiris/shared";
 import { isUnreachable, ServiceError } from "@osiris/platform/http.ts";
 import { projectAudience, type InternalSigner } from "@osiris/platform/internal-auth.ts";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { isSystemAdmin } from "@osiris/platform/claims.ts";
 import { configuredLocale, LocalizedError, translate } from "@osiris/platform/i18n.ts";

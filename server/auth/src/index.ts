@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { FsObjectStore } from "@osiris/platform/objects.ts";
-import { LocalDb, migrate } from "@osiris/platform/rqlite.ts";
+import { LocalDb, migrate } from "@osiris/platform/db.ts";
 import { startTelemetry } from "@osiris/platform/telemetry.ts";
 import { startLoop } from "@osiris/platform/worker.ts";
 import { createAuthApp } from "./app.ts";

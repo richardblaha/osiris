@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { calculateJwkThumbprint } from "jose";
 import type { JWK } from "oidc-provider";
-import type { Db } from "@osiris/platform/rqlite.ts";
+import type { Db } from "@osiris/platform/db.ts";
 import { SecretBox } from "@osiris/platform/secrets.ts";
 import type { Config } from "./config.ts";
 import type { Users } from "./users.ts";

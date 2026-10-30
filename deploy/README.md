@@ -87,18 +87,9 @@ Users verify their phone number for WhatsApp themselves (My profile → Account 
 
 ### From control (one-off, 2026-10)
 
-Before osiris-auth, control was the provider and kept users in rqlite. `cli.ts import-control <rqlite-url>` copies every
-user with the same id, password, authenticator, recovery codes, passkeys and linked accounts, turning claims into
-groups (sessions don't move: everyone signs in again). With a port-forward to rqlite on abydos:
-
-```bash
-kubectl -n osiris port-forward svc/rqlite 4001 &
-kubectl --kubeconfig .kubeconfig.busiris -n osiris-auth exec -i deploy/auth -- env RQLITE_USERNAME=control RQLITE_PASSWORD=… \
-  node_modules/.bin/tsx src/cli.ts import-control http://<reachable rqlite>:4001
-```
-
-(or run the CLI locally with `DATA_DIR` on a copy, then copy `auth.db` into the volume). Control's migration
-`013_no_auth.sql` then drops its auth tables.
+Before osiris-auth, control was the provider and kept users in rqlite; the one-off `import-control` command brought
+them over (users, passwords, authenticators, passkeys and linked accounts, claims turned into groups). Control's
+migration `013_no_auth.sql` then dropped its auth tables.
 
 ## WhatsApp
 

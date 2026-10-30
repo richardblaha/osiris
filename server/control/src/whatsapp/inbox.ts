@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import type { deliveryStatuses, InboundMessage } from "./cloud-api.ts";
 
 export interface InboxMessage extends InboundMessage {

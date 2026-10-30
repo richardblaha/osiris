@@ -1,5 +1,4 @@
 -- osiris-auth: users, their sign-in methods, groups (access) and the OpenID Connect provider's state.
--- `pnpm --filter @osiris/auth cli import-control <rqlite-url>` brings the users over from control once
 
 CREATE TABLE users (
   id TEXT PRIMARY KEY,

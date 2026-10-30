@@ -1,7 +1,7 @@
 import { timingSafeEqual, createHash } from "node:crypto";
 import { z } from "zod";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import type { SecretBox } from "@osiris/platform/secrets.ts";
 import { newToken } from "./secrets.ts";
 import { GROUP_NAME } from "./users.ts";

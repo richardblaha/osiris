@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Mailer } from "@osiris/platform/mail.ts";
 import { FsObjectStore } from "@osiris/platform/objects.ts";
-import { LocalDb, migrate } from "@osiris/platform/rqlite.ts";
+import { LocalDb, migrate } from "@osiris/platform/db.ts";
 import { createAuthApp } from "../src/app.ts";
 import { createAuthDeps } from "../src/auth.ts";
 import { osirisClients } from "../src/clients.ts";

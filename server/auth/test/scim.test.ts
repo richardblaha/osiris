@@ -1,10 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { LocalDb, migrate, run } from "@osiris/platform/rqlite.ts";
-import { copyFileSync } from "node:fs";
-import { join } from "node:path";
-import { importFromControl } from "../src/import.ts";
 import { applyPatch, parseFilter } from "../src/scim.ts";
-import { createTestAuth, createTestDb, tempDir } from "./helpers.ts";
+import { createTestAuth, createTestDb } from "./helpers.ts";
 
 const PATCH = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
 
@@ -84,40 +80,5 @@ describe("SCIM", () => {
     });
     expect(r).toEqual({ name: { givenName: "C", familyName: "B" }, members: [{ value: "y" }] });
     expect(() => applyPatch({}, { Operations: [] })).toThrow();
-  });
-});
-
-describe("import from control", () => {
-  it("brings users over with their sign-in methods, turns claims into groups, and skips them the second time", async () => {
-    // control's tables as its migration 002 made them (a later one drops them once the users are here).
-    const dir = tempDir();
-    copyFileSync(join(import.meta.dirname, "../../control/src/db/migrations/002_auth.sql"), join(dir, "002_auth.sql"));
-    const source = new LocalDb(join(dir, "control.db"));
-    await migrate(source, dir);
-    await source.execute([
-      run(
-        "INSERT INTO users (id, email, email_verified, first_name, last_name, claims, password_hash, totp_secret, totp_step, created_at, updated_at) VALUES (?, ?, 1, 'Alice', 'N', ?, 'hash', 'sealed', 7, 1, 2)",
-        "alice",
-        "alice@firma.cz",
-        JSON.stringify({ role: "osiris-admin", project: "acme,beta", "project-admin": ["acme"], phone_number: "+420600111222" }),
-      ),
-      run("INSERT INTO passkeys (id, user_id, public_key, name, created_at) VALUES ('pk1', 'alice', 'key', 'Laptop', 1)"),
-      run("INSERT INTO recovery_codes (user_id, code_hash) VALUES ('alice', 'h1')"),
-      run("INSERT INTO user_identities (provider, subject, user_id, email, created_at) VALUES ('google', 'g1', 'alice', 'alice@firma.cz', 1)"),
-    ]);
-    const target = await createTestDb();
-    expect(await importFromControl(source, target)).toEqual({ imported: ["alice"], skipped: [] });
-    const [user] = await target.query<Record<string, unknown>>("SELECT email, phone, password_hash, totp_secret, totp_step FROM users");
-    expect(user).toEqual({ email: "alice@firma.cz", phone: "+420600111222", password_hash: "hash", totp_secret: "sealed", totp_step: 7 });
-    expect((await target.query<{ group_id: string }>("SELECT group_id FROM group_members ORDER BY group_id")).map((r) => r.group_id)).toEqual([
-      "osiris-admin",
-      "project-admin:acme",
-      "project:acme",
-      "project:beta",
-    ]);
-    expect(await target.query("SELECT id FROM passkeys")).toEqual([{ id: "pk1" }]);
-    expect(await target.query("SELECT code_hash FROM recovery_codes")).toEqual([{ code_hash: "h1" }]);
-    expect(await target.query("SELECT subject FROM user_identities")).toEqual([{ subject: "g1" }]);
-    expect(await importFromControl(source, target)).toEqual({ imported: [], skipped: ["alice"] });
   });
 });

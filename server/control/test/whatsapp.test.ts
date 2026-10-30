@@ -83,7 +83,7 @@ describe("WhatsApp router", () => {
     const other = await inbox.claim();
     // The sender's second message waits for the first.
     expect([first?.id, other?.id]).toEqual(["a", "c"]);
-    // Nothing to claim means no write: rqlite can't snapshot away writes that change nothing.
+    // Nothing to claim means no write: a snapshot can't wash away writes that change nothing.
     const execute = vi.spyOn(db, "execute");
     expect(await inbox.claim()).toBeNull();
     expect(execute).not.toHaveBeenCalled();

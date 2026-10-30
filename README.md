@@ -18,7 +18,7 @@ The UI and the services' messages are available in English (the default) and Cze
 | `server/sites`, `server/vitepress`, `server/web-events` | Project websites, the VitePress builder, cookieless web analytics |
 | `server/digital-twin` | The cluster's digital twin (twin.k6labs.cz): its 3D structure from the Kubernetes API, telemetry from ClickHouse |
 | `packages/shared` | Types shared with the web app, locale helpers |
-| `packages/platform` | Service plumbing: internal JWT, rqlite, object storage, telemetry, service message catalogs |
+| `packages/platform` | Service plumbing: internal JWT, SQLite (`LocalDb`), object storage, telemetry, service message catalogs |
 | `packages/core` | The agent: graph, tools, checkpointer, RAG, MCP, vault, files |
 
 [CLAUDE.md](CLAUDE.md) describes the architecture in detail; [deploy/README.md](deploy/README.md) covers production.
@@ -33,7 +33,7 @@ pnpm --filter @osiris/platform gen-keys   # internal JWT key pair, master key an
 pnpm dev                                  # gateway :3001, control :3002 (starts runtimes on :4100+), web :5173
 ```
 
-Each app reads its `.env` (see the `.env.example` next to it). Locally, control needs no rqlite, S3 or SMTP: it uses a
+Each app reads its `.env` (see the `.env.example` next to it). Locally, control needs no S3 or SMTP: it uses a
 SQLite file, a folder and the log. To skip sign-in, set `AUTH_DEV_BYPASS=true` for the gateway and `VITE_DEV_USER` for
 the web app (for example `root:role=osiris-admin`). `DEFAULT_LOCALE` (`en` or `cs`) sets the language of messages that
 no request asked for in a language, such as WhatsApp replies.

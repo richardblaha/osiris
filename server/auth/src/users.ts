@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
-import { DbError, run, type Db, type Statement } from "@osiris/platform/rqlite.ts";
+import { DbError, run, type Db, type Statement } from "@osiris/platform/db.ts";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
 import { newToken, sha256 } from "./secrets.ts";
 

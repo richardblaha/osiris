@@ -1,5 +1,5 @@
 import Provider, { errors, type Adapter, type AdapterPayload, type Configuration, type JWK, type KoaContextWithOIDC } from "oidc-provider";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import { requestLocale, translate } from "@osiris/platform/i18n.ts";
 import type { Clients } from "./clients.ts";
 import type { Users, UserRecord } from "./users.ts";

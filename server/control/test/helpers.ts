@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { Role } from "@osiris/shared";
 import { CONTROL_AUDIENCE, generateInternalKeys, InternalSigner, InternalVerifier } from "@osiris/platform/internal-auth.ts";
 import { FsObjectStore } from "@osiris/platform/objects.ts";
-import { LocalDb, migrate } from "@osiris/platform/rqlite.ts";
+import { LocalDb, migrate } from "@osiris/platform/db.ts";
 import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { devRuntimeVerifier } from "@osiris/platform/runtime-identity.ts";
 import { createControlApp } from "../src/app.ts";

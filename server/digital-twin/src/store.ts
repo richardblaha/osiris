@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { DigitalTwin, DigitalTwinRelationship, DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
-import { LocalDb, run, type Statement } from "@osiris/platform/rqlite.ts";
+import { LocalDb, run, type Statement } from "@osiris/platform/db.ts";
 import { toRelationship, type SourceSnapshot, type SourceTwin } from "./twin.ts";
 
 /**

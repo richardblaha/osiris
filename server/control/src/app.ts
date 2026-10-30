@@ -29,7 +29,7 @@ import { CLAIMS, claimList, SYSTEM_ADMIN_ROLE, PROJECT_SLUG, USER_ROLE } from "@
 import { CONTROL_AUDIENCE, InternalAuthError, type InternalVerifier, type VerifiedCall } from "@osiris/platform/internal-auth.ts";
 import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
 import type { Mailer } from "@osiris/platform/mail.ts";
-import type { Db } from "@osiris/platform/rqlite.ts";
+import type { Db } from "@osiris/platform/db.ts";
 import { userByPhone } from "./whatsapp/phones.ts";
 import type { Backups } from "./backups.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";

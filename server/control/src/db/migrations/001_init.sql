@@ -1,4 +1,4 @@
--- Central database (rqlite). Times are epoch milliseconds passed in by the application. Statements end with ";" at
+-- Central database (SQLite). Times are epoch milliseconds passed in by the application. Statements end with ";" at
 -- the end of a line, which is where the runner splits them
 
 CREATE TABLE tenants (

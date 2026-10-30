@@ -1,5 +1,5 @@
 import { randomInt } from "node:crypto";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import type { InternalUser } from "@osiris/platform/internal-auth.ts";
 import type { Access } from "@osiris/platform/claims.ts";
 import { userAccess } from "../projects.ts";

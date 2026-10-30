@@ -11,7 +11,7 @@ import {
   type WebStats,
   type WebSummary,
 } from "@osiris/shared";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import { HttpError, requestLocale, translate, ValidationError, type Params } from "@osiris/platform/i18n.ts";
 import { Hono, type Context } from "hono";
 import { HTTPException } from "hono/http-exception";

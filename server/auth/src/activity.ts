@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isIP } from "node:net";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import { EMPTY_GEO, type GeoLocation } from "@osiris/platform/geoip.ts";
 import { parseUserAgent } from "@osiris/platform/user-agent.ts";
 import type { LoginEvent, LoginSession } from "@osiris/shared";

@@ -8,7 +8,7 @@ import type Provider from "oidc-provider";
 import { z } from "zod";
 import { HttpError, requestLocale, translate, ValidationError } from "@osiris/platform/i18n.ts";
 import { readAll } from "@osiris/platform/objects.ts";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import type { Clients } from "./clients.ts";
 import type { Users } from "./users.ts";
 import { CredentialError, type Credentials } from "./credentials.ts";

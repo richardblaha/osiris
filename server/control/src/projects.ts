@@ -2,7 +2,7 @@ import { FEATURES, NO_QUOTAS, type ReportedUsage, type AdminUser, type Guard, ty
 import { CLAIMS, claimList, isAuthorized, SYSTEM_ADMIN_ROLE, USER_ROLE, type Access } from "@osiris/platform/claims.ts";
 import { randomUUID } from "node:crypto";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import type { Orchestrator, ProjectSpec } from "./orchestrator/types.ts";
 import type { UserDirectory, UserRecord } from "./users.ts";
 import { LocalizedError } from "@osiris/platform/i18n.ts";

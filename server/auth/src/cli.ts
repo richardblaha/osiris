@@ -1,9 +1,8 @@
 import { join } from "node:path";
 import { FsObjectStore } from "@osiris/platform/objects.ts";
-import { LocalDb, migrate, RqliteDb } from "@osiris/platform/rqlite.ts";
+import { LocalDb, migrate } from "@osiris/platform/db.ts";
 import { createAuth } from "./auth.ts";
 import { loadConfig } from "./config.ts";
-import { importFromControl } from "./import.ts";
 import { createServiceToken } from "./scim.ts";
 import { Users } from "./users.ts";
 
@@ -13,7 +12,6 @@ import { Users } from "./users.ts";
 //   client list                        the registered apps
 //   client add <id> <json>             registers an app ({"name":…,"redirectUris":[…],"confidential":true,…}); prints its secret
 //   client remove <id>
-//   import-control <rqlite-url>        copies control's users once (RQLITE_USERNAME, RQLITE_PASSWORD for the source)
 const config = loadConfig();
 const [command, ...args] = process.argv.slice(2);
 
@@ -41,15 +39,8 @@ if (command === "add-admin") {
     console.log(secret ? `Registered ${id}. Secret (shown once): ${secret}` : `Registered ${id}.`);
   } else if (action === "remove" && id) console.log((await clients.remove(id)) ? `Removed ${id}.` : `No app ${id}.`);
   else throw new Error("Usage: client list | client add <id> <json> | client remove <id>");
-} else if (command === "import-control") {
-  const [url] = args;
-  if (!url) throw new Error("Usage: import-control <rqlite-url>");
-  const source = new RqliteDb(url, { username: process.env.RQLITE_USERNAME, password: process.env.RQLITE_PASSWORD });
-  const { imported, skipped } = await importFromControl(source, db);
-  console.log(`Imported ${imported.length} users, skipped ${skipped.length} already here.`);
-  await source.close();
 } else {
-  console.error("Commands: add-admin <email> [first] [last] | token <name> | client list|add|remove | import-control <rqlite-url>");
+  console.error("Commands: add-admin <email> [first] [last] | token <name> | client list|add|remove");
   process.exitCode = 1;
 }
 await db.close();

@@ -1,6 +1,6 @@
 import { Transform, type Readable } from "node:stream";
 import type { ObjectStore } from "@osiris/platform/objects.ts";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 
 /** Why a snapshot was taken: before sleeping, daily while awake, on demand, or the import of pre-split data. */
 export const BACKUP_REASON = /^[a-z][a-z-]{0,19}$/;

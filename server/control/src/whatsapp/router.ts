@@ -3,7 +3,7 @@ import { accessibleProjects, isAuthorized, type Membership } from "@osiris/platf
 import { isUnreachable, ServiceError } from "@osiris/platform/http.ts";
 import { projectAudience, type InternalSigner, type InternalUser } from "@osiris/platform/internal-auth.ts";
 import { configuredLocale, translate, type Params } from "@osiris/platform/i18n.ts";
-import { run, type Db } from "@osiris/platform/rqlite.ts";
+import { run, type Db } from "@osiris/platform/db.ts";
 import type { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import type { ProjectStore } from "../projects.ts";
 import type { UserDirectory } from "../users.ts";
