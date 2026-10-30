@@ -317,6 +317,8 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     await engine.initialize();
     await indexer!.reconcile();
     await knowledge.reindexStale();
+    // The bundled skills become the project's own, once each.
+    await skills.seed();
     // A chat's scratchpad lives as long as the chat; one whose chat is gone goes now.
     const threads = await threadIds(records);
     for (const thread of await files.tempThreads()) if (!threads.has(thread)) await files.removeTemp(thread);

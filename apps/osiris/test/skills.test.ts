@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
-import { loadSkills, parseSkill } from "@osiris/core/agent/skills.ts";
+import { SkillStore, loadSkills, parseSkill } from "@osiris/core/agent/skills.ts";
 import { createTestProjects } from "./helpers.ts";
 
 const ctx = { thread_id: "t", project_id: "a", user_id: "u", role: "admin" as const, channel: "web" as const };
@@ -60,36 +60,48 @@ describe("skills", () => {
     expect(result?.text).toBe("Uveď IČO a datum splatnosti.");
   });
 
-  it("puts the project's skills over bundled ones of the same name, per project", async () => {
-    const bundled = [{ name: "faktura", description: "Obecná", instructions: "Obecný postup." }];
+  it("copies the bundled skills into each project once: the project's to edit or delete for good", async () => {
+    const bundled = [{ name: "faktura", description: "Obecná", instructions: "Obecný postup.", requires: "database" as const }];
     const { projects } = createTestProjects([], bundled);
     const a = await projects.get("a");
     const b = await projects.get("b");
+    // Every project starts with them as its own.
+    expect(await a.skills.list()).toEqual([{ name: "faktura", description: "Obecná", source: "project", requires: "database" }]);
+    expect((await b.skills.get("faktura"))?.instructions).toBe("Obecný postup.");
 
+    // Edited in one project, it stays as it was in the other.
     await a.skills.put({ name: "faktura", description: "Naše", instructions: "Náš postup." });
     await a.skills.put({ name: "revize", description: "Revize elektro", instructions: "Postup revize." });
-    expect(await a.skills.list()).toEqual([
-      { name: "faktura", description: "Naše", source: "project" },
-      { name: "faktura", description: "Obecná", source: "bundled", overridden: true },
-      { name: "revize", description: "Revize elektro", source: "project" },
-    ]);
-    expect(await b.skills.list()).toEqual([{ name: "faktura", description: "Obecná", source: "bundled" }]);
+    expect((await b.skills.get("faktura"))?.instructions).toBe("Obecný postup.");
 
     // A user's own skill wins over the project's, for them alone.
     await a.skills.put({ name: "faktura", description: "Moje", instructions: "Můj postup." }, "personal", "bob");
     expect((await a.skills.list("bob")).filter((s) => s.name === "faktura").map((s) => [s.source, !!s.overridden])).toEqual([
       ["personal", false],
       ["project", true],
-      ["bundled", true],
     ]);
     expect((await a.skills.get("faktura", "bob"))?.instructions).toBe("Můj postup.");
     expect((await a.skills.get("faktura", "carol"))?.instructions).toBe("Náš postup.");
     expect((await a.skills.get("faktura", "bob", "project"))?.instructions).toBe("Náš postup.");
 
-    // Deleting the project's replacement reveals the bundled skill.
+    // Deleted, it's gone — and the next init doesn't bring it back.
     expect(await a.skills.delete("faktura")).toBe(true);
-    expect((await a.skills.get("faktura"))?.instructions).toBe("Obecný postup.");
+    expect(await a.skills.get("faktura")).toBeUndefined();
+    expect(await a.skills.seed()).toEqual([]);
+    expect(await a.skills.get("faktura")).toBeUndefined();
     expect(await a.skills.delete("faktura")).toBe(false);
+  });
+
+  it("copies a bundled skill new in a later release into a project that has been running", async () => {
+    const { projects } = createTestProjects([], [{ name: "faktura", description: "Obecná", instructions: "Postup." }]);
+    const a = await projects.get("a");
+    const later = new SkillStore(a.records, [
+      { name: "faktura", description: "Obecná", instructions: "Postup." },
+      { name: "nabidka", description: "Nabídka", instructions: "Jak psát nabídku." },
+    ]);
+    await a.skills.delete("faktura");
+    expect(await later.seed()).toEqual(["nabidka"]);
+    expect((await later.list()).map((s) => s.name)).toEqual(["nabidka"]);
   });
 
   it("omits the skills section when there are none", async () => {

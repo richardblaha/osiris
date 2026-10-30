@@ -61,21 +61,30 @@ function GroupSwitch({ group, disabled, onChange }: { group: Group; disabled: bo
 }
 
 /**
- * The assistant's built-in tools, grouped by feature (the Google and Microsoft ones by service). A system admin switches each one on or off for the project;
- * the runtime picks the change up within half a minute, so the list keeps the admin's choice rather than reloading.
+ * The assistant's built-in tools, grouped by feature (the Google and Microsoft ones by service). A system admin switches each one on or off for the project.
+ * Which are switched off is control's, read fresh from it: the runtime's own list may lag by half a minute (it caches its policy), and a change made from
+ * that stale list would undo the one before it.
  */
 export function BuiltinTools({ projectId, systemAdmin }: { projectId: string; systemAdmin: boolean }) {
   const [tools, setTools] = useState<BuiltinTool[]>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
-  useEffect(() => void api.tools().then(setTools, (e: Error) => setError(e.message)), []);
+  /** The switched-off tools as control has them now (system admins). */
+  const fresh = async () => new Set((await api.admin.project(projectId)).disabledTools);
+  useEffect(() => {
+    void Promise.all([api.tools(), systemAdmin ? fresh() : Promise.resolve(undefined)]).then(
+      ([list, off]) => setTools(off ? list.map((t) => ({ ...t, disabled: off.has(t.name) })) : list),
+      (e: Error) => setError(e.message),
+    );
+  }, []);
 
-  /** Switches these tools on or off. */
+  /** Switches these tools on or off: the change applied to control's current list, not to what this page last saw. */
   const toggle = (names: string[], on: boolean) =>
     attempt(setBusy, setError, async () => {
-      const next = tools!.map((t) => (names.includes(t.name) ? { ...t, disabled: !on } : t));
-      await api.admin.updateProject(projectId, { disabledTools: next.filter((t) => t.disabled).map((t) => t.name) });
-      setTools(next);
+      const off = await fresh();
+      for (const name of names) on ? off.delete(name) : off.add(name);
+      await api.admin.updateProject(projectId, { disabledTools: [...off] });
+      setTools((list) => list?.map((t) => ({ ...t, disabled: off.has(t.name) })));
     });
 
   return (

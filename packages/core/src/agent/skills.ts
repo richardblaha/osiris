@@ -66,10 +66,15 @@ const dirOf = (scope: Scope, userId: string) => (scope === "project" ? SKILLS_DI
 export const formatSkill = (s: Skill) =>
   `---\nname: ${s.name}\ndescription: ${s.description.replace(/\s+/g, " ").trim()}\n${s.public ? "public: true\n" : ""}${s.requires ? `requires: ${s.requires}\n` : ""}---\n\n${s.instructions.trim()}\n`;
 
+/** Which bundled skills the project was given once (`seed`): a skill deleted since stays deleted. */
+const SEEDED = "skills-seeded.json";
+
 /**
- * Bundled skills merged with the project's (`.osiris/skills/`) and each user's (in their private folder): personal
- * wins over project, which wins over bundled. The files are read on every call, so a skill edited (in Osiris or in
- * the repository) applies from the next step; a malformed one is skipped.
+ * The project's skills (`.osiris/skills/`) and each user's (in their private folder): personal wins over project.
+ * The bundled skills are copied into the project once (`seed`, at the project's init), so they are the project's
+ * own — edited or deleted like any other; a bundled skill new in a later release is copied in at the next init. The
+ * files are read on every call, so a skill edited (in Osiris or in the repository) applies from the next step; a
+ * malformed one is skipped.
  */
 export class SkillStore {
   private readonly bundled: Map<string, Skill>;
@@ -106,7 +111,7 @@ export class SkillStore {
   async list(userId = ""): Promise<SkillSummary[]> {
     const summary = (s: Skill, source: SkillSummary["source"]): SkillSummary => ({ name: s.name, description: s.description, source, ...(s.requires ? { requires: s.requires } : {}) });
     const [project, personal] = await Promise.all([this.read("project", ""), userId ? this.read("personal", userId) : new Map<string, Skill>()]);
-    const layers: [Iterable<Skill>, SkillSummary["source"]][] = [[personal.values(), "personal"], [project.values(), "project"], [this.bundled.values(), "bundled"]];
+    const layers: [Iterable<Skill>, SkillSummary["source"]][] = [[personal.values(), "personal"], [project.values(), "project"]];
     const won = new Set<string>();
     const out: SkillSummary[] = [];
     for (const [skills, source] of layers) {
@@ -122,7 +127,7 @@ export class SkillStore {
     return [...(await this.read("project", "")).values()];
   }
 
-  /** The skill `userId` gets for `name` (their own, else the project's, else the bundled one), or one layer's (`source`). */
+  /** The skill `userId` gets for `name` (their own, else the project's), or one layer's (`source`). */
   async get(name: string, userId = "", source?: SkillSummary["source"]): Promise<(Skill & { source: SkillSummary["source"] }) | undefined> {
     if (!SKILL_NAME.test(name)) return undefined;
     if (userId && (!source || source === "personal")) {
@@ -131,10 +136,30 @@ export class SkillStore {
     }
     if (!source || source === "project") {
       const project = (await this.read("project", "")).get(name);
-      if (project || source) return project && { ...project, source: "project" };
+      if (project) return { ...project, source: "project" };
     }
-    const bundled = this.bundled.get(name);
-    return bundled && { ...bundled, source: "bundled" };
+    return undefined;
+  }
+
+  /**
+   * Copies each bundled skill the project hasn't had yet into its own skills (unless it has one of that name), and
+   * remembers it: the copy is the project's to edit or delete, and a deleted one never comes back. Returns the names
+   * copied now.
+   */
+  async seed(): Promise<string[]> {
+    return this.records.lock(SEEDED, async () => {
+      const seeded = new Set((await this.records.read<string[]>(SEEDED)) ?? []);
+      const before = seeded.size;
+      const own = await this.read("project", "");
+      const copied: string[] = [];
+      for (const skill of this.bundled.values()) {
+        if (seeded.has(skill.name)) continue;
+        if (!own.has(skill.name)) (await this.put(skill, "project"), copied.push(skill.name));
+        seeded.add(skill.name);
+      }
+      if (seeded.size !== before) await this.records.write(SEEDED, [...seeded].sort());
+      return copied;
+    });
   }
 
   async put(skill: Skill, scope: Scope = "project", userId = ""): Promise<void> {
@@ -142,7 +167,7 @@ export class SkillStore {
     await this.records.writeText(`${dirOf(scope, userId)}/${skill.name}/SKILL.md`, formatSkill(skill));
   }
 
-  /** Deletes a project or personal skill (bundled ones can't be deleted; deleting a replacement reveals what it hid). */
+  /** Deletes a project or personal skill (deleting a personal replacement reveals the project's it hid). */
   async delete(name: string, scope: Scope = "project", userId = ""): Promise<boolean> {
     return SKILL_NAME.test(name) && this.records.remove(`${dirOf(scope, userId)}/${name}`);
   }
