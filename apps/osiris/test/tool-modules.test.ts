@@ -3,11 +3,13 @@ import { loadToolModules, TOOL_MODULE_NAMES } from "../src/tool-modules.ts";
 import { createTestProjects } from "./helpers.ts";
 
 describe("tool modules", () => {
-  it("loads every module for 'all', but images, the scheduler and the infrastructure only with their settings", async () => {
+  it("loads every module for 'all', but images, the scheduler and the cluster modules only with their settings", async () => {
     const names = (await loadToolModules({ enabled: ["all"] })).map((m) => m.name);
-    expect(names).toEqual(TOOL_MODULE_NAMES.filter((n) => n !== "images" && n !== "scheduler" && n !== "infrastructure"));
+    expect(names).toEqual(TOOL_MODULE_NAMES.filter((n) => n !== "images" && n !== "scheduler" && n !== "kubernetes" && n !== "ceph" && n !== "digital-twin"));
     const withOps = (await loadToolModules({ enabled: ["all"], infrastructure: { projects: ["twin"], ops: { url: "http://t", token: async () => "" } } })).map((m) => m.name);
-    expect(withOps).toContain("infrastructure");
+    expect(withOps).toContain("kubernetes");
+    expect(withOps).toContain("ceph");
+    expect(withOps).toContain("digital-twin");
   });
 
   it("loads only the modules named", async () => {

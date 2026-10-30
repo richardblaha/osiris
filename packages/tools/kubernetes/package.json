@@ -1,0 +1,21 @@
+{
+  "name": "@osiris/tools-kubernetes",
+  "private": true,
+  "description": "Osiris agent tools: managing the Kubernetes cluster through the digital twin.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@osiris/core": "workspace:*",
+    "@osiris/tools-ops": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "6.0.3"
+  }
+}

@@ -150,4 +150,6 @@ vite.config.ts.timestamp-*
 
 # Kubernetes config files
 .kubeconfig
+.kubeconfig.*
 data/
+

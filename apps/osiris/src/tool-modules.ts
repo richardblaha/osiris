@@ -1,7 +1,7 @@
 import type { ToolModule } from "@osiris/core/tools/module.ts";
 import type { ImagesToolOptions } from "@osiris/tools-images";
 import type { ScheduleClient } from "@osiris/tools-scheduler";
-import type { InfrastructureOptions } from "@osiris/tools-infrastructure";
+import type { OpsOptions } from "@osiris/tools-ops";
 
 /** What the tool modules need from the runtime's configuration. */
 export interface ToolModuleOptions {
@@ -12,8 +12,8 @@ export interface ToolModuleOptions {
   images?: ImagesToolOptions;
   /** Control's scheduled tasks (server mode); without it there is no scheduler module. */
   schedules?: ScheduleClient;
-  /** The digital twin's ops API (server mode); without it there is no infrastructure module. */
-  infrastructure?: InfrastructureOptions;
+  /** The digital twin's ops API (server mode); without it there are no kubernetes, ceph or digital-twin modules. */
+  infrastructure?: OpsOptions;
 }
 
 /**
@@ -32,7 +32,9 @@ const MODULES: Record<string, (o: ToolModuleOptions) => Promise<ToolModule | und
   http: async () => (await import("@osiris/tools-http")).httpModule(),
   scheduler: async (o) => (o.schedules ? (await import("@osiris/tools-scheduler")).schedulerModule(o.schedules) : undefined),
   workflows: async () => (await import("@osiris/tools-workflows")).workflowsModule(),
-  infrastructure: async (o) => (o.infrastructure ? (await import("@osiris/tools-infrastructure")).infrastructureModule(o.infrastructure) : undefined),
+  kubernetes: async (o) => (o.infrastructure ? (await import("@osiris/tools-kubernetes")).kubernetesModule(o.infrastructure) : undefined),
+  ceph: async (o) => (o.infrastructure ? (await import("@osiris/tools-ceph")).cephModule(o.infrastructure) : undefined),
+  "digital-twin": async (o) => (o.infrastructure ? (await import("@osiris/tools-digital-twin")).digitalTwinModule(o.infrastructure.projects) : undefined),
 };
 
 export const TOOL_MODULE_NAMES = Object.keys(MODULES);

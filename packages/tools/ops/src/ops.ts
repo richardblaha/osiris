@@ -2,13 +2,18 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { getRunContext, type RunContext } from "@osiris/core/agent/context.ts";
 import type { QuestionStore } from "@osiris/core/agent/questions.ts";
-import { cephReads, commandLine, kubectlReads } from "./commands.ts";
 
 /** Where the twin's ops API is and how this runtime proves which project it is. */
 export interface OpsClient {
   url: string;
   token: () => Promise<string>;
   fetch?: typeof fetch;
+}
+
+/** The twin's ops API and the projects whose agents run commands through it. */
+export interface OpsOptions {
+  ops: OpsClient;
+  projects: string[];
 }
 
 interface CommandResult {
@@ -57,8 +62,8 @@ async function call(client: OpsClient, program: "kubectl" | "ceph", args: string
 
 /**
  * A command-line tool of the cluster (kubectl, ceph), run by the digital twin's service. Reads run at once; anything
- * else becomes a yes/no question in the chat naming the exact command, and runs only after the user's yes, when the
- * agent calls the tool again with the same arguments.
+ * else becomes a yes/no question in the chat naming the exact command, and runs only after the user's yes, when
+ * the agent calls the tool again with the same arguments.
  */
 function commandTool(client: OpsClient, questions: QuestionStore, program: "kubectl" | "ceph", reads: (args: string[]) => boolean, description: string) {
   return tool(
@@ -85,27 +90,8 @@ function commandTool(client: OpsClient, questions: QuestionStore, program: "kube
   );
 }
 
-export const kubectlTool = (client: OpsClient, questions: QuestionStore) =>
-  commandTool(
-    client,
-    questions,
-    "kubectl",
-    kubectlReads,
-    "Správa Kubernetes clusteru (busiris) příkazem kubectl jako administrátor. Argumenty předej jako pole, např. [\"get\", \"pods\", \"-A\", \"-o\", \"wide\"]; " +
-      "API přímo: [\"get\", \"--raw\", \"/apis\"]. Čtení (get, describe, logs, top, events, explain, auth can-i, rollout status, --dry-run) proběhne hned. " +
-      "Každá změna (apply, create, delete, patch, scale, rollout restart, cordon, drain, label, exec…) se nejdřív zeptá uživatele; když odpoví, zavolej nástroj znovu se stejnými argumenty. " +
-      "YAML pro apply předej ve stdin s argumenty [\"apply\", \"-f\", \"-\"]. Nejde: edit, port-forward, proxy, exec -it, vlastní --kubeconfig/--as. " +
-      "Cluster je microk8s (kubeadm se v něm nepoužívá; uzly a jejich upgrade spravuje microk8s na hostitelích).",
-  );
+/** A command as people read it, for the question that asks to run it. */
+export const commandLine = (program: string, args: string[]) =>
+  [program, ...args.map((a) => (/^[\w./:=@,+-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`))].join(" ");
 
-export const cephTool = (client: OpsClient, questions: QuestionStore) =>
-  commandTool(
-    client,
-    questions,
-    "ceph",
-    cephReads,
-    "Správa úložiště Ceph (microceph na uzlech clusteru) příkazem ceph jako client.admin. Argumenty jako pole, např. [\"status\"], [\"osd\", \"tree\"], [\"df\", \"detail\"], [\"osd\", \"pool\", \"ls\", \"detail\"]; " +
-      "pro strojové zpracování přidej [\"--format\", \"json\"]. Čtení (status, health, df, osd tree/df/ls, pg, mon, mgr, fs, config get…) proběhne hned; " +
-      "každá změna (osd out/in/reweight, pool create/set/delete, config set, mgr module enable, auth…) se nejdřív zeptá uživatele; po odpovědi zavolej nástroj znovu se stejnými argumenty. " +
-      "Příkazy microceph (správa uzlů a disků microcephu) se spouštějí na hostitelích, ne odsud.",
-  );
+export { commandTool };

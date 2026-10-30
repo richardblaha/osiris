@@ -1,22 +1,5 @@
-/**
- * Which commands only read and which change something: reads run at once, changes wait for the user's yes. When in
- * doubt a command counts as a change.
- */
-
-/** kubectl verbs that only read. */
-const KUBECTL_READ = new Set(["get", "describe", "logs", "top", "explain", "api-resources", "api-versions", "version", "cluster-info", "events", "wait", "diff"]);
-
-/** Whether a kubectl call only reads (`auth can-i`, `rollout status|history`, a dry run count as reads). */
-export function kubectlReads(args: string[]): boolean {
-  const words = args.filter((a) => !a.startsWith("-"));
-  const [verb, sub] = words;
-  if (!verb) return false;
-  if (args.some((a) => /^--dry-run(=(client|server))?$/.test(a))) return true;
-  if (KUBECTL_READ.has(verb)) return verb !== "cluster-info" || sub !== "dump";
-  if (verb === "auth") return sub === "can-i" || sub === "whoami";
-  if (verb === "rollout") return sub === "status" || sub === "history";
-  return false;
-}
+import type { QuestionStore } from "@osiris/core/agent/questions.ts";
+import { commandTool, type OpsClient } from "@osiris/tools-ops";
 
 /** ceph commands that only read, as their leading words. `auth` (it shows keys) and the rest count as changes. */
 const CEPH_READ = [
@@ -33,6 +16,14 @@ export function cephReads(args: string[]): boolean {
   return CEPH_READ.some((r) => line === r || line.startsWith(`${r} `));
 }
 
-/** A command as people read it, for the question that asks to run it. */
-export const commandLine = (program: string, args: string[]) =>
-  [program, ...args.map((a) => (/^[\w./:=@,+-]+$/.test(a) ? a : `'${a.replace(/'/g, "'\\''")}'`))].join(" ");
+export const cephTool = (client: OpsClient, questions: QuestionStore) =>
+  commandTool(
+    client,
+    questions,
+    "ceph",
+    cephReads,
+    "Správa úložiště Ceph (microceph na uzlech clusteru) příkazem ceph jako client.admin. Argumenty jako pole, např. [\"status\"], [\"osd\", \"tree\"], [\"df\", \"detail\"], [\"osd\", \"pool\", \"ls\", \"detail\"]; " +
+      "pro strojové zpracování přidej [\"--format\", \"json\"]. Čtení (status, health, df, osd tree/df/ls, pg, mon, mgr, fs, config get…) proběhne hned; " +
+      "každá změna (osd out/in/reweight, pool create/set/delete, config set, mgr module enable, auth…) se nejdřív zeptá uživatele; po odpovědi zavolej nástroj znovu se stejnými argumenty. " +
+      "Příkazy microceph (správa uzlů a disků microcephu) se spouštějí na hostitelích, ne odsud.",
+  );

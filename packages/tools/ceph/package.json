@@ -1,7 +1,7 @@
 {
-  "name": "@osiris/tools-infrastructure",
+  "name": "@osiris/tools-ceph",
   "private": true,
-  "description": "Osiris agent tools: managing Kubernetes and Ceph through the digital twin, and steering the twin's view.",
+  "description": "Osiris agent tools: managing the Ceph storage through the digital twin.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -11,11 +11,8 @@
     "typecheck": "tsc -p ."
   },
   "dependencies": {
-    "@langchain/core": "^1.2.17",
     "@osiris/core": "workspace:*",
-    "@osiris/platform": "workspace:*",
-    "@osiris/shared": "workspace:*",
-    "zod": "^4.6.5"
+    "@osiris/tools-ops": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.6.4",

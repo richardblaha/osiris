@@ -1,0 +1,22 @@
+{
+  "name": "@osiris/tools-ops",
+  "private": true,
+  "description": "Osiris agent tools: running cluster commands through the digital twin's ops API, changes only after the user's yes.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@langchain/core": "^1.2.17",
+    "@osiris/core": "workspace:*",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "typescript": "6.0.3"
+  }
+}
