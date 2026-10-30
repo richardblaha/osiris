@@ -71,7 +71,7 @@ body,
 .legend-button {
   padding: 0.15rem 0.6rem;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-sidebar) 85%, transparent);
   font-size: 12px;
 }
@@ -224,13 +224,13 @@ body,
   gap: 0.25rem;
   padding: 0.2rem;
   border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-sidebar) 55%, transparent);
   backdrop-filter: blur(6px);
 }
 .app-tab {
   padding: 0.25rem 0.9rem;
-  border-radius: 999px;
+  border-radius: calc(var(--radius) - 2px);
   font-size: 0.875rem;
   color: var(--text-secondary);
   transition:
@@ -253,7 +253,7 @@ body,
   margin-inline-start: 0.5rem;
   padding: 0.15rem 0.7rem;
   border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-sidebar) 55%, transparent);
   backdrop-filter: blur(6px);
   font-size: 0.8rem;
@@ -336,7 +336,7 @@ button.instance-button:hover {
   width: min(42rem, calc(100% - 2rem));
   padding: 0.3rem 0.4rem;
   border: 1px solid var(--border-strong);
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: color-mix(in srgb, var(--bg-sidebar) 90%, transparent);
   backdrop-filter: blur(8px);
   box-shadow: var(--shadow-popup);
@@ -351,7 +351,7 @@ button.instance-button:hover {
   place-items: center;
   width: 2rem;
   height: 2rem;
-  border-radius: 999px;
+  border-radius: var(--radius);
   font-size: 15px;
 }
 .osiris-icon:hover:not(:disabled) {
