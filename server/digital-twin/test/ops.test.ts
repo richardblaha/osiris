@@ -25,6 +25,8 @@ describe("ops' checks", () => {
 
   it("run a program without a shell, with a time limit", async () => {
     expect(await run("echo", ["a; rm -rf /"])).toMatchObject({ exitCode: 0, stdout: "a; rm -rf /\n" });
+    // Input to a program that never reads it (the pipe closes early) is no error.
+    expect(await run("true", [], "x".repeat(1_000_000))).toMatchObject({ exitCode: 0 });
     const slow = await run("sleep", ["5"], undefined, 200);
     expect(slow.exitCode).not.toBe(0);
     expect(slow.stderr).toContain("stopped");

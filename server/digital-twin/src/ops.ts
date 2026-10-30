@@ -77,6 +77,8 @@ export function run(program: string, args: string[], stdin?: string, timeoutMs =
       clearTimeout(timer);
       resolve({ exitCode: code ?? -1, stdout, stderr, truncated, durationMs: Date.now() - start });
     });
+    // A program that exits without reading its input closes the pipe: that's its business, not a crash of ours.
+    child.stdin.on("error", () => {});
     child.stdin.end(stdin ?? "");
   });
 }
