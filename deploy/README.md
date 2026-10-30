@@ -380,3 +380,24 @@ mappings and approved notification templates. Project migration 019 and control 
 No live Flow or template is created by deploying these images. Without configured Meta assets, simple choices
 use native buttons/lists, questionnaires link to PWA and out-of-window scheduled replies remain in web chat.
 Runtime OCR/transcription uses `MISTRAL_API_KEY`, `OCR_MODEL` and `AUDIO_MODEL`; configure them at system level.
+
+## Osiris over the digital twin (project `twin`, kubectl, ceph, speech)
+
+The twin's chat talks to Osiris project **twin**, whose agent manages the cluster and Ceph through the twin
+(`OPS_PROJECTS=twin` in `deploy/k8s/digital-twin.yaml`, `RUNTIME_ENV_OPS_PROJECTS=twin` in `operator.yaml`).
+
+1. Create the project **twin** (System > Projects). System admins are admins of every project; others need the
+   group `project:twin`.
+2. osiris-auth (`/admin` → Apps → `osiris-gateway`): add `digital-twin` to the apps whose tokens it accepts, so the
+   gateway takes the twin's sign-in.
+3. Ceph (optional; without it the agent has kubectl only). On a Ceph host (microceph):
+   ```bash
+   sudo microceph.ceph config generate-minimal-conf > ceph.conf
+   sudo microceph.ceph auth get client.admin > keyring
+   kubectl -n osiris create secret generic ceph-ops --from-file=ceph.conf --from-file=keyring
+   kubectl -n osiris rollout restart deploy/digital-twin
+   ```
+4. `kubectl apply -k deploy/k8s` creates the `osiris-ops` ServiceAccount (cluster-admin, its token mounted only
+   into the twin), the TokenReview binding, the `tts` service and the network rules; restart the operator so it
+   lets runtimes reach the twin's ops API. Every command the agent runs is logged by the twin (`ops.command`), and
+   every change waits for the user's yes in the chat.

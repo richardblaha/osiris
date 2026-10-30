@@ -90,14 +90,7 @@ export function OsirisChat({ onTwin }: { onTwin: (actions: TwinAction[]) => void
   const say = async (words: string) => {
     if (!words.trim()) return;
     try {
-      const token = await getAccessToken();
-      const res = await fetch("/osiris/api/tts", {
-        method: "POST",
-        headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ text: words, lang: currentLocale() }),
-      });
-      if (!res.ok) return;
-      const url = URL.createObjectURL(await res.blob());
+      const url = URL.createObjectURL(await api.tts(words, currentLocale()));
       audio.current?.pause();
       const player = new Audio(url);
       audio.current = player;

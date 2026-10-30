@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { ComposerPrimitive, ThreadPrimitive, useAui, useAuiState } from "@assistant-ui/react";
 import { t } from "i18next";
+import { setSpeechEnabled, useSpeechEnabled } from "./speech.ts";
 
 /** Uploads a file to the open thread's scratchpad and gives its path; absent on the public chat (no uploads). */
 export const UploadContext = createContext<((file: File) => Promise<string>) | undefined>(undefined);
@@ -30,6 +31,7 @@ export function Composer({ placeholder }: { placeholder: string }) {
   const upload = useContext(UploadContext);
   const aui = useAui();
   const running = useAuiState((s) => s.thread.isRunning);
+  const speaking = useSpeechEnabled();
   const [paths, setPaths] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -197,6 +199,19 @@ export function Composer({ placeholder }: { placeholder: string }) {
             aria-pressed={recording}
           >
             <Icon d={MIC} />
+          </button>
+        )}
+        {/* Speech for signed-in users (the public chat has no uploads and no speech). */}
+        {upload && (
+          <button
+            type="button"
+            className={`icon-button ${speaking ? "btn-primary" : "btn-secondary"}`}
+            onClick={() => setSpeechEnabled(!speaking)}
+            aria-pressed={speaking}
+            aria-label={speaking ? t("chat:speakOff") : t("chat:speakOn")}
+            title={speaking ? t("chat:speakOff") : t("chat:speakOn")}
+          >
+            {speaking ? "🔊" : "🔈"}
           </button>
         )}
         <ThreadPrimitive.If running={false}>

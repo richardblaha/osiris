@@ -103,6 +103,8 @@ export function createGatewayApp(deps: GatewayDeps) {
     `script-src 'self'${stats ? ` ${stats}` : ""}`,
     "style-src 'self' 'unsafe-inline'",
     `img-src 'self' data: blob: ${deps.auth.issuer}${stats ? ` ${stats}` : ""}`,
+    // Answers read aloud play from blob URLs.
+    "media-src 'self' blob:",
     `connect-src 'self' ${deps.auth.issuer}${stats ? ` ${stats}` : ""}`,
     "frame-src 'none'",
     "frame-ancestors 'none'",

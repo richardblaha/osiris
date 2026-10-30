@@ -1,4 +1,4 @@
-import { Composer } from "./Attachments.tsx";
+import { Composer, UploadContext } from "./Attachments.tsx";
 import { Question } from "./Question.tsx";
 import {
   MessagePrimitive,
@@ -11,6 +11,7 @@ import { asWorkflowView, QUESTION_TOOLS, type FileScope, type RunStatus } from "
 import { WorkflowDiagram } from "./WorkflowDiagram.tsx";
 import { createContext, useContext, useEffect, useState } from "react";
 import { api, saveBlob } from "../api.ts";
+import { speak, useSpeechEnabled } from "./speech.ts";
 import { t } from "i18next";
 
 /** The open thread's id (null until the first message creates it), for downloading the thread's temp files. */
@@ -211,6 +212,35 @@ function UserMessage() {
   );
 }
 
+/** Reads the answer aloud (Piper): a button under a finished answer. */
+function SpeakButton() {
+  const signedIn = !!useContext(UploadContext);
+  const text = useAuiState((s) => s.message.content.filter((p) => p.type === "text").map((p) => p.text).join(""));
+  const running = useAuiState((s) => s.message.status?.type === "running");
+  if (!signedIn || running || !text.trim()) return null;
+  return (
+    <button type="button" className="speak-button" onClick={() => void speak(text)} title={t("chat:speak")} aria-label={t("chat:speak")}>
+      🔊
+    </button>
+  );
+}
+
+/** With speech on, each answer is read aloud as it finishes (the last assistant message, once its run ends). */
+function AutoSpeak() {
+  const on = useSpeechEnabled() && !!useContext(UploadContext);
+  const running = useAuiState((s) => s.thread.isRunning);
+  const last = useAuiState((s) => {
+    const m = s.thread.messages.at(-1);
+    return m?.role === "assistant" ? m.content.filter((p) => p.type === "text").map((p) => p.text).join("") : "";
+  });
+  const [was, setWas] = useState(running);
+  useEffect(() => {
+    if (was && !running && on) void speak(last);
+    setWas(running);
+  }, [running]);
+  return null;
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="py-2">
@@ -219,6 +249,7 @@ function AssistantMessage() {
           components={{ Text: () => <MarkdownTextPrimitive />, tools: { Fallback: ToolCall } }}
         />
         <RunStatusLine />
+        <SpeakButton />
         <MessagePrimitive.Error>
           <p className="notice notice-error mt-2 px-3 py-2 text-sm">{t("chat:runFailed")}</p>
         </MessagePrimitive.Error>
@@ -230,6 +261,7 @@ function AssistantMessage() {
 export function Thread({ greeting = t("chat:greeting"), placeholder = t("chat:placeholder") }: { greeting?: string; placeholder?: string } = {}) {
   return (
     <ThreadPrimitive.Root className="h-full">
+      <AutoSpeak />
       <ThreadPrimitive.Viewport className="flex h-full flex-col overflow-y-auto px-4">
         <div className="mx-auto w-full max-w-3xl flex-1 py-6">
           <ThreadPrimitive.Empty>

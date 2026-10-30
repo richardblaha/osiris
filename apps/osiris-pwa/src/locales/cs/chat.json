@@ -138,5 +138,8 @@
   "cancelRecording": "Zahodit nahrávku",
   "recording": "Nahrávám {{time}}",
   "removeAttachment": "Odebrat {{name}}",
-  "voiceSent": "Hlasová zpráva odeslána, přepisuji…"
+  "voiceSent": "Hlasová zpráva odeslána, přepisuji…",
+  "speak": "Přečíst nahlas",
+  "speakOn": "Předčítat odpovědi",
+  "speakOff": "Nepředčítat odpovědi"
 }

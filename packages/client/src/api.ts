@@ -393,6 +393,8 @@ export const api = {
     resetSecondFactor: (userId: string) => request(`/admin/users/${encodeURIComponent(userId)}/second-factor`, { method: "DELETE" }),
   },
 
+  /** Speech: the text read by Piper (WAV), in the language given or the app's. */
+  tts: async (text: string, lang?: string) => (await request("/tts", { method: "POST", body: JSON.stringify({ text, ...(lang ? { lang } : {}) }) })).blob(),
   /** Starts a run and yields its server-sent events. */
   threadState: (thread: string) => json<{ busy: boolean; messages: ThreadMessage[] }>(`/threads/${encodeURIComponent(thread)}/state`),
   question: (thread: string, id: string) => json<ChatQuestion>(`/threads/${encodeURIComponent(thread)}/questions/${encodeURIComponent(id)}`),

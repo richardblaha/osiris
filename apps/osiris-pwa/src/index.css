@@ -72,6 +72,20 @@ body,
     letter-spacing: 0.02em;
   }
 
+  /* Reads an answer aloud: a quiet button under it. */
+  .speak-button {
+    margin-top: 0.25rem;
+    border-radius: var(--radius);
+    padding: 0 0.3rem;
+    font-size: 13px;
+    opacity: 0.55;
+    transition: opacity var(--transition);
+  }
+  .speak-button:hover {
+    opacity: 1;
+    background: var(--bg-hover);
+  }
+
   /* A run's step in the chat (chat/Thread.tsx `ToolCall`), like a coding agent's: icon, what it does, the tool. */
   .tool-step {
     margin-block: 0.25rem;

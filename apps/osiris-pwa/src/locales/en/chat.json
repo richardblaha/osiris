@@ -132,5 +132,8 @@
   "cancelRecording": "Discard the recording",
   "recording": "Recording {{time}}",
   "removeAttachment": "Remove {{name}}",
-  "voiceSent": "Voice message sent, transcribing…"
+  "voiceSent": "Voice message sent, transcribing…",
+  "speak": "Read aloud",
+  "speakOn": "Read answers aloud",
+  "speakOff": "Stop reading answers aloud"
 }
