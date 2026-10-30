@@ -2,7 +2,9 @@ import type { DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildScene, scopeOf, type TwinScene } from "./scene.ts";
 import { t } from "i18next";
-import { api, type DashboardSummary } from "./api.ts";
+import { api, currentInstance, setInstance, type DashboardSummary, type InstanceSummary } from "./api.ts";
+import { Instances } from "./Instances.tsx";
+import { InstanceMenu } from "./InstanceMenu.tsx";
 import { authOff, autoSignIn, getAccessToken, login, profile, signedInOk } from "./auth.ts";
 import { UserMenu, type Profile } from "./UserMenu.tsx";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
@@ -21,7 +23,8 @@ type View =
   | { kind: "dashboard"; id?: string }
   | { kind: "logs"; preset: Preset; filter?: Record<string, string>; traceId?: string }
   | { kind: "metrics"; preset: Preset }
-  | { kind: "traces"; preset: Preset; traceId?: string };
+  | { kind: "traces"; preset: Preset; traceId?: string }
+  | { kind: "instances" };
 
 const SCOPE = ["namespace", "pod", "node", "container", "claim"] as const;
 /** The logs page's own filters (besides the scope), kept in the URL. */
@@ -42,11 +45,24 @@ const parseHash = (): View => {
     return { kind: "logs", preset, filter: Object.fromEntries(LOG_FILTERS.flatMap((k) => (params.get(k) ? [[k, params.get(k)!]] : []))), traceId: params.get("traceId") ?? undefined };
   if (kind === "metrics") return { kind: "metrics", preset };
   if (kind === "traces") return { kind: "traces", preset, traceId: params.get("traceId") ?? undefined };
+  if (kind === "instances") return { kind: "instances" };
   return { kind: "twin" };
+};
+
+/** The twin the URL names (`twin=`), so a link opens the same twin. */
+const hashInstance = () => new URLSearchParams(location.hash.replace(/^#\/?/, "")).get("twin") ?? undefined;
+const INSTANCE_KEY = "osiris.digital-twin.instance";
+const rememberedInstance = () => {
+  try {
+    return localStorage.getItem(INSTANCE_KEY) ?? undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 const toHash = (view: View) => {
   const params = new URLSearchParams();
+  if (currentInstance()) params.set("twin", currentInstance());
   const preset = "preset" in view ? view.preset : undefined;
   for (const k of SCOPE) if (preset?.[k]) params.set(k, preset[k]);
   if (view.kind !== "twin") params.set("view", view.kind);
@@ -96,6 +112,36 @@ export function App() {
   // undefined while the stored token is being checked: nothing asks the API before it's known whether there is one.
   const [signedIn, setSignedIn] = useState<boolean | undefined>(authOff ? true : undefined);
   const [user, setUser] = useState<Profile>();
+  /** The twins the user may see, the one shown, and whether the user manages them (an admin). */
+  const [instances, setInstances] = useState<InstanceSummary[]>();
+  const [instance, setInstanceState] = useState<string>();
+  const [admin, setAdmin] = useState(false);
+  /** Shows another twin: everything of the one before goes (its scene, selection, time, dashboards). */
+  const chooseInstance = (id: string | undefined) => {
+    if (id === instance) return;
+    setInstance(id ?? "");
+    try {
+      if (id) localStorage.setItem(INSTANCE_KEY, id);
+    } catch {
+      // Remembered as long as the page.
+    }
+    setModels(undefined);
+    setData(undefined);
+    setSelectedId(undefined);
+    setAt(null);
+    setHistoryFrom(undefined);
+    setDashboards([]);
+    setInstanceState(id);
+    // Another twin (not the first one chosen): its pages start over, on the twin.
+    if (instance && view.kind !== "instances") navigate({ kind: "twin" });
+  };
+  const loadInstances = async (prefer?: string) => {
+    const list = await api.instances();
+    setInstances(list);
+    const want = [prefer, instance, hashInstance(), rememberedInstance()].find((id) => id && list.some((i) => i.id === id)) ?? list[0]?.id;
+    if (want !== instance) chooseInstance(want);
+    return list;
+  };
 
   useEffect(() => {
     const onHash = () => setView(parseHash());
@@ -113,8 +159,8 @@ export function App() {
   /** How far back the recorded history goes; undefined while there is none (or it's off). */
   const [historyFrom, setHistoryFrom] = useState<number>();
   useEffect(() => {
-    if (signedIn) void api.range().then((r) => setHistoryFrom(r.from ?? undefined), () => setHistoryFrom(undefined));
-  }, [signedIn]);
+    if (signedIn && instance) void api.range().then((r) => setHistoryFrom(r.from ?? undefined), () => setHistoryFrom(undefined));
+  }, [signedIn, instance]);
 
   /** The twin loads once signed in and, live, refreshes every minute (the server syncs every 30 s). */
   const loadTwin = () =>
@@ -137,12 +183,12 @@ export function App() {
   // The selection follows the refreshed scene (its new status and properties), or goes when its twin is gone.
   const selected = selectedId ? scene?.byId.get(selectedId) : undefined;
   useEffect(() => {
-    if (!signedIn) return;
+    if (!signedIn || !instance) return;
     void loadTwin();
     if (at !== null) return;
     const id = setInterval(() => void loadTwin(), 60_000);
     return () => clearInterval(id);
-  }, [signedIn, at]);
+  }, [signedIn, at, instance]);
 
   // After the OIDC redirect: back to where the user was. Without a token, straight on to signing in (unless that just
   // failed: then the button).
@@ -151,7 +197,8 @@ export function App() {
       if (token || authOff) {
         signedInOk();
         setSignedIn(true);
-        const [p, me] = await Promise.all([profile(), api.me().catch(() => null)]);
+        const [p, me] = await Promise.all([profile(), api.me().catch(() => null), loadInstances().catch((e: Error) => setError(e.message))]);
+        setAdmin(authOff || !!me?.admin);
         // The picture osiris-auth's introspection names (the ID token's when the API has none).
         setUser({ name: me?.name ?? p?.name ?? undefined, email: me?.email ?? p?.email ?? undefined, picture: me?.picture ?? p?.picture });
         return;
@@ -186,8 +233,8 @@ export function App() {
   const [choosing, setChoosing] = useState(false);
   const loadDashboards = () => api.dashboards().then((l) => (setDashboards(l), l));
   useEffect(() => {
-    if (signedIn) void loadDashboards().catch(() => {});
-  }, [signedIn]);
+    if (signedIn && instance) void loadDashboards().catch(() => {});
+  }, [signedIn, instance]);
   /** Overview: with several dashboards a choice first, with one that one, with none a new one. */
   const openOverview = async () => {
     const list = await loadDashboards().catch(() => dashboards);
@@ -239,7 +286,8 @@ export function App() {
     }
   };
 
-  const tabLabel = (page: Page) =>
+  const tabLabel = (page: Page | "instances") =>
+    page === "instances" ? t("instances:title") :
     page === "dashboard" ? t("common:nav.dashboard") : page === "logs" ? t("common:nav.logs") : page === "metrics" ? t("common:nav.metrics") : t("common:nav.traces");
 
   return (
@@ -262,7 +310,18 @@ export function App() {
               <div className="twin-chrome">
                 <ErrorNotice error={error} />
               </div>
-              {scene ? (
+              {instances && !instances.length ? (
+                <div className="grid h-full place-items-center p-6 text-center">
+                  <div>
+                    <p className="text-sm text-fg-muted">{admin ? t("instances:noneAdmin") : t("instances:none")}</p>
+                    {admin && (
+                      <button type="button" className="btn-primary mt-3" onClick={() => navigate({ kind: "instances" })}>
+                        {t("instances:createFirst")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ) : scene ? (
                 scene.top.length ? (
                   <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} control={camera} layers={layers} />
                 ) : (
@@ -294,9 +353,11 @@ export function App() {
         )}
       </main>
 
-      {signedIn && view.kind !== "twin" && (
+      {signedIn && view.kind !== "twin" && (instance || view.kind === "instances") && (
         <section className="page-overlay" aria-label={tabLabel(view.kind)}>
-          {view.kind === "dashboard" ? (
+          {view.kind === "instances" ? (
+            <Instances onChanged={(id) => void loadInstances(id).catch(() => {})} />
+          ) : view.kind === "dashboard" ? (
             <Dashboard
               id={view.id}
               list={dashboards}
@@ -336,6 +397,9 @@ export function App() {
         <span className="app-bar-brand">
           <img src="/favicon.svg" alt="" className="h-5 w-5" />
           OSIRIS <span className="text-fg-secondary">{t("common:title")}</span>
+          {signedIn && (instances?.length || admin) ? (
+            <InstanceMenu list={instances ?? []} current={instance} admin={admin} onPick={chooseInstance} onManage={() => navigate({ kind: "instances" })} />
+          ) : null}
         </span>
         <nav className="app-bar-tabs" aria-label={t("common:nav.label")}>
           {PAGES.map((page) => (
@@ -347,7 +411,7 @@ export function App() {
                 aria-pressed={view.kind === page}
                 aria-haspopup={page === "dashboard" && dashboards.length > 1 ? "menu" : undefined}
                 aria-expanded={page === "dashboard" ? choosing : undefined}
-                disabled={!signedIn}
+                disabled={!signedIn || !instance}
                 className="app-tab"
               >
                 {tabLabel(page)}

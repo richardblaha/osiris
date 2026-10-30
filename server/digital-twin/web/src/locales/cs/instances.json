@@ -1,0 +1,65 @@
+{
+  "title": "Digitální dvojčata",
+  "choose": "Digitální dvojče",
+  "manage": "Spravovat dvojčata…",
+  "none": "Zatím nesmíš vidět žádné digitální dvojče. Požádej administrátora o přístup (skupina twin:<id>).",
+  "noneAdmin": "Zatím tu není žádné digitální dvojče.",
+  "createFirst": "Vytvořit první dvojče",
+  "new": "Nové dvojče",
+  "failing": "neběží",
+  "error": "Zdroj neběží: {{error}}",
+  "id": "Id",
+  "idHelp": "Malá písmena, číslice a pomlčky; později ho nejde změnit. Vidí ho skupina twin:<id>.",
+  "access": "Kdo ho vidí: administrátoři a členové skupiny {{group}} ve správě identit.",
+  "name": "Název",
+  "sourceType": "Druh systému",
+  "create": "Vytvořit",
+  "save": "Uložit",
+  "saving": "Ukládám…",
+  "delete": "Smazat",
+  "confirmDelete": "Smazat dvojče {{name}} i s jeho přehledy a uloženými filtry? Jeho historie zůstane, dokud nevyprší.",
+  "secret": {
+    "set": "nastaveno",
+    "notSet": "nenastaveno",
+    "keep": "Zůstane, jak je; napiš nové pro nahrazení",
+    "remove": "Odebrat",
+    "removing": "bude odebráno",
+    "undo": "Ponechat"
+  },
+  "type": {
+    "kubernetes": "Kubernetes cluster"
+  },
+  "field": {
+    "kubernetes": {
+      "connection": "Připojení",
+      "kubeconfig": "Kubeconfig",
+      "context": "Kontext",
+      "clusterName": "Název clusteru ve dvojčeti",
+      "cephManagers": "Ceph managery",
+      "clickhouseUrl": "Telemetrie: ClickHouse",
+      "clickhouseUser": "Uživatel ClickHouse",
+      "clickhousePassword": "Heslo ClickHouse",
+      "clickhouseCluster": "Název clusteru v telemetrii"
+    }
+  },
+  "help": {
+    "kubernetes": {
+      "connection": "Cluster, ve kterém tahle služba běží (její účet jen pro čtení), nebo jakýkoli jiný přes kubeconfig.",
+      "kubeconfig": "Jeho uživatel se musí přihlašovat tokenem (kubectl create token <účet> --duration 0) a vše musí být přímo v něm: certificate-authority-data, žádné soubory.",
+      "context": "Prázdné: aktuální kontext kubeconfigu.",
+      "clusterName": "Popisek kořenového dvojčete; prázdné: id dvojčete.",
+      "cephManagers": "Stránky Prometheus Ceph managerů (http://host:9283/metrics) oddělené čárkami: pooly a disky ve dvojčeti.",
+      "clickhouseUrl": "Kam OpenTelemetry Collector clusteru zapisuje logy, metriky a trasy; prázdné: vlastní ClickHouse této služby.",
+      "clickhouseUser": "Jen pro čtení; prázdné: default.",
+      "clickhouseCluster": "k8s.cluster.name, kterým collector označuje telemetrii; prázdné: vše v tom ClickHouse."
+    }
+  },
+  "option": {
+    "kubernetes": {
+      "connection": {
+        "inCluster": "Cluster, ve kterém tahle služba běží",
+        "kubeconfig": "Jiný cluster (kubeconfig)"
+      }
+    }
+  }
+}

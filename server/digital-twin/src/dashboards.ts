@@ -1,4 +1,4 @@
-import type { Dashboard, DashboardPanel, TwinStore } from "./store.ts";
+import type { Dashboard, DashboardPanel, InstanceData } from "./store.ts";
 
 const HOUR = 3_600_000;
 const panel = (id: string, kind: DashboardPanel["kind"], title: string, width: number, filter: Record<string, string>): DashboardPanel => ({ id, kind, title, width, filter });
@@ -30,8 +30,8 @@ export function defaultDashboards(now: number): Dashboard[] {
   ];
 }
 
-/** Creates the default dashboards once (a deleted one stays deleted: the store remembers they were made). */
-export async function seedDashboards(store: TwinStore, now = Date.now()): Promise<void> {
+/** Creates the default dashboards once, in the instance of the cluster Osiris runs in (a deleted one stays deleted: the store remembers they were made). */
+export async function seedDashboards(store: InstanceData, now = Date.now()): Promise<void> {
   for (const d of defaultDashboards(now)) {
     const key = `dashboard-seeded:${d.id}`;
     if (await store.meta(key)) continue;

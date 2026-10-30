@@ -1,61 +1,36 @@
 import { serve } from "@hono/node-server";
-import { Agent, fetch as undiciFetch } from "undici";
 import { join } from "node:path";
 import { loadConfig } from "./config.ts";
 import { createApp } from "./app.ts";
-import { HistoryLog, HistoryReader } from "./history.ts";
 import { introspection, devVerifier } from "./auth.ts";
 import { memoryCache } from "./cache.ts";
 import { TwinStore } from "./store.ts";
-import { startSync } from "./sync.ts";
-import { seedDashboards } from "./dashboards.ts";
+import { Instances } from "./instances.ts";
+import { bootstrapInstance } from "./bootstrap.ts";
+import { SecretBox } from "@osiris/platform/secrets.ts";
 import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";
-import { Kube } from "./sources/kubernetes/kube.ts";
-import { loadKubeconfig } from "./sources/kubernetes/kubeconfig.ts";
-import { kubernetesSource } from "./sources/kubernetes/source.ts";
-import { ClickHouse, Telemetry } from "./telemetry.ts";
+import { ClickHouse } from "./telemetry.ts";
 import { eventEmitter, startTelemetry } from "@osiris/platform/telemetry.ts";
 
 const config = loadConfig();
 startTelemetry(config.OTEL_SERVICE_NAME);
 
-// The cluster to twin: a kubeconfig (any cluster, its context, its certificate authority) or the pod's own
-// ServiceAccount (in the cluster we run in).
-const kubeconfig = config.KUBECONFIG ? await loadKubeconfig(config.KUBECONFIG, config.KUBE_CONTEXT) : undefined;
-const kubeFetch =
-  kubeconfig && (kubeconfig.ca || kubeconfig.insecureTls)
-    ? ((url: Parameters<typeof undiciFetch>[0], init: Parameters<typeof undiciFetch>[1]) =>
-        undiciFetch(url, {
-          ...init,
-          dispatcher: new Agent({ connect: { ca: kubeconfig.ca, rejectUnauthorized: !kubeconfig.insecureTls } }),
-        })) as unknown as typeof fetch
-    : undefined;
-
-// The source adapter; Kubernetes is the one there is (TwinSource in twin.ts is how another one plugs in).
-const source = kubernetesSource(
-  new Kube({
-    apiServer: kubeconfig?.server ?? config.KUBE_API_SERVER,
-    tokenPath: kubeconfig?.tokenPath ?? config.KUBE_TOKEN_PATH,
-    token: kubeconfig?.token ?? config.KUBE_TOKEN,
-    fetchFn: kubeFetch,
-  }),
-  config.CLUSTER_NAME,
-  { cephManagers: config.CEPH_MANAGERS },
-);
 const clickhouse = config.CLICKHOUSE_URL ? new ClickHouse(config.CLICKHOUSE_URL, config.CLICKHOUSE_USER, config.CLICKHOUSE_PASSWORD ?? "") : undefined;
-const telemetry = clickhouse ? new Telemetry(clickhouse, config.CLICKHOUSE_CLUSTER) : undefined;
+const sealer = config.TWIN_SECRETS_KEY ? new SecretBox(config.TWIN_SECRETS_KEY) : SecretBox.insecureDev();
+const store = await TwinStore.open(join(config.DATA_DIR, "twin.db"), sealer);
+await bootstrapInstance(store, config);
 
-// The structure in SQLite, kept in step with the source; its changes go out as OpenTelemetry events (only when the
-// service sends telemetry) and come back from ClickHouse's otel_logs.
-const store = await TwinStore.open(join(config.DATA_DIR, "twin.db"));
-await seedDashboards(store);
+// Every instance: its source kept in step with SQLite, its changes out as OpenTelemetry events (only when the service
+// sends telemetry), read back from the service's ClickHouse.
 const recording = !!process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
-await startSync({
-  source,
+const instances = new Instances({
   store,
-  history: recording ? new HistoryLog(eventEmitter("osiris-digital-twin.history"), config.CLUSTER_NAME, source.name) : undefined,
+  defaults: { clickhouse, kube: { apiServer: config.KUBE_API_SERVER, tokenPath: config.KUBE_TOKEN_PATH, token: config.KUBE_TOKEN } },
+  emit: recording ? eventEmitter("osiris-digital-twin.history") : undefined,
+  historyFrom: clickhouse ? { clickhouse, service: config.OTEL_SERVICE_NAME } : undefined,
   intervalMs: config.SYNC_INTERVAL_SECONDS * 1000,
 });
+await instances.start();
 
 // Ops: kubectl and ceph for the agents of the allowed projects (their runtimes checked by TokenReview).
 const ops = config.OPS_PROJECTS.length
@@ -70,9 +45,7 @@ const ops = config.OPS_PROJECTS.length
   : undefined;
 const app = createApp(config, {
   ops,
-  source,
-  store,
-  telemetry,
+  instances,
   verifier: config.AUTH_DEV_BYPASS
     ? devVerifier()
     : config.AUTH_URL && config.AUTH_CLIENT_SECRET
@@ -80,15 +53,12 @@ const app = createApp(config, {
           url: config.AUTH_URL,
           clientId: config.AUTH_CLIENT_ID,
           clientSecret: config.AUTH_CLIENT_SECRET,
-          requiredGroup: config.AUTH_REQUIRED_GROUP,
+          adminGroup: config.AUTH_ADMIN_GROUP,
         })
       : undefined,
   cache: memoryCache(),
   staticDir: config.STATIC_DIR,
-  history: clickhouse ? new HistoryReader(clickhouse, config.CLUSTER_NAME, config.OTEL_SERVICE_NAME) : undefined,
 });
 
 serve({ fetch: app.fetch, port: config.PORT });
-console.log(
-  `osiris-digital-twin on :${config.PORT} (cluster ${config.CLUSTER_NAME}${kubeconfig ? ` at ${kubeconfig.server}` : ""}${recording ? ", history to OpenTelemetry" : ""})`,
-);
+console.log(`osiris-digital-twin on :${config.PORT} (twins: ${instances.list().map((r) => r.record.id).join(", ") || "none"}${recording ? "; history to OpenTelemetry" : ""})`);

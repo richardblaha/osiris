@@ -1,0 +1,65 @@
+{
+  "title": "Digital twins",
+  "choose": "Digital twin",
+  "manage": "Manage twins…",
+  "none": "You may not see any digital twin yet. Ask an administrator for access (the group twin:<id>).",
+  "noneAdmin": "There is no digital twin yet.",
+  "createFirst": "Create the first twin",
+  "new": "New twin",
+  "failing": "not running",
+  "error": "The source isn't running: {{error}}",
+  "id": "Id",
+  "idHelp": "Lowercase letters, digits and dashes; it can't change later. Its viewers are the group twin:<id>.",
+  "access": "Who sees it: administrators and the members of the group {{group}} in the identity provider.",
+  "name": "Name",
+  "sourceType": "Kind of system",
+  "create": "Create",
+  "save": "Save",
+  "saving": "Saving…",
+  "delete": "Delete",
+  "confirmDelete": "Delete the twin {{name}} with its dashboards and saved filters? Its history stays until it expires.",
+  "secret": {
+    "set": "set",
+    "notSet": "not set",
+    "keep": "Kept as it is; type to replace it",
+    "remove": "Remove",
+    "removing": "will be removed",
+    "undo": "Keep it"
+  },
+  "type": {
+    "kubernetes": "Kubernetes cluster"
+  },
+  "field": {
+    "kubernetes": {
+      "connection": "Connection",
+      "kubeconfig": "Kubeconfig",
+      "context": "Context",
+      "clusterName": "Cluster's name in the twin",
+      "cephManagers": "Ceph managers",
+      "clickhouseUrl": "Telemetry: ClickHouse",
+      "clickhouseUser": "ClickHouse user",
+      "clickhousePassword": "ClickHouse password",
+      "clickhouseCluster": "Telemetry's cluster name"
+    }
+  },
+  "help": {
+    "kubernetes": {
+      "connection": "The cluster this service runs in (its read-only account), or any other through a kubeconfig.",
+      "kubeconfig": "Its user must sign in with a token (kubectl create token <account> --duration 0) and everything must be inline: certificate-authority-data, no files.",
+      "context": "Empty: the kubeconfig's current context.",
+      "clusterName": "The root twin's label; empty: the twin's id.",
+      "cephManagers": "The Ceph managers' Prometheus pages (http://host:9283/metrics), comma-separated: pools and disks in the twin.",
+      "clickhouseUrl": "Where the cluster's OpenTelemetry Collector writes logs, metrics and traces; empty: this service's own ClickHouse.",
+      "clickhouseUser": "Read-only; empty: default.",
+      "clickhouseCluster": "The k8s.cluster.name the collector stamps the telemetry with; empty: everything in that ClickHouse."
+    }
+  },
+  "option": {
+    "kubernetes": {
+      "connection": {
+        "inCluster": "The cluster this service runs in",
+        "kubeconfig": "Another cluster (kubeconfig)"
+      }
+    }
+  }
+}

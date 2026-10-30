@@ -8,8 +8,10 @@ const schema = z
     PORT: z.coerce.number().int().default(3004),
     STATIC_DIR: z.string().optional(),
 
-    // The twin's root label; the cluster's own name in the k8s API has no single place to read it from.
-    CLUSTER_NAME: z.string().min(1).default("k8s"),
+    // The twins are instances an admin manages in the PWA. When the service starts with none, it makes one of the
+    // cluster it runs in (or KUBECONFIG's) from the settings below, named CLUSTER_NAME (also its id, `twin.id` of
+    // its history), so a deployment that had one twin keeps it. Later changes to these settings don't touch it.
+    CLUSTER_NAME: z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/).default("k8s"),
     // Ceph's managers' Prometheus pages (`http://<host>:9283/metrics`, comma-separated; the active one answers):
     // the twin then shows Ceph's pools and its OSDs (disks) in their nodes.
     CEPH_MANAGERS: z
@@ -46,12 +48,17 @@ const schema = z
     CACHE_DATA_TTL_SECONDS: z.coerce.number().int().positive().default(15),
 
     // Sign-in: osiris-auth (OIDC). The PWA signs in as WEB_CLIENT_ID (public, PKCE); the API introspects tokens as
-    // AUTH_CLIENT_ID and answers only to members of AUTH_REQUIRED_GROUP. Without AUTH_URL there is no sign-in.
+    // AUTH_CLIENT_ID. Members of AUTH_ADMIN_GROUP see and manage every twin, members of `twin:<id>` see that twin.
+    // Without AUTH_URL there is no sign-in.
     AUTH_URL: z.url().optional().transform((v) => v?.replace(/\/$/, "")),
     WEB_CLIENT_ID: z.string().min(1).default("digital-twin"),
     AUTH_CLIENT_ID: z.string().min(1).default("osiris-digital-twin"),
     AUTH_CLIENT_SECRET: z.string().optional(),
-    AUTH_REQUIRED_GROUP: z.string().min(1).default("admin"),
+    AUTH_ADMIN_GROUP: z.string().min(1).default("admin"),
+
+    // Seals the instances' secrets (kubeconfigs, passwords) in twin.db: 32 bytes, base64 (`openssl rand -base64 32`).
+    // Development without it uses a fixed key.
+    TWIN_SECRETS_KEY: z.string().optional(),
 
     // Development only: any bearer token signs in as `dev` (refused in production).
     AUTH_DEV_BYPASS: bool,
@@ -80,6 +87,7 @@ const schema = z
     const prod = env.NODE_ENV === "production";
     if (prod) {
       if (!env.AUTH_URL?.startsWith("https://")) ctx.addIssue({ code: "custom", path: ["AUTH_URL"], message: "must be set and https in production" });
+      if (!env.TWIN_SECRETS_KEY) ctx.addIssue({ code: "custom", path: ["TWIN_SECRETS_KEY"], message: "is required in production" });
       if (!env.AUTH_CLIENT_SECRET) ctx.addIssue({ code: "custom", path: ["AUTH_CLIENT_SECRET"], message: "is required in production" });
       // The cluster can be anywhere (a kubeconfig of another cluster), but its telemetry has to be reachable.
       if (!env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["CLICKHOUSE_URL"], message: "is required in production" });

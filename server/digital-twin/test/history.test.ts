@@ -8,7 +8,8 @@ import { ClickHouse } from "../src/telemetry.ts";
 import type { SourceSnapshot, TwinSource } from "../src/twin.ts";
 import { DTDL_CONTEXT } from "@osiris/shared/dtdl.ts";
 
-const tempStore = () => TwinStore.open(join(tmpdir(), `twin-${process.pid}-${Math.random().toString(36).slice(2)}.db`));
+const tempDb = () => TwinStore.open(join(tmpdir(), `twin-${process.pid}-${Math.random().toString(36).slice(2)}.db`));
+const tempStore = async () => (await tempDb()).of("t");
 const thing = (id: string, over: Record<string, unknown> = {}) => ({ $dtId: id, $metadata: { $model: "dtmi:test:Thing;1" }, name: id, status: "ok", ...over });
 const snap = (twins: ReturnType<typeof thing>[], contains: [string, string][]): SourceSnapshot => ({ twins, relationships: contains.map(([source, target]) => ({ name: "contains", source, target })) });
 const first = snap([thing("root"), thing("a", { v: 1 }), thing("b")], [["root", "a"], ["a", "b"]]);
@@ -17,27 +18,51 @@ const second = snap([thing("root"), thing("a", { v: 2, status: "warn" })], [["ro
 describe("TwinStore", () => {
   it("syncs a source's snapshot and tells what changed", async () => {
     const store = await tempStore();
-    const one = await store.sync("test", first, 1_000);
+    const one = await store.sync(first, 1_000);
     expect(one.added.map((t) => t.$dtId).sort()).toEqual(["a", "b", "root"]);
     expect(one.relationshipsAdded).toHaveLength(2);
-    const two = await store.sync("test", second, 2_000);
+    const two = await store.sync(second, 2_000);
     expect(two.added).toEqual([]);
     expect(two.changed).toEqual([expect.objectContaining({ changed: ["status", "v"] })]);
     expect(two.removed.map((t) => t.$dtId)).toEqual(["b"]);
     expect(two.relationshipsRemoved).toEqual([expect.objectContaining({ $sourceId: "a", $targetId: "b" })]);
     expect((await store.twin("a"))).toMatchObject({ v: 2, status: "warn", $metadata: { $lastUpdateTime: "1970-01-01T00:00:02.000Z" } });
     // Nothing changed: nothing written, the etag and update time stay.
-    const three = await store.sync("test", second, 3_000);
+    const three = await store.sync(second, 3_000);
     expect([three.added, three.changed, three.removed, three.relationshipsAdded, three.relationshipsRemoved].flat()).toEqual([]);
     expect((await store.twin("root"))!.$metadata.$lastUpdateTime).toBe("1970-01-01T00:00:01.000Z");
   });
 
-  it("keeps each source's twins its own", async () => {
-    const store = await tempStore();
-    await store.sync("one", snap([thing("x")], []), 1);
-    await store.sync("two", snap([thing("y")], []), 2);
-    await store.sync("one", snap([], []), 3);
-    expect((await store.twins()).map((t) => t.$dtId)).toEqual(["y"]);
+  it("keeps each instance's twins, dashboards and filters its own", async () => {
+    const db = await tempDb();
+    const one = db.of("one");
+    const two = db.of("two");
+    await one.sync(snap([thing("x")], []), 1);
+    await two.sync(snap([thing("x"), thing("y")], []), 2);
+    await one.sync(snap([], []), 3);
+    expect((await one.twins()).map((t) => t.$dtId)).toEqual([]);
+    expect((await two.twins()).map((t) => t.$dtId)).toEqual(["x", "y"]);
+    await one.saveDashboard({ id: "d", name: "D", range: 1, panels: [], updatedAt: 1, updatedBy: "u" });
+    expect(await two.dashboards()).toEqual([]);
+    await db.putInstance({ id: "one", name: "One", sourceType: "test", settings: {} }, 1);
+    expect(await db.deleteInstance("one")).toBe(true);
+    expect(await one.dashboards()).toEqual([]);
+    expect((await two.twins()).length).toBe(2);
+  });
+
+  it("seals an instance's secrets and hands out only their names", async () => {
+    const sealed: string[] = [];
+    const db = await TwinStore.open(join(tmpdir(), `twin-s-${process.pid}-${Math.random().toString(36).slice(2)}.db`), {
+      seal: (s) => (sealed.push(s), Buffer.from(s).toString("base64")),
+      open: (s) => Buffer.from(s, "base64").toString(),
+    });
+    const r = await db.putInstance({ id: "c", name: "C", sourceType: "kubernetes", settings: { connection: "kubeconfig" }, secrets: { kubeconfig: "apiVersion: v1", other: "x" } }, 1);
+    expect(r).toMatchObject({ id: "c", secretNames: ["kubeconfig", "other"], settings: { connection: "kubeconfig" } });
+    expect(JSON.stringify(r)).not.toContain("apiVersion");
+    // A secret not named stays, null removes one.
+    await db.putInstance({ id: "c", name: "C2", sourceType: "kubernetes", settings: {}, secrets: { other: null } }, 2);
+    expect(await db.secrets("c")).toEqual({ kubeconfig: "apiVersion: v1" });
+    expect((await db.instance("c"))).toMatchObject({ name: "C2", createdAt: 1, updatedAt: 2 });
   });
 });
 
@@ -46,8 +71,8 @@ describe("HistoryLog", () => {
     const store = await tempStore();
     const events: { name: string; a: Record<string, string>; ts: number }[] = [];
     const log = new HistoryLog((name, a, ts) => events.push({ name, a, ts }), "busiris", "test");
-    await store.sync("test", first, 1_000);
-    const result = await store.sync("test", second, 2_000);
+    await store.sync(first, 1_000);
+    const result = await store.sync(second, 2_000);
     log.record(result, await store.relationships());
     const entity = events.filter((e) => e.name === ENTITY_EVENT);
     expect(entity.find((e) => e.a["dt.id"] === "a")!.a).toMatchObject({ "twin.id": "busiris", "twin.change": "changed", "dt.status": "warn", "dt.previous_status": "ok", "dt.changed": '["status","v"]', "dt.ancestors": '["root"]' });

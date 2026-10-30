@@ -7,7 +7,7 @@ import { createApp } from "../src/app.ts";
 import { noCache } from "../src/cache.ts";
 import { loadConfig } from "../src/config.ts";
 import { checkCeph, checkKubectl, OpsRefused, run } from "../src/ops.ts";
-import type { TwinSource } from "../src/twin.ts";
+import { Instances } from "../src/instances.ts";
 import { TwinStore } from "../src/store.ts";
 
 describe("ops' checks", () => {
@@ -35,14 +35,13 @@ describe("ops' checks", () => {
 
 describe("the ops API and the Osiris proxy", async () => {
   const store = await TwinStore.open(join(tmpdir(), `twin-ops-${process.pid}-${Date.now()}.db`));
-  const source: TwinSource = { name: "test", models: () => [], snapshot: async () => ({ twins: [], relationships: [] }) };
   const config = loadConfig({ NODE_ENV: "test", OSIRIS_URL: "https://osiris.example", OSIRIS_PROJECT: "twin" });
   const ca = join(tmpdir(), `ca-${process.pid}`);
   await writeFile(ca, "");
   const fetchFn = vi.fn(async (url: string, init?: RequestInit) => Response.json({ url, project: new Headers(init?.headers).get("x-project-id"), auth: new Headers(init?.headers).get("authorization") }));
+  const instances = new Instances({ store, defaults: { kube: { apiServer: "", tokenPath: "" } }, intervalMs: 1e9 });
   const app = createApp(config, {
-    source,
-    store,
+    instances,
     cache: noCache,
     fetchFn: fetchFn as unknown as typeof fetch,
     ops: { projects: ["twin"], identity: devRuntimeVerifier(), tools: { kubectl: { server: "https://k", tokenPath: "/nonexistent", caPath: ca } } },

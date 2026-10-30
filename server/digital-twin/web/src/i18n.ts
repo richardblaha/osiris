@@ -5,6 +5,7 @@ import type en_common from "./locales/en/common.json";
 import type en_telemetry from "./locales/en/telemetry.json";
 import type en_twin from "./locales/en/twin.json";
 import type en_dashboard from "./locales/en/dashboard.json";
+import type en_instances from "./locales/en/instances.json";
 
 /**
  * The app's language. English (`locales/en`) is the source; another language falls back to it key by key. Choice:
@@ -103,6 +104,6 @@ export default i18n;
 declare module "i18next" {
   interface CustomTypeOptions {
     defaultNS: "common";
-    resources: { common: typeof en_common, telemetry: typeof en_telemetry, twin: typeof en_twin, dashboard: typeof en_dashboard };
+    resources: { common: typeof en_common, telemetry: typeof en_telemetry, twin: typeof en_twin, dashboard: typeof en_dashboard, instances: typeof en_instances };
   }
 }

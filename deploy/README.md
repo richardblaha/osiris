@@ -130,7 +130,8 @@ lets only the collector write and the three readers read.
 
 ## Osiris Digital Twin (twin.k6labs.cz)
 
-`server/digital-twin` + `server/digital-twin/web` (Docker target `digital-twin`): the cluster's digital twin — a 3D
+`server/digital-twin` + `server/digital-twin/web` (Docker target `digital-twin`): a general digital twin system that
+holds any number of twins (instances), each of a kind of source (today Kubernetes) with its own settings — a 3D
 WebGL PWA (three.js, the OSIRIS theme) of what each twin contains as nested translucent cuboids, edges coloured by
 status, with Logy/Metriky/Trasy pages that open filtered by the selected twin. The models are DTDL v3
 (`/api/models`) and the twins and relationships follow the Azure Digital Twins API (`/api/digitaltwins/{id}`,
@@ -142,11 +143,16 @@ and history come from ClickHouse's `otel` database.
    and the introspection client **osiris-digital-twin** (a secret, accepting `digital-twin`'s tokens), then:
    ```bash
    kubectl -n osiris create secret generic osiris-digital-twin --dry-run=client -o yaml \
-     --from-literal=AUTH_CLIENT_SECRET="<osiris-auth secret>" --from-literal=CLICKHOUSE_PASSWORD="$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD" | kubectl apply -f -
+     --from-literal=AUTH_CLIENT_SECRET="<osiris-auth secret>" --from-literal=CLICKHOUSE_PASSWORD="$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD" \
+     --from-literal=TWIN_SECRETS_KEY="$(openssl rand -base64 32)" | kubectl apply -f -
    kubectl apply -k deploy/k8s
    ```
-   The twin reads ClickHouse as the read-only user `osiris` (telemetry and history alike).
-2. `AUTH_REQUIRED_GROUP` (default `admin`) says which group may see the twin; without membership the API answers 403.
+   The twin reads ClickHouse as the read-only user `osiris` (telemetry and history alike). `TWIN_SECRETS_KEY` seals
+   the twins' secrets (kubeconfigs, passwords) in `twin.db`; losing it loses them (the twins then need them again).
+   An existing secret gets it with `kubectl -n osiris patch secret osiris-digital-twin --type merge -p
+   "{\"stringData\":{\"TWIN_SECRETS_KEY\":\"$(openssl rand -base64 32)\"}}"`.
+2. Access: members of `AUTH_ADMIN_GROUP` (default `admin`) see and manage every twin (the twin menu in the bar →
+   Manage twins); members of the osiris-auth group `twin:<id>` see that twin only. Others get 403.
 3. DNS: twin.k6labs.cz to the cluster's ingress, the same as osiris.k6labs.cz; cert-manager issues the certificate.
 4. **Structure and history**: one replica with its own volume (`digital-twin-data`, SQLite `twin.db`: the DTDL
    models, twins and relationships, synced from the cluster every 30 s). What changes goes out as OpenTelemetry
@@ -154,15 +160,19 @@ and history come from ClickHouse's `otel` database.
    `otel_logs`, so the history lives as long as the logs (30 days). The PWA's time axis shows the twin at any five
    minutes since the first checkpoint, and the detail lists the changes under the selected twin.
 
-Any cluster can be twinned, not just the one the app runs in: mount the cluster's kubeconfig (as a secret) and set
-`KUBECONFIG` (and `KUBE_CONTEXT`, if not the current one) plus its ClickHouse (`CLICKHOUSE_URL`, `CLICKHOUSE_USER`,
-`CLICKHOUSE_PASSWORD`) and `CLUSTER_NAME`. The kubeconfig's user must authenticate with a token — client certificates
-and exec plugins are refused; `kubectl create token <service-account> --duration 0` prints one that doesn't expire
-(the cluster's read-only rules are in `deploy/k8s/rbac.yaml`). The cluster's telemetry must reach ClickHouse through
-the OpenTelemetry Collector's standard schema (`otel_logs`, `otel_traces`, `otel_metrics_*`, database `otel`).
-`CLICKHOUSE_CLUSTER` is the `k8s.cluster.name` its collector stamps its telemetry with (the resource/cluster
+The first start with no twins makes one of the cluster the app runs in, from `CLUSTER_NAME` (its id and name, so the
+history it wrote as the only twin goes on), `CEPH_MANAGERS` and `CLICKHOUSE_CLUSTER` (or `KUBECONFIG`/`KUBE_CONTEXT`,
+whose kubeconfig is then stored sealed); later changes to those variables don't touch it. Any other cluster is a twin
+an admin adds in the PWA: connection "another cluster", its kubeconfig pasted in, and its telemetry's ClickHouse
+(empty: the app's own, filtered by the telemetry's cluster name). The kubeconfig's user must authenticate with a token
+and everything must be inline (`certificate-authority-data`; files, client certificates and exec plugins are
+refused); `kubectl create token <service-account> --duration 0` prints one that doesn't expire (the cluster's
+read-only rules are in `deploy/k8s/rbac.yaml`). The cluster's telemetry must reach ClickHouse through the
+OpenTelemetry Collector's standard schema (`otel_logs`, `otel_traces`, `otel_metrics_*`, database `otel`). The
+telemetry's cluster name is the `k8s.cluster.name` its collector stamps its telemetry with (the resource/cluster
 processor, `deploy/observability/collector.yaml`): set it and a ClickHouse shared by several clusters keeps them
-apart; without it, the twin sees every cluster in the database.
+apart; without it, the twin sees every cluster in the database. Every twin's history goes out with the app's own
+telemetry, `twin.id` = the twin's id.
 
 1. `.env`: `OSIRIS_CLICKHOUSE_OTEL_PASSWORD`, `OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD` (`openssl rand -hex 24` each), then:
    ```bash

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createServer } from "node:http";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { KubeconfigError, loadKubeconfig } from "../src/sources/kubernetes/kubeconfig.ts";
+import { KubeconfigError, loadKubeconfig, parseKubeconfig } from "../src/sources/kubernetes/kubeconfig.ts";
 import { Kube } from "../src/sources/kubernetes/kube.ts";
 
 const CA = `-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n`;
@@ -107,5 +107,20 @@ describe("the twin reads any cluster through its kubeconfig", () => {
     const kube = new Kube({ apiServer: conn.server, token: conn.token });
     const namespaces = await kube.namespaces();
     expect(namespaces[0]!.metadata.name).toBe("osiris");
+  });
+});
+
+describe("a kubeconfig pasted into an instance", () => {
+  const doc = (user: string, cluster = "    server: https://k.example:6443\n    certificate-authority-data: " + Buffer.from("PEM").toString("base64")) =>
+    `apiVersion: v1\ncurrent-context: c\ncontexts:\n- name: c\n  context: { cluster: k, user: u }\nclusters:\n- name: k\n  cluster:\n${cluster}\nusers:\n- name: u\n  user:\n${user}\n`;
+
+  it("resolves an inline token and certificate authority", async () => {
+    expect(await parseKubeconfig(doc("    token: abc"))).toEqual({ server: "https://k.example:6443", token: "abc", tokenPath: undefined, ca: "PEM", insecureTls: false });
+  });
+
+  it("refuses files on this server and a user without a token", async () => {
+    await expect(parseKubeconfig(doc("    tokenFile: /etc/shadow"))).rejects.toThrow(/names files/);
+    await expect(parseKubeconfig(doc("    token: abc", "    server: https://k\n    certificate-authority: /etc/passwd"))).rejects.toThrow(/names files/);
+    await expect(parseKubeconfig(doc("    username: x"))).rejects.toThrow(/no token/);
   });
 });

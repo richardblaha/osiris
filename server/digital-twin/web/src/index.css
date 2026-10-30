@@ -248,6 +248,22 @@ body,
 .app-bar-user {
   justify-self: end;
 }
+/* The twin shown, beside the name: a quiet pill that opens the choice of twins. */
+.instance-button {
+  margin-inline-start: 0.5rem;
+  padding: 0.15rem 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 70%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg-sidebar) 55%, transparent);
+  backdrop-filter: blur(6px);
+  font-size: 0.8rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  color: var(--accent-primary);
+}
+button.instance-button:hover {
+  background: var(--bg-hover);
+}
 .avatar {
   display: grid;
   place-items: center;

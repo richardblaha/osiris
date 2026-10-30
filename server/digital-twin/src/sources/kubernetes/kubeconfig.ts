@@ -46,6 +46,14 @@ export async function loadKubeconfig(path: string, contextName?: string): Promis
   } catch (err) {
     throw new KubeconfigError(`The kubeconfig can't be read: ${file}: ${(err as Error).message}`);
   }
+  return parseKubeconfig(raw, contextName, { files: true });
+}
+
+/**
+ * Resolves a kubeconfig's context from its text. Without `files` (a kubeconfig pasted into an instance's settings)
+ * it may not name files on this server (`tokenFile`, `certificate-authority`): everything must be inline.
+ */
+export async function parseKubeconfig(raw: string, contextName?: string, options: { files?: boolean } = {}): Promise<KubeConnection> {
   let doc: Kubeconfig;
   try {
     doc = z.object({}).passthrough().parse(parse(raw)) as Kubeconfig;
@@ -53,8 +61,8 @@ export async function loadKubeconfig(path: string, contextName?: string): Promis
     throw new KubeconfigError(`The kubeconfig isn't valid YAML: ${(err as Error).message}`);
   }
 
-  const context = doc.contexts?.find((c) => c.name === (contextName ?? doc["current-context"]));
-  if (!context) throw new KubeconfigError(`The kubeconfig has no context ${JSON.stringify(contextName ?? doc["current-context"] ?? "")}`);
+  const context = doc.contexts?.find((c) => c.name === (contextName || doc["current-context"]));
+  if (!context) throw new KubeconfigError(`The kubeconfig has no context ${JSON.stringify(contextName || doc["current-context"] || "")}`);
   const cluster = doc.clusters?.find((c) => c.name === context.context.cluster);
   if (!cluster?.cluster.server) throw new KubeconfigError(`The kubeconfig context ${context.name} has no cluster with a server`);
   const user = doc.users?.find((u) => u.name === context.context.user)?.user ?? {};
@@ -64,9 +72,11 @@ export async function loadKubeconfig(path: string, contextName?: string): Promis
       `The kubeconfig's user ${JSON.stringify(context.context.user ?? "")} authenticates with a client certificate or an exec plugin; ` +
         "the twin reads the cluster and needs a token (kubectl create token <service-account> --duration 0)",
     );
-
   // certificate-authority is a PEM file on disk; certificate-authority-data the same PEM inline, base64-encoded.
   const caFile = cluster.cluster["certificate-authority"];
+  if (!options.files && (caFile || user.tokenFile))
+    throw new KubeconfigError("The kubeconfig names files (tokenFile, certificate-authority); put the token and certificate-authority-data in it instead");
+  if (!user.token && !user.tokenFile && !options.files) throw new KubeconfigError(`The kubeconfig's user ${JSON.stringify(context.context.user ?? "")} has no token`);
   const ca = cluster.cluster["certificate-authority-data"]
     ? Buffer.from(cluster.cluster["certificate-authority-data"], "base64").toString("utf8")
     : caFile

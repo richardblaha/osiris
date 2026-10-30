@@ -50,12 +50,14 @@ spec:
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
             - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
+            # The first twin, made once when there is none (later twins are an admin's, in the PWA): this cluster.
             - { name: CLUSTER_NAME, value: busiris }
             # Ceph's managers (microceph on the nodes; the active one answers): pools and the OSDs (disks) in the twin.
             - { name: CEPH_MANAGERS, value: "http://192.168.0.231:9283/metrics,http://192.168.0.241:9283/metrics,http://192.168.0.242:9283/metrics" }
             - { name: STATIC_DIR, value: /app/server/digital-twin/web/dist }
             - { name: AUTH_URL, value: https://auth.k6labs.cz }
-            - { name: AUTH_REQUIRED_GROUP, value: admin }
+            # Admins see and manage every twin; the group twin:<id> sees that twin.
+            - { name: AUTH_ADMIN_GROUP, value: admin }
             - { name: DATA_DIR, value: /data }
             - { name: CLICKHOUSE_URL, value: http://clickhouse.observability.svc.cluster.local:8123 }
             # The busiris cluster's telemetry, as the collector's resource/cluster processor stamps it; keep the

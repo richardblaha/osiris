@@ -6,13 +6,13 @@ import { z } from "zod";
 import { errorResponse, HttpError, requestLocale, ValidationError } from "@osiris/platform/i18n.ts";
 import { ServiceError } from "@osiris/platform/http.ts";
 import { telemetryMiddleware } from "@osiris/platform/telemetry.ts";
-import type { Identity, TokenVerifier } from "./auth.ts";
+import { isAdmin, maySee, type Identity, type TokenVerifier } from "./auth.ts";
 import type { Cache } from "./cache.ts";
 import type { Config } from "./config.ts";
-import type { HistoryReader } from "./history.ts";
-import type { TwinStore } from "./store.ts";
-import { errorsByTwin, valuesByTwin, type TwinSource } from "./twin.ts";
-import type { MetricType, Telemetry } from "./telemetry.ts";
+import type { Instances, RunningInstance } from "./instances.ts";
+import { errorsByTwin, valuesByTwin } from "./twin.ts";
+import type { MetricType } from "./telemetry.ts";
+import { secretFields } from "./sources/registry.ts";
 import { availableTools, ceph, kubectl, OpsRefused, type CommandResult, type OpsTools } from "./ops.ts";
 import { RuntimeIdentityError, type RuntimeIdentityVerifier } from "@osiris/platform/runtime-identity.ts";
 
@@ -59,8 +59,10 @@ const MAX_DASHBOARDS = 50;
 const filterKind = z.enum(["logs"]);
 /** How many filters one user may keep. */
 const MAX_SAVED_FILTERS = 100;
+type Env = { Variables: { identity: Identity; twin: RunningInstance } };
 /** The signed-in user's id (development without sign-in: `dev`). */
-const owner = (c: Context<{ Variables: { identity: Identity } }>) => c.get("identity")?.sub ?? "dev";
+const owner = (c: Context<Env>) => c.get("identity")?.sub ?? "dev";
+const instanceId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const r = schema.safeParse(value, { reportInput: true });
   if (!r.success) throw new ValidationError(r.error);
@@ -74,16 +76,11 @@ const csp = (authUrl?: string) =>
   `default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:${authUrl ? ` ${new URL(authUrl).origin}` : ""}; media-src 'self' blob:; connect-src 'self'${authUrl ? ` ${new URL(authUrl).origin}` : ""}; form-action 'self'; frame-ancestors 'none'; base-uri 'self'; object-src 'none'`;
 
 export interface AppOptions {
-  /** The adapter the twin mirrors (Kubernetes): its error attributes name the twins' logs. */
-  source: TwinSource;
-  /** The twin's structure (SQLite), kept in step with the source by the sync. */
-  store: TwinStore;
-  telemetry?: Telemetry;
+  /** The digital twins (instances), each with its source, data, telemetry and history. */
+  instances: Instances;
   verifier?: TokenVerifier;
   cache: Cache;
   staticDir?: string;
-  /** The twin's history in OpenTelemetry's logs; without it the history endpoints answer 503. */
-  history?: HistoryReader;
   /** kubectl and ceph for the agents of `projects`, whose runtimes `identity` recognizes. */
   ops?: { tools: OpsTools; identity: RuntimeIdentityVerifier; projects: string[] };
   /** Replaces global fetch for the Osiris proxy (tests). */
@@ -91,23 +88,25 @@ export interface AppOptions {
 }
 
 /**
- * Osiris Digital Twin's HTTP app. The twin in the shape of the Azure Digital Twins API, DTDL's de facto instance
- * format: `/api/models` (DTDL v3 interfaces), `/api/digitaltwins/{id}`, its relationships and incoming relationships,
- * plus the lists the PWA draws from (`/api/digitaltwins`, `/api/relationships`; `?at=` for a past time) and each
- * twin's history. Structure from SQLite; telemetry and history from OpenTelemetry's ClickHouse; the telemetry
+ * Osiris Digital Twin's HTTP app. It holds any number of digital twins (instances, `/api/instances`; admins manage
+ * them at `/api/admin/instances`), each in the shape of the Azure Digital Twins API, DTDL's de facto instance format,
+ * under `/api/instances/{instance}`: `/models` (DTDL v3 interfaces), `/digitaltwins/{id}`, its relationships and
+ * incoming relationships, plus the lists the PWA draws from (`/digitaltwins`, `/relationships`; `?at=` for a past
+ * time) and each twin's history. Structure from SQLite; telemetry and history from OpenTelemetry's ClickHouse; the telemetry
  * pages' data (logs, metrics, traces) and the PWA itself. Sign-in is osiris-auth's: the PWA signs in with OIDC, the
- * API introspects the token and answers members of the configured group.
+ * API introspects the token; the admin group sees every instance, the group `twin:<id>` that one.
  */
 export function createApp(config: Config, options: AppOptions) {
-  const { source, store, telemetry, verifier, cache, staticDir, history, ops } = options;
+  const { instances, verifier, cache, staticDir, ops } = options;
+  const store = instances.store;
   const CSP = csp(config.AUTH_URL);
   const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
-  const prefix = `twin:${config.CLUSTER_NAME}`;
+  const ADMIN = config.AUTH_ADMIN_GROUP;
 
   /** An endpoint whose answer is cached: the key a hash of the query, the value fresh when the key misses. Epoch
    * times are bucketed to the TTL before hashing, so a repeated question (the pages' `now`-anchored ranges) hits. */
-  const cached = async <T>(name: string, query: Record<string, unknown>, ttlSeconds: number, load: () => Promise<T>): Promise<T> => {
-    const key = `${prefix}:${name}:${createHash("sha256")
+  const cached = async <T>(tw: RunningInstance, name: string, query: Record<string, unknown>, ttlSeconds: number, load: () => Promise<T>): Promise<T> => {
+    const key = `twin:${tw.record.id}:${tw.record.updatedAt}:${name}:${createHash("sha256")
       .update(JSON.stringify(query, (_, v) => (typeof v === "number" && v > 1e12 ? Math.floor(v / (ttlSeconds * 1000)) : v)))
       .digest("hex")}`;
     const hit = await cache.get<T>(key);
@@ -117,21 +116,22 @@ export function createApp(config: Config, options: AppOptions) {
     return value;
   };
 
-  const h = () => {
-    if (!history) throw new HttpError(503, "errors.digitalTwin.historyOff");
-    return history;
+  const h = (tw: RunningInstance) => {
+    if (!tw.history) throw new HttpError(503, "errors.digitalTwin.historyOff");
+    return tw.history;
   };
-  const t = () => {
-    if (!telemetry) throw new HttpError(503, "errors.telemetryOff");
-    return telemetry;
+  const t = (tw: RunningInstance) => {
+    if (!tw.telemetry) throw new HttpError(503, "errors.telemetryOff");
+    return tw.telemetry;
   };
   /** The twins and relationships now (SQLite) or at a past time (the history). */
-  const stateAt = async (at: number | undefined) => {
-    if (at === undefined) return { twins: await store.twins(), relationships: await store.relationships() };
-    const state = await failing(() => h().stateAt(Math.min(at, Date.now())));
+  const stateAt = async (tw: RunningInstance, at: number | undefined) => {
+    if (at === undefined) return { twins: await tw.data.twins(), relationships: await tw.data.relationships() };
+    const state = await failing(() => h(tw).stateAt(Math.min(at, Date.now())));
     if (!state) throw new HttpError(404, "errors.digitalTwin.historyMissing");
     return state;
   };
+  const T = "/api/instances/:instance";
   const atQuery = z.object({ at: z.coerce.number().int().positive().optional() });
   const failing = async <T>(action: () => Promise<T>): Promise<T> => {
     try {
@@ -143,7 +143,16 @@ export function createApp(config: Config, options: AppOptions) {
     }
   };
 
-  const app = new Hono<{ Variables: { identity: Identity } }>()
+  /** The instance a twin route is about (checked by the middleware). */
+  const twinOf = (c: Context<Env>) => c.get("twin");
+  /** Admin routes: the admin group only. */
+  const adminOnly = (c: Context<Env>) => {
+    if (!isAdmin(c.get("identity"), ADMIN)) throw new HttpError(403, "errors.digitalTwin.adminOnly");
+  };
+  /** An instance as its viewers see it: name, source type and whether it runs. */
+  const summary = (r: RunningInstance) => ({ id: r.record.id, name: r.record.name, sourceType: r.record.sourceType, error: r.error ?? null });
+
+  const app = new Hono<Env>()
     .use(telemetryMiddleware())
     .use(async (c, next) => {
       await next();
@@ -240,71 +249,126 @@ export function createApp(config: Config, options: AppOptions) {
       c.set("identity", await verifier.identify(token));
       await next();
     })
-    .get("/api/me", (c) => c.json(c.get("identity") ?? null))
+    .get("/api/me", (c) => {
+      const identity = c.get("identity");
+      return c.json(identity ? { ...identity, admin: isAdmin(identity, ADMIN) } : null);
+    })
+
+    // The twins the user may see (an admin all of them).
+    .get("/api/instances", (c) => c.json({ value: instances.list().filter((r) => maySee(c.get("identity"), ADMIN, r.record.id)).map(summary) }))
+    // Admins: the kinds of system a twin can mirror (each with its settings form), and the instances themselves.
+    .get("/api/source-types", (c) => {
+      adminOnly(c);
+      return c.json({ value: instances.typeList().map((t) => ({ id: t.id, fields: t.fields })) });
+    })
+    .get("/api/admin/instances", (c) => {
+      adminOnly(c);
+      return c.json({ value: instances.list().map((r) => ({ ...r.record, error: r.error ?? null })) });
+    })
+    .put("/api/admin/instances/:id", async (c) => {
+      adminOnly(c);
+      const id = parse(instanceId, c.req.param("id"));
+      const body = parse(
+        z.object({
+          name: z.string().trim().min(1).max(80),
+          sourceType: z.string().max(40),
+          settings: z.record(z.string(), z.string().max(4000)).default({}),
+          // A string sets a secret, null removes it, one not named stays.
+          secrets: z.record(z.string(), z.string().max(200_000).nullable()).default({}),
+        }),
+        await c.req.json().catch(() => null),
+      );
+      const type = instances.type(body.sourceType);
+      if (!type) throw new HttpError(400, "errors.digitalTwin.sourceType");
+      const settings = parse(type.settings, body.settings);
+      const allowed = new Set(secretFields(type));
+      const secrets = Object.fromEntries(Object.entries(body.secrets).filter(([k, v]) => allowed.has(k) && v !== ""));
+      await store.putInstance({ id, name: body.name, sourceType: type.id, settings, secrets }, Date.now());
+      const running = (await instances.restart(id))!;
+      return c.json({ ...running.record, error: running.error ?? null });
+    })
+    .delete("/api/admin/instances/:id", async (c) => {
+      adminOnly(c);
+      if (!(await instances.delete(c.req.param("id")))) throw new HttpError(404, "errors.digitalTwin.instanceNotFound");
+      return c.body(null, 204);
+    })
+
+    // One twin: only its viewers (an admin, or a member of its group) reach it.
+    .use("/api/instances/:instance/*", async (c, next) => {
+      const id = c.req.param("instance");
+      const running = instances.get(id);
+      if (!running || !maySee(c.get("identity"), ADMIN, id)) throw new HttpError(404, "errors.digitalTwin.instanceNotFound");
+      c.set("twin", running);
+      await next();
+    })
 
     // The twin, in the shape of the Azure Digital Twins API: models, twins and their relationships.
-    .get("/api/models", async (c) => c.json({ value: await store.models() }))
-    .get("/api/models/:id", async (c) => {
-      const model = (await store.models()).find((m) => m.id === c.req.param("id"));
+    .get(`${T}/models`, async (c) => c.json({ value: await twinOf(c).data.models() }))
+    .get(`${T}/models/:id`, async (c) => {
+      const model = (await twinOf(c).data.models()).find((m) => m.id === c.req.param("id"));
       if (!model) throw new HttpError(404, "errors.digitalTwin.notFound");
       return c.json(model);
     })
-    .get("/api/digitaltwins", async (c) => {
+    .get(`${T}/digitaltwins`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const state = at === undefined ? { twins: await store.twins() } : await cached("twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(at));
+      const state = at === undefined ? { twins: await twinOf(c).data.twins() } : await cached(twinOf(c), "twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(twinOf(c), at));
       return c.json({ value: state.twins });
     })
-    .get("/api/relationships", async (c) => {
+    .get(`${T}/relationships`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const state = at === undefined ? { relationships: await store.relationships() } : await cached("twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(at));
+      const state = at === undefined ? { relationships: await twinOf(c).data.relationships() } : await cached(twinOf(c), "twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(twinOf(c), at));
       return c.json({ value: state.relationships });
     })
-    .get("/api/digitaltwins/:id", async (c) => {
-      const twin = await store.twin(c.req.param("id"));
+    .get(`${T}/digitaltwins/:id`, async (c) => {
+      const twin = await twinOf(c).data.twin(c.req.param("id"));
       if (!twin) throw new HttpError(404, "errors.digitalTwin.notFound");
       return c.json(twin);
     })
-    .get("/api/digitaltwins/:id/relationships", async (c) => c.json({ value: await store.relationships({ source: c.req.param("id") }) }))
-    .get("/api/digitaltwins/:id/incomingrelationships", async (c) =>
-      c.json({ value: (await store.relationships({ target: c.req.param("id") })).map((r) => ({ $relationshipId: r.$relationshipId, $sourceId: r.$sourceId, $relationshipName: r.$relationshipName })) }),
+    .get(`${T}/digitaltwins/:id/relationships`, async (c) => c.json({ value: await twinOf(c).data.relationships({ source: c.req.param("id") }) }))
+    .get(`${T}/digitaltwins/:id/incomingrelationships`, async (c) =>
+      c.json({ value: (await twinOf(c).data.relationships({ target: c.req.param("id") })).map((r) => ({ $relationshipId: r.$relationshipId, $sourceId: r.$sourceId, $relationshipName: r.$relationshipName })) }),
     )
     // A twin's changes and its descendants' (newest first), and how far back the history goes.
-    .get("/api/digitaltwins/:id/history", async (c) => {
-      const f = parse(rangeQuery.and(z.object({ limit: z.coerce.number().int().min(1).max(500).default(100) })), c.req.query());
+    .get(`${T}/digitaltwins/:id/history`, async (c) => {
+      const f = parse(rangeQuery.and(z.object({ limit: z.coerce.number().int(twinOf(c)).min(1).max(500).default(100) })), c.req.query());
       const dtId = c.req.param("id");
-      return c.json({ value: await cached("history", { ...f, dtId }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => h().changes({ ...f, dtId }))) });
+      return c.json({ value: await cached(twinOf(c), "history", { ...f, dtId }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => h(twinOf(c)).changes({ ...f, dtId }))) });
     })
-    .get("/api/history/range", async (c) => c.json(await failing(() => h().range())))
+    .get(`${T}/history/range`, async (c) => c.json(await failing(() => h(twinOf(c)).range())))
     // The telemetry the models declare: `errorLogs`, each twin's error log records of the 15 minutes before `at`.
-    .get("/api/telemetry/errorLogs", async (c) => {
+    .get(`${T}/telemetry/errorLogs`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const value = await cached("errorLogs", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
-        if (!telemetry || !source.errorAttributes?.length) return {};
-        const [{ twins }, counts] = await Promise.all([stateAt(at), failing(() => telemetry.errorCounts(source.errorAttributes!, at))]);
+      const value = await cached(twinOf(c), "errorLogs", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
+        const { source, telemetry } = twinOf(c);
+        if (!telemetry || !source?.errorAttributes?.length) return {};
+        const [{ twins }, counts] = await Promise.all([stateAt(twinOf(c), at), failing(() => telemetry.errorCounts(source.errorAttributes!, at))]);
         return errorsByTwin(twins, source.errorAttributes, counts);
       });
       return c.json({ value });
     })
     // The models' `network` telemetry: each node's and pod's bytes per second over the 5 minutes before `at`.
-    .get("/api/telemetry/network", async (c) => {
+    .get(`${T}/telemetry/network`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const value = await cached("network", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
-        if (!telemetry || !source.networkMetrics?.length) return {};
-        const [{ twins }, ...rates] = await Promise.all([stateAt(at), ...source.networkMetrics.map((m) => failing(() => telemetry.rates(m.metric, m.attributes, at)))]);
+      const value = await cached(twinOf(c), "network", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
+        const { source, telemetry } = twinOf(c);
+        const metrics = source?.networkMetrics;
+        if (!telemetry || !metrics?.length) return {};
+        const [{ twins }, ...rates] = await Promise.all([stateAt(twinOf(c), at), ...metrics.map((m) => failing(() => telemetry.rates(m.metric, m.attributes, at)))]);
         const out: Record<string, number> = {};
-        source.networkMetrics.forEach((m, i) => valuesByTwin(twins, m.attributes, rates[i]!, out));
+        metrics.forEach((m, i) => valuesByTwin(twins, m.attributes, rates[i]!, out));
         return out;
       });
       return c.json({ value });
     })
     // The models' storage telemetry (`used`, `fsCapacity`): each volume claim's filesystem, its size and used bytes.
-    .get("/api/telemetry/storage", async (c) => {
+    .get(`${T}/telemetry/storage`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const value = await cached("storage", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
-        const m = source.storageMetrics;
+      const value = await cached(twinOf(c), "storage", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
+        const { source, telemetry } = twinOf(c);
+        const m = source?.storageMetrics;
         if (!telemetry || !m) return {};
         const [{ twins }, capacity, available] = await Promise.all([
-          stateAt(at),
+          stateAt(twinOf(c), at),
           failing(() => telemetry.latest(m.capacity, m.attributes, at)),
           failing(() => telemetry.latest(m.available, m.attributes, at)),
         ]);
@@ -316,42 +380,42 @@ export function createApp(config: Config, options: AppOptions) {
       });
       return c.json({ value });
     })
-    .get("/api/facets", async (c) => {
+    .get(`${T}/facets`, async (c) => {
       const f = parse(rangeQuery.and(z.object({ namespace: text })), c.req.query());
-      return c.json(await cached("facets", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().facets(f))));
+      return c.json(await cached(twinOf(c), "facets", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t(twinOf(c)).facets(f))));
     })
     // How many log records match the logs page's filters over time, by severity (about 60 bars across the range).
-    .get("/api/logs/histogram", async (c) => {
+    .get(`${T}/logs/histogram`, async (c) => {
       const f = parse(rangeQuery.and(logFilters), c.req.query());
       const step = Math.max(10, Math.round((f.to - f.from) / 1000 / 60 / 10) * 10);
-      return c.json({ step, buckets: await cached("log-histogram", { ...f, step }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().logHistogram({ ...f, step }))) });
+      return c.json({ step, buckets: await cached(twinOf(c), "log-histogram", { ...f, step }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t(twinOf(c)).logHistogram({ ...f, step }))) });
     })
     // Dashboards: named sets of panels over the telemetry, shared by everyone who may see the twin.
-    .get("/api/dashboards", async (c) => c.json({ value: await store.dashboards() }))
-    .get("/api/dashboards/:id", async (c) => {
-      const d = await store.dashboard(c.req.param("id"));
+    .get(`${T}/dashboards`, async (c) => c.json({ value: await twinOf(c).data.dashboards() }))
+    .get(`${T}/dashboards/:id`, async (c) => {
+      const d = await twinOf(c).data.dashboard(c.req.param("id"));
       if (!d) throw new HttpError(404, "errors.digitalTwin.dashboardNotFound");
       return c.json(d);
     })
-    .put("/api/dashboards/:id", async (c) => {
+    .put(`${T}/dashboards/:id`, async (c) => {
       const id = parse(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), c.req.param("id"));
       const body = parse(dashboardBody, await c.req.json().catch(() => null));
-      if (!(await store.dashboard(id)) && (await store.countDashboards()) >= MAX_DASHBOARDS) throw new HttpError(409, "errors.digitalTwin.tooManyDashboards");
+      if (!(await twinOf(c).data.dashboard(id)) && (await twinOf(c).data.countDashboards()) >= MAX_DASHBOARDS) throw new HttpError(409, "errors.digitalTwin.tooManyDashboards");
       const who = c.get("identity");
       const saved = { id, ...body, updatedAt: Date.now(), updatedBy: who?.name ?? who?.email ?? who?.sub ?? "dev" };
-      await store.saveDashboard(saved);
+      await twinOf(c).data.saveDashboard(saved);
       return c.json(saved);
     })
-    .delete("/api/dashboards/:id", async (c) => {
-      if (!(await store.deleteDashboard(c.req.param("id")))) throw new HttpError(404, "errors.digitalTwin.dashboardNotFound");
+    .delete(`${T}/dashboards/:id`, async (c) => {
+      if (!(await twinOf(c).data.deleteDashboard(c.req.param("id")))) throw new HttpError(404, "errors.digitalTwin.dashboardNotFound");
       return c.body(null, 204);
     })
     // The signed-in user's saved filters of a telemetry page (their own, never another's).
-    .get("/api/me/filters", async (c) => {
+    .get(`${T}/me/filters`, async (c) => {
       const { kind } = parse(z.object({ kind: filterKind }), c.req.query());
-      return c.json({ value: await store.savedFilters(owner(c), kind) });
+      return c.json({ value: await twinOf(c).data.savedFilters(owner(c), kind) });
     })
-    .put("/api/me/filters/:id", async (c) => {
+    .put(`${T}/me/filters/:id`, async (c) => {
       const id = parse(z.string().regex(/^[A-Za-z0-9_-]{1,64}$/), c.req.param("id"));
       const body = parse(
         z.object({
@@ -362,45 +426,45 @@ export function createApp(config: Config, options: AppOptions) {
         await c.req.json().catch(() => null),
       );
       const who = owner(c);
-      const existing = (await store.savedFilters(who, body.kind)).find((f) => f.id === id);
-      if (!existing && (await store.countSavedFilters(who)) >= MAX_SAVED_FILTERS) throw new HttpError(409, "errors.digitalTwin.tooManyFilters");
+      const existing = (await twinOf(c).data.savedFilters(who, body.kind)).find((f) => f.id === id);
+      if (!existing && (await twinOf(c).data.countSavedFilters(who)) >= MAX_SAVED_FILTERS) throw new HttpError(409, "errors.digitalTwin.tooManyFilters");
       const saved = { id, ...body, createdAt: existing?.createdAt ?? Date.now() };
-      await store.saveFilter(who, saved);
+      await twinOf(c).data.saveFilter(who, saved);
       return c.json(saved);
     })
-    .delete("/api/me/filters/:id", async (c) => {
-      if (!(await store.deleteFilter(owner(c), c.req.param("id")))) throw new HttpError(404, "errors.digitalTwin.filterNotFound");
+    .delete(`${T}/me/filters/:id`, async (c) => {
+      if (!(await twinOf(c).data.deleteFilter(owner(c), c.req.param("id")))) throw new HttpError(404, "errors.digitalTwin.filterNotFound");
       return c.body(null, 204);
     })
-    .get("/api/logs", async (c) => {
-      const f = parse(rangeQuery.and(logFilters).and(z.object({ limit: z.coerce.number().int().min(1).max(1000).default(200) })), c.req.query());
-      return c.json(await cached("logs", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().logs(f))));
+    .get(`${T}/logs`, async (c) => {
+      const f = parse(rangeQuery.and(logFilters).and(z.object({ limit: z.coerce.number().int(twinOf(c)).min(1).max(1000).default(200) })), c.req.query());
+      return c.json(await cached(twinOf(c), "logs", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t(twinOf(c)).logs(f))));
     })
-    .get("/api/traces", async (c) => {
+    .get(`${T}/traces`, async (c) => {
       const f = parse(
         rangeQuery.and(
           z.object({
             service: text,
             ...scope,
             q: text,
-            minMs: z.coerce.number().int().min(0).optional(),
+            minMs: z.coerce.number().int(twinOf(c)).min(0).optional(),
             errors: z.enum(["true", "false"]).optional(),
-            limit: z.coerce.number().int().min(1).max(500).default(100),
+            limit: z.coerce.number().int(twinOf(c)).min(1).max(500).default(100),
           }),
         ),
         c.req.query(),
       );
-      return c.json(await cached("traces", { ...f, errors: f.errors === "true" }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().traces({ ...f, errors: f.errors === "true" }))));
+      return c.json(await cached(twinOf(c), "traces", { ...f, errors: f.errors === "true" }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t(twinOf(c)).traces({ ...f, errors: f.errors === "true" }))));
     })
-    .get("/api/trace/:id", async (c) => {
+    .get(`${T}/trace/:id`, async (c) => {
       const id = parse(z.string().regex(/^[0-9a-f]{32}$/), c.req.param("id"));
-      return c.json(await cached("trace", { id }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().trace(id))));
+      return c.json(await cached(twinOf(c), "trace", { id }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t(twinOf(c)).trace(id))));
     })
-    .get("/api/metrics", async (c) => {
+    .get(`${T}/metrics`, async (c) => {
       const f = parse(rangeQuery.and(z.object({ q: text })), c.req.query());
-      return c.json(await cached("metrics", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().metrics(f, f.q))));
+      return c.json(await cached(twinOf(c), "metrics", f, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t(twinOf(c)).metrics(f, f.q))));
     })
-    .get("/api/series", async (c) => {
+    .get(`${T}/series`, async (c) => {
       const f = parse(
         rangeQuery.and(
           z.object({
@@ -416,7 +480,7 @@ export function createApp(config: Config, options: AppOptions) {
       // About 120 points across the range, at least a minute apart.
       const step = Math.max(60, Math.round((f.to - f.from) / 1000 / 120 / 60) * 60);
       const query = { ...f, step };
-      const series = await cached("series", query, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t().series({ ...f, type: f.type as MetricType, step })));
+      const series = await cached(twinOf(c), "series", query, config.CACHE_DATA_TTL_SECONDS, () => failing(() => t(twinOf(c)).series({ ...f, type: f.type as MetricType, step })));
       return c.json({ step, series });
     })
 

@@ -139,7 +139,10 @@
       "tooManyFilters": "Uložených filtrů je příliš mnoho; nejdřív některé smažte.",
       "dashboardNotFound": "Takový dashboard neexistuje.",
       "tooManyDashboards": "Dashboardů je příliš mnoho; nejdřív některé smažte.",
-      "opsProject": "Tento projekt nesmí spravovat cluster."
+      "opsProject": "Tento projekt nesmí spravovat cluster.",
+      "instanceNotFound": "Takové digitální dvojče není, nebo ho nesmíš vidět.",
+      "adminOnly": "Digitální dvojčata spravují jen administrátoři.",
+      "sourceType": "Neznámý druh zdroje."
     },
     "validation": {
       "invalid": "Neplatný požadavek",
@@ -153,7 +156,8 @@
       "host": "Server: název nebo IP adresa",
       "remoteDir": "Cílová složka musí být absolutní cesta, např. /var/www/firma",
       "allowedHost": "Neplatná doména (např. api.example.com nebo *.example.com)",
-      "allowedHostsEmpty": "Zadej aspoň jednu povolenou doménu"
+      "allowedHostsEmpty": "Zadej aspoň jednu povolenou doménu",
+      "urls": "Zadej webové adresy (http nebo https) oddělené čárkami."
     },
     "invalidJson": "Tělo požadavku není platný JSON",
     "project": {
