@@ -431,4 +431,6 @@ twin, read-only (`OPS_PROJECTS=twin` in `deploy/k8s/digital-twin.yaml`, `RUNTIME
 4. `kubectl apply -k deploy/k8s` creates the `osiris-ops` ServiceAccount (read-only: `view` and `osiris-ops-read`,
    no Secrets; its token mounted only into the twin), the TokenReview binding, the `tts` service and the network
    rules; restart the operator so it lets runtimes reach the twin's ops API. Every command the agent runs is logged
-   by the twin (`ops.command`); a change is refused by the twin and by the account.
+   by the twin (`ops.command`); a change is refused by the twin and by the account. A binding's role can't change,
+   so a cluster where `osiris-ops` was still bound to `cluster-admin` needs
+   `kubectl delete clusterrolebinding osiris-ops` before the apply.
