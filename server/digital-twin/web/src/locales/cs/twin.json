@@ -8,7 +8,7 @@
   "model": "DTDL model",
   "errors15m": "Chybové logy za posledních 15 minut.",
   "empty": "Dvojče nemá nic k zobrazení.",
-  "hint": "Tažením otáčej, kolečkem přibližuj, klikem na kvádr ho zaměř, Esc ukáže celé dvojče. Klávesy: WASD/šipky pohyb, Q/E nahoru/dolů, +/- lupa, Tab výběr, H celé dvojče, 1/2/3 vrstvy.",
+  "hint": "Tažením otáčej, kolečkem přibližuj, klikem na kvádr ho zaměř, Esc ukáže celé dvojče. Klávesy: WASD/šipky pohyb, Q/E nahoru/dolů, +/- lupa, Tab výběr, H celé dvojče, 1–4 jedna vrstva, 0 všechny vrstvy.",
   "counts": {
     "twins_one": "{{count}} twin",
     "twins_few": "{{count}} twiny",
@@ -78,39 +78,8 @@
     "send": "Odeslat",
     "yes": "Ano, spustit",
     "no": "Ne",
-    "cancel": "Zrušit"
-  },
-  "legend": {
-    "title": "Legenda",
-    "layers": "Vrstvy",
-    "layer": {
-      "network": "Síť",
-      "storage": "Úložiště",
-      "logical": "Skupiny"
-    },
-    "solids": "Objekty",
-    "lines": "Čáry",
-    "solid": {
-      "cluster": "Cluster (podlaha s mřížkou)",
-      "node": "Node (stavové světlo)",
-      "namespace": "Namespace (čárkovaný, tónovaný)",
-      "workload": "Workload (tečkovaný)",
-      "pod": "Pod",
-      "container": "Kontejner (plný)",
-      "volume": "Svazek, pool (hladina)",
-      "disk": "Disk (Ceph OSD)",
-      "port": "Síťové rozhraní",
-      "service": "Služba (virtuální)",
-      "ingress": "Ingress (brána)",
-      "internet": "Internet, veřejná adresa"
-    },
-    "line": {
-      "network": "Síť, provoz podle zátěže",
-      "overlay": "VXLAN tunel",
-      "routing": "Směrování výběru",
-      "mount": "Připojení, zapojení nodu"
-    },
-    "hint": "Klikněte na Ingress, službu nebo pod: rozsvítí se cesta jeho provozu od veřejné adresy po pody."
+    "cancel": "Zrušit",
+    "subtitle": "Odpovědi"
   },
   "bottomBar": "Spodní lišta: čas, zobrazení, chat",
   "display": {
@@ -118,7 +87,32 @@
     "search": "Hledat podle jména…",
     "anyStatus": "Jakýkoliv stav",
     "warnUp": "Pozor a horší",
-    "errorOnly": "Jen chyby"
+    "errorOnly": "Jen chyby",
+    "title": "Zobrazení",
+    "layers": "Vrstvy",
+    "reset": "Zobrazit vše",
+    "layer": {
+      "network": "Síť",
+      "services": "Síťové služby",
+      "storage": "Úložiště",
+      "logical": "Skupiny"
+    },
+    "layerHelp": {
+      "network": "Rozhraní, mosty, routery, tunely a jejich zapojení",
+      "services": "Služby, Ingressy a cesta z internetu k podům",
+      "storage": "Svazky, Ceph s pooly a disky",
+      "logical": "Namespaces a workloady"
+    },
+    "drawing": "Vykreslení",
+    "labels": "Popisky",
+    "labelMode": {
+      "auto": "Podle velikosti",
+      "all": "Všechna jména",
+      "off": "Žádné"
+    },
+    "addresses": "Adresy u rozhraní",
+    "traffic": "Pohyb provozu",
+    "hint": "Klávesy 1–4 ukážou jen jednu vrstvu, 0 všechny. Klikněte na Ingress, službu nebo pod: rozsvítí se cesta jeho provozu."
   },
   "keysHint": "Klávesy: WASD/šipky pohyb, Q/E nahoru/dolů, +/- lupa, Tab výběr, H celé dvojče, 1/2/3 vrstvy.",
   "models": {
@@ -147,5 +141,11 @@
     "icon": "Ikona",
     "visible": "Viditelný",
     "remove": "odebrat"
+  },
+  "ceph": {
+    "osds": "{{up}}/{{total}} OSD běží",
+    "pgs": "PG {{clean}}/{{total}} clean",
+    "mons": "MON {{quorum}}/{{total}} v kvóru",
+    "io": "čtení {{read}}, zápis {{write}}"
   }
 }

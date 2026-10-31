@@ -31,6 +31,7 @@ interface Terminated {
 
 export interface NodeObject {
   metadata: { name: string; uid?: string; annotations?: Record<string, string> };
+  spec?: { podCIDR?: string };
   status?: {
     nodeInfo?: { kubeletVersion?: string; osImage?: string };
     capacity?: Record<string, string>;

@@ -4,9 +4,10 @@ type Vec = [number, number, number];
 
 /**
  * A solid's shape: a rounded box, a cylinder (storage), a port (a network interface, a plate on a wall), a hexagonal
- * prism (a Service: virtual) or a gate (an Ingress: a frame traffic comes through).
+ * prism (a Service: virtual), a gate (an Ingress: a portal traffic comes through) or a drum (a storage cluster: Ceph,
+ * its pools inside).
  */
-export type Shape = "box" | "cylinder" | "port" | "hex" | "gate";
+export type Shape = "box" | "cylinder" | "port" | "hex" | "gate" | "drum";
 
 /** A node's solid in the twin's 3D scene: its shape, center and full size. */
 export interface Box {
@@ -19,16 +20,22 @@ export interface Box {
   radius: number;
 }
 
+/** The view's layer a line belongs to (the display menu switches them with the solids). */
+export type LinkLayer = "base" | "network" | "services" | "storage";
+
 /**
- * A line between two interfaces, both on a solid's surface (a wall, a mantle, a port), never inside one:
- * `network` from the container's router (its hub on its back wall) to the child's port or facing wall (traffic
- * animated by the child's load), `internet` from the cluster's LoadBalancer to its public address on the globe,
- * `wire` between a node's own interfaces (card, router, tunnel), `overlay` a VXLAN tunnel between nodes,
- * `interface` between related siblings (a container mounting a volume), `virtual` a Service's or an Ingress's
- * routing (to Services, pods, from a LoadBalancer), shown with what it belongs to.
+ * A line between two interfaces, both on a solid's surface (a wall, a mantle, a port), never inside one, and always
+ * orthogonal: every segment runs along one axis, turning at right angles, never the shortest way across.
+ * `network` from the container's router or bridge (its hub on its back wall) to the child's port or back wall
+ * (traffic animated by the child's load), `lan` a pod's containers on its eth0 (they share its network),
+ * `internet` from the cluster's LoadBalancer to its public address on the globe, `wire` between a node's own
+ * interfaces (card, router, bridge, tunnel), `overlay` a VXLAN tunnel between nodes, `interface` between related
+ * siblings (a container mounting a volume), `virtual` a Service's or an Ingress's routing (to Services, pods' eth0,
+ * from a LoadBalancer), `storage` Ceph to its disks and its pools to the claims they hold.
  */
 export interface Link {
-  kind: "network" | "interface" | "internet" | "wire" | "overlay" | "virtual";
+  kind: "network" | "lan" | "interface" | "internet" | "wire" | "overlay" | "virtual" | "storage";
+  layer: LinkLayer;
   /** The twin whose load the link carries (network, internet), or the relationship's source. */
   id: string;
   /** The relationship's target (wire, overlay, virtual, interface). */
@@ -64,14 +71,18 @@ export interface LayoutRules {
   storage: (node: TwinView) => boolean;
   /** A solid of its own shape (a port, a Service, an Ingress); undefined for a box or a storage cylinder. */
   shape?: (node: TwinView) => Shape | undefined;
-  /** A network interface's kind (physical, router, tunnel, veth, loadbalancer, public). */
+  /** A network interface's kind (physical, router, bridge, tunnel, veth, loadbalancer, public). */
   portKind?: (node: TwinView) => string;
+  /** A twin that shares its container's network (a container in its pod): wired to the container's own interface. */
+  sharesNetwork?: (node: TwinView) => boolean;
   /** Related siblings, as id pairs. */
   interfaces: [string, string][];
   /** Interfaces connected to each other (connectedTo). */
   wires?: [string, string][];
   /** Routing between twins anywhere (routesTo, exposes, servedBy). */
   virtual?: [string, string][];
+  /** Storage relations between twins anywhere (Ceph hasOsd, a pool holds a claim). */
+  storageLinks?: [string, string][];
 }
 
 /** What a node's own layout measured: its size, with solids and links relative to its floor center. */
@@ -91,14 +102,46 @@ const gapAt = (depth: number) => Math.max(0.5, 4 / 2.4 ** depth);
 const padAt = (depth: number) => gapAt(depth) * 0.55 + 0.45;
 /** How round a box's edges are: a little, more for the big shells, never more than a fifth of its least side. */
 const roundness = (size: Vec) => Math.min(Math.min(...size) * 0.2, Math.min(...size) * 0.06 + 0.1, 1.2);
-/** A port: a small plate standing out of a wall. */
+/** A port: a small plate standing out of a wall; a bridge a wider bar, a router a bigger disc. */
 const PORT: Vec = [0.55, 0.55, 0.16];
+const portSize = (kind: string): Vec => (kind === "bridge" ? [1.2, 0.5, 0.16] : kind === "router" ? [0.75, 0.75, 0.16] : PORT);
+/** The space between two ports side by side on a wall. */
+const PORT_GAP = 0.6;
+/** How far a line leaves a surface before it turns. */
+const STUB = 0.3;
+
+type Axis = 0 | 1 | 2;
+/**
+ * An orthogonal path through `points`: between each two, a segment along each axis in `order` (x, then z, then y by
+ * default) — right angles only. Repeated points are dropped.
+ */
+export function orthogonal(points: Vec[], order: Axis[] = [0, 2, 1]): Vec[] {
+  const out: Vec[] = [points[0]!];
+  for (const q of points.slice(1)) {
+    let cur = out.at(-1)!;
+    for (const axis of order) {
+      if (Math.abs(cur[axis] - q[axis]) < 1e-6) continue;
+      cur = [...cur] as Vec;
+      cur[axis] = q[axis];
+      out.push(cur);
+    }
+  }
+  // Collinear corners merged: a straight run is one segment.
+  return out.filter((p, i) => {
+    const a = out[i - 1];
+    const b = out[i + 1];
+    if (!a || !b) return true;
+    const same = (k: number) => Math.abs(a[k]! - p[k]!) < 1e-6 && Math.abs(p[k]! - b[k]!) < 1e-6;
+    return [0, 1, 2].filter(same).length < 2;
+  });
+}
 
 /** A leaf's size by its shape: a small cube (or cylinder) at the bottom of the tree, a bigger one higher up. */
 function leafOf(node: TwinView, shape: Shape): Vec {
   if (shape === "port") return PORT;
   if (shape === "hex") return [1.4, 0.8, 1.4];
-  if (shape === "gate") return [1.8, 1.5, 0.5];
+  if (shape === "gate") return [2.4, 2, 0.7];
+  if (shape === "drum") return [2.6, 1.6, 2.6];
   if (shape === "cylinder") return node.depth >= 3 ? [1.2, 1.2, 1.2] : [2, 2, 2];
   return node.depth >= 3 ? [1, 1, 1] : node.depth === 2 ? [1.6, 1.6, 1.6] : [3, 3, 3];
 }
@@ -112,41 +155,41 @@ interface Placed {
   shape: Shape;
 }
 
-/**
- * The interface of a solid toward a point (only x and z count), at height `y`: on a box, the middle of the wall facing
- * it; on a cylinder or a hexagon, the mantle where it faces it.
- */
-function port(p: Placed, toward: Vec, y: number): Vec {
-  const [x, , z] = p.at;
-  const dx = toward[0] - x;
-  const dz = toward[2] - z;
-  if (p.shape === "cylinder" || p.shape === "hex") {
-    const r = p.size[0] / 2;
-    const d = Math.hypot(dx, dz);
-    return d ? [x + (dx / d) * r, y, z + (dz / d) * r] : [x, y, z - r];
-  }
-  // The wall the point lies beyond: the axis on which it is farther out, relative to the box's extent.
-  return Math.abs(dx) / p.size[0] > Math.abs(dz) / p.size[2] ? [x + Math.sign(dx) * (p.size[0] / 2), y, z] : [x, y, z + (Math.sign(dz) || -1) * (p.size[2] / 2)];
-}
+/** A placed solid's top center, where lines between solids anywhere start and end (they run over the top). */
+const topOf = (p: Placed): Vec => [p.at[0], p.at[1] + p.size[1], p.at[2]];
+/** A placed solid's back wall (−z) at its middle: where its container's network reaches it. */
+const backOf = (p: Placed): Vec => [p.at[0], p.at[1] + p.size[1] / 2, p.at[2] - p.size[2] / 2];
 
 const shapeOf = (node: TwinView, rules: LayoutRules): Shape => rules.shape?.(node) ?? (rules.storage(node) && !node.children.length ? "cylinder" : "box");
 const isPort = (node: TwinView, rules: LayoutRules) => rules.shape?.(node) === "port";
-/** Where a container's own interfaces go on its back wall, left to right: card, router (the hub), tunnel, the rest. */
-const PORT_ORDER = ["physical", "router", "tunnel", "loadbalancer", "veth"];
+/** Where a container's own interfaces go on its back wall, left to right: card, router, bridge (the hub), tunnel, the rest. */
+const PORT_ORDER = ["physical", "router", "bridge", "tunnel", "loadbalancer", "veth"];
+/** How wide a row of ports is on a wall. */
+const portsWidth = (ports: TwinView[], rules: LayoutRules) => ports.reduce((n, p) => n + portSize(rules.portKind?.(p) ?? "veth")[0] + PORT_GAP, 0);
 
 /**
- * A container's interfaces on its back wall at height `y`: the router at `hub` (where its children's links start),
- * the others beside it, a port's width apart. Returns where each went.
+ * A container's interfaces on its back wall at height `y`: the hub — the bridge where there is one, else the router —
+ * at `hub` (where its children's links start), the others beside it in a row. Returns where each went.
  */
 function mountPorts(ports: TwinView[], hub: Vec, rules: LayoutRules, boxes: Box[]): Map<string, Vec> {
   const at = new Map<string, Vec>();
   const kind = (p: TwinView) => rules.portKind?.(p) ?? "veth";
   const sorted = [...ports].sort((a, b) => PORT_ORDER.indexOf(kind(a)) - PORT_ORDER.indexOf(kind(b)) || a.name.localeCompare(b.name));
+  const bridge = sorted.findIndex((p) => kind(p) === "bridge");
   const router = sorted.findIndex((p) => kind(p) === "router");
-  const center = router >= 0 ? router : (sorted.length - 1) / 2;
+  const center = bridge >= 0 ? bridge : router;
+  // Each port's x from the row's left end; the hub's lands on `hub`.
+  const xs: number[] = [];
+  let x = 0;
+  for (const p of sorted) {
+    const w = portSize(kind(p))[0];
+    xs.push(x + w / 2);
+    x += w + PORT_GAP;
+  }
+  const origin = center >= 0 ? xs[center]! : (x - PORT_GAP) / 2;
   sorted.forEach((p, i) => {
-    const c: Vec = [hub[0] + (i - center) * (PORT[0] + 0.6), hub[1], hub[2]];
-    boxes.push({ id: p.id, shape: "port", center: c, size: PORT, radius: 0.08 });
+    const c: Vec = [hub[0] + xs[i]! - origin, hub[1], hub[2]];
+    boxes.push({ id: p.id, shape: "port", center: c, size: portSize(kind(p)), radius: 0.08 });
     at.set(p.id, c);
   });
   return at;
@@ -243,12 +286,31 @@ function place(child: TwinView, m: Measured, at: Vec, boxes: Box[], links: Link[
 }
 
 /**
- * A network link: along the floor from the hub to the foot of the child's interface (its port, else its facing wall),
- * then up to it.
+ * A network link, at right angles: out of the hub into the container, along its back in a tray under its children's
+ * floor, forward under the child to just behind it, up, and into the child's interface (its port, else its back wall).
+ * `stub` is how far behind the child it rises (less than the gap between rows).
  */
-function networkLink(id: string, parent: string, hub: Vec, p: Placed & { port?: Vec }): Link {
-  const end = p.port ?? port(p, hub, p.at[1] + p.size[1] / 2);
-  return { kind: "network", id, parent, path: [hub, [end[0], hub[1], end[2]], end] };
+function networkLink(id: string, parent: string, hub: Vec, p: Placed & { port?: Vec }, stub: number): Link {
+  const end = p.port ?? backOf(p);
+  const s = Math.min(STUB, stub);
+  return {
+    kind: "network",
+    layer: "network",
+    id,
+    parent,
+    path: orthogonal([hub, [hub[0], hub[1], hub[2] + s], [end[0], hub[1], end[2] - s], [end[0], end[1], end[2] - s], end]),
+  };
+}
+
+/**
+ * A line over the top: up from the start's top (or out of its port along `na`), along at `lane`, x then z, and down
+ * onto the end's top (or into its port against `nb`).
+ */
+function overTop(a: Vec, b: Vec, lane: number, na: Vec = [0, 1, 0], nb: Vec = [0, 1, 0]): Vec[] {
+  const a1: Vec = [a[0] + na[0] * STUB, a[1] + na[1] * STUB, a[2] + na[2] * STUB];
+  const b1: Vec = [b[0] + nb[0] * STUB, b[1] + nb[1] * STUB, b[2] + nb[2] * STUB];
+  const y = Math.max(lane, a1[1], b1[1]);
+  return orthogonal([a, a1, [a1[0], y, a1[2]], [b1[0], y, b1[2]], b1, b], [0, 2, 1]);
 }
 
 /**
@@ -273,7 +335,9 @@ function measure(node: TwinView, rules: LayoutRules): Measured {
   const gap = gapAt(node.depth);
   const pad = padAt(node.depth);
   const { inner: footprint, placed: items } = arrange(inner.map((child) => ({ node: child, m: measure(child, rules) })), gap);
-  const size: Vec = [Math.max(footprint[0] + 2 * pad, ports.length * (PORT[0] + 0.6) + 2 * pad), footprint[1] + 2 * pad, footprint[2] + 2 * pad];
+  // A drum is round: its footprint's diagonal fits inside.
+  const round = shape === "drum" ? Math.hypot(footprint[0], footprint[2]) + 2 * pad : 0;
+  const size: Vec = round ? [round, footprint[1] + 2 * pad, round] : [Math.max(footprint[0] + 2 * pad, portsWidth(ports, rules) + 2 * pad), footprint[1] + 2 * pad, footprint[2] + 2 * pad];
 
   const boxes: Box[] = [{ id: node.id, shape, center: [0, size[1] / 2, 0], size, radius: roundness(size) }];
   const links: Link[] = [];
@@ -282,16 +346,28 @@ function measure(node: TwinView, rules: LayoutRules): Measured {
   const hub: Vec = [0, pad * 0.5, -size[2] / 2];
   // A pod's eth0 sits higher, in the middle of its back wall: the end of the link from its node's router.
   const mounted = ports.length ? mountPorts(ports, rules.networked(node) ? [0, size[1] / 2, -size[2] / 2] : hub, rules, boxes) : new Map<string, Vec>();
+  const own = rules.networked(node) ? mounted.values().next().value : undefined;
   for (const { node: child, m, at: rel } of items) {
     place(child, m, [rel[0], pad + rel[1], rel[2]], boxes, links, placed);
-    if (rules.networked(child)) links.push(networkLink(child.id, node.id, hub, placed.get(child.id)!));
+    const p = placed.get(child.id)!;
+    if (rules.networked(child)) links.push(networkLink(child.id, node.id, hub, p, gap * 0.45));
+    // A pod's containers share its eth0: from it into the pod, along, up and into each one's back.
+    else if (own && rules.sharesNetwork?.(child)) {
+      const end = backOf(p);
+      const s = Math.min(STUB, gap * 0.45);
+      links.push({ kind: "lan", layer: "network", id: child.id, to: [...mounted.keys()][0], parent: node.id, path: orthogonal([own, [own[0], own[1], own[2] + s], [end[0], end[1], end[2] - s], end], [0, 1, 2]) });
+    }
   }
-  addInterfaces(rules, placed, links, node.id);
-  return { size, boxes, links, port: rules.networked(node) ? mounted.values().next().value : undefined };
+  addInterfaces(rules, placed, links, node.id, pad);
+  return { size, boxes, links, port: own };
 }
 
 /** A twin whose contents' contents belong to bands (a cluster: its nodes' pods to namespaces). */
 const isBanded = (node: TwinView) => node.children.some((c) => c.band !== undefined || c.children.some((g) => g.band !== undefined));
+/** A column of a banded container: a node, or whatever holds things of the bands (a storage cluster is not one: it
+ * sits compactly in the last row). */
+const isColumn = (c: TwinView, rules: LayoutRules) =>
+  c.band === undefined && !isPort(c, rules) && c.children.some((g) => !isPort(g, rules)) && (c.look === "node" || c.children.some((g) => g.band !== undefined));
 /** The id of the band of `group` across `root` (scene.ts makes it the same way). */
 export const bandId = (root: string, group: string) => `${root}~${group}`;
 
@@ -315,7 +391,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const itemGap = gapAt(node.depth + 2);
 
   const ownPorts = node.children.filter((c) => isPort(c, rules));
-  const columns = node.children.filter((c) => c.band === undefined && !isPort(c, rules) && c.children.some((g) => !isPort(g, rules)));
+  const columns = node.children.filter((c) => isColumn(c, rules));
   const loose = node.children.filter((c) => !columns.includes(c) && !isPort(c, rules));
   const keyOf = (v: TwinView) => v.band ?? "";
   const contents = (holder: TwinView) => holder.children.filter((v) => !isPort(v, rules));
@@ -325,7 +401,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const cells = holders.map((holder) =>
     rows.map((row) => arrange((holder ? contents(holder) : loose).filter((v) => keyOf(v) === row).map((v) => ({ node: v, m: measure(v, rules) })), itemGap)),
   );
-  const colW = holders.map((holder, c) => Math.max(1, (holder?.children.filter((v) => isPort(v, rules)).length ?? 0) * (PORT[0] + 0.6), ...cells[c]!.map((cell) => cell.inner[0])));
+  const colW = holders.map((holder, c) => Math.max(1, portsWidth(holder?.children.filter((v) => isPort(v, rules)) ?? [], rules), ...cells[c]!.map((cell) => cell.inner[0])));
   const rowD = rows.map((_, r) => Math.max(1, ...cells.map((col) => col[r]!.inner[2])));
   const rowH = rows.map((_, r) => Math.max(0, ...cells.map((col) => col[r]!.inner[1])));
 
@@ -337,7 +413,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     colX.push(x + (holder ? colPad : 0));
     x += colW[c]! + (holder ? 2 * colPad : 0) + colGap;
   });
-  const width = Math.max(x - colGap + pad, ownPorts.length * (PORT[0] + 0.6) + 2 * pad);
+  const width = Math.max(x - colGap + pad, portsWidth(ownPorts, rules) + PORT[0] + PORT_GAP + 2 * pad);
   // The bands in levels: rows one behind another, levels one on top of another, as many levels as keep the whole
   // nearest a cube (the rows in order, a level filled before the next).
   const levelsOf = (count: number) => {
@@ -393,7 +469,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
       // The cluster's network reaches the node at its card.
       const card = holder.children.find((v) => isPort(v, rules) && rules.portKind?.(v) === "physical");
       placed.set(holder.id, { at: floor, size, shape: "box", port: card && mounted.get(card.id) });
-      if (rules.networked(holder)) links.push(networkLink(holder.id, node.id, hub, placed.get(holder.id)!));
+      if (rules.networked(holder)) links.push(networkLink(holder.id, node.id, hub, placed.get(holder.id)!, pad * 0.45));
     }
     rows.forEach((_, r) => {
       const cell = cells[c]![r]!;
@@ -401,7 +477,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
       const center = at(colX[c]! + colW[c]! / 2, rowY[r]!, rowZ[r]! + rowD[r]! / 2);
       for (const { node: item, m, at: rel } of cell.placed) {
         place(item, m, [center[0] + rel[0], rowY[r]! + rel[1], center[2] + rel[2]], boxes, links, placed);
-        if (rules.networked(item)) links.push(networkLink(item.id, holder?.id ?? node.id, colHub ?? hub, placed.get(item.id)!));
+        if (rules.networked(item)) links.push(networkLink(item.id, holder?.id ?? node.id, colHub ?? hub, placed.get(item.id)!, Math.min(itemGap, rowGap) * 0.45));
       }
     });
   });
@@ -421,18 +497,20 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     const size: Vec = [x1 - x0, y1 - y0, z1 - z0];
     boxes.push({ id: bandId(node.id, row), shape: "box", center: at((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), size, radius: roundness(size) * 0.5 });
   });
-  addInterfaces(rules, placed, links, node.id);
+  addInterfaces(rules, placed, links, node.id, pad);
   return { size: [width, height, depth], boxes, links, outside };
 }
 
-/** Related siblings (a container mounting a claim): wall to wall, each end halfway up its own solid (they may be on
- * different layers of the grid). */
-function addInterfaces(rules: LayoutRules, placed: Map<string, Placed>, links: Link[], parent: string) {
+/** Related siblings (a container mounting a claim): over the top of both, at right angles, under the container's
+ * ceiling; a line to storage is the storage layer's. */
+function addInterfaces(rules: LayoutRules, placed: Map<string, Placed>, links: Link[], parent: string, pad: number) {
   for (const [a, b] of rules.interfaces) {
     const pa = placed.get(a);
     const pb = placed.get(b);
     if (!pa || !pb) continue;
-    links.push({ kind: "interface", id: a, to: b, parent, path: [port(pa, pb.at, pa.at[1] + pa.size[1] / 2), port(pb, pa.at, pb.at[1] + pb.size[1] / 2)] });
+    const lane = Math.max(topOf(pa)[1], topOf(pb)[1]) + Math.min(0.35, pad * 0.4);
+    const storage = pa.shape === "cylinder" || pb.shape === "cylinder";
+    links.push({ kind: "interface", layer: storage ? "storage" : "base", id: a, to: b, parent, path: overTop(topOf(pa), topOf(pb), lane) });
   }
 }
 
@@ -462,24 +540,28 @@ export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
       const radius = Math.max(2.5, Math.min(r.size[0], r.size[2]) * 0.07);
       const center: Vec = [at[0], r.size[1] + radius * 1.5, -r.size[2] / 2 - radius * 3 - gap];
       internet.push({ id: node.id, center, radius });
-      const onGlobe = (from: Vec, spread: number): Vec => {
-        const d: Vec = [from[0] - center[0] + spread, from[1] - center[1], from[2] - center[2]];
-        const len = Math.hypot(...d) || 1;
-        return shift(center, [(d[0] / len) * radius, (d[1] / len) * radius, (d[2] / len) * radius]);
+      // Each public address on the globe's face toward the twin, side by side below its middle: its line comes in
+      // straight along z.
+      const onGlobe = (spread: number): Vec => {
+        const ox = Math.max(-radius * 0.8, Math.min(radius * 0.8, spread));
+        const oy = -radius * 0.3;
+        return [center[0] + ox, center[1] + oy, center[2] + Math.sqrt(Math.max(0, radius ** 2 - ox ** 2 - oy ** 2))];
       };
       const lbs = boxes.filter((b) => b.shape === "port" && node.children.some((c) => c.id === b.id && rules.portKind?.(c) === "loadbalancer"));
       const starts = lbs.length ? lbs.map((b) => b.center) : [hub];
       const publics = r.outside ?? [];
       const ends = (publics.length ? publics : [undefined]).map((p, k) => {
-        const end = onGlobe(starts[0]!, (k - (publics.length - 1) / 2) * radius * 0.5);
+        const end = onGlobe((k - (publics.length - 1) / 2) * radius * 0.45);
         if (p) boxes.push({ id: p.id, shape: "port", center: end, size: PORT, radius: 0.08 });
         return end;
       });
-      for (const s of starts)
-        for (const e of ends) {
-          const out: Vec = [s[0], s[1], s[2] - gap / 2];
-          links.push({ kind: "internet", id: node.id, parent: INTERNET, path: [s, out, e] });
-        }
+      // Out of the back wall, along behind the twin, up to the address's height and on into it: right angles only.
+      starts.forEach((s, i) =>
+        ends.forEach((e) => {
+          const out = s[2] - gap * (0.3 + 0.08 * (i % 4));
+          links.push({ kind: "internet", layer: lbs.length ? "services" : "network", id: node.id, parent: INTERNET, path: orthogonal([s, [s[0], s[1], out], [e[0], e[1], out], e], [0, 1, 2]) });
+        }),
+      );
     }
     x += r.size[0] + gap;
   });
@@ -490,6 +572,10 @@ export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
   const walk = (v: TwinView) => (rules.shape?.(v) === "port" && kinds.set(v.id, rules.portKind?.(v) ?? ""), v.children.forEach(walk));
   top.forEach(walk);
   const placedOf = (b: Box): Placed => ({ at: [b.center[0], b.center[1] - b.size[1] / 2, b.center[2]], size: b.size, shape: b.shape });
+  // A node's own wiring right behind its back wall, the tunnels between nodes farther out: each pair its own lane,
+  // so lines side by side stay apart.
+  let wire = 0;
+  let overlay = 0;
   for (const [a, b] of rules.wires ?? []) {
     const ka = kinds.get(a);
     const kb = kinds.get(b);
@@ -497,16 +583,38 @@ export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
     const bb = byId.get(b);
     // The links already drawn (a pod's eth0 from its router, a LoadBalancer's and the public address's) aren't twice.
     if (!ba || !bb || [ka, kb].some((k) => k === "veth" || k === "loadbalancer" || k === "public")) continue;
-    links.push({ kind: ka === "tunnel" && kb === "tunnel" ? "overlay" : "wire", id: a, to: b, parent: a, path: [ba.center, bb.center] });
+    const tunnel = ka === "tunnel" && kb === "tunnel";
+    const out = tunnel ? 0.75 + 0.22 * (overlay++ % 6) : 0.3 + 0.1 * (wire++ % 3);
+    const z = Math.min(ba.center[2], bb.center[2]) - out;
+    links.push({ kind: tunnel ? "overlay" : "wire", layer: "network", id: a, to: b, parent: a, path: orthogonal([ba.center, [ba.center[0], ba.center[1], z], [bb.center[0], bb.center[1], z], bb.center], [0, 1, 2]) });
   }
-  for (const [a, b] of rules.virtual ?? []) {
-    const ba = byId.get(a);
-    const bb = byId.get(b);
-    if (!ba || !bb) continue;
-    const pa = placedOf(ba);
-    const pb = placedOf(bb);
-    links.push({ kind: "virtual", id: a, to: b, parent: a, path: [port(pa, pb.at, ba.center[1]), port(pb, pa.at, bb.center[1])] });
-  }
+  // Routing and storage relations over the top of what they join; routing into a pod ends at its eth0, from behind.
+  const ethOf = new Map<string, string>();
+  const findEth = (v: TwinView) => {
+    const eth = v.children.find((c) => rules.shape?.(c) === "port" && rules.portKind?.(c) === "veth");
+    if (eth) ethOf.set(v.id, eth.id);
+    v.children.forEach(findEth);
+  };
+  top.forEach(findEth);
+  const end = (id: string, inward: boolean): { at: Vec; n: Vec } | undefined => {
+    const eth = ethOf.get(id);
+    const b = byId.get(eth ?? id);
+    if (!b) return undefined;
+    if (eth) return { at: b.center, n: [0, 0, -1] };
+    // A port on a wall (a LoadBalancer): into the twin; any other solid from its top.
+    if (b.shape === "port") return { at: b.center, n: [0, 0, inward ? 1 : -1] };
+    return { at: topOf(placedOf(b)), n: [0, 1, 0] };
+  };
+  const relate = (pairs: [string, string][], kind: "virtual" | "storage") =>
+    pairs.forEach(([a, b], k) => {
+      const ea = end(a, true);
+      const eb = end(b, true);
+      if (!ea || !eb) return;
+      const lane = Math.max(ea.at[1], eb.at[1]) + 0.6 + 0.12 * (k % 5);
+      links.push({ kind, layer: kind === "virtual" ? "services" : "storage", id: a, to: b, parent: a, path: overTop(ea.at, eb.at, lane, ea.n, eb.n) });
+    });
+  relate(rules.virtual ?? [], "virtual");
+  relate(rules.storageLinks ?? [], "storage");
 
   const minX = Math.min(...boxes.map((b) => b.center[0] - b.size[0] / 2));
   const maxX = Math.max(...boxes.map((b) => b.center[0] + b.size[0] / 2));

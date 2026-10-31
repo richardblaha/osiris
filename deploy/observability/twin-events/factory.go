@@ -9,12 +9,12 @@ import (
 	"go.opentelemetry.io/collector/processor/processorhelper"
 )
 
-const (
-	typeStr   = "twin/events"
+var (
+	typeStr   = component.MustNewType("twin_events")
 	stability = component.StabilityLevelAlpha
 )
 
-// NewFactory makes the `twin/events` processor: warn/error log records (per config) are appended to a Redis stream
+// NewFactory makes the `twin_events` processor: warn/error log records (per config) are appended to a Redis stream
 // for the digital twin and Osiris's agent; everything passes through unchanged.
 func NewFactory() processor.Factory {
 	return processor.NewFactory(
@@ -37,7 +37,7 @@ func createLogs(ctx context.Context, set processor.Settings, cfg component.Confi
 		next,
 		p.processLogs,
 		processorhelper.WithCapabilities(consumer.Capabilities{MutatesData: false}),
-		processorhelper.WithStart(func(ctx context.Context, host component.Host) error { return nil }),
-		processorhelper.WithShutdown(p.shutdown),
+		processorhelper.WithStart(p.Start),
+		processorhelper.WithShutdown(p.Shutdown),
 	)
 }

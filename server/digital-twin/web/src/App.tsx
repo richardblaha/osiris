@@ -10,10 +10,9 @@ import { authOff, autoSignIn, getAccessToken, login, profile, signedInOk } from 
 import { UserMenu, type Profile } from "./UserMenu.tsx";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
-import { ALL_LAYERS, Twin3D, type CameraControl, type Layers, type Point } from "./Twin3D.tsx";
+import { ALL_LAYERS, DEFAULT_DISPLAY, Twin3D, type CameraControl, type DisplayOptions, type Layers, type Point } from "./Twin3D.tsx";
 import { BottomBar } from "./BottomBar.tsx";
 import { OsirisChat, type TwinAction } from "./OsirisChat.tsx";
-import { Models } from "./Models.tsx";
 import { FocusPanels } from "./FocusPanels.tsx";
 import { Dashboard, DashboardMenu } from "./Dashboard.tsx";
 
@@ -25,8 +24,7 @@ type View =
   | { kind: "logs"; preset: Preset; filter?: Record<string, string>; traceId?: string }
   | { kind: "metrics"; preset: Preset }
   | { kind: "traces"; preset: Preset; traceId?: string }
-  | { kind: "instances" }
-  | { kind: "models" };
+  | { kind: "instances"; tab?: "settings" | "models" };
 
 const SCOPE = ["namespace", "pod", "node", "container", "claim"] as const;
 /** The logs page's own filters (besides the scope), kept in the URL. */
@@ -47,8 +45,9 @@ const parseHash = (): View => {
     return { kind: "logs", preset, filter: Object.fromEntries(LOG_FILTERS.flatMap((k) => (params.get(k) ? [[k, params.get(k)!]] : []))), traceId: params.get("traceId") ?? undefined };
   if (kind === "metrics") return { kind: "metrics", preset };
   if (kind === "traces") return { kind: "traces", preset, traceId: params.get("traceId") ?? undefined };
-  if (kind === "instances") return { kind: "instances" };
-  if (kind === "models") return { kind: "models" };
+  if (kind === "instances") return { kind: "instances", tab: params.get("tab") === "models" ? "models" : undefined };
+  // The models' old page is the twins' administration's tab now.
+  if (kind === "models") return { kind: "instances", tab: "models" };
   return { kind: "twin" };
 };
 
@@ -72,6 +71,7 @@ const toHash = (view: View) => {
   if ("traceId" in view && view.traceId) params.set("traceId", view.traceId);
   if (view.kind === "logs") for (const [k, v] of Object.entries(view.filter ?? {})) params.set(k, v);
   if (view.kind === "dashboard" && view.id) params.set("id", view.id);
+  if (view.kind === "instances" && view.tab) params.set("tab", view.tab);
   return `#/?${params}`;
 };
 
@@ -104,6 +104,23 @@ export function App() {
     setLayers(next);
     try {
       localStorage.setItem("osiris.digital-twin.layers", JSON.stringify(next));
+    } catch {
+      // The choice lasts as long as the page.
+    }
+  };
+  /** How the 3D view draws (labels, addresses, moving traffic), kept in this browser. */
+  const DISPLAY_KEY = "osiris.digital-twin.display";
+  const [display, setDisplay] = useState<DisplayOptions>(() => {
+    try {
+      return { ...DEFAULT_DISPLAY, ...(JSON.parse(localStorage.getItem(DISPLAY_KEY) ?? "{}") as Partial<DisplayOptions>) };
+    } catch {
+      return DEFAULT_DISPLAY;
+    }
+  });
+  const changeDisplay = (next: DisplayOptions) => {
+    setDisplay(next);
+    try {
+      localStorage.setItem(DISPLAY_KEY, JSON.stringify(next));
     } catch {
       // The choice lasts as long as the page.
     }
@@ -328,8 +345,8 @@ export function App() {
     }
   };
 
-  const tabLabel = (page: Page | "instances" | "models") =>
-    page === "instances" ? t("instances:title") : page === "models" ? t("common:nav.models") :
+  const tabLabel = (page: Page | "instances") =>
+    page === "instances" ? t("instances:title") :
     page === "dashboard" ? t("common:nav.dashboard") : page === "logs" ? t("common:nav.logs") : page === "metrics" ? t("common:nav.metrics") : t("common:nav.traces");
 
   return (
@@ -365,7 +382,7 @@ export function App() {
                 </div>
               ) : scene ? (
                 scene.top.length ? (
-                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} control={camera} layers={layers} onNavigate={navigate3d} onLayersChange={changeLayers} />
+                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} control={camera} layers={layers} display={display} onNavigate={navigate3d} onLayersChange={changeLayers} />
                 ) : (
                   <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
                 )
@@ -390,6 +407,8 @@ export function App() {
                 onAt={setAt}
                 layers={layers}
                 onLayers={changeLayers}
+                display={display}
+                onDisplay={changeDisplay}
                 filters={filters}
                 onFilters={changeFilters}
                 scene={scene}
@@ -403,11 +422,14 @@ export function App() {
       {signedIn && view.kind !== "twin" && (instance || view.kind === "instances") && (
         <section className="page-overlay" aria-label={tabLabel(view.kind)}>
           {view.kind === "instances" ? (
-            <Instances onChanged={(id) => void loadInstances(id).catch(() => {})} />
-          ) : view.kind === "models" ? (
-            <Models
-              models={models ?? []}
-              onChanged={() => setModels(undefined)}
+            <Instances
+              current={instance}
+              tab={view.tab ?? "settings"}
+              onTab={(tab) => navigate({ kind: "instances", tab: tab === "settings" ? undefined : tab })}
+              onPick={chooseInstance}
+              onChanged={(id) => void loadInstances(id).catch(() => {})}
+              models={models}
+              onModelsChanged={() => setModels(undefined)}
               onPreview={(doc) =>
                 setModels((ms) =>
                   ms?.some((m) => m.id === doc["@id"])
@@ -479,18 +501,6 @@ export function App() {
               )}
             </span>
           ))}
-          {admin && (
-            <button
-              type="button"
-              onClick={() => (view.kind === "models" ? navigate({ kind: "twin" }) : navigate({ kind: "models" }))}
-              data-active={view.kind === "models"}
-              aria-pressed={view.kind === "models"}
-              disabled={!instance}
-              className="app-tab"
-            >
-              {t("common:nav.models")}
-            </button>
-          )}
         </nav>
         <span className="app-bar-user">{signedIn && <UserMenu user={user} />}</span>
       </header>

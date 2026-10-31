@@ -61,24 +61,6 @@ body,
   color: var(--accent-active);
   text-shadow: 0 0 6px var(--accent-active-soft), 0 0 4px var(--bg-editor);
 }
-/* The legend of the 3D view, under the bar on the left. */
-.twin-legend {
-  position: absolute;
-  top: calc(var(--app-bar) + 0.25rem);
-  left: 1rem;
-  z-index: 12;
-}
-.legend-button {
-  padding: 0.15rem 0.6rem;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-sidebar) 85%, transparent);
-  font-size: 12px;
-}
-.legend-button:hover,
-.legend-button[aria-expanded="true"] {
-  border-color: var(--accent-active);
-}
 .twin-port[data-kind="public"],
 .twin-port[data-kind="loadbalancer"] {
   color: var(--accent-active);
@@ -674,13 +656,112 @@ button.instance-button:hover {
   width: min(30rem, 42%);
   box-shadow: none;
 }
+/* The chat's answers docked: a panel like the selection's detail, in the middle over the bottom bar, above the twin
+   (the detail's panels keep the corners). */
 .osiris-answers-dock {
   position: absolute;
-  right: 0.5rem;
-  bottom: calc(100% + 0.5rem);
-  left: auto;
+  left: 50%;
+  right: auto;
   top: auto;
-  transform: none;
-  width: min(26rem, calc(100vw - 2rem));
-  max-height: 50vh;
+  bottom: calc(100% + 0.75rem);
+  width: min(42rem, calc(100vw - 2rem));
+  height: auto;
+  max-height: min(55vh, calc(100vh - var(--app-bar) - 6rem));
+  border-top: 2px solid var(--accent-active);
+  background: color-mix(in srgb, var(--bg-sidebar) 90%, transparent);
+  backdrop-filter: blur(6px);
+  transform: translateX(-50%);
+  animation: dock-in 0.25s ease both;
+}
+@keyframes dock-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.98);
+  }
+}
+@media (max-width: 900px) {
+  .osiris-answers-dock {
+    max-height: 45vh;
+  }
+}
+
+/* The display menu's button in the bar: an icon (and how many twins show), marked while something is switched off. */
+.display-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 2rem;
+  padding: 0 0.45rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+.display-button:hover,
+.display-button[aria-expanded="true"] {
+  border-color: var(--accent-active);
+  color: var(--text-primary);
+}
+.display-button[data-changed="true"] {
+  color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--accent-primary-soft);
+}
+/* A pop-up that opens upward from the bar, within the window, scrolling when taller. */
+.menu-popup.menu-up {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+  max-height: calc(100vh - var(--app-bar) - 4.5rem);
+  overflow-y: auto;
+}
+/* A layer in the display menu: its icon, name and what it shows, and a switch. */
+.layer-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  color: var(--text-secondary);
+}
+.layer-row:hover {
+  background: var(--bg-hover);
+}
+.layer-row:focus-within {
+  outline: 2px solid var(--accent-active-soft);
+}
+.layer-row[data-on="true"] {
+  color: var(--text-primary);
+}
+.layer-row[data-on="true"] > svg {
+  color: var(--accent-primary);
+}
+.layer-switch {
+  position: relative;
+  width: 1.9rem;
+  height: 1.05rem;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.15s ease;
+}
+.layer-switch::after {
+  content: "";
+  position: absolute;
+  top: 0.15rem;
+  left: 0.15rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 50%;
+  background: var(--bg-editor);
+  transition: transform 0.15s ease;
+}
+.layer-row[data-on="true"] .layer-switch {
+  background: var(--accent-primary);
+}
+.layer-row[data-on="true"] .layer-switch::after {
+  transform: translateX(0.85rem);
+}
+@media (prefers-reduced-motion: reduce) {
+  .osiris-answers-dock {
+    animation: none;
+  }
 }

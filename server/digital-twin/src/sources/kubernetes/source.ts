@@ -27,6 +27,8 @@ export function kubernetesSource(
   clusterName: string,
   options: { cephManagers?: string[]; fetchFn?: typeof fetch; resolve?: (hosts: string[]) => Promise<Record<string, string[]>> } = {},
 ): TwinSource {
+  /** Ceph's client I/O counters at the last sync, for its read and write rates. */
+  let cephBefore: { at: number; read: number; write: number } | undefined;
   return {
     name: "kubernetes",
     models: dtdlModel,
@@ -61,7 +63,16 @@ export function kubernetesSource(
         ...ingressRoutes.flatMap((r) => (r.spec?.routes ?? []).flatMap((x) => [...(x.match ?? "").matchAll(/Host\(`([^`]+)`/g)].map((m) => m[1]!))),
       ];
       const publicAddresses = await (options.resolve ?? publicAddressesOf)(hosts);
-      return clusterGraph({ clusterName, namespaces, pods, nodes, pvcs, pvs, replicasets, version, ceph, services, endpointSlices, ingresses, ingressRoutes, publicAddresses });
+      // Ceph's client I/O: its counters' change since the last sync (none on the first, or after a restart).
+      let cephIo: { read: number; write: number } | undefined;
+      if (ceph) {
+        const now = Date.now();
+        const b = cephBefore;
+        if (b && now > b.at && ceph.readBytes >= b.read && ceph.writeBytes >= b.write)
+          cephIo = { read: ((ceph.readBytes - b.read) * 1000) / (now - b.at), write: ((ceph.writeBytes - b.write) * 1000) / (now - b.at) };
+        cephBefore = { at: now, read: ceph.readBytes, write: ceph.writeBytes };
+      }
+      return clusterGraph({ clusterName, namespaces, pods, nodes, pvcs, pvs, replicasets, version, ceph, cephIo, services, endpointSlices, ingresses, ingressRoutes, publicAddresses });
     },
   };
 }

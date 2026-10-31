@@ -58,7 +58,8 @@ const shown = (m: ChatMessage): ReactNode => {
 
 /**
  * Osiris's agent over the twin: the input at the bottom in the middle (typing, or the microphone: the recording goes
- * as a voice message Osiris transcribes), the conversation in a panel above the twin, questions (a command to
+ * as a voice message Osiris transcribes), the conversation in a panel like the selection's detail — docked, in the
+ * middle over the bottom bar, above the twin — questions (a command to
  * approve) as forms, answers read aloud (Piper) when speech is on, and the `twin_view` tool's steps handed to the
  * twin as they come. The conversation is one thread, kept across visits.
  */
@@ -213,8 +214,11 @@ export function OsirisChat({ onTwin, dock }: { onTwin: (actions: TwinAction[]) =
     <>
       {open && (messages.length > 0 || error) && (
         <section className={dock ? "osiris-answers osiris-answers-dock" : "osiris-answers"} aria-label={t("twin:chat.title")} aria-live="polite">
-          <header className="flex items-center gap-2 border-b border-line px-3 py-1.5">
-            <span className="section-header flex-1">{t("twin:chat.title")}</span>
+          <header className="flex items-center gap-2 border-b border-line px-3 py-2">
+            <div className="min-w-0 flex-1">
+              <h2 className="section-header">{t("twin:chat.title")}</h2>
+              <p className="truncate text-sm font-semibold">{busy ? t("twin:chat.thinking") : t("twin:chat.subtitle")}</p>
+            </div>
             <button type="button" className="btn-link text-xs" onClick={newConversation}>
               {t("twin:chat.new")}
             </button>

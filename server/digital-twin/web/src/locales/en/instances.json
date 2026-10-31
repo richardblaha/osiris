@@ -61,5 +61,9 @@
         "kubeconfig": "Another cluster (kubeconfig)"
       }
     }
+  },
+  "tab": {
+    "settings": "Settings",
+    "models": "Models"
   }
 }

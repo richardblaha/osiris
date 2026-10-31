@@ -25,6 +25,16 @@ export interface CephPool {
 }
 export interface CephState {
   fsid: string;
+  /** The health checks that are raised (`OSD_DOWN`, `PG_DEGRADED`…), with their severity. */
+  checks: { name: string; severity: string }[];
+  /** The monitors, and how many of them are in quorum. */
+  monitors: number;
+  quorum: number;
+  /** Placement groups: all of them, the active+clean ones, and the degraded ones. */
+  pgs: { total: number; clean: number; degraded: number };
+  /** Bytes read and written by clients, all pools together since the daemons started (counters). */
+  readBytes: number;
+  writeBytes: number;
   /** 0 ok, 1 warning, 2 error (HEALTH_OK, HEALTH_WARN, HEALTH_ERR). */
   health: number;
   version: string;
@@ -95,8 +105,20 @@ export function cephState(samples: Sample[]): CephState | undefined {
     .map((s): CephPool => ({ id: Number(s.labels.pool_id), name: s.labels.name ?? "", stored: stored.get(s.labels.pool_id ?? "") ?? 0, maxAvailable: avail.get(s.labels.pool_id ?? "") ?? 0 }))
     .sort((a, b) => a.name.localeCompare(b.name));
   const meta = all("ceph_mon_metadata")[0]?.labels ?? all("ceph_osd_metadata")[0]?.labels ?? {};
+  const sum = (name: string) => all(name).reduce((n, s) => n + s.value, 0);
+  // A PG is clean when active and clean: the mgr counts each state per pool, so the clean count is the lesser.
+  const pgTotal = sum("ceph_pg_total");
   return {
     fsid: all("ceph_health_status")[0]?.labels.fsid ?? "",
+    checks: all("ceph_health_detail")
+      .filter((s) => s.value > 0 && s.labels.name)
+      .map((s) => ({ name: s.labels.name!, severity: (s.labels.severity ?? "").replace(/^HEALTH_/, "").toLowerCase() }))
+      .sort((a, b) => a.name.localeCompare(b.name)),
+    monitors: all("ceph_mon_metadata").length,
+    quorum: all("ceph_mon_quorum_status").filter((s) => s.value === 1).length,
+    pgs: { total: pgTotal, clean: Math.min(sum("ceph_pg_active"), sum("ceph_pg_clean"), pgTotal || Infinity), degraded: sum("ceph_pg_degraded") },
+    readBytes: sum("ceph_pool_rd_bytes"),
+    writeBytes: sum("ceph_pool_wr_bytes"),
     health,
     version: (meta.ceph_version ?? "").replace(/^ceph version (\S+).*$/, "$1"),
     size: one("ceph_cluster_total_bytes") ?? 0,

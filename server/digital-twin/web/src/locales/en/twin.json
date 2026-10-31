@@ -8,7 +8,7 @@
   "model": "DTDL model",
   "errors15m": "Error log records of the last 15 minutes.",
   "empty": "The twin has nothing to show.",
-  "hint": "Drag to orbit, wheel to zoom, click a box to focus it, Esc for the whole twin. Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1/2/3 layers.",
+  "hint": "Drag to orbit, wheel to zoom, click a box to focus it, Esc for the whole twin. Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1–4 one layer, 0 all layers.",
   "counts": {
     "twins_one": "{{count}} twin",
     "twins_other": "{{count}} twins"
@@ -72,39 +72,8 @@
     "send": "Send",
     "yes": "Yes, run it",
     "no": "No",
-    "cancel": "Cancel"
-  },
-  "legend": {
-    "title": "Legend",
-    "layers": "Layers",
-    "layer": {
-      "network": "Network",
-      "storage": "Storage",
-      "logical": "Groupings"
-    },
-    "solids": "Objects",
-    "lines": "Lines",
-    "solid": {
-      "cluster": "Cluster (floor grid)",
-      "node": "Node (status light)",
-      "namespace": "Namespace (dashed, tinted)",
-      "workload": "Workload (dotted)",
-      "pod": "Pod",
-      "container": "Container (solid)",
-      "volume": "Volume claim, pool (fill)",
-      "disk": "Disk (Ceph OSD)",
-      "port": "Network interface",
-      "service": "Service (virtual)",
-      "ingress": "Ingress (gate)",
-      "internet": "Internet, public address"
-    },
-    "line": {
-      "network": "Network, traffic by load",
-      "overlay": "VXLAN tunnel",
-      "routing": "Routing of the selection",
-      "mount": "Mount, node wiring"
-    },
-    "hint": "Click an Ingress, a Service or a pod: its traffic's path lights up, from the public address to the pods."
+    "cancel": "Cancel",
+    "subtitle": "Answers"
   },
   "bottomBar": "Bottom bar: time, display, chat",
   "display": {
@@ -112,7 +81,32 @@
     "search": "Search by name…",
     "anyStatus": "Any status",
     "warnUp": "Warn and worse",
-    "errorOnly": "Errors only"
+    "errorOnly": "Errors only",
+    "title": "Display",
+    "layers": "Layers",
+    "reset": "Show everything",
+    "layer": {
+      "network": "Network",
+      "services": "Network services",
+      "storage": "Storage",
+      "logical": "Groupings"
+    },
+    "layerHelp": {
+      "network": "Interfaces, bridges, routers, tunnels and their wiring",
+      "services": "Services, Ingresses and the way from the internet to the pods",
+      "storage": "Volumes, Ceph with its pools and disks",
+      "logical": "Namespaces and workloads"
+    },
+    "drawing": "Drawing",
+    "labels": "Labels",
+    "labelMode": {
+      "auto": "By size",
+      "all": "All names",
+      "off": "None"
+    },
+    "addresses": "Addresses at the interfaces",
+    "traffic": "Moving traffic",
+    "hint": "Keys 1–4 show one layer alone, 0 all of them. Click an Ingress, a Service or a pod: the way of its traffic lights up."
   },
   "keysHint": "Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1/2/3 layers.",
   "models": {
@@ -141,5 +135,11 @@
     "icon": "Icon",
     "visible": "Visible",
     "remove": "remove"
+  },
+  "ceph": {
+    "osds": "{{up}}/{{total}} OSDs up",
+    "pgs": "PGs {{clean}}/{{total}} clean",
+    "mons": "MON {{quorum}}/{{total}} in quorum",
+    "io": "read {{read}}, write {{write}}"
   }
 }

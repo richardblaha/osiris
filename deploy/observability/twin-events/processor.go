@@ -49,14 +49,39 @@ func newEventsProcessor(set processor.Settings, cfg *Config) (*eventsProcessor, 
 	return p, nil
 }
 
-func (p *eventsProcessor) shutdown(ctx context.Context) error {
+// Start/Shutdown: the Redis client opens with the processor and closes with it.
+func (p *eventsProcessor) Start(_ context.Context, _ component.Host) error { return nil }
+
+func (p *eventsProcessor) Shutdown(ctx context.Context) error {
 	return p.redis.Close()
+}
+
+// severityTextOf the severity's name for a number (17 -> ERROR).
+func severityTextOf(n int32) string {
+	switch {
+	case n >= 21:
+		return "FATAL"
+	case n >= 17:
+		return "ERROR"
+	case n >= 13:
+		return "WARN"
+	case n >= 9:
+		return "INFO"
+	case n >= 5:
+		return "DEBUG"
+	default:
+		return "TRACE"
+	}
 }
 
 // severityOf the record's severity number, from its text when it has none, else inferred from the body.
 func (p *eventsProcessor) severityOf(rec plog.LogRecord) (int32, string) {
 	if n := rec.SeverityNumber(); n != plog.SeverityNumberUnspecified {
-		return int32(n), strings.ToUpper(rec.SeverityText())
+		text := strings.ToUpper(rec.SeverityText())
+		if text == "" || text == "UNSPECIFIED" {
+			text = severityTextOf(int32(n))
+		}
+		return int32(n), text
 	}
 	if s := strings.ToLower(rec.SeverityText()); s != "" {
 		if n, ok := severityNumbers[s]; ok {

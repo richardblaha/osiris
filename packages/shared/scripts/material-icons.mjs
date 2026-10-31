@@ -12,6 +12,7 @@ export const ICONS = [
   "draft", "error", "extension", "folder", "forum", "group", "image", "inventory_2", "keyboard_arrow_down", "key", "language",
   "left_panel_close", "left_panel_open", "menu_book", "mic", "open_in_new", "psychology", "remove", "schedule",
   "school", "send", "settings", "star", "stop", "support_agent", "verified_user", "volume_off", "volume_up", "warning",
+  "account_tree", "deployed_code", "hub", "lan", "layers", "storage", "tune", "view_in_ar",
 ];
 
 const root = dirname(createRequire(import.meta.url).resolve("@material-symbols/svg-400/package.json"));

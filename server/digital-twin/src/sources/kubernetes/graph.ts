@@ -51,6 +51,8 @@ export interface ClusterInput {
   replicasets: ReplicaSetObject[];
   /** The Ceph cluster the volumes live on, when its manager is known. */
   ceph?: CephState;
+  /** Ceph's client I/O in bytes per second, from its counters' change since the last sync. */
+  cephIo?: { read: number; write: number };
   services?: ServiceObject[];
   endpointSlices?: EndpointSliceObject[];
   ingresses?: IngressObject[];
@@ -241,6 +243,15 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
       health: c.health >= 2 ? "error" : c.health === 1 ? "warn" : "ok",
       version: c.version,
       osdCount: c.osds.length,
+      osdUp: c.osds.filter((o) => o.up).length,
+      osdIn: c.osds.filter((o) => o.in).length,
+      monitors: c.monitors,
+      quorum: c.quorum,
+      pgTotal: c.pgs.total,
+      pgClean: c.pgs.clean,
+      pgDegraded: c.pgs.degraded,
+      checks: c.checks.map((x) => `${x.name} (${x.severity})`).join(", "),
+      ...(input.cephIo ? { readRate: Math.round(input.cephIo.read), writeRate: Math.round(input.cephIo.write) } : {}),
       size: c.size,
       used: c.used,
     });
@@ -257,7 +268,8 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
         ip: o.address,
         up: o.up,
         in: o.in,
-        fill,
+        // The disk's own bytes where the manager reports them, else the cluster's average fill.
+        ...(o.size > 0 ? { size: o.size, used: o.used, fill: o.used / o.size } : { fill }),
       });
       link(CONTAINS, nodeIds.get(o.host) ?? cephId, id);
       link("hasOsd", cephId, id);
@@ -293,7 +305,7 @@ function matchOf(match: string | undefined): { hosts: string[]; paths: string[] 
 
 /**
  * The cluster's network as twins: each node's network card (its address), its router (Calico routes between pods,
- * no bridge) and VXLAN tunnel to the other nodes; each pod's eth0 to its node's router (a host-network pod straight
+ * no bridge; a bridge CNI like flannel puts them on its bridge `cni0`, which the host routes) and VXLAN tunnel to the other nodes; each pod's eth0 to its node's router (a host-network pod straight
  * to the card); the LoadBalancer addresses (MetalLB) announced by the nodes' cards and exposing their Services; the
  * public addresses the Ingress hosts resolve to, forwarded to the LoadBalancers. Services route to the pods of
  * their endpoints, Ingresses and IngressRoutes to Services.
@@ -314,6 +326,7 @@ function network(
   // Nodes: card, router, tunnel.
   const routerOf = new Map<string, string>();
   const cardOf = new Map<string, string>();
+  const bridgeOf = new Map<string, string>();
   const tunnels: string[] = [];
   for (const node of input.nodes) {
     const nodeId = g.nodeIds.get(node.metadata.name);
@@ -323,17 +336,26 @@ function network(
     const withMask = a["projectcalico.org/IPv4Address"] ?? "";
     const card = `${nodeId}/if/nic`;
     const router = `${nodeId}/if/router`;
+    // Flannel (and other bridge CNIs) put the pods on a bridge the host routes from; Calico routes each pod itself.
+    const flannel = a["flannel.alpha.coreos.com/backend-type"];
     iface(card, internal || "nic", "physical", { ip: internal || withMask.split("/")[0] || "", cidr: withMask });
-    iface(router, "calico", "router", {});
+    iface(router, flannel ? "host" : "calico", "router", {});
     link(CONTAINS, nodeId, card);
     link(CONTAINS, nodeId, router);
     link("connectedTo", router, card);
     cardOf.set(node.metadata.name, card);
     routerOf.set(node.metadata.name, router);
-    const tunnelIp = a["projectcalico.org/IPv4VXLANTunnelAddr"];
+    if (flannel) {
+      const bridge = `${nodeId}/if/cni0`;
+      iface(bridge, "cni0", "bridge", { cidr: node.spec?.podCIDR ?? "" });
+      link(CONTAINS, nodeId, bridge);
+      link("connectedTo", bridge, router);
+      bridgeOf.set(node.metadata.name, bridge);
+    }
+    const tunnelIp = a["projectcalico.org/IPv4VXLANTunnelAddr"] ?? (flannel === "vxlan" ? a["flannel.alpha.coreos.com/public-ip"] : undefined);
     if (tunnelIp) {
       const tunnel = `${nodeId}/if/vxlan`;
-      iface(tunnel, "vxlan.calico", "tunnel", { ip: tunnelIp });
+      iface(tunnel, flannel ? "flannel.1" : "vxlan.calico", "tunnel", { ip: tunnelIp });
       link(CONTAINS, nodeId, tunnel);
       link("connectedTo", router, tunnel);
       tunnels.push(tunnel);
@@ -352,7 +374,7 @@ function network(
     const eth0 = `${podId}/if/eth0`;
     iface(eth0, "eth0", "veth", { ip, ...(pod.spec.hostNetwork ? { cidr: "host network" } : {}) });
     link(CONTAINS, podId, eth0);
-    const to = pod.spec.hostNetwork ? cardOf.get(pod.spec.nodeName) : routerOf.get(pod.spec.nodeName);
+    const to = pod.spec.hostNetwork ? cardOf.get(pod.spec.nodeName) : (bridgeOf.get(pod.spec.nodeName) ?? routerOf.get(pod.spec.nodeName));
     if (to) link("connectedTo", eth0, to);
   }
 

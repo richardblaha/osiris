@@ -252,7 +252,7 @@ export function Models({ models, onChanged, onPreview }: { models: DtdlModelData
                     <label className="flex items-center gap-2 text-fg-secondary">
                       {t("twin:models.layer")}
                       <select className="field flex-1 py-1" value={draft.presentation?.layer ?? ""} onChange={(e) => setPresentation((p) => ({ ...p, layer: (e.target.value || undefined) as DtdlPresentation["layer"] }))}>
-                        <option value="">base</option>
+                        <option value="">—</option>
                         {PRESENTATION_LAYERS.map((l) => (
                           <option key={l}>{l}</option>
                         ))}

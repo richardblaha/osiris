@@ -1,8 +1,10 @@
 import { t } from "i18next";
 import { useEffect, useState } from "react";
 import { Icon } from "./Icon.tsx";
+import type { DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { api, type InstanceRecord, type SourceField, type SourceType } from "./api.ts";
-import { ErrorNotice, Pending } from "./ui.tsx";
+import { Models } from "./Models.tsx";
+import { ErrorNotice, Loading, Pending } from "./ui.tsx";
 
 /** A form's state: the instance's id, name, type, settings, and the secrets typed in (null: remove it). */
 interface Draft {
@@ -32,9 +34,30 @@ const newDraft = (type?: SourceType): Draft => ({
 /**
  * The digital twins, for admins: each twin is an instance of a kind of source (Kubernetes…) with its settings; secrets
  * (a kubeconfig, a password) are write-only: the form shows whether one is set, a new value replaces it. Who sees a
- * twin is osiris-auth's group `twin:<id>` (admins see all of them).
+ * twin is osiris-auth's group `twin:<id>` (admins see all of them). Each twin has two tabs: its settings, and its
+ * DTDL models (how its twins are described and drawn) — picking a twin here shows it, so its models are the ones
+ * edited.
  */
-export function Instances({ onChanged }: { onChanged: (id?: string) => void }) {
+export function Instances({
+  current,
+  tab,
+  onTab,
+  onPick,
+  onChanged,
+  models,
+  onModelsChanged,
+  onPreview,
+}: {
+  /** The twin shown (its models are the ones the models tab edits). */
+  current?: string;
+  tab: "settings" | "models";
+  onTab: (tab: "settings" | "models") => void;
+  onPick: (id: string) => void;
+  onChanged: (id?: string) => void;
+  models?: DtdlModelData[];
+  onModelsChanged: () => void;
+  onPreview: (doc: DtdlInterface) => void;
+}) {
   const [records, setRecords] = useState<InstanceRecord[]>();
   const [types, setTypes] = useState<SourceType[]>([]);
   const [draft, setDraft] = useState<Draft>();
@@ -50,7 +73,11 @@ export function Instances({ onChanged }: { onChanged: (id?: string) => void }) {
   };
   useEffect(() => {
     void load().then(
-      ({ list, kinds }) => (list[0] ? (setEditing(list[0]), setDraft(draftOf(list[0]))) : setDraft(newDraft(kinds[0]))),
+      ({ list, kinds }) => {
+        const first = list.find((r) => r.id === current) ?? list[0];
+        if (first) (setEditing(first), setDraft(draftOf(first)));
+        else setDraft(newDraft(kinds[0]));
+      },
       (e: Error) => setError(e.message),
     );
   }, []);
@@ -66,6 +93,9 @@ export function Instances({ onChanged }: { onChanged: (id?: string) => void }) {
     setError(undefined);
     setEditing(r);
     setDraft(r ? draftOf(r) : newDraft(types[0]));
+    // The twin picked is shown, so its models are the ones edited; a new one has none yet.
+    if (r) onPick(r.id);
+    else onTab("settings");
   };
   const save = async () => {
     setSaving(true);
@@ -112,6 +142,28 @@ export function Instances({ onChanged }: { onChanged: (id?: string) => void }) {
         </button>
       </nav>
 
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2">
+          <h2 className="font-semibold">{isNew ? t("instances:new") : editing.name}</h2>
+          {!isNew && (
+            <span className="flex gap-1" role="tablist" aria-label={editing.name}>
+              {(["settings", "models"] as const).map((k) => (
+                <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "btn-primary px-2 py-1 text-xs" : "btn-secondary px-2 py-1 text-xs"} onClick={() => onTab(k)}>
+                  {t(`instances:tab.${k}`)}
+                </button>
+              ))}
+            </span>
+          )}
+        </header>
+        {!isNew && tab === "models" ? (
+          editing.id === current && models ? (
+            <Models models={models} onChanged={onModelsChanged} onPreview={onPreview} />
+          ) : (
+            <div className="relative min-h-0 flex-1">
+              <Loading show />
+            </div>
+          )
+        ) : (
       <form
         className="min-w-0 flex-1 overflow-y-auto p-4"
         onSubmit={(e) => {
@@ -119,7 +171,6 @@ export function Instances({ onChanged }: { onChanged: (id?: string) => void }) {
           void save();
         }}
       >
-        <h2 className="font-semibold">{isNew ? t("instances:new") : editing.name}</h2>
         {editing?.error && <p className="notice notice-error mt-3 px-3 py-2 text-sm">{t("instances:error", { error: editing.error })}</p>}
         <ErrorNotice error={error} />
 
@@ -199,6 +250,8 @@ export function Instances({ onChanged }: { onChanged: (id?: string) => void }) {
           )}
         </div>
       </form>
+        )}
+      </div>
     </div>
   );
 }

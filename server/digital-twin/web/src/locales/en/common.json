@@ -5,8 +5,7 @@
     "dashboard": "Overview",
     "logs": "Logs",
     "metrics": "Metrics",
-    "traces": "Traces",
-    "models": "Models"
+    "traces": "Traces"
   },
   "loading": "Loading…",
   "signIn": "Sign in",

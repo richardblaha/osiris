@@ -61,5 +61,9 @@
         "kubeconfig": "Jiný cluster (kubeconfig)"
       }
     }
+  },
+  "tab": {
+    "settings": "Nastavení",
+    "models": "Modely"
   }
 }

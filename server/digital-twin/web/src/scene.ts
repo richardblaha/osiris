@@ -1,5 +1,5 @@
 import { TWIN_CONTAINS, type TwinStatus } from "@osiris/shared";
-import { BUILTIN_LOOKS, localized, presentationOf, resolveContents, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData, type Look, type PresentationLayer } from "@osiris/shared/dtdl.ts";
+import { BUILTIN_LAYERS, BUILTIN_LOOKS, localized, presentationOf, resolveContents, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData, type Look, type PresentationLayer } from "@osiris/shared/dtdl.ts";
 import { currentLocale } from "./i18n.ts";
 
 /** A twin in the view: the twin itself, its model, and its place in the containment tree with rolled-up status. */
@@ -42,7 +42,8 @@ export interface TwinView {
   icon?: string;
   /** The property that is its label (the presentation's `label`, else `name`). */
   labelProp: string;
-  /** The legend's layer it is switched with (`presentation.layer`, else base). */
+  /** The layer it is switched with: `presentation.layer`, else its model's built-in one (an interface carrying
+   * outside traffic — a LoadBalancer, a public address — is the services'), else base. */
   layer: PresentationLayer;
   /** Whether its model's presentation shows it at all (`presentation.visible`, else yes). */
   visible: boolean;
@@ -116,13 +117,18 @@ export function buildScene(
   /** The presentation a model's twins are drawn with, resolved over `extends` (fallback: the built-in look). */
   const lookOfModel = (model: string) => {
     const p = presentationOf(model, modelMap);
-    return { look: p.look ?? BUILTIN_LOOKS[model.replace(/;.*$/, "")] ?? ("box" as Look), color: p.color, icon: p.icon, labelProp: p.label ?? "name", layer: p.layer ?? ("base" as PresentationLayer), visible: p.visible ?? true };
+    const base = model.replace(/;.*$/, "");
+    return { look: p.look ?? BUILTIN_LOOKS[base] ?? ("box" as Look), color: p.color, icon: p.icon, labelProp: p.label ?? "name", layer: p.layer ?? BUILTIN_LAYERS[base] ?? ("base" as PresentationLayer), ownLayer: !!p.layer, visible: p.visible ?? true };
   };
+  /** A twin's layer: its model's, but an interface that carries outside traffic belongs to the network services. */
+  const layerOf = (t: DigitalTwin, l: ReturnType<typeof lookOfModel>): PresentationLayer =>
+    !l.ownLayer && l.layer === "network" && (t.kind === "loadbalancer" || t.kind === "public") ? "services" : l.layer;
   const byId = new Map<string, TwinView>(
     twins.map((t) => {
       const own = statusOf(t);
       const ownErrors = errors[t.$dtId] ?? 0;
-      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], depth: 0, children: [], ...lookOfModel(t.$metadata.$model) }];
+      const { ownLayer: _, ...look } = lookOfModel(t.$metadata.$model);
+      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], depth: 0, children: [], ...look, layer: layerOf(t, lookOfModel(t.$metadata.$model)) }];
     }),
   );
   for (const r of relationships) {
@@ -324,7 +330,7 @@ export function interfacesOf(scene: Pick<TwinScene, "byId" | "relationships">): 
   const out: [string, string][] = [];
   for (const r of scene.relationships) {
     // Not containment, and not the network's own lines (wires, routing): those are drawn their own way.
-    if ([TWIN_CONTAINS, "connectedTo", "routesTo", "exposes", "servedBy"].includes(r.$relationshipName)) continue;
+    if ([TWIN_CONTAINS, "connectedTo", "routesTo", "exposes", "servedBy", "hasOsd", "holds"].includes(r.$relationshipName)) continue;
     const a = scene.byId.get(r.$sourceId);
     const b = scene.byId.get(r.$targetId);
     if (!a?.parent || a.parent !== b?.parent) continue;
@@ -344,6 +350,8 @@ const pairsOf = (scene: Pick<TwinScene, "byId" | "relationships">, names: string
 export const wiresOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["connectedTo"]);
 /** Routing: an Ingress to Services and its LoadBalancer, a Service to pods, a LoadBalancer to its Service. */
 export const routingOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["routesTo", "exposes", "servedBy"]);
+/** Storage: a storage cluster to its disks (Ceph's OSDs), a pool to the volume claims it holds. */
+export const storageLinksOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["hasOsd", "holds"]);
 
 /**
  * The path traffic takes through a twin, for showing it lit: the routing both ways (an Ingress's Services and their

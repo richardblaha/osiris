@@ -77,8 +77,8 @@ export interface DtdlInterface {
 
 /** How a kind of twin is drawn: a solid of its own shape, so a node, a pod, a disk and a Service are told apart
  * before any label is read. */
-export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "box";
-export const LOOKS: readonly Look[] = ["cluster", "node", "workload", "pod", "container", "cylinder", "disk", "port", "hex", "gate", "box"];
+export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "ceph" | "box";
+export const LOOKS: readonly Look[] = ["cluster", "node", "workload", "pod", "container", "cylinder", "disk", "port", "hex", "gate", "ceph", "box"];
 /** The built-in looks by model DTMI without the version, for models without a `presentation`. */
 export const BUILTIN_LOOKS: Record<string, Look> = {
   "dtmi:osiris:k8s:Cluster": "cluster",
@@ -87,6 +87,7 @@ export const BUILTIN_LOOKS: Record<string, Look> = {
   "dtmi:osiris:k8s:Pod": "pod",
   "dtmi:osiris:k8s:Container": "container",
   "dtmi:osiris:k8s:PersistentVolumeClaim": "cylinder",
+  "dtmi:osiris:ceph:Cluster": "ceph",
   "dtmi:osiris:ceph:Pool": "cylinder",
   "dtmi:osiris:ceph:Osd": "disk",
   "dtmi:osiris:net:Interface": "port",
@@ -94,9 +95,27 @@ export const BUILTIN_LOOKS: Record<string, Look> = {
   "dtmi:osiris:k8s:Ingress": "gate",
 };
 
-/** The view's layer a model belongs to (the legend's switches). */
-export type PresentationLayer = "base" | "network" | "storage" | "logical";
-export const PRESENTATION_LAYERS: readonly PresentationLayer[] = ["base", "network", "storage", "logical"];
+/**
+ * The view's layer a model belongs to (the display menu's switches): `base` always shows (the cluster, nodes, pods,
+ * containers), `network` the low-level network (interfaces, bridges, routers, tunnels and their wiring), `services`
+ * the network services (Services, Ingresses, LoadBalancer and public addresses, their routing), `storage` the
+ * storage (volume claims, Ceph with its pools and disks), `logical` the groupings (namespaces, workloads).
+ */
+export type PresentationLayer = "base" | "network" | "services" | "storage" | "logical";
+export const PRESENTATION_LAYERS: readonly PresentationLayer[] = ["base", "network", "services", "storage", "logical"];
+/** The built-in layers by model DTMI without the version, for models whose presentation names none. */
+export const BUILTIN_LAYERS: Record<string, PresentationLayer> = {
+  "dtmi:osiris:net:Interface": "network",
+  "dtmi:osiris:k8s:Service": "services",
+  "dtmi:osiris:k8s:Ingress": "services",
+  "dtmi:osiris:k8s:PersistentVolumeClaim": "storage",
+  "dtmi:osiris:ceph:Cluster": "storage",
+  "dtmi:osiris:ceph:Pool": "storage",
+  "dtmi:osiris:ceph:Osd": "storage",
+  "dtmi:osiris:ceph:Monitor": "storage",
+  "dtmi:osiris:k8s:Namespace": "logical",
+  "dtmi:osiris:k8s:Workload": "logical",
+};
 
 /**
  * A model's `presentation` section (`dtmi:osiris:presentation;1`): how the twin's views draw its twins. Everything
