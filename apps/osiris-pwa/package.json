@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@assistant-ui/react": "^0.15.25",
-    "@assistant-ui/react-markdown": "^0.14.19",
+    "@assistant-ui/react-markdown": "^0.14.24",
     "@monaco-editor/react": "4.7.0",
     "@osiris/shared": "workspace:*",
     "i18next": "26.4.2",
