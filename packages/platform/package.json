@@ -23,7 +23,7 @@
     "@opentelemetry/sdk-metrics": "2.12.0",
     "@opentelemetry/sdk-node": "0.223.0",
     "@osiris/shared": "workspace:*",
-    "i18next": "26.4.2",
+    "i18next": "26.5.11",
     "jose": "6.2.12",
     "mmdb-lib": "^3.0.3",
     "nodemailer": "10.0.13",
