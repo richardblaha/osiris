@@ -100,7 +100,7 @@ spec:
   policyTypes: [Ingress]
   ingress:
     - from:
-        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress } }
       ports: [{ port: 8080, protocol: TCP }]
 ---
 # Per visitor IP: a burst of events is fine (a SPA, a few custom events), a flood isn't.
