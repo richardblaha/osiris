@@ -1227,8 +1227,8 @@ importers:
         specifier: 2.1.4
         version: 2.1.4(hono@4.13.13)
       '@vueuse/core':
-        specifier: 12.8.2
-        version: 12.8.2(typescript@6.0.3)
+        specifier: 15.0.0
+        version: 15.0.0(vue@3.5.44(typescript@6.0.3))
       hono:
         specifier: 4.13.13
         version: 4.13.13
@@ -4165,6 +4165,12 @@ packages:
   '@vueuse/core@12.8.2':
     resolution: {integrity: sha512-HbvCmZdzAu3VGi/pWYm5Ut+Kd9mn1ZHnn4L5G8kOQTPs/IwIAmJoBrmYk2ckLArgMXZj0AW3n5CAejLUO+PhdQ==}
 
+  '@vueuse/core@15.0.0':
+    resolution: {integrity: sha512-Zv67h5mrk7YHDJsRObx+DXaCBz6RKBUpxqLesJ+3xZNPG6yuQs7ja7kg3veFrrouYLWAqydQ7CwGEbLVxB43Ng==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      vue: ^3.5.0
+
   '@vueuse/integrations@12.8.2':
     resolution: {integrity: sha512-fbGYivgK5uBTRt7p5F3zy6VrETlV9RtZjBqd1/HxGdjdckBgBM4ugP8LHpjolqTj14TXTxSK1ZfgPbHYyGuH7g==}
     peerDependencies:
@@ -4209,8 +4215,18 @@ packages:
   '@vueuse/metadata@12.8.2':
     resolution: {integrity: sha512-rAyLGEuoBJ/Il5AmFHiziCPdQzRt88VxR+Y/A/QhJ1EWtWqPBBAxTAFaSkviwEuOEZNtW8pvkPgoCZQ+HxqW1A==}
 
+  '@vueuse/metadata@15.0.0':
+    resolution: {integrity: sha512-sfWE5LADAKJ0KnjtGliMdSN8Ij/L7uP6rXIZlgPloAI4zvvefbw6H5Lt7KJA6RqQOYgVqWF5Guj50HHMIzygBg==}
+    engines: {node: '>=22'}
+
   '@vueuse/shared@12.8.2':
     resolution: {integrity: sha512-dznP38YzxZoNloI0qpEfpkms8knDtaoQ6Y/sfS0L7Yki4zh40LFHEhur0odJC6xTHG5dxWVPiUWBXn+wCG2s5w==}
+
+  '@vueuse/shared@15.0.0':
+    resolution: {integrity: sha512-vbNXhGrbV53xPOMSyOzMHQRvhMgZf7oNDw2RChUetVxwTIEkInQ1joZ9JbT0G3z2n2AJNjvmCWeM9ySYrnvogA==}
+    engines: {node: '>=22'}
+    peerDependencies:
+      vue: ^3.5.0
 
   '@zone-eu/mailsplit@5.4.27':
     resolution: {integrity: sha512-9008ddFqqKk7lMF2S1sLU7ExfJZP9zPw5tkZy24EVt45Ryme2x85f/5vJZZqQ+vCJkKcCY78dJ5yuEVG3ZrVZA==}
@@ -10163,6 +10179,13 @@ snapshots:
     transitivePeerDependencies:
       - typescript
 
+  '@vueuse/core@15.0.0(vue@3.5.44(typescript@6.0.3))':
+    dependencies:
+      '@types/web-bluetooth': 0.0.21
+      '@vueuse/metadata': 15.0.0
+      '@vueuse/shared': 15.0.0(vue@3.5.44(typescript@6.0.3))
+      vue: 3.5.44(typescript@6.0.3)
+
   '@vueuse/integrations@12.8.2(axios@1.20.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0))(focus-trap@7.8.0)(jwt-decode@4.0.0)(typescript@6.0.3)':
     dependencies:
       '@vueuse/core': 12.8.2(typescript@6.0.3)
@@ -10177,11 +10200,17 @@ snapshots:
 
   '@vueuse/metadata@12.8.2': {}
 
+  '@vueuse/metadata@15.0.0': {}
+
   '@vueuse/shared@12.8.2(typescript@6.0.3)':
     dependencies:
       vue: 3.5.44(typescript@6.0.3)
     transitivePeerDependencies:
       - typescript
+
+  '@vueuse/shared@15.0.0(vue@3.5.44(typescript@6.0.3))':
+    dependencies:
+      vue: 3.5.44(typescript@6.0.3)
 
   '@zone-eu/mailsplit@5.4.27':
     dependencies:
