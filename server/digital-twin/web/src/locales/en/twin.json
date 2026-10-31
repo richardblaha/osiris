@@ -186,5 +186,8 @@
       "traces": "traces",
       "chat": "conversation"
     }
+  },
+  "data": {
+    "title": "Data ({{profile}})"
   }
 }

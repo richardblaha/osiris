@@ -26,7 +26,7 @@ type View =
   | { kind: "logs"; preset: Preset; filter?: Record<string, string>; traceId?: string }
   | { kind: "metrics"; preset: Preset }
   | { kind: "traces"; preset: Preset; traceId?: string }
-  | { kind: "instances"; tab?: "settings" | "models" };
+  | { kind: "instances"; tab?: "settings" | "models" | "data" };
 
 const SCOPE = ["namespace", "pod", "node", "container", "claim"] as const;
 /** The logs page's own filters (besides the scope), kept in the URL. */
@@ -47,7 +47,7 @@ const parseHash = (): View => {
     return { kind: "logs", preset, filter: Object.fromEntries(LOG_FILTERS.flatMap((k) => (params.get(k) ? [[k, params.get(k)!]] : []))), traceId: params.get("traceId") ?? undefined };
   if (kind === "metrics") return { kind: "metrics", preset };
   if (kind === "traces") return { kind: "traces", preset, traceId: params.get("traceId") ?? undefined };
-  if (kind === "instances") return { kind: "instances", tab: params.get("tab") === "models" ? "models" : undefined };
+  if (kind === "instances") return { kind: "instances", tab: params.get("tab") === "models" ? "models" : params.get("tab") === "data" ? "data" : undefined };
   // The models' old page is the twins' administration's tab now.
   if (kind === "models") return { kind: "instances", tab: "models" };
   return { kind: "twin" };

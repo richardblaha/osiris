@@ -64,6 +64,70 @@
   },
   "tab": {
     "settings": "Nastavení",
-    "models": "Modely"
+    "models": "Modely",
+    "data": "Zdroje dat"
+  },
+  "data": {
+    "profile": "Datový profil",
+    "profileHelp": "Dvojče běží vždy v jednom datovém profilu: dataProfiles modelů říkají, odkud má který profil telemetrii (živá data, simulace, přehrání).",
+    "models_one": "{{count}} model",
+    "models_few": "{{count}} modely",
+    "models_many": "{{count}} modelu",
+    "models_other": "{{count}} modelů",
+    "bound_one": "běží {{count}} vazba",
+    "bound_few": "běží {{count}} vazby",
+    "bound_many": "běží {{count}} vazby",
+    "bound_other": "běží {{count}} vazeb",
+    "connections": "Připojení",
+    "connectionsHelp": "Odkud čtou vazby profilů, podle id. Adresy a přihlašovací údaje jsou jen tady, nikdy v modelech; tajné údaje jdou jen zapsat.",
+    "add": "Přidat připojení",
+    "none": "Zatím žádná připojení.",
+    "check": "Vyzkoušet",
+    "checkOk": "Připojení funguje.",
+    "edit": "Upravit",
+    "cancel": "Zrušit",
+    "kindOf": "Druh zdroje",
+    "idHelp": "Krátké id, které uvádějí vazby v modelech (a-z, 0-9, -).",
+    "confirmDelete": "Smazat připojení {{name}}?",
+    "lastValue": "poslední hodnota {{at}}",
+    "kind": {
+      "live": "živá data",
+      "simulation": "simulace",
+      "replay": "přehrání"
+    },
+    "type": {
+      "clickhouse": "ClickHouse",
+      "prometheus": "Prometheus API (backendy OpenTelemetry)",
+      "mqtt": "MQTT",
+      "kafka": "Kafka",
+      "rabbitmq": "RabbitMQ",
+      "generator": "Generátor (simulace)",
+      "kubernetes-simulation": "Simulovaný Kubernetes"
+    },
+    "typeHelp": {
+      "clickhouse": "SELECT pro každý twin; hodnoty twinu jdou jako typované parametry. Použijte uživatele jen pro čtení.",
+      "prometheus": "Okamžitý dotaz PromQL pro každý twin (Prometheus, Mimir, VictoriaMetrics, Thanos…).",
+      "mqtt": "Topic pro každý twin; hodnota na cestě ve zprávě.",
+      "kafka": "Topic; zpráva se přiřadí twinu podle klíče nebo pole.",
+      "rabbitmq": "Vlastní fronta navázaná na exchange routovacím klíčem pro každý twin.",
+      "generator": "Hodnoty podle vzoru v čase, pro simulace. Nikam se nepřipojuje.",
+      "kubernetes-simulation": "Vlastní cluster simulace (kwok, kind…), na který odkazuje simulátor simulačního profilu."
+    },
+    "field": {
+      "url": "Adresa",
+      "user": "Uživatel",
+      "password": "Heslo",
+      "database": "Databáze",
+      "token": "Token",
+      "username": "Uživatelské jméno",
+      "clientId": "Id klienta",
+      "brokers": "Brokery (host:port, oddělené čárkou)",
+      "ssl": "TLS",
+      "mechanism": "Mechanismus SASL",
+      "groupId": "Skupina konzumentů",
+      "server": "API server",
+      "ca": "Certifikát CA (PEM)",
+      "tool": "Nástroj"
+    }
   }
 }

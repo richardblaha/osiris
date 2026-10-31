@@ -194,5 +194,8 @@
       "traces": "trasy",
       "chat": "konverzaci"
     }
+  },
+  "data": {
+    "title": "Data ({{profile}})"
   }
 }

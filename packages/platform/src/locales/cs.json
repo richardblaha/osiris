@@ -143,7 +143,9 @@
       "instanceNotFound": "Takové digitální dvojče není, nebo ho nesmíš vidět.",
       "adminOnly": "Digitální dvojčata spravují jen administrátoři.",
       "sourceType": "Neznámý druh zdroje.",
-      "preferenceTooLarge": "Předvolba je příliš velká."
+      "preferenceTooLarge": "Předvolba je příliš velká.",
+      "connectorType": "Neznámý druh zdroje dat.",
+      "connectionInUse": "Z tohoto připojení stále čte datový profil modelu."
     },
     "validation": {
       "invalid": "Neplatný požadavek",

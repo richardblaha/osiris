@@ -4,6 +4,7 @@ import { Icon } from "./Icon.tsx";
 import type { DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { api, type InstanceRecord, type SourceField, type SourceType } from "./api.ts";
 import { Models } from "./Models.tsx";
+import { DataSources } from "./DataSources.tsx";
 import { ErrorNotice, Loading, Pending } from "./ui.tsx";
 
 /** A form's state: the instance's id, name, type, settings, and the secrets typed in (null: remove it). */
@@ -50,8 +51,8 @@ export function Instances({
 }: {
   /** The twin shown (its models are the ones the models tab edits). */
   current?: string;
-  tab: "settings" | "models";
-  onTab: (tab: "settings" | "models") => void;
+  tab: "settings" | "models" | "data";
+  onTab: (tab: "settings" | "models" | "data") => void;
   onPick: (id: string) => void;
   onChanged: (id?: string) => void;
   models?: DtdlModelData[];
@@ -147,7 +148,7 @@ export function Instances({
           <h2 className="font-semibold">{isNew ? t("instances:new") : editing.name}</h2>
           {!isNew && (
             <span className="flex gap-1" role="tablist" aria-label={editing.name}>
-              {(["settings", "models"] as const).map((k) => (
+              {(["settings", "models", "data"] as const).map((k) => (
                 <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "btn-primary px-2 py-1 text-xs" : "btn-secondary px-2 py-1 text-xs"} onClick={() => onTab(k)}>
                   {t(`instances:tab.${k}`)}
                 </button>
@@ -155,7 +156,15 @@ export function Instances({
             </span>
           )}
         </header>
-        {!isNew && tab === "models" ? (
+        {!isNew && tab === "data" ? (
+          editing.id === current ? (
+            <DataSources instance={editing.id} />
+          ) : (
+            <div className="relative min-h-0 flex-1">
+              <Loading show />
+            </div>
+          )
+        ) : !isNew && tab === "models" ? (
           editing.id === current && models ? (
             <Models models={models} onChanged={onModelsChanged} onPreview={onPreview} />
           ) : (

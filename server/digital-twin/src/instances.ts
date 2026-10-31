@@ -6,6 +6,7 @@ import { startSync } from "./sync.ts";
 import type { TwinStateStore } from "./state.ts";
 import type { TwinSource } from "./twin.ts";
 import { SOURCE_TYPES, type SourceDefaults, type SourceType } from "./sources/registry.ts";
+import { DataHub, type DataValueStore } from "./data/hub.ts";
 
 /** A running instance: its record, data, adapter, telemetry and history; or why it could not start. */
 export interface RunningInstance {
@@ -16,6 +17,8 @@ export interface RunningInstance {
   history?: HistoryReader;
   /** Why the source could not be made (a bad kubeconfig…): the instance has its stored data, nothing new. */
   error?: string;
+  /** Its data profiles' runner: the telemetry its models bind to connections. */
+  hub?: DataHub;
   stop(): void;
 }
 
@@ -32,6 +35,8 @@ export interface InstancesOptions {
   /** How long the view's telemetry outlives a sync round in the cache. */
   telemetryTtlSeconds?: number;
   types?: Record<string, SourceType>;
+  /** Where the data hubs write their values; none: no data hubs run. */
+  values?: DataValueStore;
   log?: (message: string, err?: unknown) => void;
 }
 
@@ -85,6 +90,11 @@ export class Instances {
     const data = store.of(id);
     const running: RunningInstance = { record, data, stop: () => {} };
     this.running.set(id, running);
+    // The data profiles run whether or not the structure's source does.
+    const hub = this.options.values ? new DataHub({ instance: id, store, data, state, values: this.options.values, fetchFn: defaults.fetchFn, log: this.log }).start() : undefined;
+    running.hub = hub;
+    const stopHub = () => void hub?.stop();
+    running.stop = stopHub;
     const type = this.type(record.sourceType);
     try {
       if (!type) throw new Error(`Unknown source type ${record.sourceType}`);
@@ -105,7 +115,7 @@ export class Instances {
           running.error = err ? `${err.message}${err.cause instanceof Error ? `: ${err.cause.message}` : ""}`.slice(0, 500) : undefined;
         },
       });
-      running.stop = sync.stop;
+      running.stop = () => (sync.stop(), stopHub());
     } catch (err) {
       running.error = (err as Error).message.slice(0, 500);
       this.log(`The twin ${id} could not start`, err);
@@ -118,6 +128,7 @@ export class Instances {
     this.running.get(id)?.stop();
     this.running.delete(id);
     await this.options.state.deleteInstance(id);
+    await this.options.values?.clear(id);
     return this.options.store.deleteInstance(id);
   }
 

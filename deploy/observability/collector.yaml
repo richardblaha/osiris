@@ -2,7 +2,7 @@
 # cluster metrics (k8s_cluster) and Kubernetes events, enriched with pod metadata and written to ClickHouse.
 # The twin_events processor (this repo's image, deploy/observability/twin-events) additionally appends every
 # warn/error log record to the Redis stream osiris:otel:events, where the digital twin's API and Osiris's agent
-# read it (GET /api/instances/:instance/events, and a push to the agent's thread when EVENTS_PUSH is on).
+# read it (GET /api/instances/:instance/events; the twin's alerting service turns them into alerts Osiris investigates).
 apiVersion: v1
 kind: ServiceAccount
 metadata:

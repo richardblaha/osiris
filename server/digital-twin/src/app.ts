@@ -13,7 +13,9 @@ import type { Config } from "./config.ts";
 import type { Instances, RunningInstance } from "./instances.ts";
 import { errorsByTwin, valuesByTwin } from "./twin.ts";
 import type { TelemetryKind, TelemetryState, TwinStateStore } from "./state.ts";
-import { interfaceErrors, presentationErrors, type DigitalTwin, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
+import { DATA_ID, dataProfileErrors, dataProfilesOf, interfaceErrors, presentationErrors, type DigitalTwin, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
+import { bindingErrors, CONNECTOR_TYPES } from "./data/connectors.ts";
+import type { DataValueStore } from "./data/hub.ts";
 import type { MetricType } from "./telemetry.ts";
 import { secretFields } from "./sources/registry.ts";
 import { availableTools, ceph, kubectl, OpsRefused, type CommandResult, type OpsTools } from "./ops.ts";
@@ -95,6 +97,8 @@ export interface AppOptions {
   fetchFn?: typeof fetch;
   /** The alerts service: each twin's alerts and the conversations that investigated them. */
   alerts?: AlertsClient;
+  /** The data hubs' values (each twin's telemetry from its models' data profiles). */
+  values?: DataValueStore;
 }
 
 /**
@@ -182,7 +186,16 @@ export function createApp(config: Config, options: AppOptions) {
   const modelErrors = (doc: DtdlInterface, existing: DtdlModelData[]): string[] => {
     const models = new Map(existing.map((m) => [m.id, m.model] as [string, DtdlInterface]));
     models.set(doc["@id"], doc);
-    return presentationErrors(doc["@id"], models);
+    return [...presentationErrors(doc["@id"], models), ...dataProfileErrors(doc["@id"], models)];
+  };
+  /** A model's data bindings against the instance's connections: each names one, with that connector's parameters. */
+  const bindingProblems = async (tw: RunningInstance, doc: DtdlInterface): Promise<string[]> => {
+    if (!doc.dataProfiles?.length) return [];
+    const types = new Map((await store.connections(tw.record.id)).map((c) => [c.id, CONNECTOR_TYPES[c.type]]));
+    return doc.dataProfiles.flatMap((p) => [
+      ...p.bindings.flatMap((b) => bindingErrors(b, types.get(b.connection)).map((e) => `${doc["@id"]}: profile ${p.name}: ${e}`)),
+      ...(p.simulator && types.get(p.simulator.connection)?.mode !== "simulator" ? [`${doc["@id"]}: profile ${p.name}: simulator ${p.simulator.connection} is no simulation connection`] : []),
+    ]);
   };
   const T = "/api/instances/:instance";
   const atQuery = z.object({ at: z.coerce.number().int().positive().optional() });
@@ -370,6 +383,68 @@ export function createApp(config: Config, options: AppOptions) {
       return c.body(null, 204);
     })
 
+    // Admins: the kinds of data source a twin's models can read (their forms), and each twin's connections to them:
+    // settings in the clear, secrets write-only (sealed; only their names come back), every change checked by the
+    // connector's own schema.
+    .get("/api/connector-types", (c) => {
+      adminOnly(c);
+      return c.json({ value: Object.values(CONNECTOR_TYPES).map((t) => ({ id: t.id, mode: t.mode, fields: t.fields })) });
+    })
+    .get("/api/admin/instances/:id/connections", async (c) => {
+      adminOnly(c);
+      return c.json({ value: await store.connections(c.req.param("id")) });
+    })
+    .put("/api/admin/instances/:id/connections/:conn", async (c) => {
+      adminOnly(c);
+      const running = instances.get(c.req.param("id"));
+      if (!running) throw new HttpError(404, "errors.digitalTwin.instanceNotFound");
+      const conn = parse(z.string().regex(DATA_ID), c.req.param("conn"));
+      const body = parse(
+        z.object({
+          name: z.string().trim().min(1).max(80),
+          type: z.string().max(40),
+          settings: z.record(z.string(), z.string().max(20_000)).default({}),
+          secrets: z.record(z.string(), z.string().max(20_000).nullable()).default({}),
+        }),
+        await c.req.json().catch(() => null),
+      );
+      const type = Object.hasOwn(CONNECTOR_TYPES, body.type) ? CONNECTOR_TYPES[body.type] : undefined;
+      if (!type) throw new HttpError(400, "errors.digitalTwin.connectorType");
+      const settings = parse(type.settings, body.settings);
+      const allowed = new Set(type.fields.filter((f) => f.secret).map((f) => f.name));
+      const secrets = Object.fromEntries(Object.entries(body.secrets).filter(([k, v]) => allowed.has(k) && v !== ""));
+      const saved = await store.putConnection(running.record.id, { id: conn, name: body.name, type: type.id, settings, secrets }, Date.now());
+      running.hub?.reload();
+      return c.json(saved);
+    })
+    .delete("/api/admin/instances/:id/connections/:conn", async (c) => {
+      adminOnly(c);
+      const running = instances.get(c.req.param("id"));
+      if (!running) throw new HttpError(404, "errors.digitalTwin.instanceNotFound");
+      const conn = c.req.param("conn");
+      // A connection a model's profile still reads stays (the models would bind to nothing).
+      const users = (await running.data.models()).filter((m) => (m.model.dataProfiles ?? []).some((p) => p.bindings.some((b) => b.connection === conn) || p.simulator?.connection === conn));
+      if (users.length) return c.json({ error: "errors.digitalTwin.connectionInUse", detail: users.map((m) => m.id) }, 409);
+      if (!(await store.deleteConnection(running.record.id, conn))) throw new HttpError(404, "errors.digitalTwin.notFound");
+      running.hub?.reload();
+      return c.body(null, 204);
+    })
+    .post("/api/admin/instances/:id/connections/:conn/check", async (c) => {
+      adminOnly(c);
+      const record = await store.connection(c.req.param("id"), c.req.param("conn"));
+      const type = record && CONNECTOR_TYPES[record.type];
+      if (!record || !type) throw new HttpError(404, "errors.digitalTwin.notFound");
+      const connector = type.create(record.settings as Record<string, string>, record.secrets, { fetchFn: options.fetchFn });
+      try {
+        await connector.check();
+        return c.json({ ok: true });
+      } catch (err) {
+        return c.json({ ok: false, error: (err instanceof Error ? err.message : String(err)).slice(0, 300) });
+      } finally {
+        await connector.close?.().catch(() => {});
+      }
+    })
+
     // One twin: only its viewers (an admin, or a member of its group) reach it.
     .use("/api/instances/:instance/*", async (c, next) => {
       const id = c.req.param("instance");
@@ -395,8 +470,10 @@ export function createApp(config: Config, options: AppOptions) {
       const doc = parse(z.record(z.string(), z.unknown()), await c.req.json().catch(() => null)) as unknown as DtdlInterface;
       if (doc["@id"] !== id) throw new HttpError(400, "errors.digitalTwin.modelIdMismatch");
       const errors = [...interfaceErrors(doc), ...modelErrors(doc, await tw.data.models())];
+      if (!errors.length) errors.push(...(await bindingProblems(tw, doc)));
       if (errors.length) return c.json({ error: "errors.digitalTwin.modelInvalid", detail: errors }, 400);
       await tw.data.putModel(doc, Date.now());
+      tw.hub?.reload();
       return c.json(await modelOf(tw, id));
     })
     .post(`${T}/models`, async (c) => {
@@ -406,8 +483,10 @@ export function createApp(config: Config, options: AppOptions) {
       const errors: string[] = [];
       const models = await tw.data.models();
       for (const doc of docs) errors.push(...interfaceErrors(doc), ...modelErrors(doc, models));
+      if (!errors.length) for (const doc of docs) errors.push(...(await bindingProblems(tw, doc)));
       if (errors.length) return c.json({ error: "errors.digitalTwin.modelInvalid", detail: errors }, 400);
       for (const doc of docs) await tw.data.putModel(doc, Date.now());
+      tw.hub?.reload();
       return c.json({ value: await tw.data.models() });
     })
     .delete(`${T}/models/:id`, async (c) => {
@@ -444,6 +523,49 @@ export function createApp(config: Config, options: AppOptions) {
       const { at } = parse(atQuery, c.req.query());
       const rels = at === undefined ? await state.relationships(twinOf(c).record.id, { target: c.req.param("id") }) : (await stateAt(twinOf(c), at)).relationships.filter((r) => r.$targetId === c.req.param("id"));
       return c.json({ value: rels.map((r) => ({ $relationshipId: r.$relationshipId, $sourceId: r.$sourceId, $relationshipName: r.$relationshipName })) });
+    })
+    // The twin's data profiles (from its models), the active one and what its hub does now (connection errors only
+    // for admins: they may name hosts); admins switch the profile. Each twin's values under the active profile.
+    .get(`${T}/data`, async (c) => {
+      const tw = twinOf(c);
+      const models = await tw.data.models();
+      const map = new Map(models.map((m) => [m.id, m.model] as [string, DtdlInterface]));
+      const profiles = new Map<string, { name: string; kind: string; description?: string; models: string[] }>();
+      for (const m of models)
+        for (const p of dataProfilesOf(m.id, map)) {
+          const e = profiles.get(p.name) ?? { name: p.name, kind: p.kind, description: p.description, models: [] };
+          e.models.push(m.id);
+          profiles.set(p.name, e);
+        }
+      const status = tw.hub?.status();
+      const admin = isAdmin(c.get("identity"), ADMIN);
+      return c.json({
+        active: await store.activeProfile(tw.record.id),
+        profiles: [...profiles.values()].sort((a, b) => a.name.localeCompare(b.name)),
+        status: status && { ...status, connections: Object.fromEntries(Object.entries(status.connections).map(([k, v]) => [k, admin ? v : { tasks: v.tasks, lastValueAt: v.lastValueAt }])) },
+      });
+    })
+    .put(`${T}/data/profile`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      const { profile } = parse(z.object({ profile: z.string().regex(DATA_ID) }), await c.req.json().catch(() => null));
+      await store.setActiveProfile(tw.record.id, profile, Date.now());
+      tw.hub?.reload();
+      return c.json({ active: profile });
+    })
+    .get(`${T}/data/values`, async (c) => {
+      const tw = twinOf(c);
+      const { twin } = parse(z.object({ twin: z.string().max(500).optional() }), c.req.query());
+      if (!options.values) return c.json({ value: {} });
+      const active = await store.activeProfile(tw.record.id);
+      const all = await options.values.read(tw.record.id, twin);
+      // Only the active profile's: a switch leaves no stale values from the other.
+      const value = Object.fromEntries(
+        Object.entries(all)
+          .map(([id, v]) => [id, Object.fromEntries(Object.entries(v).filter(([, p]) => p.profile === active))] as const)
+          .filter(([, v]) => Object.keys(v).length),
+      );
+      return c.json({ value });
     })
     // The twin's alerts (the alerts service's, of the cluster the twin mirrors), and the conversation in which
     // Osiris investigated one, read by the service as its own account: viewers of the twin read it, never write it.

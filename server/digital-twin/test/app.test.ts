@@ -234,6 +234,40 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     expect(((await (await as("alice", "/api/instances/k8s/me/filters?kind=logs")).json()) as { value: unknown[] }).value).toEqual([]);
   });
 
+  it("keeps a twin's data connections (secrets write-only), checks models' bindings against them, runs profiles", async () => {
+    const instance = app();
+    const put = (path: string, body: unknown) => instance.request(path, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    expect((await put("/api/admin/instances/k8s/connections/plant", { name: "Plant", type: "mqtt", settings: { url: "mqtt://localhost:1883" } })).status).toBe(400);
+    const saved = await put("/api/admin/instances/k8s/connections/plant", { name: "Plant", type: "mqtt", settings: { url: "mqtts://broker.plant.lan:8883", username: "twin" }, secrets: { password: "s3cret", notAField: "x" } });
+    expect(saved.status).toBe(200);
+    const list = await (await instance.request("/api/admin/instances/k8s/connections")).text();
+    expect(list).toContain('"secretNames":["password"]');
+    expect(list).not.toContain("s3cret");
+    const model = {
+      "@context": ["dtmi:dtdl:context;3", "dtmi:osiris:data;1"],
+      "@id": "dtmi:test:Sensor;1",
+      "@type": "Interface",
+      contents: [{ "@type": "Telemetry", name: "temperature", schema: "double" }],
+      dataProfiles: [{ name: "live", kind: "live", bindings: [{ telemetry: "temperature", connection: "plant", topic: "s/{name}", path: "v" }] }],
+    };
+    expect((await put("/api/instances/k8s/models/dtmi:test:Sensor;1", model)).status).toBe(200);
+    // A binding the connector doesn't take, or to a connection that isn't there, is refused.
+    const wrong = await put("/api/instances/k8s/models/dtmi:test:Sensor;1", { ...model, dataProfiles: [{ name: "live", kind: "live", bindings: [{ telemetry: "temperature", connection: "plant", topic: "s/#" }] }] });
+    expect(wrong.status).toBe(400);
+    const missing = await put("/api/instances/k8s/models/dtmi:test:Sensor;1", { ...model, dataProfiles: [{ name: "live", kind: "live", bindings: [{ telemetry: "temperature", connection: "nope", topic: "s" }] }] });
+    expect(JSON.stringify(await missing.json())).toContain("connection nope doesn't exist");
+    // A connection a profile reads stays.
+    expect((await instance.request("/api/admin/instances/k8s/connections/plant", { method: "DELETE" })).status).toBe(409);
+    const data = (await (await instance.request("/api/instances/k8s/data")).json()) as { active: string; profiles: { name: string; models: string[] }[] };
+    expect(data.active).toBe("live");
+    expect(data.profiles).toEqual([expect.objectContaining({ name: "live", kind: "live", models: ["dtmi:test:Sensor;1"] })]);
+    expect((await put("/api/instances/k8s/data/profile", { profile: "simulation" })).status).toBe(200);
+    expect(((await (await instance.request("/api/instances/k8s/data")).json()) as { active: string }).active).toBe("simulation");
+    await put("/api/instances/k8s/data/profile", { profile: "live" });
+    expect((await instance.request("/api/instances/k8s/models/dtmi:test:Sensor;1", { method: "DELETE" })).status).toBe(204);
+    expect((await instance.request("/api/admin/instances/k8s/connections/plant", { method: "DELETE" })).status).toBe(204);
+  });
+
   it("shows a twin its own cluster's alerts and their conversations, never another cluster's", async () => {
     const mine = { id: "a1", cluster: "k8s", message: "boom", thread: "t1" } as never;
     const theirs = { id: "a2", cluster: "elsewhere", message: "bang", thread: "t2" } as never;

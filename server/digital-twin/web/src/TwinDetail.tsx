@@ -2,7 +2,7 @@ import type { TwinChange } from "@osiris/shared";
 import { localized, resolveContents, type DtdlProperty, type DtdlRelationship, type DtdlSchema } from "@osiris/shared/dtdl.ts";
 import { t } from "i18next";
 import { useEffect, useState } from "react";
-import { api } from "./api.ts";
+import { api, type DataPoint } from "./api.ts";
 import { currentLocale, formatBytesRate, formatDateTime, formatNumber } from "./i18n.ts";
 import { storageText } from "./Twin3D.tsx";
 import { twinIdOf, type TwinScene, type TwinView } from "./scene.ts";
@@ -46,6 +46,17 @@ export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: T
     const d = model ? resolveContents(model, scene.models).find((c) => c["@type"] === "Relationship" && c.name === rel) : declared.get(rel);
     return localized(d?.displayName, locale) ?? rel;
   };
+
+  // The telemetry its models' active data profile fills (live data, a simulation…), refreshed every 15 s.
+  const [values, setValues] = useState<Record<string, DataPoint>>({});
+  useEffect(() => {
+    let current = true;
+    const load = () => void api.dataValues(id).then((v) => current && setValues(v), () => {});
+    load();
+    const timer = setInterval(load, 15_000);
+    return () => ((current = false), clearInterval(timer));
+  }, [id]);
+  const telemetryName = (name: string) => localized(contents.find((c) => c.name === name)?.displayName, locale) ?? name;
 
   // The week of changes up to the time shown, the twin's and its descendants'; nothing when the history is off.
   const [changes, setChanges] = useState<TwinChange[]>();
@@ -95,6 +106,21 @@ export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: T
               </div>
             ))}
           </dl>
+        )}
+        {Object.keys(values).length > 0 && (
+          <section className="mt-4">
+            <h3 className="section-header mb-1">{t("twin:data.title", { profile: Object.values(values)[0]!.profile })}</h3>
+            <dl className="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-3 gap-y-1 text-xs">
+              {Object.entries(values).map(([name, p]) => (
+                <div key={name} className="contents">
+                  <dt className="text-fg-muted" title={`${p.connection} · ${formatDateTime(p.ts)}`}>
+                    {telemetryName(name)}
+                  </dt>
+                  <dd className="break-all">{typeof p.value === "number" ? formatNumber(p.value) : typeof p.value === "boolean" ? (p.value ? t("twin:yes") : t("twin:no")) : p.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
         )}
         {(outgoing.length > 0 || incoming.length > 0) && (
           <section className="mt-4">

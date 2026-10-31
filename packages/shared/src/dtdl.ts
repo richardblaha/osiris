@@ -9,6 +9,8 @@
 export const DTDL_CONTEXT = "dtmi:dtdl:context;3";
 /** The context that allows a `presentation` section on an interface: how the twin's views draw its twins. */
 export const PRESENTATION_CONTEXT = "dtmi:osiris:presentation;1";
+/** The context of a model's data profiles: where its twins' telemetry comes from (`dataProfiles`). */
+export const DATA_CONTEXT = "dtmi:osiris:data;1";
 
 /** A DTDL string for people: one text, or a language map (`{ "en": "Pod", "cs": "Pod" }`). */
 export type Localized = string | Record<string, string>;
@@ -73,7 +75,41 @@ export interface DtdlInterface {
   contents?: DtdlContent[];
   /** How the views draw this model's twins; needs {@link PRESENTATION_CONTEXT} in `@context`. */
   presentation?: DtdlPresentation;
+  /** Where its twins' telemetry comes from, by profile (live, simulation…); needs {@link DATA_CONTEXT}. */
+  dataProfiles?: DataProfile[];
 }
+
+/**
+ * A data profile of a model: one way its twins get their telemetry — the real system's (`live`), a simulation, a
+ * replay of recorded data. A twin instance runs one profile at a time. Each binding fills one of the model's
+ * Telemetry (or Property) contents from a connection (the instance's, by id: its address and credentials live
+ * there, never in the model) with the connector's own, non-secret parameters (a query, a topic, a generator).
+ * A simulation profile may also name a simulator: a connection to the simulation's own tools (a simulated
+ * Kubernetes cluster…) with the scenario it runs.
+ */
+export interface DataProfile {
+  name: string;
+  kind: DataProfileKind;
+  description?: string;
+  bindings: DataBinding[];
+  simulator?: { connection: string; scenario?: Record<string, unknown> };
+}
+export type DataProfileKind = "live" | "simulation" | "replay";
+export const DATA_PROFILE_KINDS: readonly DataProfileKind[] = ["live", "simulation", "replay"];
+export interface DataBinding {
+  /** The model's Telemetry or Property it fills. */
+  telemetry: string;
+  /** The instance's connection it reads, by id. */
+  connection: string;
+  /** How often to ask, for connectors that are asked (seconds; streams push). */
+  every?: number;
+  /** The connector's own parameters (a query, a topic, a JSON path, a generator's pattern). */
+  [parameter: string]: unknown;
+}
+/** An id: a profile's name or a connection's. */
+export const DATA_ID = /^[a-z][a-z0-9-]{0,39}$/;
+/** Placeholders a binding's parameters may use: the twin's id, its name, a property, an OpenTelemetry attribute. */
+export const DATA_PLACEHOLDER = /\{(id|name|twin\.[A-Za-z][A-Za-z0-9_]{0,63}|otel\.[A-Za-z0-9_.]{1,100})\}/g;
 
 /** How a kind of twin is drawn: a solid of its own shape, so a node, a pod, a disk and a Service are told apart
  * before any label is read. */
@@ -224,11 +260,78 @@ export function interfaceErrors(doc: unknown): string[] {
     if (c["@type"] === "Property" || c["@type"] === "Telemetry") errors.push(...schemaErrors(c.schema, at));
     if (c["@type"] === "Relationship" && c.target !== undefined && (typeof c.target !== "string" || !DTMI.test(c.target))) errors.push(`${at}: target is not a DTMI`);
   }
+  if (d.dataProfiles !== undefined) {
+    if (!list(d["@context"] as string | string[]).includes(DATA_CONTEXT)) errors.push(`${id}: dataProfiles needs ${DATA_CONTEXT} in @context`);
+    errors.push(...dataProfileShapeErrors(id, d.dataProfiles));
+  }
   if (d.presentation !== undefined) {
     if (!list(d["@context"] as string | string[]).includes(PRESENTATION_CONTEXT)) errors.push(`${id}: presentation needs ${PRESENTATION_CONTEXT} in @context`);
     errors.push(...presentationShapeErrors(id, d.presentation));
   }
   return errors;
+}
+
+/** What's wrong with a `dataProfiles` section itself (not against the model's contents or the connections). */
+function dataProfileShapeErrors(id: string, raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [`${id}: dataProfiles must be an array`];
+  if (raw.length > 10) return [`${id}: at most 10 data profiles`];
+  const errors: string[] = [];
+  const names = new Set<string>();
+  for (const [i, p] of (raw as unknown[]).entries()) {
+    const at = `${id}: dataProfiles[${i}]`;
+    if (!p || typeof p !== "object" || Array.isArray(p)) {
+      errors.push(`${at} must be an object`);
+      continue;
+    }
+    const o = p as Record<string, unknown>;
+    if (typeof o.name !== "string" || !DATA_ID.test(o.name)) errors.push(`${at}.name must be a short id (a-z, 0-9, -)`);
+    else if (names.has(o.name)) errors.push(`${at}.name ${o.name} is there twice`);
+    else names.add(o.name);
+    if (!DATA_PROFILE_KINDS.includes(o.kind as DataProfileKind)) errors.push(`${at}.kind is not one of ${DATA_PROFILE_KINDS.join(", ")}`);
+    if (o.description !== undefined && (typeof o.description !== "string" || o.description.length > 500)) errors.push(`${at}.description must be a short text`);
+    if (o.simulator !== undefined) {
+      const sim = o.simulator as Record<string, unknown> | null;
+      if (o.kind !== "simulation") errors.push(`${at}.simulator belongs to a simulation profile only`);
+      if (!sim || typeof sim !== "object" || typeof sim.connection !== "string" || !DATA_ID.test(sim.connection)) errors.push(`${at}.simulator.connection must be a connection id`);
+      else if (sim.scenario !== undefined && (typeof sim.scenario !== "object" || sim.scenario === null || Array.isArray(sim.scenario))) errors.push(`${at}.simulator.scenario must be an object`);
+    }
+    if (!Array.isArray(o.bindings)) {
+      errors.push(`${at}.bindings must be an array`);
+      continue;
+    }
+    if (o.bindings.length > 100) errors.push(`${at}: at most 100 bindings`);
+    for (const [j, b] of (o.bindings as unknown[]).entries()) {
+      const bt = `${at}.bindings[${j}]`;
+      if (!b || typeof b !== "object" || Array.isArray(b)) {
+        errors.push(`${bt} must be an object`);
+        continue;
+      }
+      const x = b as Record<string, unknown>;
+      if (typeof x.telemetry !== "string" || !NAME.test(x.telemetry)) errors.push(`${bt}.telemetry must name a content`);
+      if (typeof x.connection !== "string" || !DATA_ID.test(x.connection)) errors.push(`${bt}.connection must be a connection id`);
+      if (x.every !== undefined && (typeof x.every !== "number" || x.every < 5 || x.every > 86_400)) errors.push(`${bt}.every must be 5 to 86400 seconds`);
+      if (JSON.stringify(x).length > 4000) errors.push(`${bt} is too large`);
+    }
+  }
+  return errors;
+}
+
+/** A model's data profiles: its own over what it extends (a profile of the same name wins). */
+export function dataProfilesOf(id: string, models: Map<string, DtdlInterface>, seen = new Set<string>()): DataProfile[] {
+  const m = models.get(id);
+  if (!m || seen.has(id)) return [];
+  seen.add(id);
+  const inherited = list(m.extends).flatMap((e) => dataProfilesOf(e, models, seen));
+  const own = m.dataProfiles ?? [];
+  return [...inherited.filter((p) => !own.some((o) => o.name === p.name)), ...own];
+}
+
+/** What's wrong with a model's data profiles against its contents: each binding fills a Telemetry or Property it has. */
+export function dataProfileErrors(id: string, models: Map<string, DtdlInterface>): string[] {
+  const profiles = models.get(id)?.dataProfiles ?? [];
+  if (!profiles.length) return [];
+  const fillable = new Set(resolveContents(id, models).filter((c) => c["@type"] === "Telemetry" || c["@type"] === "Property").map((c) => c.name));
+  return profiles.flatMap((p) => p.bindings.filter((b) => !fillable.has(b.telemetry)).map((b) => `${id}: profile ${p.name} fills ${b.telemetry}, which is no Telemetry or Property of the model`));
 }
 
 /** What's wrong with a `presentation` section itself (not against the model's contents). */

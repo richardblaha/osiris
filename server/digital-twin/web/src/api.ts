@@ -1,6 +1,35 @@
 import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, TwinChange } from "@osiris/shared";
 import type { ThreadMessage, TwinEvent } from "@osiris/shared";
 
+/** A kind of data source: how it works (asked, streaming, a simulation's tool) and its connection form. */
+export interface ConnectorType {
+  id: string;
+  mode: "poll" | "stream" | "simulator";
+  fields: SourceField[];
+}
+/** A twin's connection to a data source: settings in the clear, of its secrets only the names of those set. */
+export interface ConnectionRecord {
+  id: string;
+  name: string;
+  type: string;
+  settings: Record<string, string>;
+  secretNames: string[];
+  updatedAt: number;
+}
+/** One value of a twin's telemetry from the active data profile. */
+export interface DataPoint {
+  value: number | string | boolean;
+  ts: number;
+  profile: string;
+  connection: string;
+}
+/** A twin's data profiles (from its models), the active one, and what its data hub does. */
+export interface DataOverview {
+  active: string;
+  profiles: { name: string; kind: string; description?: string; models: string[] }[];
+  status?: { profile: string; tasks: number; connections: Record<string, { tasks: number; error?: string; lastValueAt?: number }> };
+}
+
 /** An alert as the twin shows it: one problem its events tell of, and Osiris's investigation of it. */
 export interface TwinAlert {
   id: string;
@@ -145,6 +174,16 @@ export const api = {
   adminInstances: async () => (await call<{ value: InstanceRecord[] }>("/api/admin/instances")).value,
   saveInstance: (id: string, body: { name: string; sourceType: string; settings: Record<string, string>; secrets: Record<string, string | null> }) =>
     send<InstanceRecord>("PUT", `/api/admin/instances/${encodeURIComponent(id)}`, body),
+  // A twin's data: the connections its models' data profiles read (admins), the profiles and the active one, values.
+  connectorTypes: async () => (await call<{ value: ConnectorType[] }>("/api/connector-types")).value,
+  connections: async (instanceId: string) => (await call<{ value: ConnectionRecord[] }>(`/api/admin/instances/${encodeURIComponent(instanceId)}/connections`)).value,
+  saveConnection: (instanceId: string, id: string, body: { name: string; type: string; settings: Record<string, string>; secrets: Record<string, string | null> }) =>
+    send<ConnectionRecord>("PUT", `/api/admin/instances/${encodeURIComponent(instanceId)}/connections/${encodeURIComponent(id)}`, body),
+  deleteConnection: (instanceId: string, id: string) => send<void>("DELETE", `/api/admin/instances/${encodeURIComponent(instanceId)}/connections/${encodeURIComponent(id)}`),
+  checkConnection: (instanceId: string, id: string) => send<{ ok: boolean; error?: string }>("POST", `/api/admin/instances/${encodeURIComponent(instanceId)}/connections/${encodeURIComponent(id)}/check`),
+  dataProfiles: () => call<DataOverview>(`${tw()}/data`),
+  setDataProfile: (profile: string) => send<{ active: string }>("PUT", `${tw()}/data/profile`, { profile }),
+  dataValues: async (twin: string) => (await call<{ value: Record<string, Record<string, DataPoint>> }>(`${tw()}/data/values?twin=${encodeURIComponent(twin)}`)).value[twin] ?? {},
   deleteInstance: (id: string) => send<void>("DELETE", `/api/admin/instances/${encodeURIComponent(id)}`),
   // The twin, in the shape of the Azure Digital Twins API (`at`: a past time from the history).
   models: async () => (await call<{ value: DtdlModelData[] }>(`${tw()}/models`)).value,

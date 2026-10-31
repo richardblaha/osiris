@@ -19,6 +19,9 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS models (instance TEXT NOT NULL, id TEXT NOT NULL, document TEXT NOT NULL, upload_time INTEGER NOT NULL, origin TEXT NOT NULL DEFAULT 'source', decommissioned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (instance, id))`,
   `CREATE TABLE IF NOT EXISTS dashboards (instance TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY (instance, id))`,
   `CREATE TABLE IF NOT EXISTS saved_filters (instance TEXT NOT NULL, owner TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, filter TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (instance, owner, id))`,
+  // Each instance's data connections (where its models' data profiles read), secrets sealed, and its active profile.
+  `CREATE TABLE IF NOT EXISTS connections (instance TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, settings TEXT NOT NULL, secrets TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (instance, id))`,
+  `CREATE TABLE IF NOT EXISTS data_profile (instance TEXT PRIMARY KEY, profile TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
   // Each user's own preferences across the twins (the layout of the windows over the twin), as JSON.
   `CREATE TABLE IF NOT EXISTS preferences (owner TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (owner, key))`,
 ];
@@ -195,10 +198,72 @@ export class TwinStore {
   async deleteInstance(id: string): Promise<boolean> {
     const results = await this.db.execute([
       run(`DELETE FROM instances WHERE id = ?`, id),
-      ...["models", "dashboards", "saved_filters"].map((t) => run(`DELETE FROM ${t} WHERE instance = ?`, id)),
+      ...["models", "dashboards", "saved_filters", "connections", "data_profile"].map((t) => run(`DELETE FROM ${t} WHERE instance = ?`, id)),
       run(`DELETE FROM meta WHERE key LIKE ?`, `${id}:%`),
     ]);
     return (results[0]?.rowsAffected ?? 0) > 0;
+  }
+
+  /** An instance's data connections (their secrets' names only). */
+  async connections(instance: string): Promise<ConnectionRecord[]> {
+    const rows = await this.db.query<ConnectionRow>(`SELECT * FROM connections WHERE instance = ? ORDER BY name COLLATE NOCASE, id`, [instance]);
+    return rows.map((r) => this.connectionOf(r));
+  }
+
+  /** A connection with its secrets opened (for its connector only). */
+  async connection(instance: string, id: string): Promise<(ConnectionRecord & { secrets: Record<string, string> }) | undefined> {
+    const [r] = await this.db.query<ConnectionRow>(`SELECT * FROM connections WHERE instance = ? AND id = ?`, [instance, id]);
+    return r ? { ...this.connectionOf(r), secrets: this.openSecrets(r.secrets) } : undefined;
+  }
+
+  /** Creates or changes a connection; of its secrets, a string sets one, null removes it, one not named stays. */
+  async putConnection(instance: string, input: { id: string; name: string; type: string; settings: Record<string, unknown>; secrets?: Record<string, string | null> }, now: number): Promise<ConnectionRecord> {
+    const had = await this.connection(instance, input.id);
+    const secrets = had?.type === input.type ? had.secrets : {};
+    for (const [k, v] of Object.entries(input.secrets ?? {})) {
+      if (v === null) delete secrets[k];
+      else secrets[k] = v;
+    }
+    await this.db.execute([
+      run(
+        `INSERT OR REPLACE INTO connections (instance, id, name, type, settings, secrets, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        instance,
+        input.id,
+        input.name,
+        input.type,
+        JSON.stringify(input.settings),
+        this.sealer.seal(JSON.stringify(secrets)),
+        had?.createdAt ?? now,
+        now,
+      ),
+    ]);
+    return (await this.connections(instance)).find((c) => c.id === input.id)!;
+  }
+
+  async deleteConnection(instance: string, id: string): Promise<boolean> {
+    const [r] = await this.db.execute([run(`DELETE FROM connections WHERE instance = ? AND id = ?`, instance, id)]);
+    return (r?.rowsAffected ?? 0) > 0;
+  }
+
+  /** The data profile an instance runs (none set: `live`). */
+  async activeProfile(instance: string): Promise<string> {
+    return (await this.db.query<{ profile: string }>(`SELECT profile FROM data_profile WHERE instance = ?`, [instance]))[0]?.profile ?? "live";
+  }
+
+  async setActiveProfile(instance: string, profile: string, now: number): Promise<void> {
+    await this.db.execute([run(`INSERT OR REPLACE INTO data_profile (instance, profile, updated_at) VALUES (?, ?, ?)`, instance, profile, now)]);
+  }
+
+  private connectionOf(r: ConnectionRow): ConnectionRecord {
+    return {
+      id: r.id,
+      name: r.name,
+      type: r.type,
+      settings: JSON.parse(r.settings) as Record<string, unknown>,
+      secretNames: Object.keys(this.openSecrets(r.secrets)).sort(),
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    };
   }
 
   /** Version 1's dashboards and saved filters, given to `instance` (the first one); once. */
@@ -240,6 +305,28 @@ export class TwinStore {
       updatedAt: r.updated_at,
     };
   }
+}
+
+/** A data connection as stored: its kind and settings; of its secrets only the names of those set. */
+export interface ConnectionRecord {
+  id: string;
+  name: string;
+  type: string;
+  settings: Record<string, unknown>;
+  secretNames: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+interface ConnectionRow {
+  instance: string;
+  id: string;
+  name: string;
+  type: string;
+  settings: string;
+  secrets: string;
+  created_at: number;
+  updated_at: number;
 }
 
 interface InstanceRow {

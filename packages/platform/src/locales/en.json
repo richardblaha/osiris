@@ -131,7 +131,9 @@
       "instanceNotFound": "There is no such digital twin, or you may not see it.",
       "adminOnly": "Only administrators manage digital twins.",
       "sourceType": "Unknown kind of source.",
-      "preferenceTooLarge": "The preference is too large."
+      "preferenceTooLarge": "The preference is too large.",
+      "connectorType": "Unknown kind of data source.",
+      "connectionInUse": "A model's data profile still reads this connection."
     },
     "validation": {
       "invalid": "Invalid request.",

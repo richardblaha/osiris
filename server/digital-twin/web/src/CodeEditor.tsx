@@ -3,7 +3,7 @@ import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker?worker";
 import { useEffect, useState } from "react";
-import { LOOKS, PRESENTATION_LAYERS } from "@osiris/shared/dtdl.ts";
+import { DATA_PROFILE_KINDS, LOOKS, PRESENTATION_LAYERS } from "@osiris/shared/dtdl.ts";
 
 // Monaco from this app's own build (no CDN, which the CSP would refuse), with the JSON worker for DTDL.
 self.MonacoEnvironment = {
@@ -39,6 +39,46 @@ const DTDL_SCHEMA = {
           schema: {},
           target: { type: "string" },
           writable: { type: "boolean" },
+        },
+      },
+    },
+    dataProfiles: {
+      type: "array",
+      maxItems: 10,
+      items: {
+        type: "object",
+        required: ["name", "kind", "bindings"],
+        properties: {
+          name: { type: "string", pattern: "^[a-z][a-z0-9-]{0,39}$" },
+          kind: { enum: [...DATA_PROFILE_KINDS] },
+          description: { type: "string", maxLength: 500 },
+          simulator: { type: "object", required: ["connection"], properties: { connection: { type: "string" }, scenario: { type: "object" } } },
+          bindings: {
+            type: "array",
+            maxItems: 100,
+            items: {
+              type: "object",
+              required: ["telemetry", "connection"],
+              properties: {
+                telemetry: { type: "string" },
+                connection: { type: "string", pattern: "^[a-z][a-z0-9-]{0,39}$" },
+                every: { type: "number", minimum: 5, maximum: 86400 },
+                query: { type: "string", description: "ClickHouse: one SELECT with {name:Type} parameters; Prometheus: PromQL" },
+                params: { type: "object", additionalProperties: { type: "string" } },
+                column: { type: "string" },
+                topic: { type: "string", description: "MQTT: levels with {id}, {name}, {twin.x}, {otel.x}; Kafka: the topic" },
+                path: { type: "string", description: "Where the value is in a message: $.a.b[0]" },
+                match: { type: "string" },
+                matchOn: { type: "string" },
+                exchange: { type: "string" },
+                routingKey: { type: "string" },
+                pattern: { enum: ["constant", "sine", "random", "step"] },
+                min: { type: "number" },
+                max: { type: "number" },
+                periodSeconds: { type: "number" },
+              },
+            },
+          },
         },
       },
     },

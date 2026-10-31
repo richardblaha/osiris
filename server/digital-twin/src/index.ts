@@ -10,6 +10,7 @@ import { memoryStateStore, redisStateStore } from "./state.ts";
 import { Instances } from "./instances.ts";
 import { bootstrapInstance } from "./bootstrap.ts";
 import { alertsClient } from "./alerts-client.ts";
+import { memoryDataValues, redisDataValues } from "./data/hub.ts";
 import { SecretBox } from "@osiris/platform/secrets.ts";
 import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";
 import { ClickHouse } from "./telemetry.ts";
@@ -33,6 +34,8 @@ if (redis) {
 }
 const state = redis ? redisStateStore(redis, config.REDIS_KEY_PREFIX) : memoryStateStore();
 const cache = redis ? redisCache(redis, `${config.REDIS_KEY_PREFIX}:cache`) : memoryCache();
+// The data hubs' values: each twin's telemetry from its models' data profiles.
+const values = redis ? redisDataValues(redis, config.REDIS_KEY_PREFIX) : memoryDataValues();
 
 // Every instance: its definitions in SQLite, its current state kept in step in Redis, its changes out as
 // OpenTelemetry events (only when the service sends telemetry), read back from the service's ClickHouse.
@@ -45,6 +48,7 @@ const instances = new Instances({
   historyFrom: clickhouse ? { clickhouse, service: config.OTEL_SERVICE_NAME } : undefined,
   intervalMs: config.SYNC_INTERVAL_SECONDS * 1000,
   telemetryTtlSeconds: config.TELEMETRY_TTL_SECONDS ?? config.SYNC_INTERVAL_SECONDS * 3,
+  values,
 });
 await instances.start();
 
@@ -75,6 +79,7 @@ const app = createApp(config, {
       : undefined,
   cache,
   staticDir: config.STATIC_DIR,
+  values,
   alerts: config.ALERTS_URL ? alertsClient({ url: config.ALERTS_URL, tokenPath: config.ALERTS_TOKEN_PATH, token: config.ALERTS_TOKEN }) : undefined,
 });
 

@@ -64,6 +64,66 @@
   },
   "tab": {
     "settings": "Settings",
-    "models": "Models"
+    "models": "Models",
+    "data": "Data sources"
+  },
+  "data": {
+    "profile": "Data profile",
+    "profileHelp": "The twin runs one data profile at a time: its models' dataProfiles say where each profile's telemetry comes from (live data, a simulation, a replay).",
+    "models_one": "{{count}} model",
+    "models_other": "{{count}} models",
+    "bound_one": "{{count}} binding running",
+    "bound_other": "{{count}} bindings running",
+    "connections": "Connections",
+    "connectionsHelp": "Where the profiles' bindings read, by id. Addresses and credentials live here, never in the models; secrets are write-only.",
+    "add": "Add connection",
+    "none": "No connections yet.",
+    "check": "Test",
+    "checkOk": "Connection works.",
+    "edit": "Edit",
+    "cancel": "Cancel",
+    "kindOf": "Kind of source",
+    "idHelp": "Short id the models' bindings name (a-z, 0-9, -).",
+    "confirmDelete": "Delete the connection {{name}}?",
+    "lastValue": "last value {{at}}",
+    "kind": {
+      "live": "live",
+      "simulation": "simulation",
+      "replay": "replay"
+    },
+    "type": {
+      "clickhouse": "ClickHouse",
+      "prometheus": "Prometheus API (OpenTelemetry backends)",
+      "mqtt": "MQTT",
+      "kafka": "Kafka",
+      "rabbitmq": "RabbitMQ",
+      "generator": "Generator (simulation)",
+      "kubernetes-simulation": "Simulated Kubernetes"
+    },
+    "typeHelp": {
+      "clickhouse": "A SELECT per twin; the twin's values go in as typed parameters. Use a read-only user.",
+      "prometheus": "An instant PromQL query per twin (Prometheus, Mimir, VictoriaMetrics, Thanos…).",
+      "mqtt": "A topic per twin; the value at a path in each message.",
+      "kafka": "A topic; each message matched to its twin by its key or a field.",
+      "rabbitmq": "An own queue bound to an exchange by a routing key per twin.",
+      "generator": "Values from a pattern over time, for simulations. Reaches nothing.",
+      "kubernetes-simulation": "The simulation's own cluster (kwok, kind…), named by a simulation profile's simulator."
+    },
+    "field": {
+      "url": "Address",
+      "user": "User",
+      "password": "Password",
+      "database": "Database",
+      "token": "Token",
+      "username": "User name",
+      "clientId": "Client id",
+      "brokers": "Brokers (host:port, comma-separated)",
+      "ssl": "TLS",
+      "mechanism": "SASL mechanism",
+      "groupId": "Consumer group",
+      "server": "API server",
+      "ca": "CA certificate (PEM)",
+      "tool": "Tool"
+    }
   }
 }

@@ -145,6 +145,22 @@ and history come from ClickHouse's `otel` database.
 2. Access: members of `AUTH_ADMIN_GROUP` (default `admin`) see and manage every twin (the twin menu in the bar →
    Manage twins); members of the osiris-auth group `twin:<id>` see that twin only. Others get 403.
 3. DNS: twin.k6labs.cz to the cluster's ingress, the same as osiris.k6labs.cz; cert-manager issues the certificate.
+5. **Alerting** (`digital-twin-alerts`, `deploy/k8s/digital-twin-alerts.yaml`): Osiris's agent investigates each new
+   alert as the service account `twin-alerts`. In osiris-auth (the auth pod, `B` below), make the user a member of the
+   twin's project, the app acting as it, and let osiris-gateway accept its tokens; then the secret:
+   ```bash
+   B="kubectl -n osiris-auth exec deploy/auth -- node_modules/.bin/tsx src/cli.ts"
+   ID=$($B service-user twin-alerts@k6labs.cz "Twin alerts" osiris-user,project:twin)
+   $B client add osiris-twin-alerts "{\"name\":\"Digital twin alerts\",\"confidential\":true,\"serviceAccount\":\"$ID\"}"   # prints the secret once
+   $B client update osiris-gateway "{\"acceptsTokensOf\":[\"osiris-web\",\"osiris-cli\",\"osiris-vscode\",\"digital-twin\",\"osiris-twin-alerts\"]}"
+   kubectl -n osiris create secret generic osiris-twin-alerts --from-literal=ALERTS_CLIENT_SECRET="<the secret>"
+   kubectl apply -k deploy/k8s && kubectl apply -f deploy/observability/redis.yaml
+   ```
+   (Keep the gateway's current list: `$B client list` shows it.) The service reads the collector's events stream with its own
+   consumer group, so nothing else changes; its alerts are in the twin's chat history.
+6. **Data sources**: a twin's connections (ClickHouse, Prometheus, MQTT, Kafka, RabbitMQ, a generator, a simulated
+   cluster) are an admin's, in the twin's administration → Data sources; models bind to them in `dataProfiles`
+   (`server/digital-twin/PLAN.md`). Their hosts must be reachable from the `digital-twin` pod.
 4. **Structure and history**: one replica with its own volume (`digital-twin-data`, SQLite `twin.db`: the DTDL
    models, twins and relationships, synced from the cluster every 30 s). What changes goes out as OpenTelemetry
    events (`twin.entity`, `twin.relationship`, a checkpoint of everything once a day) with the twin's other logs into
