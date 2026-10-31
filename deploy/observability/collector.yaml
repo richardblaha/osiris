@@ -168,13 +168,14 @@ spec:
         config/version: "5"
     spec:
       serviceAccountName: otel-collector
+      imagePullSecrets: [{ name: ghcr-pull }]
       securityContext:
         runAsNonRoot: true
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: collector
           # This repo's build: contrib plus the twin/events processor (deploy/observability/twin-events/Dockerfile).
-          image: ghcr.io/richardblaha/otel-collector:main
+          image: ghcr.io/richardblaha/osiris-otel-collector:main
           args: [--config=/conf/config.yaml]
           ports:
             - { name: otlp-grpc, containerPort: 4317 }
