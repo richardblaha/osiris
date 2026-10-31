@@ -225,7 +225,8 @@ spec:
     - from:
         - podSelector: { matchLabels: { app: web-events } }
       ports: [{ port: 4320, protocol: TCP }]
-  # The twin_events processor's Redis, and ClickHouse for the rest; DNS must stay reachable.
+  # The twin_events processor's Redis, and ClickHouse for the rest; DNS and the Kubernetes API server (the
+  # k8s_cluster/k8s_objects receivers and the prometheus scraper need it) must stay reachable.
   egress:
     - to:
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
@@ -233,6 +234,13 @@ spec:
       ports:
         - { port: 53, protocol: UDP }
         - { port: 53, protocol: TCP }
+    # The API server: its endpoint (192.168.0.231:16443) and the `kubernetes` service's ClusterIP.
+    - to:
+        - ipBlock: { cidr: 192.168.0.231/32 }
+      ports: [{ port: 16443, protocol: TCP }]
+    - to:
+        - ipBlock: { cidr: 10.152.183.1/32 }
+      ports: [{ port: 443, protocol: TCP }]
     - to:
         - podSelector: { matchLabels: { app: redis } }
       ports: [{ port: 6379, protocol: TCP }]
