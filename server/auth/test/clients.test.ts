@@ -24,6 +24,37 @@ async function signedIn(auth: Awaited<ReturnType<typeof setup>>, email: string) 
 }
 
 describe("registered applications", () => {
+  it("gives a service with a service account that account's tokens (client credentials), only while it has it", async () => {
+    const auth = await setup();
+    const { clients } = auth.auth;
+    // A public app can't act as anyone.
+    await expect(clients.create("loose", { name: "Loose", confidential: false, serviceAccount: "bob" })).rejects.toThrow();
+    const { secret } = await clients.create("alerts", { name: "Alerts", confidential: true, serviceAccount: "bob" });
+    const gateway = (await clients.get("osiris-gateway"))!;
+    await clients.update("osiris-gateway", { ...gateway, acceptsTokensOf: [...gateway.acceptsTokensOf, "alerts"] });
+    const b = await browser(auth);
+    const token = async (id: string, key: string) =>
+      b.request("/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded", authorization: `Basic ${Buffer.from(`${id}:${key}`).toString("base64")}` },
+        body: new URLSearchParams({ grant_type: "client_credentials" }),
+      });
+    expect((await token("alerts", "wrong")).status).toBe(401);
+    const res = await token("alerts", secret!);
+    expect(res.status).toBe(200);
+    const access = ((await res.json()) as { access_token: string }).access_token;
+    expect(await (await auth.introspect(access)).json()).toMatchObject({ active: true, sub: "bob", client_id: "alerts", groups: ["osiris-user"] });
+    // Another resource server that doesn't accept the service's tokens sees nothing.
+    const other = await clients.create("other-api", { name: "Other API", confidential: true, acceptsTokensOf: ["osiris-web"] });
+    expect(await (await auth.introspect(access, other.secret, "other-api")).json()).toEqual({ active: false });
+    // Without its service account the token stands for nobody.
+    const alerts = (await clients.get("alerts"))!;
+    await clients.update("alerts", { ...alerts, serviceAccount: null, acceptsTokensOf: ["osiris-web"] });
+    expect(await (await auth.introspect(access)).json()).toEqual({ active: false });
+    // An app without the grant can't use it.
+    expect((await token("other-api", other.secret!)).status).toBe(400);
+  });
+
   it("lets only members of an app's groups sign in, and its resource server introspect only its tokens", async () => {
     const auth = await setup();
     const admin = await signedIn(auth, alice.email);

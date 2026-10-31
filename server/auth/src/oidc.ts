@@ -161,6 +161,8 @@ export function createOidcProvider(options: OidcOptions): Provider {
     clientBasedCORS: (_ctx, origin, client) => client.redirectUris?.some((u) => URL.canParse(u) && new URL(u).origin === origin) ?? false,
     features: {
       devInteractions: { enabled: false },
+      // Services without a browser (a confidential client with a service account) get that account's tokens.
+      clientCredentials: { enabled: true },
       revocation: { enabled: true },
       userinfo: { enabled: true },
       rpInitiatedLogout: {

@@ -31,6 +31,8 @@ export interface Client {
   postLogoutRedirectUris: string[];
   allowedGroups: string[];
   acceptsTokensOf: string[];
+  /** The user a confidential service acts as (client credentials), if any. */
+  serviceAccount: string | null;
 }
 export type ClientInput = Omit<Client, "id">;
 

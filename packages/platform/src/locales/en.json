@@ -370,12 +370,13 @@
       "unknownMember": "User {{id}} doesn't exist."
     },
     "client": {
-      "nothing": "An app needs redirect URIs (to sign users in) or apps whose tokens it accepts.",
+      "nothing": "An app needs redirect URIs (to sign users in), apps whose tokens it accepts, or a service account it acts as.",
       "invalid": "The app's settings aren't valid: {{detail}}",
       "id": "An app's id is lowercase letters, digits and . _ -, 2 to 64 characters.",
       "exists": "An app with this id already exists.",
       "notFound": "No such app.",
-      "public": "A public app has no secret."
+      "public": "A public app has no secret.",
+      "serviceAccountPublic": "Only a confidential app (with a secret) may act as a service account."
     },
     "token": {
       "notFound": "No such API key."

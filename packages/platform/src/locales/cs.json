@@ -384,12 +384,13 @@
       "unknownMember": "Uživatel {{id}} neexistuje."
     },
     "client": {
-      "nothing": "Aplikace potřebuje adresy pro návrat (přihlašuje uživatele) nebo aplikace, jejichž tokeny přijímá.",
+      "nothing": "Aplikace potřebuje adresy pro návrat (přihlašuje uživatele), aplikace, jejichž tokeny přijímá, nebo servisní účet, za který jedná.",
       "invalid": "Nastavení aplikace není platné: {{detail}}",
       "id": "Id aplikace smí mít malá písmena, číslice a . _ -, 2 až 64 znaků.",
       "exists": "Aplikace s tímto id už existuje.",
       "notFound": "Taková aplikace neexistuje.",
-      "public": "Veřejná aplikace nemá tajný klíč."
+      "public": "Veřejná aplikace nemá tajný klíč.",
+      "serviceAccountPublic": "Za servisní účet může jednat jen důvěrná aplikace (se secretem)."
     },
     "token": {
       "notFound": "Takový API klíč neexistuje."

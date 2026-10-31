@@ -21,6 +21,11 @@ export interface ClientRecord {
   allowedGroups: string[];
   /** Clients whose access tokens this one may introspect (it is their resource server). */
   acceptsTokensOf: string[];
+  /**
+   * The user a confidential service (no browser, no sign-in) acts as: it gets that user's access tokens with its own
+   * id and secret (OAuth 2.0 client credentials), and resource servers see that user with their groups.
+   */
+  serviceAccount: string | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -39,6 +44,7 @@ export const clientInput = z.object({
   postLogoutRedirectUris: z.array(uri).max(20).default([]),
   allowedGroups: z.array(z.string().regex(GROUP_NAME)).max(50).default([]),
   acceptsTokensOf: z.array(z.string().regex(CLIENT_ID)).max(50).default([]),
+  serviceAccount: z.string().trim().min(1).max(100).nullable().default(null),
 });
 export type ClientInput = z.input<typeof clientInput>;
 
@@ -54,7 +60,7 @@ interface Row {
   updated_at: number;
 }
 
-type Metadata = { redirect_uris: string[]; post_logout_redirect_uris: string[]; application_type: "web" | "native"; confidential: boolean };
+type Metadata = { redirect_uris: string[]; post_logout_redirect_uris: string[]; application_type: "web" | "native"; confidential: boolean; service_account?: string | null };
 
 const record = (r: Row): ClientRecord => {
   const m = JSON.parse(r.metadata) as Metadata;
@@ -68,6 +74,7 @@ const record = (r: Row): ClientRecord => {
     postLogoutRedirectUris: m.post_logout_redirect_uris,
     allowedGroups: JSON.parse(r.allowed_groups) as string[],
     acceptsTokensOf: JSON.parse(r.accepts_tokens_of) as string[],
+    serviceAccount: m.service_account ?? null,
     createdAt: Number(r.created_at),
     updatedAt: Number(r.updated_at),
   };
@@ -114,7 +121,7 @@ export class Clients {
       application_type: m.application_type,
       redirect_uris: m.redirect_uris,
       post_logout_redirect_uris: m.post_logout_redirect_uris,
-      grant_types: m.redirect_uris.length ? ["authorization_code", "refresh_token"] : [],
+      grant_types: [...(m.redirect_uris.length ? ["authorization_code", "refresh_token"] : []), ...(m.confidential && m.service_account ? ["client_credentials"] : [])],
       response_types: m.redirect_uris.length ? ["code"] : [],
       token_endpoint_auth_method: m.confidential ? "client_secret_basic" : "none",
       ...(m.confidential && secret ? { client_secret: secret } : {}),
@@ -130,8 +137,10 @@ export class Clients {
   }
 
   private async check(id: string, input: z.output<typeof clientInput>, secret?: string) {
-    const meta: Metadata = { redirect_uris: input.redirectUris, post_logout_redirect_uris: input.postLogoutRedirectUris, application_type: input.type, confidential: input.confidential };
-    if (!input.redirectUris.length && !input.acceptsTokensOf.length) throw new ClientError("errors.client.nothing");
+    const meta: Metadata = { redirect_uris: input.redirectUris, post_logout_redirect_uris: input.postLogoutRedirectUris, application_type: input.type, confidential: input.confidential, service_account: input.serviceAccount };
+    if (!input.redirectUris.length && !input.acceptsTokensOf.length && !input.serviceAccount) throw new ClientError("errors.client.nothing");
+    // Only a service that keeps a secret acts as a user; whoever has it gets that user's tokens.
+    if (input.serviceAccount && !input.confidential) throw new ClientError("errors.client.serviceAccountPublic");
     await this.validate(this.metadataOf(id, input.name, input.logo ?? null, meta, input.confidential ? (secret ?? "x".repeat(43)) : undefined)).catch((err: Error & { error_description?: string }) => {
       throw new ClientError("errors.client.invalid", { detail: err.error_description ?? err.message });
     });

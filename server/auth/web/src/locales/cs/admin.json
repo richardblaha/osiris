@@ -49,7 +49,10 @@
     "secretHint": "Tajný klíč klienta, zobrazený jen teď. Uložte ho do nastavení aplikace.",
     "rotate": "Nový tajný klíč",
     "rotateConfirm": "Vytvořit nový tajný klíč? Současný hned přestane platit.",
-    "deleteConfirm": "Smazat aplikaci {{name}}? Její uživatelé se z ní odhlásí."
+    "deleteConfirm": "Smazat aplikaci {{name}}? Její uživatelé se z ní odhlásí.",
+    "serviceAccount": "Servisní účet (ID uživatele)",
+    "serviceAccountPlaceholder": "žádný",
+    "serviceAccountHint": "Služba dostává tokeny tohoto uživatele svým ID a secretem (client credentials), bez přihlášení. Jen pro službu, které svěříte práva toho uživatele."
   },
   "keys": {
     "intro": "API klíče dovolují jiným službám spravovat uživatele a skupiny přes SCIM 2.0 (/scim/v2).",

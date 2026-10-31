@@ -298,7 +298,7 @@ function Groups() {
 
 // --- applications -----------------------------------------------------------------------------------------------------
 
-const EMPTY: ClientInput = { name: "", logo: null, type: "web", confidential: true, redirectUris: [], postLogoutRedirectUris: [], allowedGroups: [], acceptsTokensOf: [] };
+const EMPTY: ClientInput = { name: "", logo: null, type: "web", confidential: true, redirectUris: [], postLogoutRedirectUris: [], allowedGroups: [], acceptsTokensOf: [], serviceAccount: null };
 const lines = (text: string) => text.split(/\s+/).map((s) => s.trim()).filter(Boolean);
 
 function Apps() {
@@ -415,6 +415,12 @@ function AppForm({ client, clients, groups, onSaved, onDeleted }: { client?: Cli
           </label>
         ))}
       </fieldset>
+      {form.confidential && (
+        <Field label={t("admin:apps.serviceAccount")}>
+          <input className="field font-mono text-sm" value={form.serviceAccount ?? ""} placeholder={t("admin:apps.serviceAccountPlaceholder")} onChange={(e) => setForm({ ...form, serviceAccount: e.target.value.trim() || null })} />
+          <span className="text-xs text-fg-muted">{t("admin:apps.serviceAccountHint")}</span>
+        </Field>
+      )}
       <ErrorNotice error={error} />
       <div className="flex flex-wrap gap-2">
         <button className="btn-primary" disabled={busy}>

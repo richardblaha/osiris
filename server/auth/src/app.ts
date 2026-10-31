@@ -91,11 +91,16 @@ export function createAuthApp(deps: AuthDeps, options: AppOptions = {}) {
       const caller = id && secret ? await deps.clients.checkSecret(id, secret) : null;
       if (!caller) return c.json({ error: "invalid_client" }, 401, { "www-authenticate": 'Basic realm="introspection"' });
       const token = String((await c.req.parseBody()).token ?? "");
-      const access = token ? await provider.AccessToken.find(token).catch(() => undefined) : undefined;
-      if (!access || access.isExpired || !caller.acceptsTokensOf.includes(access.clientId ?? "") || !access.accountId) return c.json({ active: false });
-      const user = await users.get(access.accountId).catch(() => null);
+      // A user's token, or a service's (client credentials): that one stands for its service account, as long as
+      // the client still has it.
+      const found = token ? await provider.AccessToken.find(token).catch(() => undefined) : undefined;
+      const service = !found && token ? await provider.ClientCredentials.find(token).catch(() => undefined) : undefined;
+      const access = found ?? service;
+      const accountId = found?.accountId ?? (service?.clientId ? (await deps.clients.get(service.clientId))?.serviceAccount : undefined);
+      if (!access || access.isExpired || !caller.acceptsTokensOf.includes(access.clientId ?? "") || !accountId) return c.json({ active: false });
+      const user = await users.get(accountId).catch(() => null);
       if (!user || user.disabled) return c.json({ active: false });
-      if (access.sessionUid) await deps.activity.touch(access.sessionUid);
+      if (found?.sessionUid) await deps.activity.touch(found.sessionUid);
       return c.json({
         active: true,
         iss: issuer,
@@ -105,7 +110,7 @@ export function createAuthApp(deps: AuthDeps, options: AppOptions = {}) {
         token_type: "Bearer",
         exp: access.exp,
         iat: access.iat,
-        sid: access.sessionUid,
+        sid: found?.sessionUid,
         email: user.email,
         name: user.name,
         phone_number: user.phone,

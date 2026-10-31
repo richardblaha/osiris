@@ -47,7 +47,10 @@
     "secretHint": "The client secret, shown only now. Store it in the app's configuration.",
     "rotate": "New secret",
     "rotateConfirm": "Make a new secret? The current one stops working at once.",
-    "deleteConfirm": "Delete {{name}}? Its users are signed out of it."
+    "deleteConfirm": "Delete {{name}}? Its users are signed out of it.",
+    "serviceAccount": "Service account (user ID)",
+    "serviceAccountPlaceholder": "none",
+    "serviceAccountHint": "The service gets this user's tokens with its own ID and secret (client credentials), without signing in. Only for a service you trust with that user's rights."
   },
   "keys": {
     "intro": "API keys let other services manage users and groups over SCIM 2.0 (/scim/v2).",
