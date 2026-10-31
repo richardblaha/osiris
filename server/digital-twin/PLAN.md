@@ -57,11 +57,11 @@ Profiles are inherited over `extends` (same name replaces).
 
 **Connections** (per twin, admins, the twin's "Data sources" tab): `clickhouse`, `prometheus` (any Prometheus-API
 backend of OpenTelemetry metrics), `mqtt`, `kafka`, `rabbitmq`, `generator` (simulated values) and
-`kubernetes-simulation` (the simulation's cluster). Each kind is an entry of `CONNECTOR_TYPES` (`src/data/connectors.ts`):
+`kubernetes-simulation` (the simulation's cluster). Each kind is an entry of `CONNECTOR_TYPES` (`src/datasources/connectors.ts`):
 its form, a zod schema for its settings and for a binding's parameters, and a connector that is asked (`poll`),
 streams (`subscribe`) or is a simulation tool (`simulator`).
 
-**Runtime.** Each twin runs a **data hub** (`src/data/hub.ts`) for its active profile (`PUT /api/instances/:id/data/profile`):
+**Runtime.** Each twin runs a **data hub** (`src/datasources/hub.ts`) for its active profile (`PUT /api/instances/:id/data/profile`):
 it plans the bindings of every twin whose model's profile has them (at most 1000), polls the asked ones when due (four
 at a time), keeps one subscription per streaming connection, and writes each value to Redis
 (`<prefix>:twin:<instance>:data`). The PWA shows them in the properties panel ("Data (profile)").

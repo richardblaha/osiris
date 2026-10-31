@@ -6,7 +6,7 @@ import { startSync } from "./sync.ts";
 import type { TwinStateStore } from "./state.ts";
 import type { TwinSource } from "./twin.ts";
 import { SOURCE_TYPES, type SourceDefaults, type SourceType } from "./sources/registry.ts";
-import { DataHub, type DataValueStore } from "./data/hub.ts";
+import { DataHub, type DataValueStore } from "./datasources/hub.ts";
 
 /** A running instance: its record, data, adapter, telemetry and history; or why it could not start. */
 export interface RunningInstance {

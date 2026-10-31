@@ -10,7 +10,7 @@ import { memoryStateStore, redisStateStore } from "./state.ts";
 import { Instances } from "./instances.ts";
 import { bootstrapInstance } from "./bootstrap.ts";
 import { alertsClient } from "./alerts-client.ts";
-import { memoryDataValues, redisDataValues } from "./data/hub.ts";
+import { memoryDataValues, redisDataValues } from "./datasources/hub.ts";
 import { SecretBox } from "@osiris/platform/secrets.ts";
 import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";
 import { ClickHouse } from "./telemetry.ts";

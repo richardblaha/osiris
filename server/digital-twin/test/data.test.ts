@@ -2,9 +2,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { DATA_CONTEXT, dataProfileErrors, dataProfilesOf, interfaceErrors, type DtdlInterface } from "@osiris/shared/dtdl.ts";
-import { bindingErrors, CONNECTOR_TYPES } from "../src/data/connectors.ts";
-import { DataHub, memoryDataValues } from "../src/data/hub.ts";
-import { fill, MissingVariable, pick, safeHost, segment, varsOf } from "../src/data/template.ts";
+import { bindingErrors, CONNECTOR_TYPES } from "../src/datasources/connectors.ts";
+import { DataHub, memoryDataValues } from "../src/datasources/hub.ts";
+import { fill, MissingVariable, pick, safeHost, segment, varsOf } from "../src/datasources/template.ts";
 import { memoryStateStore } from "../src/state.ts";
 import { TwinStore } from "../src/store.ts";
 
