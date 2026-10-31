@@ -74,7 +74,20 @@
     "history": "Conversations",
     "noHistory": "No conversations yet.",
     "untitled": "Untitled conversation",
-    "empty": "Ask Osiris about the cluster below."
+    "empty": "Ask Osiris about the cluster below.",
+    "alerts": "Alert investigations",
+    "alertTitle": "Alert: {{message}}",
+    "alertHeading_one": "Investigation by Osiris ({{state}}), {{count}} event",
+    "alertHeading_other": "Investigation by Osiris ({{state}}), {{count}} events",
+    "alertReadOnly": "The alerts service opened this conversation; it is read-only. Write below to go on in a new conversation of your own.",
+    "alertPlaceholder": "Ask about this alert (a new conversation)…",
+    "alertContext": "I am following up on an alert the digital twin raised: {{message}} ({{where}}). Osiris investigated it and found:\n\n{{findings}}",
+    "alertState": {
+      "investigating": "investigating",
+      "answered": "investigated",
+      "failed": "failed",
+      "skipped": "not investigated (limit)"
+    }
   },
   "bottomBar": "Bottom bar: time, display, chat",
   "display": {

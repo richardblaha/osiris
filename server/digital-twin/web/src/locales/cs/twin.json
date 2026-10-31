@@ -80,7 +80,22 @@
     "history": "Konverzace",
     "noHistory": "Zatím žádné konverzace.",
     "untitled": "Konverzace bez názvu",
-    "empty": "Zeptejte se Osirise na cluster níže."
+    "empty": "Zeptejte se Osirise na cluster níže.",
+    "alerts": "Řešení alertů",
+    "alertTitle": "Alert: {{message}}",
+    "alertHeading_one": "Řešení od Osirise ({{state}}), {{count}} událost",
+    "alertHeading_few": "Řešení od Osirise ({{state}}), {{count}} události",
+    "alertHeading_many": "Řešení od Osirise ({{state}}), {{count}} události",
+    "alertHeading_other": "Řešení od Osirise ({{state}}), {{count}} událostí",
+    "alertReadOnly": "Tuto konverzaci založila služba alertů; je jen pro čtení. Napište níže a budete pokračovat v nové konverzaci své.",
+    "alertPlaceholder": "Zeptejte se na tento alert (nová konverzace)…",
+    "alertContext": "Navazuji na alert z digitálního dvojčete: {{message}} ({{where}}). Osiris ho prozkoumal a zjistil:\n\n{{findings}}",
+    "alertState": {
+      "investigating": "řeší se",
+      "answered": "vyřešeno",
+      "failed": "selhalo",
+      "skipped": "neřešeno (limit)"
+    }
   },
   "bottomBar": "Spodní lišta: čas, zobrazení, chat",
   "display": {

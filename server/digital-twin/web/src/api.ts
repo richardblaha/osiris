@@ -1,5 +1,27 @@
 import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, TwinChange } from "@osiris/shared";
-import type { TwinEvent } from "@osiris/shared";
+import type { ThreadMessage, TwinEvent } from "@osiris/shared";
+
+/** An alert as the twin shows it: one problem its events tell of, and Osiris's investigation of it. */
+export interface TwinAlert {
+  id: string;
+  severity: string;
+  message: string;
+  lastMessage: string;
+  cluster?: string;
+  namespace?: string;
+  workload?: string;
+  pod?: string;
+  node?: string;
+  container?: string;
+  firstSeen: number;
+  lastSeen: number;
+  count: number;
+  state: "investigating" | "answered" | "failed" | "skipped";
+  resolved: boolean;
+  thread?: string;
+  summary?: string;
+  error?: string;
+}
 import type { DigitalTwin, DigitalTwinRelationship, DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { autoSignIn, getAccessToken } from "./auth.ts";
 
@@ -133,6 +155,9 @@ export const api = {
   uploadModels: (docs: DtdlInterface[]) => send<{ value: DtdlModelData[] }>("POST", `${tw()}/models`, docs),
   deleteModel: (id: string) => send<void>("DELETE", `${tw()}/models/${encodeURIComponent(id)}`),
   // The warn/error events the collector's twin/events processor caught (the Redis stream).
+  // The twin's alerts (the alerts service's), and the conversation in which Osiris investigated one (read-only).
+  alerts: async (limit = 30) => (await call<{ value: TwinAlert[] }>(`${tw()}/alerts?limit=${limit}`)).value,
+  alertMessages: (id: string) => call<ThreadMessage[]>(`${tw()}/alerts/${encodeURIComponent(id)}/messages`),
   events: (q: { limit?: number; cluster?: string; severity?: "warn" | "error" | "fatal" } = {}) =>
     call<{ value: TwinEvent[] }>(`${tw()}/events?${query(q)}`),
 

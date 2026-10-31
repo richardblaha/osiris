@@ -1,4 +1,4 @@
-# One Dockerfile, one image per service: docker build --target <gateway|auth|control|runtime|operator|vitepress|web-events|digital-twin|tts> .
+# One Dockerfile, one image per service: docker build --target <gateway|auth|control|runtime|operator|vitepress|web-events|digital-twin|digital-twin-alerts|tts> .
 # Every service runs TypeScript with tsx as the unprivileged node user, read-only root filesystem (tsx caches in /tmp).
 
 FROM node:24-slim AS base
@@ -193,6 +193,18 @@ ENV PORT=3004 STATIC_DIR=/app/server/digital-twin/web/dist
 WORKDIR /app/server/digital-twin
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
+
+# The digital twin's alerting (server/digital-twin/src/alerts): the collector's warn/error events become alerts that
+# Osiris's agent investigates, each in a conversation of its own. No kubectl, ceph or PWA.
+FROM base AS digital-twin-alerts
+RUN pnpm install --frozen-lockfile --prod --filter "@osiris/digital-twin..." && pnpm store prune
+COPY packages/shared/src packages/shared/src
+COPY packages/platform/src packages/platform/src
+COPY server/digital-twin/src server/digital-twin/src
+ENV PORT=3006
+WORKDIR /app/server/digital-twin
+USER node
+CMD ["node_modules/.bin/tsx", "src/alerts/index.ts"]
 
 # Osiris speech: Piper TTS with Czech (jirka) and English (lessac) voices, an HTTP service inside the cluster. The
 # build speaks a sentence, so a broken voice or API never ships.

@@ -6,7 +6,10 @@ import { withResolution, type Alert, type AlertStore } from "./engine.ts";
 
 /** An alert as the twin's API gets it: without its fingerprint, resolved by now. */
 export type AlertView = Omit<Alert, "fingerprint">;
-const view = ({ fingerprint: _, ...a }: Alert, now: number, resolveMs: number): AlertView => withResolution({ fingerprint: "", ...a }, now, resolveMs);
+const view = (a: Alert, now: number, resolveMs: number): AlertView => {
+  const { fingerprint: _, ...rest } = withResolution(a, now, resolveMs);
+  return rest;
+};
 
 /**
  * The alerts service's API, for the digital twin only (its ServiceAccount's token, checked by `caller`): the alerts,

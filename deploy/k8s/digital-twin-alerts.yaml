@@ -1,0 +1,111 @@
+# The digital twin's alerting (server/digital-twin/src/alerts, image osiris-digital-twin-alerts): reads the
+# collector's warn/error events (the twin_events processor's Redis stream, its own consumer group), groups them
+# into alerts and has Osiris's agent (project twin) investigate each new one in a conversation of its own — as the
+# service account of osiris-auth's app osiris-twin-alerts (client credentials), never as a person. Only the digital
+# twin's API asks it (its ServiceAccount's projected token, checked by TokenReview); the twin shows the alerts and
+# their conversations (read-only) in its chat's history.
+# Secret osiris-twin-alerts: ALERTS_CLIENT_SECRET (deploy/README.md).
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: digital-twin-alerts
+automountServiceAccountToken: true
+---
+# TokenReview: the service checks that a caller's token is the digital twin's.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: osiris-digital-twin-alerts-token-review
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator }
+subjects: [{ kind: ServiceAccount, name: digital-twin-alerts, namespace: osiris }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: digital-twin-alerts
+  labels: { app: digital-twin-alerts }
+spec:
+  # One consumer of the stream; its state (the alerts) is in Redis.
+  replicas: 1
+  strategy: { type: Recreate }
+  selector:
+    matchLabels: { app: digital-twin-alerts }
+  template:
+    metadata:
+      labels: { app: digital-twin-alerts }
+    spec:
+      enableServiceLinks: false
+      serviceAccountName: digital-twin-alerts
+      imagePullSecrets: [{ name: ghcr-pull }]
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: alerts
+          image: ghcr.io/richardblaha/osiris-digital-twin-alerts:main
+          imagePullPolicy: Always
+          ports:
+            - { name: http, containerPort: 3006 }
+          env:
+            - { name: NODE_ENV, value: production }
+            - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
+            - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
+            - { name: NODE_EXTRA_CA_CERTS, value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt }
+            - { name: REDIS_URL, value: redis://redis.observability.svc.cluster.local:6379/0 }
+            - { name: REDIS_KEY_PREFIX, value: osiris }
+            - { name: OSIRIS_URL, value: https://osiris.k6labs.cz }
+            - { name: OSIRIS_PROJECT, value: twin }
+            - { name: AUTH_URL, value: https://auth.k6labs.cz }
+            - { name: ALERTS_CLIENT_ID, value: osiris-twin-alerts }
+            # Error and worse; repeats within an hour are one alert; at most 6 investigations an hour.
+            - { name: ALERTS_MIN_SEVERITY, value: error }
+            - { name: ALERTS_REOPEN_MINUTES, value: "60" }
+            - { name: ALERTS_MAX_PER_HOUR, value: "6" }
+            - { name: ALERTS_RESOLVE_MINUTES, value: "30" }
+            - { name: ALERTS_CALLER, value: system:serviceaccount:osiris:digital-twin }
+            - { name: ALERTS_AUDIENCE, value: osiris-twin-alerts }
+          envFrom:
+            - secretRef: { name: osiris-twin-alerts }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 30
+          resources:
+            requests: { cpu: 10m, memory: 96Mi }
+            limits: { memory: 256Mi }
+          volumeMounts:
+            # Read-only root filesystem: tsx caches in /tmp.
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: digital-twin-alerts
+spec:
+  selector: { app: digital-twin-alerts }
+  ports:
+    - { name: http, port: 3006, targetPort: http }
+---
+# Only the digital twin's API reaches it.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: digital-twin-alerts
+spec:
+  podSelector: { matchLabels: { app: digital-twin-alerts } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: { matchLabels: { app: digital-twin } }
+      ports: [{ port: 3006, protocol: TCP }]

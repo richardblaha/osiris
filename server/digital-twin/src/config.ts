@@ -52,14 +52,12 @@ const schema = z
     REDIS_KEY_PREFIX: z.string().regex(/^[a-z0-9][a-z0-9:-]{0,39}$/).default("osiris"),
     // The telemetry the view draws is kept this many seconds longer than a sync interval, so a missed round still shows.
     TELEMETRY_TTL_SECONDS: z.coerce.number().int().min(30).max(86_400).optional(),
-    // Push the collector's warn/error events to Osiris's agent: each new event (at least EVENTS_PUSH_MIN_SEVERITY,
-    // at most EVENTS_PUSH_MAX_PER_MINUTE) becomes a run of thread EVENTS_PUSH_THREAD in project OSIRIS_PROJECT, with
-    // EVENTS_PUSH_TOKEN's bearer (a service account's token the gateway accepts). Off without all four.
-    EVENTS_PUSH: bool,
-    EVENTS_PUSH_THREAD: z.string().min(1).optional(),
-    EVENTS_PUSH_TOKEN: z.string().min(1).optional(),
-    EVENTS_PUSH_MIN_SEVERITY: z.enum(["warn", "error", "fatal"]).default("error"),
-    EVENTS_PUSH_MAX_PER_MINUTE: z.coerce.number().int().min(1).max(600).default(10),
+    // The alerts service (its own Deployment, src/alerts): each twin's alerts and the conversations in which Osiris
+    // investigated them. The twin asks with its ServiceAccount's token projected for the service (ALERTS_TOKEN_PATH);
+    // ALERTS_TOKEN only in development. Without ALERTS_URL the twin has no alerts.
+    ALERTS_URL: z.url().optional(),
+    ALERTS_TOKEN_PATH: z.string().default("/var/run/secrets/twin-alerts/token"),
+    ALERTS_TOKEN: z.string().min(16).optional(),
 
     // Telemetry and history answers are cached for this long.
     CACHE_DATA_TTL_SECONDS: z.coerce.number().int().positive().default(15),

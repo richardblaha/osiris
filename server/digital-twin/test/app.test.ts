@@ -1,3 +1,4 @@
+import type { AlertsClient } from "../src/alerts-client.ts";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -120,9 +121,9 @@ beforeAll(async () => {
   await instances.start();
 });
 
-const app = (over: { verifier?: TokenVerifier; cache?: Cache; telemetry?: Telemetry | null } = {}) => {
+const app = (over: { verifier?: TokenVerifier; cache?: Cache; telemetry?: Telemetry | null; alerts?: AlertsClient } = {}) => {
   instances.get("k8s")!.telemetry = over.telemetry === null ? undefined : (over.telemetry ?? telemetry);
-  return createApp(config, { instances, state, verifier: over.verifier ?? devVerifier(), cache: over.cache ?? noCache });
+  return createApp(config, { instances, state, verifier: over.verifier ?? devVerifier(), cache: over.cache ?? noCache, alerts: over.alerts });
 };
 
 const json = async <T>(path: string) => {
@@ -231,6 +232,25 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     expect((await as("alice", "/api/instances/k8s/me/filters/x", { method: "PUT", body: JSON.stringify({ kind: "logs", name: "", filter: {} }) })).status).toBe(400);
     expect((await as("alice", "/api/instances/k8s/me/filters/errors-gw", { method: "DELETE" })).status).toBe(204);
     expect(((await (await as("alice", "/api/instances/k8s/me/filters?kind=logs")).json()) as { value: unknown[] }).value).toEqual([]);
+  });
+
+  it("shows a twin its own cluster's alerts and their conversations, never another cluster's", async () => {
+    const mine = { id: "a1", cluster: "k8s", message: "boom", thread: "t1" } as never;
+    const theirs = { id: "a2", cluster: "elsewhere", message: "bang", thread: "t2" } as never;
+    const asked: string[] = [];
+    const alerts: AlertsClient = {
+      list: async (cluster) => (asked.push(cluster), [mine]),
+      get: async (id) => (id === "a1" ? mine : id === "a2" ? theirs : undefined),
+      messages: async (id) => [{ id: "m", role: "assistant", text: `of ${id}` } as never],
+    };
+    const instance = app({ alerts });
+    expect(((await (await instance.request("/api/instances/k8s/alerts")).json()) as { value: unknown[] }).value).toEqual([mine]);
+    expect(asked).toEqual(["k8s"]);
+    expect(await (await instance.request("/api/instances/k8s/alerts/a1/messages")).json()).toEqual([{ id: "m", role: "assistant", text: "of a1" }]);
+    expect((await instance.request("/api/instances/k8s/alerts/a2/messages")).status).toBe(404);
+    expect((await instance.request("/api/instances/k8s/alerts/nope/messages")).status).toBe(404);
+    // Without the service: no alerts.
+    expect(((await (await app().request("/api/instances/k8s/alerts")).json()) as { value: unknown[] }).value).toEqual([]);
   });
 
   it("keeps each user's preferences (the windows' layout) their own, across twins", async () => {

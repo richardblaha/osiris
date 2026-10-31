@@ -1,5 +1,6 @@
 import type { ChatQuestion, RunEvent, ThreadSummary } from "@osiris/shared";
 import { api, connect } from "@osiris/client/api.ts";
+import { api as twinApi, type TwinAlert } from "./api.ts";
 import { Icon } from "./Icon.tsx";
 import { answerMessage, applyEvent, fromHistory, pendingQuestion, type ChatMessage } from "@osiris/client/chat.ts";
 import { t } from "i18next";
@@ -74,6 +75,8 @@ export type OsirisChatState = ReturnType<typeof useOsirisChat>;
 export function useOsirisChat(onTwin: (actions: TwinAction[]) => void) {
   const [thread, setThread] = useState(() => stored(THREAD));
   const [title, setTitle] = useState<string>();
+  /** An alert's investigation shown (read-only: it is the alerts service's conversation, not the user's). */
+  const [alert, setAlert] = useState<TwinAlert>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [question, setQuestion] = useState<ChatQuestion>();
   const [text, setText] = useState("");
@@ -115,8 +118,8 @@ export function useOsirisChat(onTwin: (actions: TwinAction[]) => void) {
     }
   };
 
-  const ensureThread = async () => {
-    if (thread) return thread;
+  const ensureThread = async (fresh = false) => {
+    if (thread && !fresh) return thread;
     const id = (await api.createThread()).id;
     store(THREAD, id);
     setThread(id);
@@ -124,17 +127,22 @@ export function useOsirisChat(onTwin: (actions: TwinAction[]) => void) {
   };
 
   /** Sends a message (typed, an answer, a voice message) and folds the run's events into the conversation. */
-  const send = async (message: string, label?: string) => {
+  const send = async (message: string, label?: string, fresh = false) => {
     if (busy) return;
+    // Over an alert's investigation, a message goes on in a new conversation of the user's own, with the alert's
+    // findings as its context.
+    if (alert && !fresh) return continueAlert(message, label);
     setBusy(true);
     setError(undefined);
     setOpen(true);
     setQuestion(undefined);
     audio.current?.pause();
     try {
-      const id = await ensureThread();
-      if (!messages.length && !title) setTitle((label ?? message).startsWith("@osiris-") ? undefined : (label ?? message).slice(0, 80));
-      let current: ChatMessage[] = [...messages, { role: "user", parts: [{ type: "text", text: label ?? message }] }, { role: "assistant", parts: [] }];
+      // A fresh one (after an alert) starts its own thread from nothing: this render's state is the alert's.
+      const id = await ensureThread(fresh);
+      const before = fresh ? [] : messages;
+      if (!fresh && !messages.length && !title) setTitle((label ?? message).startsWith("@osiris-") ? undefined : (label ?? message).slice(0, 80));
+      let current: ChatMessage[] = [...before, { role: "user", parts: [{ type: "text", text: label ?? message }] }, { role: "assistant", parts: [] }];
       setMessages(current);
       abort.current = new AbortController();
       for await (const e of api.run(id, message, abort.current.signal) as AsyncGenerator<RunEvent>) {
@@ -201,9 +209,20 @@ export function useOsirisChat(onTwin: (actions: TwinAction[]) => void) {
     }
   };
 
+  /** A new conversation about an alert: the user's message after what the investigation found. */
+  const continueAlert = async (message: string, label?: string) => {
+    const a = alert!;
+    const findings = textOf(messages.filter((m) => m.role === "assistant").at(-1) ?? { role: "assistant", parts: [] }).slice(0, 4000);
+    newConversation();
+    setTitle(t("twin:chat.alertTitle", { message: a.message.slice(0, 60) }));
+    const context = t("twin:chat.alertContext", { message: a.message.slice(0, 1000), where: [a.namespace, a.workload ?? a.pod ?? a.node].filter(Boolean).join(" / "), findings });
+    await send(`${context}\n\n${message}`, label ?? message, true);
+  };
+
   /** A new, empty conversation, shown. */
   const newConversation = () => {
     abort.current?.abort();
+    setAlert(undefined);
     store(THREAD);
     setThread(undefined);
     setTitle(undefined);
@@ -212,13 +231,29 @@ export function useOsirisChat(onTwin: (actions: TwinAction[]) => void) {
     setError(undefined);
     setOpen(true);
   };
+  /** Opens an alert's investigation (read-only) from the history. */
+  const openAlert = async (a: TwinAlert) => {
+    abort.current?.abort();
+    setAlert(a);
+    setTitle(a.message.slice(0, 80));
+    setError(undefined);
+    setQuestion(undefined);
+    setMessages([]);
+    setOpen(true);
+    try {
+      setMessages(fromHistory(await twinApi.alertMessages(a.id)));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
   /** Opens a conversation from the history. */
   const openThread = async (id: string, name?: string) => {
     abort.current?.abort();
+    setAlert(undefined);
     setError(undefined);
     setTitle(name);
     setOpen(true);
-    if (id === thread && messages.length) return;
+    if (id === thread && messages.length && !alert) return;
     setMessages([]);
     setQuestion(undefined);
     store(THREAD, id);
@@ -236,14 +271,14 @@ export function useOsirisChat(onTwin: (actions: TwinAction[]) => void) {
   };
   const stop = () => abort.current?.abort();
 
-  return { thread, title, messages, question, text, setText, busy, open, setOpen, error, speak, recording, send, submit, toggleRecording, newConversation, openThread, toggleSpeak, stop };
+  return { thread, title, alert, messages, question, text, setText, busy, open, setOpen, error, speak, recording, send, submit, toggleRecording, newConversation, openThread, openAlert, toggleSpeak, stop };
 }
 
 /** The conversation as a window over the twin: closing it hides it (the conversation stays). */
 export function chatPanel(chat: OsirisChatState): PanelView {
   return {
     title: t("twin:chat.title"),
-    heading: chat.busy ? t("twin:chat.thinking") : (chat.title ?? t("twin:chat.subtitle")),
+    heading: chat.busy ? t("twin:chat.thinking") : chat.alert ? t("twin:chat.alertTitle", { message: chat.alert.message.slice(0, 60) }) : (chat.title ?? t("twin:chat.subtitle")),
     icon: "chat",
     actions: (
       <button type="button" className="wm-button" onClick={chat.newConversation} title={t("twin:chat.new")} aria-label={t("twin:chat.new")}>
@@ -258,7 +293,7 @@ export function chatPanel(chat: OsirisChatState): PanelView {
 /** The conversation's messages, the question it waits on, and what went wrong; kept scrolled to the newest. */
 function ChatConversation({ chat }: { chat: OsirisChatState }) {
   const list = useRef<HTMLDivElement>(null);
-  const { messages, busy, question, error } = chat;
+  const { messages, busy, question, error, alert } = chat;
   useEffect(() => {
     // The window's body scrolls: to the newest message.
     const body = list.current?.parentElement;
@@ -266,7 +301,14 @@ function ChatConversation({ chat }: { chat: OsirisChatState }) {
   }, [messages, question]);
   return (
     <div ref={list} className="space-y-2 text-sm" aria-live="polite">
-      {!messages.length && !error && <p className="text-fg-muted">{t("twin:chat.empty")}</p>}
+      {alert && (
+        <div className="osiris-question">
+          <p className="font-semibold">{t("twin:chat.alertHeading", { state: t(`twin:chat.alertState.${alert.state}`), count: alert.count })}</p>
+          <p className="text-xs text-fg-secondary">{t("twin:chat.alertReadOnly")}</p>
+          {alert.error && <p className="text-xs text-error">{alert.error}</p>}
+        </div>
+      )}
+      {!messages.length && !error && !alert && <p className="text-fg-muted">{t("twin:chat.empty")}</p>}
       {messages.map((m, i) =>
         m.role === "user" ? (
           <p key={i} className="osiris-user">
@@ -305,7 +347,7 @@ export function ChatInput({ chat }: { chat: OsirisChatState }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onFocus={() => chat.messages.length > 0 && chat.setOpen(true)}
-        placeholder={recording ? t("twin:chat.recording") : t("twin:chat.placeholder")}
+        placeholder={recording ? t("twin:chat.recording") : chat.alert ? t("twin:chat.alertPlaceholder") : t("twin:chat.placeholder")}
         aria-label={t("twin:chat.placeholder")}
         className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none"
         disabled={recording}
@@ -333,6 +375,7 @@ export function ChatInput({ chat }: { chat: OsirisChatState }) {
 function ChatHistory({ chat }: { chat: OsirisChatState }) {
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<ThreadSummary[]>();
+  const [alerts, setAlerts] = useState<TwinAlert[]>([]);
   const [error, setError] = useState<string>();
   const box = useRef<HTMLDivElement>(null);
   usePopupClose(open, box, () => setOpen(false));
@@ -343,6 +386,8 @@ function ChatHistory({ chat }: { chat: OsirisChatState }) {
       (threads) => setList([...threads].filter((x) => x.channel !== "public").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))),
       (e: Error) => setError(e.message),
     );
+    // The alerts Osiris investigated: their conversations are the alerts service's, opened read-only.
+    void twinApi.alerts(20).then(setAlerts, () => setAlerts([]));
   }, [open]);
   const label = t("twin:chat.history");
   return (
@@ -356,6 +401,33 @@ function ChatHistory({ chat }: { chat: OsirisChatState }) {
             <Icon name="add_comment" className="h-4 w-4" />
             {t("twin:chat.new")}
           </button>
+          {alerts.length > 0 && (
+            <>
+              <p className="section-header border-t border-line px-3 pt-2 pb-1">{t("twin:chat.alerts")}</p>
+              <ul className="max-h-56 overflow-y-auto pb-1">
+                {alerts.map((a) => (
+                  <li key={a.id}>
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={a.id === chat.alert?.id}
+                      data-active={a.id === chat.alert?.id}
+                      className="list-row flex w-full items-start gap-2 px-3 py-1.5 text-start"
+                      onClick={() => (setOpen(false), void chat.openAlert(a))}
+                    >
+                      <Icon name={a.resolved ? "check_circle" : a.severity.toLowerCase() === "warn" ? "warning" : "error"} className={`mt-0.5 h-4 w-4 shrink-0 ${a.resolved ? "text-fg-muted" : "text-error"}`} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-sm">{a.message}</span>
+                        <span className="block truncate text-xs text-fg-muted">
+                          {[formatDateTime(a.lastSeen), a.count > 1 ? `×${a.count}` : "", [a.namespace, a.workload ?? a.pod ?? a.node].filter(Boolean).join(" / "), t(`twin:chat.alertState.${a.state}`)].filter(Boolean).join(" · ")}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
           <p className="section-header border-t border-line px-3 pt-2 pb-1">{label}</p>
           {error && <p className="px-3 py-1 text-xs text-error">{error}</p>}
           {!list && !error && <p className="px-3 py-1 text-xs text-fg-muted">{t("common:loading")}</p>}

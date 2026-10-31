@@ -61,4 +61,7 @@ spec:
         # The digital twin (namespace osiris) reads the state cache and the events.
         - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: osiris } }
           podSelector: { matchLabels: { app: digital-twin } }
+        # The digital twin's alerting reads the events (its own consumer group) and keeps its alerts.
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: osiris } }
+          podSelector: { matchLabels: { app: digital-twin-alerts } }
       ports: [{ port: 6379, protocol: TCP }]

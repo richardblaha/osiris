@@ -74,6 +74,9 @@ spec:
             - { name: OSIRIS_PROJECT, value: twin }
             # kubectl (the osiris-ops account) and ceph (the ceph-ops secret) for that project's agent only.
             - { name: OPS_PROJECTS, value: twin }
+            # The alerts service (digital-twin-alerts.yaml), asked with this pod's token projected for it.
+            - { name: ALERTS_URL, value: http://digital-twin-alerts.osiris.svc.cluster.local:3006 }
+            - { name: ALERTS_TOKEN_PATH, value: /var/run/secrets/twin-alerts/token }
           envFrom:
             - secretRef: { name: osiris-digital-twin }
           securityContext:
@@ -95,6 +98,7 @@ spec:
             - { name: data, mountPath: /data }
             - { name: ops-token, mountPath: /var/run/secrets/osiris-ops, readOnly: true }
             - { name: ceph-ops, mountPath: /etc/ceph-ops, readOnly: true }
+            - { name: alerts-token, mountPath: /var/run/secrets/twin-alerts, readOnly: true }
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 1Gi }
@@ -107,6 +111,11 @@ spec:
           secret: { secretName: ceph-ops, optional: true, items: [{ key: ceph.conf, path: ceph.conf }, { key: keyring, path: keyring }] }
         - name: data
           persistentVolumeClaim: { claimName: digital-twin-data }
+        # The ServiceAccount's token for the alerts service only (audience osiris-twin-alerts), rotated by the kubelet.
+        - name: alerts-token
+          projected:
+            sources:
+              - serviceAccountToken: { audience: osiris-twin-alerts, expirationSeconds: 3600, path: token }
 ---
 apiVersion: v1
 kind: Service

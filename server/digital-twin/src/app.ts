@@ -1,3 +1,4 @@
+import type { AlertsClient } from "./alerts-client.ts";
 import { createHash } from "node:crypto";
 import { serveStatic } from "@hono/node-server/serve-static";
 import { Hono, type Context } from "hono";
@@ -92,6 +93,8 @@ export interface AppOptions {
   ops?: { tools: OpsTools; identity: RuntimeIdentityVerifier; projects: string[] };
   /** Replaces global fetch for the Osiris proxy (tests). */
   fetchFn?: typeof fetch;
+  /** The alerts service: each twin's alerts and the conversations that investigated them. */
+  alerts?: AlertsClient;
 }
 
 /**
@@ -126,6 +129,8 @@ export function createApp(config: Config, options: AppOptions) {
     return value;
   };
 
+  /** The cluster name a twin's telemetry and events carry (its source's setting, else its id). */
+  const clusterOf = (tw: RunningInstance) => String(tw.record.settings.clusterName || tw.record.id);
   const h = (tw: RunningInstance) => {
     if (!tw.history) throw new HttpError(503, "errors.digitalTwin.historyOff");
     return tw.history;
@@ -439,6 +444,18 @@ export function createApp(config: Config, options: AppOptions) {
       const { at } = parse(atQuery, c.req.query());
       const rels = at === undefined ? await state.relationships(twinOf(c).record.id, { target: c.req.param("id") }) : (await stateAt(twinOf(c), at)).relationships.filter((r) => r.$targetId === c.req.param("id"));
       return c.json({ value: rels.map((r) => ({ $relationshipId: r.$relationshipId, $sourceId: r.$sourceId, $relationshipName: r.$relationshipName })) });
+    })
+    // The twin's alerts (the alerts service's, of the cluster the twin mirrors), and the conversation in which
+    // Osiris investigated one, read by the service as its own account: viewers of the twin read it, never write it.
+    .get(`${T}/alerts`, async (c) => {
+      if (!options.alerts) return c.json({ value: [] });
+      const { limit } = parse(z.object({ limit: z.coerce.number().int().min(1).max(200).default(50) }), c.req.query());
+      return c.json({ value: await failing(() => options.alerts!.list(clusterOf(twinOf(c)), limit)) });
+    })
+    .get(`${T}/alerts/:id/messages`, async (c) => {
+      const alert = options.alerts && (await failing(() => options.alerts!.get(c.req.param("id"))));
+      if (!alert || alert.cluster !== clusterOf(twinOf(c))) throw new HttpError(404, "errors.digitalTwin.notFound");
+      return c.json(await failing(() => options.alerts!.messages(alert.id)));
     })
     // The warn/error log records the collector caught (its `twin/events` processor wrote them to the events stream).
     .get(`${T}/events`, async (c) => {

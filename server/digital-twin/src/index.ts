@@ -9,7 +9,7 @@ import { TwinStore } from "./store.ts";
 import { memoryStateStore, redisStateStore } from "./state.ts";
 import { Instances } from "./instances.ts";
 import { bootstrapInstance } from "./bootstrap.ts";
-import { startEventPush } from "./events.ts";
+import { alertsClient } from "./alerts-client.ts";
 import { SecretBox } from "@osiris/platform/secrets.ts";
 import { devRuntimeVerifier, tokenReviewVerifier } from "@osiris/platform/runtime-identity.ts";
 import { ClickHouse } from "./telemetry.ts";
@@ -48,20 +48,6 @@ const instances = new Instances({
 });
 await instances.start();
 
-// The collector's warn/error events pushed to Osiris's agent (a run of the thread in the twin's project).
-const stopEventPush =
-  config.EVENTS_PUSH && config.OSIRIS_URL && config.OSIRIS_PROJECT && config.EVENTS_PUSH_THREAD && config.EVENTS_PUSH_TOKEN
-    ? startEventPush({
-        state,
-        url: config.OSIRIS_URL,
-        project: config.OSIRIS_PROJECT,
-        thread: config.EVENTS_PUSH_THREAD,
-        token: config.EVENTS_PUSH_TOKEN,
-        minSeverity: config.EVENTS_PUSH_MIN_SEVERITY,
-        maxPerMinute: config.EVENTS_PUSH_MAX_PER_MINUTE,
-      })
-    : undefined;
-
 // Ops: kubectl and ceph for the agents of the allowed projects (their runtimes checked by TokenReview).
 const ops = config.OPS_PROJECTS.length
   ? {
@@ -89,15 +75,15 @@ const app = createApp(config, {
       : undefined,
   cache,
   staticDir: config.STATIC_DIR,
+  alerts: config.ALERTS_URL ? alertsClient({ url: config.ALERTS_URL, tokenPath: config.ALERTS_TOKEN_PATH, token: config.ALERTS_TOKEN }) : undefined,
 });
 
 serve({ fetch: app.fetch, port: config.PORT });
 console.log(
-  `osiris-digital-twin on :${config.PORT} (twins: ${instances.list().map((r) => r.record.id).join(", ") || "none"}${recording ? "; history to OpenTelemetry" : ""}${redis ? `; state in ${config.REDIS_URL}` : "; state in memory"}${stopEventPush ? "; events pushed to Osiris" : ""})`,
+  `osiris-digital-twin on :${config.PORT} (twins: ${instances.list().map((r) => r.record.id).join(", ") || "none"}${recording ? "; history to OpenTelemetry" : ""}${redis ? `; state in ${config.REDIS_URL}` : "; state in memory"}${config.ALERTS_URL ? "; alerts from the alerts service" : ""})`,
 );
 
 process.on("SIGTERM", () => {
-  stopEventPush?.();
   instances.stopAll();
   void redis?.quit();
 });
