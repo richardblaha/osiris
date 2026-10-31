@@ -1,162 +1,58 @@
 import type { LogRecord, MetricInfo, MetricSeries, TraceSummary } from "@osiris/shared";
 import { t } from "i18next";
 import { Icon } from "./Icon.tsx";
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, type Scope } from "./api.ts";
 import { formatBytes, formatBytesRate, formatDateTime, formatNumber } from "./i18n.ts";
 import { scopeOf, type TwinScene, type TwinView } from "./scene.ts";
 import { duration, SEVERITY_CLASS } from "./Telemetry.tsx";
-import type { Point } from "./Twin3D.tsx";
 import { TwinDetail } from "./TwinDetail.tsx";
 import { ErrorNotice } from "./ui.tsx";
+import type { PanelView } from "./Windows.tsx";
+import type { PanelId } from "./windowLayout.ts";
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 type Page = "logs" | "metrics" | "traces";
-/** The panels and the corner each sits in. */
-const SLOTS = [
-  { key: "properties", slot: "tl" },
-  { key: "logs", slot: "tr" },
-  { key: "metrics", slot: "br" },
-  { key: "traces", slot: "bl" },
-] as const;
-type Slot = (typeof SLOTS)[number]["slot"];
 
 /**
- * The selected twin's panels around it, as plain HTML over the 3D view: its properties, its logs, metrics and traces
- * (for the OpenTelemetry resource its `otelResource` names). An SVG line runs from each panel to the nearest corner
- * of the twin's box on screen, following the camera every frame.
+ * The selected twin's panels, for the windows over the 3D view: its properties, its logs, metrics and traces (for the
+ * OpenTelemetry resource its `otelResource` names), each joined by a line to the twin's box. Their contents start
+ * over with each selection.
  */
-export function FocusPanels({
+export function detailPanels({
   node,
   scene,
-  anchor,
   onSelect,
   onOpenPage,
   onOpenTrace,
 }: {
   node: TwinView;
   scene: TwinScene;
-  anchor: RefObject<(() => Point[] | null) | null>;
   onSelect: (id: string) => void;
   onOpenPage: (page: Page) => void;
   onOpenTrace: (traceId: string) => void;
-}) {
-  const host = useRef<HTMLDivElement>(null);
-  const panels = useRef(new Map<Slot, HTMLElement>());
-  const paths = useRef(new Map<Slot, SVGPathElement>());
-  const starts = useRef(new Map<Slot, SVGCircleElement>());
-  const targets = useRef(new Map<Slot, SVGCircleElement>());
+}): Partial<Record<PanelId, PanelView>> {
   const scope = scopeOf(node);
-
-  // The callout lines, redrawn every frame: from the panel's inner top corner to the box's nearest corner.
-  useEffect(() => {
-    let frame = 0;
-    const draw = () => {
-      frame = requestAnimationFrame(draw);
-      const box = host.current?.getBoundingClientRect();
-      const corners = anchor.current?.() ?? null;
-      for (const { slot } of SLOTS) {
-        const panel = panels.current.get(slot);
-        const path = paths.current.get(slot);
-        const a = starts.current.get(slot);
-        const b = targets.current.get(slot);
-        if (!box || !panel || !path || !a || !b) continue;
-        const r = panel.getBoundingClientRect();
-        // Panels in a column (a narrow screen) or nothing to point at: no line.
-        const shown = corners && getComputedStyle(panel).position === "absolute" && r.width > 0;
-        path.style.display = a.style.display = b.style.display = shown ? "" : "none";
-        if (!shown) continue;
-        const left = slot === "tl" || slot === "bl";
-        const top = slot === "tl" || slot === "tr";
-        const end = { x: (left ? r.right : r.left) - box.left, y: (top ? r.top + 22 : r.bottom - 22) - box.top };
-        const target = corners.reduce((best, p) => (Math.hypot(p.x - end.x, p.y - end.y) < Math.hypot(best.x - end.x, best.y - end.y) ? p : best));
-        const knee = { x: end.x + (left ? 28 : -28), y: end.y };
-        path.setAttribute("d", `M${end.x},${end.y} L${knee.x},${knee.y} L${target.x},${target.y}`);
-        a.setAttribute("cx", String(end.x));
-        a.setAttribute("cy", String(end.y));
-        b.setAttribute("cx", String(target.x));
-        b.setAttribute("cy", String(target.y));
-      }
-    };
-    draw();
-    return () => cancelAnimationFrame(frame);
-  }, [anchor]);
-
-  /** A ref callback keeping `slot`'s element in `map`. */
-  const keep =
-    <T,>(map: Map<Slot, T>, slot: Slot) =>
-    (el: T | null) =>
-      void (el ? map.set(slot, el) : map.delete(slot));
-  const bind = (slot: Slot) => keep(panels.current, slot);
   const open = (page: Page) => (
-    <button type="button" className="focus-panel-open" onClick={() => onOpenPage(page)} title={t("twin:openPage")} aria-label={t("twin:openPage")}>
+    <button type="button" className="wm-button" onClick={() => onOpenPage(page)} title={t("twin:openPage")} aria-label={t("twin:openPage")}>
       <Icon name="open_in_new" className="h-4 w-4" />
     </button>
   );
-
-  return (
-    <div ref={host} className="focus-panels">
-      <svg className="focus-lines" aria-hidden="true">
-        {SLOTS.map(({ slot }) => (
-          <g key={slot}>
-            <path ref={keep(paths.current, slot)} />
-            <circle r={2.5} ref={keep(starts.current, slot)} />
-            <circle r={3.5} className="focus-line-target" ref={keep(targets.current, slot)} />
-          </g>
-        ))}
-      </svg>
-      <Panel slot="tl" bind={bind("tl")} title={node.modelName} heading={node.name} label={`${t("twin:properties")}: ${node.name}`}>
-        <TwinDetail node={node} scene={scene} onSelect={onSelect} />
-      </Panel>
-      <Panel slot="tr" bind={bind("tr")} title={t("twin:panel.logs")} action={open("logs")} flush>
-        <LogTail scope={{ ...scope, claim: undefined }} at={scene.at} />
-      </Panel>
-      <Panel slot="br" bind={bind("br")} title={t("twin:panel.metrics")} action={open("metrics")}>
-        <MetricsPanel scope={scope} at={scene.at} />
-      </Panel>
-      <Panel slot="bl" bind={bind("bl")} title={t("twin:panel.traces")} action={open("traces")} flush>
-        <TraceList scope={{ ...scope, container: undefined, claim: undefined }} at={scene.at} onOpen={onOpenTrace} />
-      </Panel>
-    </div>
-  );
-}
-
-function Panel({
-  slot,
-  bind,
-  title,
-  heading,
-  label,
-  action,
-  flush,
-  children,
-}: {
-  slot: Slot;
-  bind: (el: HTMLElement | null) => void;
-  title: string;
-  heading?: string;
-  label?: string;
-  action?: ReactNode;
-  flush?: boolean;
-  children: ReactNode;
-}) {
-  return (
-    <section ref={bind} className="focus-panel" data-slot={slot} aria-label={label ?? title}>
-      <header className="flex items-start gap-2 border-b border-line px-3 py-2">
-        <div className="min-w-0 flex-1">
-          <h2 className="section-header truncate">{title}</h2>
-          {heading && (
-            <p className="truncate text-sm font-semibold" title={heading}>
-              {heading}
-            </p>
-          )}
-        </div>
-        {action}
-      </header>
-      <div className={`min-h-0 flex-1 overflow-y-auto ${flush ? "" : "px-3 py-2"}`}>{children}</div>
-    </section>
-  );
+  return {
+    properties: { title: node.modelName, heading: node.name, icon: "deployed_code", anchored: true, body: <TwinDetail key={node.id} node={node} scene={scene} onSelect={onSelect} /> },
+    logs: { title: t("twin:panel.logs"), heading: node.name, icon: "description", anchored: true, flush: true, actions: open("logs"), body: <LogTail key={node.id} scope={{ ...scope, claim: undefined }} at={scene.at} /> },
+    metrics: { title: t("twin:panel.metrics"), heading: node.name, icon: "bar_chart", anchored: true, actions: open("metrics"), body: <MetricsPanel key={node.id} scope={scope} at={scene.at} /> },
+    traces: {
+      title: t("twin:panel.traces"),
+      heading: node.name,
+      icon: "schedule",
+      anchored: true,
+      flush: true,
+      actions: open("traces"),
+      body: <TraceList key={node.id} scope={{ ...scope, container: undefined, claim: undefined }} at={scene.at} onOpen={onOpenTrace} />,
+    },
+  };
 }
 
 const time = (ms: number) => formatDateTime(ms, { hour: "2-digit", minute: "2-digit", second: "2-digit" });

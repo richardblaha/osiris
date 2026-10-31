@@ -224,9 +224,9 @@ export function normalizeLayout(raw: unknown): WindowLayout {
     if (!g || typeof g !== "object") continue;
     const x = g as Partial<WindowGroup>;
     if (!isRect(x.rect) || !Array.isArray(x.tabs)) continue;
-    const tabs = x.tabs.filter((t): t is PanelId => PANELS.includes(t as PanelId) && !seen.has(t as PanelId));
+    const tabs: PanelId[] = [];
+    for (const t of x.tabs) if (PANELS.includes(t as PanelId) && !seen.has(t as PanelId)) (tabs.push(t as PanelId), seen.add(t as PanelId));
     if (!tabs.length) continue;
-    tabs.forEach((t) => seen.add(t));
     const id = typeof x.id === "string" && x.id && !groups.some((o) => o.id === x.id) ? x.id.slice(0, 40) : `${tabs[0]}-${groups.length}`;
     groups.push({ id, tabs, active: tabs.includes(x.active as PanelId) ? (x.active as PanelId) : tabs[0]!, rect: clampRect(x.rect), maximized: x.maximized === true, z: typeof x.z === "number" && Number.isFinite(x.z) ? x.z : groups.length + 1 });
   }

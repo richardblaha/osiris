@@ -1,11 +1,13 @@
-import type { ChatQuestion, RunEvent } from "@osiris/shared";
+import type { ChatQuestion, RunEvent, ThreadSummary } from "@osiris/shared";
 import { api, connect } from "@osiris/client/api.ts";
 import { Icon } from "./Icon.tsx";
 import { answerMessage, applyEvent, fromHistory, pendingQuestion, type ChatMessage } from "@osiris/client/chat.ts";
 import { t } from "i18next";
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { autoSignIn, getAccessToken } from "./auth.ts";
-import { currentLocale } from "./i18n.ts";
+import { currentLocale, formatDateTime } from "./i18n.ts";
+import { usePopupClose } from "./Telemetry.tsx";
+import type { PanelView } from "./Windows.tsx";
 
 /** A step for the twin's view, as Osiris's `twin_view` tool sends it. */
 export type TwinAction =
@@ -56,16 +58,19 @@ const shown = (m: ChatMessage): ReactNode => {
   }
 };
 
+/** Osiris's conversation over the twin: its state and what can be done with it, shared by the bar and the window. */
+export type OsirisChatState = ReturnType<typeof useOsirisChat>;
+
 /**
  * Osiris's agent over the twin: the input at the bottom in the middle (typing, or the microphone: the recording goes
- * as a voice message Osiris transcribes), the conversation in a panel like the selection's detail — docked, in the
- * middle over the bottom bar, above the twin — questions (a command to
- * approve) as forms, answers read aloud (Piper) when speech is on, and the `twin_view` tool's steps handed to the
- * twin as they come. The conversation is one thread, kept across visits.
+ * as a voice message Osiris transcribes), the conversation in a window over the twin (`chatPanel`), questions (a
+ * command to approve) as forms, answers read aloud (Piper) when speech is on, and the `twin_view` tool's steps handed
+ * to the twin as they come. The conversation shown is kept across visits; the history menu opens another or starts
+ * a new one.
  */
-export function OsirisChat({ onTwin, dock }: { onTwin: (actions: TwinAction[]) => void; /** In the bottom bar: the input inline, the conversation in a panel above the bar. */
-  dock?: boolean }) {
+export function useOsirisChat(onTwin: (actions: TwinAction[]) => void) {
   const [thread, setThread] = useState(() => stored(THREAD));
+  const [title, setTitle] = useState<string>();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [question, setQuestion] = useState<ChatQuestion>();
   const [text, setText] = useState("");
@@ -76,22 +81,20 @@ export function OsirisChat({ onTwin, dock }: { onTwin: (actions: TwinAction[]) =
   const [recording, setRecording] = useState(false);
   const recorder = useRef<MediaRecorder | null>(null);
   const abort = useRef<AbortController | null>(null);
-  const list = useRef<HTMLDivElement>(null);
   const audio = useRef<HTMLAudioElement | null>(null);
   const twin = useRef(onTwin);
   twin.current = onTwin;
 
-  // The kept conversation, and a question it stopped at.
+  /** Shows a conversation: its messages, and a question it stopped at. */
+  const load = async (id: string) => {
+    const history = await api.messages(id);
+    setMessages(fromHistory(history));
+    setQuestion(pendingQuestion(history));
+  };
+  // The kept conversation.
   useEffect(() => {
-    if (!thread) return;
-    void api.messages(thread).then(
-      (history) => (setMessages(fromHistory(history)), setQuestion(pendingQuestion(history))),
-      () => (store(THREAD), setThread(undefined)),
-    );
+    if (thread) void load(thread).catch(() => (store(THREAD), setThread(undefined)));
   }, []);
-  useEffect(() => {
-    if (open) list.current?.scrollTo({ top: list.current.scrollHeight });
-  }, [messages, open]);
   useEffect(() => () => abort.current?.abort(), []);
 
   /** Reads an answer aloud with Piper (through Osiris), unless another one started meanwhile. */
@@ -109,6 +112,14 @@ export function OsirisChat({ onTwin, dock }: { onTwin: (actions: TwinAction[]) =
     }
   };
 
+  const ensureThread = async () => {
+    if (thread) return thread;
+    const id = (await api.createThread()).id;
+    store(THREAD, id);
+    setThread(id);
+    return id;
+  };
+
   /** Sends a message (typed, an answer, a voice message) and folds the run's events into the conversation. */
   const send = async (message: string, label?: string) => {
     if (busy) return;
@@ -118,12 +129,8 @@ export function OsirisChat({ onTwin, dock }: { onTwin: (actions: TwinAction[]) =
     setQuestion(undefined);
     audio.current?.pause();
     try {
-      let id = thread;
-      if (!id) {
-        id = (await api.createThread()).id;
-        store(THREAD, id);
-        setThread(id);
-      }
+      const id = await ensureThread();
+      if (!messages.length && !title) setTitle((label ?? message).startsWith("@osiris-") ? undefined : (label ?? message).slice(0, 80));
       let current: ChatMessage[] = [...messages, { role: "user", parts: [{ type: "text", text: label ?? message }] }, { role: "assistant", parts: [] }];
       setMessages(current);
       abort.current = new AbortController();
@@ -174,12 +181,7 @@ export function OsirisChat({ onTwin, dock }: { onTwin: (actions: TwinAction[]) =
         const blob = new Blob(chunks, { type: media.mimeType });
         if (!blob.size) return;
         try {
-          let id = thread;
-          if (!id) {
-            id = (await api.createThread()).id;
-            store(THREAD, id);
-            setThread(id);
-          }
+          const id = await ensureThread();
           const ext = media.mimeType.includes("ogg") ? "ogg" : media.mimeType.includes("mp4") ? "m4a" : "webm";
           const path = `${crypto.randomUUID()}-hlas.${ext}`;
           await api.uploadFile({ scope: "temp", path, thread: id }, new File([blob], path, { type: media.mimeType }));
@@ -196,94 +198,185 @@ export function OsirisChat({ onTwin, dock }: { onTwin: (actions: TwinAction[]) =
     }
   };
 
+  /** A new, empty conversation, shown. */
   const newConversation = () => {
     abort.current?.abort();
     store(THREAD);
     setThread(undefined);
+    setTitle(undefined);
     setMessages([]);
     setQuestion(undefined);
     setError(undefined);
+    setOpen(true);
+  };
+  /** Opens a conversation from the history. */
+  const openThread = async (id: string, name?: string) => {
+    abort.current?.abort();
+    setError(undefined);
+    setTitle(name);
+    setOpen(true);
+    if (id === thread && messages.length) return;
+    setMessages([]);
+    setQuestion(undefined);
+    store(THREAD, id);
+    setThread(id);
+    try {
+      await load(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   };
   const toggleSpeak = () => {
     store(SPEAK, speak ? "0" : "1");
     if (speak) audio.current?.pause();
     setSpeak(!speak);
   };
+  const stop = () => abort.current?.abort();
 
+  return { thread, title, messages, question, text, setText, busy, open, setOpen, error, speak, recording, send, submit, toggleRecording, newConversation, openThread, toggleSpeak, stop };
+}
+
+/** The conversation as a window over the twin: closing it hides it (the conversation stays). */
+export function chatPanel(chat: OsirisChatState): PanelView {
+  return {
+    title: t("twin:chat.title"),
+    heading: chat.busy ? t("twin:chat.thinking") : (chat.title ?? t("twin:chat.subtitle")),
+    icon: "chat",
+    actions: (
+      <button type="button" className="wm-button" onClick={chat.newConversation} title={t("twin:chat.new")} aria-label={t("twin:chat.new")}>
+        <Icon name="add_comment" className="h-4 w-4" />
+      </button>
+    ),
+    body: <ChatConversation chat={chat} />,
+    onClose: () => chat.setOpen(false),
+  };
+}
+
+/** The conversation's messages, the question it waits on, and what went wrong; kept scrolled to the newest. */
+function ChatConversation({ chat }: { chat: OsirisChatState }) {
+  const list = useRef<HTMLDivElement>(null);
+  const { messages, busy, question, error } = chat;
+  useEffect(() => {
+    // The window's body scrolls: to the newest message.
+    const body = list.current?.parentElement;
+    body?.scrollTo({ top: body.scrollHeight });
+  }, [messages, question]);
   return (
-    <>
-      {open && (messages.length > 0 || error) && (
-        <section className={dock ? "osiris-answers osiris-answers-dock" : "osiris-answers"} aria-label={t("twin:chat.title")} aria-live="polite">
-          <header className="flex items-center gap-2 border-b border-line px-3 py-2">
-            <div className="min-w-0 flex-1">
-              <h2 className="section-header">{t("twin:chat.title")}</h2>
-              <p className="truncate text-sm font-semibold">{busy ? t("twin:chat.thinking") : t("twin:chat.subtitle")}</p>
-            </div>
-            <button type="button" className="btn-link text-xs" onClick={newConversation}>
-              {t("twin:chat.new")}
-            </button>
-            <button type="button" className="px-1 text-fg-muted hover:text-fg" onClick={() => setOpen(false)} aria-label={t("twin:chat.hide")} title={t("twin:chat.hide")}>
-              <Icon name="close" className="h-4 w-4" />
-            </button>
-          </header>
-          <div ref={list} className="min-h-0 flex-1 space-y-2 overflow-y-auto px-3 py-2 text-sm">
-            {messages.map((m, i) =>
-              m.role === "user" ? (
-                <p key={i} className="osiris-user">
-                  {shown(m)}
-                </p>
+    <div ref={list} className="space-y-2 text-sm" aria-live="polite">
+      {!messages.length && !error && <p className="text-fg-muted">{t("twin:chat.empty")}</p>}
+      {messages.map((m, i) =>
+        m.role === "user" ? (
+          <p key={i} className="osiris-user">
+            {shown(m)}
+          </p>
+        ) : (
+          <div key={i} className="space-y-1">
+            {m.parts.map((p, j) =>
+              p.type === "tool" ? (
+                <span key={j} className="osiris-step" data-state={p.failed ? "failed" : p.done ? "done" : "running"}>
+                  {p.done ? <Icon name={p.failed ? "close" : "check"} className="h-3.5 w-3.5 align-[-0.15em]" /> : "…"} {p.name}
+                </span>
               ) : (
-                <div key={i} className="space-y-1">
-                  {m.parts.map((p, j) =>
-                    p.type === "tool" ? (
-                      <span key={j} className="osiris-step" data-state={p.failed ? "failed" : p.done ? "done" : "running"}>
-                        {p.done ? <Icon name={p.failed ? "close" : "check"} className="h-3.5 w-3.5 align-[-0.15em]" /> : "…"} {p.name}
-                      </span>
-                    ) : (
-                      <p key={j} className="whitespace-pre-wrap">
-                        {p.text}
-                      </p>
-                    ),
-                  )}
-                  {busy && i === messages.length - 1 && !textOf(m) && <p className="text-fg-muted">{t("twin:chat.thinking")}</p>}
-                </div>
+                <p key={j} className="whitespace-pre-wrap">
+                  {p.text}
+                </p>
               ),
             )}
-            {question && <QuestionForm question={question} onAnswer={(values, cancel) => void send(answerMessage(question, values, cancel), cancel ? t("twin:chat.cancelled") : t("twin:chat.answered"))} />}
-            {error && <p className="text-xs text-error">{error}</p>}
+            {busy && i === messages.length - 1 && !textOf(m) && <p className="text-fg-muted">{t("twin:chat.thinking")}</p>}
           </div>
-        </section>
+        ),
       )}
-      <form className={dock ? "osiris-input osiris-input-dock" : "osiris-input"} onSubmit={submit}>
-        <button type="button" onClick={() => setOpen(!open)} className="osiris-icon" aria-pressed={open} title={t("twin:chat.title")} aria-label={t("twin:chat.title")}>
-          <Icon name="chat" />
+      {question && <QuestionForm question={question} onAnswer={(values, cancel) => void chat.send(answerMessage(question, values, cancel), cancel ? t("twin:chat.cancelled") : t("twin:chat.answered"))} />}
+      {error && <p className="text-xs text-error">{error}</p>}
+    </div>
+  );
+}
+
+/** The input in the bottom bar: the history menu, the text, speech, the microphone, send (or stop). */
+export function ChatInput({ chat }: { chat: OsirisChatState }) {
+  const { text, setText, recording, busy, speak } = chat;
+  return (
+    <form className="osiris-input osiris-input-dock" onSubmit={chat.submit}>
+      <ChatHistory chat={chat} />
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onFocus={() => chat.messages.length > 0 && chat.setOpen(true)}
+        placeholder={recording ? t("twin:chat.recording") : t("twin:chat.placeholder")}
+        aria-label={t("twin:chat.placeholder")}
+        className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none"
+        disabled={recording}
+      />
+      <button type="button" onClick={chat.toggleSpeak} className="osiris-icon" aria-pressed={speak} title={speak ? t("twin:chat.speakOff") : t("twin:chat.speakOn")} aria-label={speak ? t("twin:chat.speakOff") : t("twin:chat.speakOn")}>
+        <Icon name={speak ? "volume_up" : "volume_off"} />
+      </button>
+      <button type="button" onClick={() => void chat.toggleRecording()} className="osiris-icon" data-recording={recording} disabled={busy && !recording} title={recording ? t("twin:chat.stop") : t("twin:chat.speakToMe")} aria-label={recording ? t("twin:chat.stop") : t("twin:chat.speakToMe")}>
+        <Icon name={recording ? "stop" : "mic"} />
+      </button>
+      {busy ? (
+        <button type="button" className="osiris-icon" onClick={chat.stop} title={t("twin:chat.stop")} aria-label={t("twin:chat.stop")}>
+          <Icon name="stop" />
         </button>
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onFocus={() => messages.length > 0 && setOpen(true)}
-          placeholder={recording ? t("twin:chat.recording") : t("twin:chat.placeholder")}
-          aria-label={t("twin:chat.placeholder")}
-          className="min-w-0 flex-1 bg-transparent px-2 py-1.5 text-sm outline-none"
-          disabled={recording}
-        />
-        <button type="button" onClick={toggleSpeak} className="osiris-icon" aria-pressed={speak} title={speak ? t("twin:chat.speakOff") : t("twin:chat.speakOn")} aria-label={speak ? t("twin:chat.speakOff") : t("twin:chat.speakOn")}>
-          <Icon name={speak ? "volume_up" : "volume_off"} />
+      ) : (
+        <button className="osiris-icon osiris-send" disabled={!text.trim()} title={t("twin:chat.send")} aria-label={t("twin:chat.send")}>
+          <Icon name="send" />
         </button>
-        <button type="button" onClick={() => void toggleRecording()} className="osiris-icon" data-recording={recording} disabled={busy && !recording} title={recording ? t("twin:chat.stop") : t("twin:chat.speakToMe")} aria-label={recording ? t("twin:chat.stop") : t("twin:chat.speakToMe")}>
-          <Icon name={recording ? "stop" : "mic"} />
-        </button>
-        {busy ? (
-          <button type="button" className="osiris-icon" onClick={() => abort.current?.abort()} title={t("twin:chat.stop")} aria-label={t("twin:chat.stop")}>
-            <Icon name="stop" />
+      )}
+    </form>
+  );
+}
+
+/** The chat's icon: a menu opening upward with a new conversation and the earlier ones, newest first. */
+function ChatHistory({ chat }: { chat: OsirisChatState }) {
+  const [open, setOpen] = useState(false);
+  const [list, setList] = useState<ThreadSummary[]>();
+  const [error, setError] = useState<string>();
+  const box = useRef<HTMLDivElement>(null);
+  usePopupClose(open, box, () => setOpen(false));
+  useEffect(() => {
+    if (!open) return;
+    setError(undefined);
+    void api.threads().then(
+      (threads) => setList([...threads].filter((x) => x.channel !== "public").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))),
+      (e: Error) => setError(e.message),
+    );
+  }, [open]);
+  const label = t("twin:chat.history");
+  return (
+    <div ref={box} className="relative">
+      <button type="button" onClick={() => setOpen(!open)} className="osiris-icon" aria-haspopup="menu" aria-expanded={open} title={label} aria-label={label}>
+        <Icon name="history" />
+      </button>
+      {open && (
+        <div className="menu-popup menu-up start-0 w-80" role="menu" aria-label={label}>
+          <button type="button" role="menuitem" className="list-row flex w-full items-center gap-2 px-3 py-2 text-start text-sm text-primary" onClick={() => (setOpen(false), chat.newConversation())}>
+            <Icon name="add_comment" className="h-4 w-4" />
+            {t("twin:chat.new")}
           </button>
-        ) : (
-          <button className="osiris-icon osiris-send" disabled={!text.trim()} title={t("twin:chat.send")} aria-label={t("twin:chat.send")}>
-            <Icon name="send" />
-          </button>
-        )}
-      </form>
-    </>
+          <p className="section-header border-t border-line px-3 pt-2 pb-1">{label}</p>
+          {error && <p className="px-3 py-1 text-xs text-error">{error}</p>}
+          {!list && !error && <p className="px-3 py-1 text-xs text-fg-muted">{t("common:loading")}</p>}
+          {list && !list.length && <p className="px-3 py-1 text-xs text-fg-muted">{t("twin:chat.noHistory")}</p>}
+          <ul className="max-h-80 overflow-y-auto pb-1">
+            {list?.map((x) => (
+              <li key={x.id}>
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={x.id === chat.thread}
+                  data-active={x.id === chat.thread}
+                  className="list-row block w-full px-3 py-1.5 text-start"
+                  onClick={() => (setOpen(false), void chat.openThread(x.id, x.title ?? undefined))}
+                >
+                  <span className="block truncate text-sm">{x.title || t("twin:chat.untitled")}</span>
+                  <span className="block text-xs text-fg-muted">{formatDateTime(Date.parse(x.updatedAt))}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 

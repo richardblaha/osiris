@@ -5,6 +5,7 @@ import { Icon } from "./Icon.tsx";
 import { usePopupClose } from "./Telemetry.tsx";
 import { ALL_LAYERS, DEFAULT_DISPLAY, LAYER_KEYS, type DisplayOptions, type Layers } from "./Twin3D.tsx";
 import type { TwinScene, ViewFilters } from "./scene.ts";
+import type { PanelId } from "./windowLayout.ts";
 
 /** Each layer's icon in the menu. */
 const LAYER_ICONS: Record<(typeof LAYER_KEYS)[number], MaterialIcon> = { network: "lan", services: "hub", storage: "storage", logical: "account_tree" };
@@ -22,6 +23,7 @@ export function DisplayMenu({
   filters,
   onFilters,
   scene,
+  windows,
 }: {
   layers: Layers;
   onLayers: (l: Layers) => void;
@@ -30,6 +32,7 @@ export function DisplayMenu({
   filters: ViewFilters;
   onFilters: (f: ViewFilters) => void;
   scene?: TwinScene;
+  windows: { hidden: PanelId[]; show: (p: PanelId) => void; reset: () => void };
 }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
@@ -110,6 +113,27 @@ export function DisplayMenu({
             <input type="checkbox" checked={display.traffic} onChange={(e) => onDisplay({ ...display, traffic: e.target.checked })} />
             {t("twin:display.traffic")}
           </label>
+
+          <div className="mt-3 flex items-center gap-2">
+            <p className="section-header flex-1">{t("twin:windows.title")}</p>
+            <button type="button" className="btn-link text-xs" onClick={windows.reset}>
+              <Icon name="restart_alt" className="me-0.5 h-3.5 w-3.5 align-[-0.15em]" />
+              {t("twin:windows.reset")}
+            </button>
+          </div>
+          {windows.hidden.length ? (
+            <ul className="mt-1 flex flex-wrap gap-1">
+              {windows.hidden.map((p) => (
+                <li key={p}>
+                  <button type="button" className="btn-secondary px-2 py-0.5 text-xs" onClick={() => windows.show(p)}>
+                    {t("twin:windows.show", { name: t(`twin:windows.panel.${p}`) })}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-1 text-xs text-fg-muted">{t("twin:windows.help")}</p>
+          )}
 
           <p className="section-header mt-3">{t("twin:display.filters")}</p>
           <input

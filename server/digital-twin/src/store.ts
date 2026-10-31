@@ -7,7 +7,7 @@ import { LocalDb, run, type Statement } from "@osiris/platform/db.ts";
  * The schema, version 3: everything belongs to an instance (a digital twin of its own, `instance`). SQLite keeps only
  * the definitions — the DTDL models (the source's, marked `origin = 'source'`, and the admins' own edits, `origin =
  * 'user'`; a deleted source model stays as a tombstone, `decommissioned`), the instances with their settings and
- * sealed secrets, dashboards and saved filters. The twins' and relationships' current state is not stored here: the
+ * sealed secrets, dashboards, saved filters and each user's preferences. The twins' and relationships' current state is not stored here: the
  * sync writes it to Redis (the cache the API and the agent read), and the history goes out as OpenTelemetry events.
  * Version 2's twins and relationships tables are dropped; version 1's structure goes, its dashboards and filters
  * wait for the first instance (`claimLegacy`).
@@ -19,6 +19,8 @@ const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS models (instance TEXT NOT NULL, id TEXT NOT NULL, document TEXT NOT NULL, upload_time INTEGER NOT NULL, origin TEXT NOT NULL DEFAULT 'source', decommissioned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (instance, id))`,
   `CREATE TABLE IF NOT EXISTS dashboards (instance TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY (instance, id))`,
   `CREATE TABLE IF NOT EXISTS saved_filters (instance TEXT NOT NULL, owner TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, filter TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (instance, owner, id))`,
+  // Each user's own preferences across the twins (the layout of the windows over the twin), as JSON.
+  `CREATE TABLE IF NOT EXISTS preferences (owner TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (owner, key))`,
 ];
 
 /** Version 2: the twins and relationships move to Redis; the models table gains `origin` and `decommissioned`. */
@@ -135,6 +137,16 @@ export class TwinStore {
   /** One instance's data. */
   of(instance: string): InstanceData {
     return new InstanceData(this.db, instance);
+  }
+
+  /** One of a user's preferences (JSON), or undefined when they have none. */
+  async preference(owner: string, key: string): Promise<unknown> {
+    const [r] = await this.db.query<{ value: string }>(`SELECT value FROM preferences WHERE owner = ? AND key = ?`, [owner, key]);
+    return r ? JSON.parse(r.value) : undefined;
+  }
+
+  async savePreference(owner: string, key: string, value: unknown, now: number): Promise<void> {
+    await this.db.execute([run(`INSERT OR REPLACE INTO preferences (owner, key, value, updated_at) VALUES (?, ?, ?, ?)`, owner, key, JSON.stringify(value), now)]);
   }
 
   async instances(): Promise<InstanceRecord[]> {

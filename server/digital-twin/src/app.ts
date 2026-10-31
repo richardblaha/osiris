@@ -64,6 +64,9 @@ const MAX_SAVED_FILTERS = 100;
 type Env = { Variables: { identity: Identity; twin: RunningInstance } };
 /** The signed-in user's id (development without sign-in: `dev`). */
 const owner = (c: Context<Env>) => c.get("identity")?.sub ?? "dev";
+/** The preferences a user keeps (each a JSON value of at most 32 kB). */
+const preferenceKey = z.enum(["layout"]);
+const MAX_PREFERENCE_BYTES = 32_768;
 const instanceId = z.string().regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
 const parse = <T>(schema: z.ZodType<T>, value: unknown): T => {
   const r = schema.safeParse(value, { reportInput: true });
@@ -308,6 +311,19 @@ export function createApp(config: Config, options: AppOptions) {
     .get("/api/me", (c) => {
       const identity = c.get("identity");
       return c.json(identity ? { ...identity, admin: isAdmin(identity, ADMIN) } : null);
+    })
+    // The signed-in user's own preferences, the same in every twin (the layout of the windows over it).
+    .get("/api/me/preferences/:key", async (c) => {
+      const key = parse(preferenceKey, c.req.param("key"));
+      return c.json({ value: (await store.preference(owner(c), key)) ?? null });
+    })
+    .put("/api/me/preferences/:key", async (c) => {
+      const key = parse(preferenceKey, c.req.param("key"));
+      const text = await c.req.text();
+      if (text.length > MAX_PREFERENCE_BYTES) throw new HttpError(413, "errors.digitalTwin.preferenceTooLarge");
+      const body = parse(z.object({ value: z.unknown() }), (() => { try { return JSON.parse(text); } catch { return null; } })());
+      await store.savePreference(owner(c), key, body.value ?? null, Date.now());
+      return c.body(null, 204);
     })
 
     // The twins the user may see (an admin all of them).

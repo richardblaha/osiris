@@ -4,6 +4,7 @@ import { Timeline } from "./Timeline.tsx";
 import { DisplayMenu } from "./DisplayMenu.tsx";
 import type { DisplayOptions, Layers } from "./Twin3D.tsx";
 import type { TwinScene, ViewFilters } from "./scene.ts";
+import type { PanelId } from "./windowLayout.ts";
 
 /**
  * The bar under the 3D view: the time axis (live, or a past recorded state), the display menu (the layers, how the
@@ -22,6 +23,7 @@ export function BottomBar({
   onFilters,
   scene,
   chat,
+  windows,
 }: {
   historyFrom?: number;
   at: number | null;
@@ -34,6 +36,8 @@ export function BottomBar({
   onFilters: (f: ViewFilters) => void;
   scene?: TwinScene;
   chat: ReactNode;
+  /** The windows over the twin: the panels the user closed, showing one again, the default layout. */
+  windows: { hidden: PanelId[]; show: (p: PanelId) => void; reset: () => void };
 }) {
   return (
     <div className="bottom-bar" role="toolbar" aria-label={t("twin:bottomBar")}>
@@ -42,7 +46,7 @@ export function BottomBar({
       ) : (
         <span className="px-2 text-xs text-fg-muted">{t("twin:history.live")}</span>
       )}
-      <DisplayMenu layers={layers} onLayers={onLayers} display={display} onDisplay={onDisplay} filters={filters} onFilters={onFilters} scene={scene} />
+      <DisplayMenu layers={layers} onLayers={onLayers} display={display} onDisplay={onDisplay} filters={filters} onFilters={onFilters} scene={scene} windows={windows} />
       <div className="flex min-w-0 flex-1 justify-end">{chat}</div>
     </div>
   );

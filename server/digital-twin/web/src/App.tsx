@@ -12,8 +12,10 @@ import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
 import { ALL_LAYERS, DEFAULT_DISPLAY, Twin3D, type CameraControl, type DisplayOptions, type Layers, type Point } from "./Twin3D.tsx";
 import { BottomBar } from "./BottomBar.tsx";
-import { OsirisChat, type TwinAction } from "./OsirisChat.tsx";
-import { FocusPanels } from "./FocusPanels.tsx";
+import { chatPanel, ChatInput, useOsirisChat, type TwinAction } from "./OsirisChat.tsx";
+import { detailPanels } from "./FocusPanels.tsx";
+import { Windows, type PanelView } from "./Windows.tsx";
+import { defaultLayout, normalizeLayout, showPanel, type PanelId, type WindowLayout } from "./windowLayout.ts";
 import { Dashboard, DashboardMenu } from "./Dashboard.tsx";
 
 /** The views, in the URL's hash so a selection or a page survives reloading and signing in: the twin is always there,
@@ -124,6 +126,29 @@ export function App() {
     } catch {
       // The choice lasts as long as the page.
     }
+  };
+  /**
+   * The windows over the twin, the user's own: kept on the server (their preferences, the same in every twin and
+   * browser) and in this browser, so it shows at once; a change is saved a moment after the last one.
+   */
+  const LAYOUT_KEY = "osiris.digital-twin.layout";
+  const [layout, setLayout] = useState<WindowLayout>(() => {
+    try {
+      return normalizeLayout(JSON.parse(localStorage.getItem(LAYOUT_KEY) ?? "null"));
+    } catch {
+      return defaultLayout();
+    }
+  });
+  const saveLayout = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const changeLayout = (next: WindowLayout) => {
+    setLayout(next);
+    try {
+      localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
+    } catch {
+      // The server keeps it.
+    }
+    clearTimeout(saveLayout.current);
+    saveLayout.current = setTimeout(() => void api.savePreference("layout", next).catch(() => {}), 800);
   };
   /** The view's own filters (the bottom bar's display menu: hidden models, a lowest status, a name search). */
   const FILTERS_KEY = "osiris.digital-twin.filters";
@@ -241,6 +266,18 @@ export function App() {
         setSignedIn(true);
         const [p, me] = await Promise.all([profile(), api.me().catch(() => null), loadInstances().catch((e: Error) => setError(e.message))]);
         setAdmin(authOff || !!me?.admin);
+        // The user's own layout of the windows, where they have one.
+        void api.preference("layout").then((value) => {
+          if (value) {
+            const l = normalizeLayout(value);
+            setLayout(l);
+            try {
+              localStorage.setItem(LAYOUT_KEY, JSON.stringify(l));
+            } catch {
+              // Shown as it is.
+            }
+          }
+        }, () => {});
         // The picture osiris-auth's introspection names (the ID token's when the API has none).
         setUser({ name: me?.name ?? p?.name ?? undefined, email: me?.email ?? p?.email ?? undefined, picture: me?.picture ?? p?.picture });
         return;
@@ -345,6 +382,16 @@ export function App() {
     }
   };
 
+  /** Osiris's conversation: the input in the bar, the conversation a window over the twin. */
+  const chat = useOsirisChat((steps) => void runTwin(steps));
+  /** The panels the windows show now: the selection's four while something is selected, the open conversation. */
+  const panels: Partial<Record<PanelId, PanelView>> = {
+    ...(selected && scene
+      ? detailPanels({ node: selected, scene, onSelect: setSelectedId, onOpenPage: openPage, onOpenTrace: (traceId) => navigate({ kind: "traces", preset: {}, traceId }) })
+      : {}),
+    ...(chat.open ? { chat: chatPanel(chat) } : {}),
+  };
+
   const tabLabel = (page: Page | "instances") =>
     page === "instances" ? t("instances:title") :
     page === "dashboard" ? t("common:nav.dashboard") : page === "logs" ? t("common:nav.logs") : page === "metrics" ? t("common:nav.metrics") : t("common:nav.traces");
@@ -387,17 +434,7 @@ export function App() {
                   <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
                 )
               ) : null}
-              {selected && scene ? (
-                <FocusPanels
-                  key={selected.id}
-                  node={selected}
-                  scene={scene}
-                  anchor={anchor}
-                  onSelect={setSelectedId}
-                  onOpenPage={openPage}
-                  onOpenTrace={(traceId) => navigate({ kind: "traces", preset: {}, traceId })}
-                />
-              ) : null}
+              {scene ? <Windows layout={layout} onLayout={changeLayout} panels={panels} anchor={anchor} /> : null}
               <p className="pointer-events-none absolute bottom-12 start-4 text-xs text-fg-muted">{selected ? t("twin:escHint") : t("twin:hint")}</p>
             </div>
             {signedIn && instance && (
@@ -412,7 +449,8 @@ export function App() {
                 filters={filters}
                 onFilters={changeFilters}
                 scene={scene}
-                chat={<OsirisChat dock onTwin={(steps) => void runTwin(steps)} />}
+                chat={<ChatInput chat={chat} />}
+                windows={{ hidden: layout.hidden, show: (p) => changeLayout(showPanel(layout, p)), reset: () => changeLayout(defaultLayout()) }}
               />
             )}
           </>

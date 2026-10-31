@@ -63,7 +63,6 @@
   "chat": {
     "title": "Osiris",
     "new": "Nová konverzace",
-    "hide": "Skrýt",
     "thinking": "Přemýšlím…",
     "answered": "(odpovězeno)",
     "cancelled": "(zrušeno)",
@@ -79,7 +78,11 @@
     "yes": "Ano, spustit",
     "no": "Ne",
     "cancel": "Zrušit",
-    "subtitle": "Odpovědi"
+    "subtitle": "Odpovědi",
+    "history": "Konverzace",
+    "noHistory": "Zatím žádné konverzace.",
+    "untitled": "Konverzace bez názvu",
+    "empty": "Zeptejte se Osirise na cluster níže."
   },
   "bottomBar": "Spodní lišta: čas, zobrazení, chat",
   "display": {
@@ -147,5 +150,36 @@
     "pgs": "PG {{clean}}/{{total}} clean",
     "mons": "MON {{quorum}}/{{total}} v kvóru",
     "io": "čtení {{read}}, zápis {{write}}"
+  },
+  "windows": {
+    "title": "Okna",
+    "reset": "Výchozí rozložení",
+    "show": "Zobrazit {{name}}",
+    "help": "Okno přetáhněte za hlavičku: u okraje nebo v rohu se přichytí, na hlavičce jiného okna se k němu připojí jako záložka.",
+    "restore": "Obnovit",
+    "maximize": "Maximalizovat",
+    "close": "Zavřít",
+    "arrange": "Rozmístit",
+    "snapTo": "Umístit okno",
+    "detach": "Vyjmout „{{name}}“",
+    "joinWith": "Sloučit s",
+    "snap": {
+      "tl": "Levá horní čtvrtina",
+      "top": "Horní polovina",
+      "tr": "Pravá horní čtvrtina",
+      "left": "Levá polovina",
+      "max": "Celé zobrazení",
+      "right": "Pravá polovina",
+      "bl": "Levá dolní čtvrtina",
+      "bottom": "Dolní polovina",
+      "br": "Pravá dolní čtvrtina"
+    },
+    "panel": {
+      "properties": "vlastnosti",
+      "logs": "logy",
+      "metrics": "metriky",
+      "traces": "trasy",
+      "chat": "konverzaci"
+    }
   }
 }

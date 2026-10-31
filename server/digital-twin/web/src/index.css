@@ -356,24 +356,6 @@ button.instance-button:hover {
   background: var(--accent-secondary-soft);
   animation: fade-in 0.8s ease-in-out infinite alternate;
 }
-.osiris-answers {
-  position: absolute;
-  left: 50%;
-  top: calc(var(--app-bar) + 0.5rem);
-  z-index: 36;
-  display: flex;
-  flex-direction: column;
-  width: min(40rem, calc(100% - 2rem));
-  max-height: 45%;
-  border: 1px solid var(--border-strong);
-  border-top: 2px solid var(--accent-active);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-sidebar) 94%, transparent);
-  backdrop-filter: blur(8px);
-  box-shadow: var(--shadow-popup);
-  transform: translateX(-50%);
-  animation: fade-in 0.2s ease both;
-}
 .osiris-user {
   margin-left: auto;
   max-width: 85%;
@@ -426,94 +408,10 @@ button.instance-button:hover {
   box-shadow: 0 0 0 2px var(--accent-primary-soft);
 }
 
-/* The selected twin's panels in the view's corners, with SVG lines to its box. */
-.focus-panels {
-  position: absolute;
-  inset: 0;
-  z-index: 10;
-  pointer-events: none;
-}
-.focus-lines {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-}
-.focus-lines path {
-  fill: none;
-  stroke: var(--accent-primary);
-  stroke-width: 1.25;
-  stroke-dasharray: 5 4;
-  animation: line-flow 1.2s linear infinite, fade-in 0.4s ease 0.5s both;
-}
-.focus-lines circle {
-  fill: var(--accent-primary);
-  animation: fade-in 0.4s ease 0.5s both;
-}
-.focus-lines .focus-line-target {
-  fill: var(--accent-active);
-}
-.focus-panel {
-  position: absolute;
-  display: flex;
-  flex-direction: column;
-  width: clamp(17rem, 27vw, 26rem);
-  height: calc(50% - 1.25rem - var(--app-bar) / 2);
-  border: 1px solid var(--border-strong);
-  border-top: 2px solid var(--accent-primary);
-  border-radius: var(--radius);
-  background: color-mix(in srgb, var(--bg-sidebar) 90%, transparent);
-  backdrop-filter: blur(6px);
-  box-shadow: var(--shadow-popup);
-  pointer-events: auto;
-  animation: panel-in 0.35s ease both;
-}
-.focus-panel[data-slot="tl"] {
-  top: calc(var(--app-bar) + 0.5rem);
-  left: 0.75rem;
-  border-top-color: var(--accent-active);
-  animation-delay: 0.45s;
-}
-.focus-panel[data-slot="tr"] {
-  top: calc(var(--app-bar) + 0.5rem);
-  right: 0.75rem;
-  animation-delay: 0.55s;
-}
-.focus-panel[data-slot="br"] {
-  bottom: 0.75rem;
-  right: 0.75rem;
-  animation-delay: 0.65s;
-}
-.focus-panel[data-slot="bl"] {
-  bottom: 0.75rem;
-  left: 0.75rem;
-  animation-delay: 0.75s;
-}
-.focus-panel-open {
-  color: var(--accent-primary);
-  padding: 0 0.25rem;
-  border-radius: var(--radius);
-}
-.focus-panel-open:hover {
-  background: var(--bg-hover);
-}
-/* Narrow screens: the panels scroll in a column over the lower half, without lines. */
+/* Narrow screens: the brand's words go; the windows become one (Windows.tsx). */
 @media (max-width: 900px) {
   .app-bar-brand > span {
     display: none;
-  }
-  .focus-panels {
-    top: 45%;
-    overflow-y: auto;
-    padding: 0.5rem;
-    pointer-events: auto;
-  }
-  .focus-panel {
-    position: static;
-    width: 100%;
-    height: 18rem;
-    margin-bottom: 0.5rem;
   }
   .twin-hint {
     display: none;
@@ -536,9 +434,8 @@ button.instance-button:hover {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .focus-panel,
-  .focus-lines path,
-  .focus-lines circle {
+  .wm-window,
+  .wm-lines path {
     animation: none;
   }
 }
@@ -645,7 +542,7 @@ button.instance-button:hover {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-subtle);
   background: var(--bg-sidebar);
   padding: 0.25rem 0.75rem;
   min-height: 2.75rem;
@@ -655,34 +552,6 @@ button.instance-button:hover {
   transform: none;
   width: min(30rem, 42%);
   box-shadow: none;
-}
-/* The chat's answers docked: a panel like the selection's detail, in the middle over the bottom bar, above the twin
-   (the detail's panels keep the corners). */
-.osiris-answers-dock {
-  position: absolute;
-  left: 50%;
-  right: auto;
-  top: auto;
-  bottom: calc(100% + 0.75rem);
-  width: min(42rem, calc(100vw - 2rem));
-  height: auto;
-  max-height: min(55vh, calc(100vh - var(--app-bar) - 6rem));
-  border-top: 2px solid var(--accent-active);
-  background: color-mix(in srgb, var(--bg-sidebar) 90%, transparent);
-  backdrop-filter: blur(6px);
-  transform: translateX(-50%);
-  animation: dock-in 0.25s ease both;
-}
-@keyframes dock-in {
-  from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(6px) scale(0.98);
-  }
-}
-@media (max-width: 900px) {
-  .osiris-answers-dock {
-    max-height: 45vh;
-  }
 }
 
 /* The display menu's button in the bar: an icon (and how many twins show), marked while something is switched off. */
@@ -760,8 +629,230 @@ button.instance-button:hover {
 .layer-row[data-on="true"] .layer-switch::after {
   transform: translateX(0.85rem);
 }
+
+/* The windows over the twin (Windows.tsx): in the area under the bar and above the bottom one, each a panel like the
+   pop-ups — moved by its header, resized by its edges, tabs when several panels share it; the front one wears the
+   bright accent. While dragging, the snap's place shows dashed and a window it would join glows. */
+.wm-area {
+  position: absolute;
+  top: calc(var(--app-bar) + 0.5rem);
+  inset-inline: 0.75rem;
+  bottom: 0.75rem;
+  z-index: 10;
+  pointer-events: none;
+}
+.wm-area[data-dragging="true"] {
+  cursor: grabbing;
+  user-select: none;
+}
+.wm-lines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.wm-lines path {
+  fill: none;
+  stroke: var(--accent-primary);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+  animation: line-flow 1.2s linear infinite, fade-in 0.4s ease 0.3s both;
+}
+.wm-window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--border-strong);
+  border-top: 2px solid var(--accent-primary);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-sidebar) 90%, transparent);
+  backdrop-filter: blur(6px);
+  box-shadow: var(--shadow-popup);
+  pointer-events: auto;
+  animation: panel-in 0.25s ease both;
+}
+.wm-window[data-front="true"] {
+  border-top-color: var(--accent-active);
+}
+.wm-window[data-drop="true"] {
+  border-color: var(--accent-active);
+  box-shadow: 0 0 0 3px var(--accent-active-soft), var(--shadow-popup);
+}
+.wm-window[data-max="true"] {
+  border-radius: var(--radius);
+}
+.wm-area[data-dragging="true"] .wm-window {
+  transition: none;
+}
+.wm-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 2.5rem;
+  padding: 0.3rem 0.35rem 0.3rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.wm-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  gap: 0.15rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wm-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 11rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: grab;
+}
+.wm-tab:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.wm-tab[aria-selected="true"] {
+  background: var(--accent-primary-soft);
+  color: var(--text-primary);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+}
+.wm-subhead {
+  padding: 0.25rem 0.75rem;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 13px;
+  font-weight: 600;
+}
+.wm-button {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+.wm-button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.wm-body {
+  min-height: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+.wm-body[hidden] {
+  display: none;
+}
+/* The edges and corners to resize by, just over the window's border. */
+.wm-resize {
+  position: absolute;
+  z-index: 1;
+}
+.wm-resize[data-dir="n"],
+.wm-resize[data-dir="s"] {
+  inset-inline: 0.5rem;
+  height: 0.5rem;
+  cursor: ns-resize;
+}
+.wm-resize[data-dir="e"],
+.wm-resize[data-dir="w"] {
+  inset-block: 0.5rem;
+  width: 0.5rem;
+  cursor: ew-resize;
+}
+.wm-resize[data-dir="n"] {
+  top: -0.25rem;
+}
+.wm-resize[data-dir="s"] {
+  bottom: -0.25rem;
+}
+.wm-resize[data-dir="e"] {
+  right: -0.25rem;
+}
+.wm-resize[data-dir="w"] {
+  left: -0.25rem;
+}
+.wm-resize[data-dir="ne"],
+.wm-resize[data-dir="nw"],
+.wm-resize[data-dir="se"],
+.wm-resize[data-dir="sw"] {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+.wm-resize[data-dir="ne"] {
+  top: -0.3rem;
+  right: -0.3rem;
+  cursor: nesw-resize;
+}
+.wm-resize[data-dir="sw"] {
+  bottom: -0.3rem;
+  left: -0.3rem;
+  cursor: nesw-resize;
+}
+.wm-resize[data-dir="nw"] {
+  top: -0.3rem;
+  left: -0.3rem;
+  cursor: nwse-resize;
+}
+.wm-resize[data-dir="se"] {
+  right: -0.3rem;
+  bottom: -0.3rem;
+  cursor: nwse-resize;
+}
+.wm-preview {
+  position: absolute;
+  z-index: 9;
+  border: 2px dashed var(--accent-active);
+  border-radius: var(--radius);
+  background: var(--accent-active-soft);
+  pointer-events: none;
+  transition: all 0.12s ease;
+}
+/* The window menu's 3×3 grid: each cell a small drawing of where the window goes. */
+.wm-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.25rem;
+}
+.wm-grid-cell {
+  position: relative;
+  height: 2rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+}
+.wm-grid-cell:hover {
+  border-color: var(--accent-active);
+}
+.wm-grid-cell > span {
+  position: absolute;
+  border-radius: 2px;
+  background: var(--accent-primary);
+  opacity: 0.6;
+}
+.wm-grid-cell:hover > span {
+  background: var(--accent-active);
+  opacity: 1;
+}
+.wm-grid-cell[data-snap="tl"] > span { inset: 3px 50% 50% 3px; }
+.wm-grid-cell[data-snap="top"] > span { inset: 3px 3px 50% 3px; }
+.wm-grid-cell[data-snap="tr"] > span { inset: 3px 3px 50% 50%; }
+.wm-grid-cell[data-snap="left"] > span { inset: 3px 50% 3px 3px; }
+.wm-grid-cell[data-snap="max"] > span { inset: 3px; }
+.wm-grid-cell[data-snap="right"] > span { inset: 3px 3px 3px 50%; }
+.wm-grid-cell[data-snap="bl"] > span { inset: 50% 50% 3px 3px; }
+.wm-grid-cell[data-snap="bottom"] > span { inset: 50% 3px 3px 3px; }
+.wm-grid-cell[data-snap="br"] > span { inset: 50% 3px 3px 50%; }
 @media (prefers-reduced-motion: reduce) {
-  .osiris-answers-dock {
-    animation: none;
+  .wm-preview {
+    transition: none;
   }
 }

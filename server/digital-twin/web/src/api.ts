@@ -114,6 +114,9 @@ const query = (f: object) => new URLSearchParams(Object.entries(f).filter(([, v]
 
 export const api = {
   me: () => call<{ sub: string; name: string | null; email: string | null; picture: string | null; admin: boolean } | null>("/api/me"),
+  // The user's own preferences, the same in every twin (the windows' layout).
+  preference: async (key: "layout") => (await call<{ value: unknown }>(`/api/me/preferences/${key}`)).value,
+  savePreference: (key: "layout", value: unknown) => send<void>("PUT", `/api/me/preferences/${key}`, { value }),
   // The digital twins the user may see; admins also manage them and the kinds of source they can have.
   instances: async () => (await call<{ value: InstanceSummary[] }>("/api/instances")).value,
   sourceTypes: async () => (await call<{ value: SourceType[] }>("/api/source-types")).value,

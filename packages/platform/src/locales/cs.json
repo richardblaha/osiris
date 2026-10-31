@@ -142,7 +142,8 @@
       "opsProject": "Tento projekt nesmí spravovat cluster.",
       "instanceNotFound": "Takové digitální dvojče není, nebo ho nesmíš vidět.",
       "adminOnly": "Digitální dvojčata spravují jen administrátoři.",
-      "sourceType": "Neznámý druh zdroje."
+      "sourceType": "Neznámý druh zdroje.",
+      "preferenceTooLarge": "Předvolba je příliš velká."
     },
     "validation": {
       "invalid": "Neplatný požadavek",

@@ -3,5 +3,5 @@
   "compilerOptions": { "types": ["node"] },
   "include": ["src", "test"],
   // The view's tests run the PWA's own code (its types are the web tsconfig's, checked there).
-  "exclude": ["test/scene.test.ts", "test/layers.test.ts"]
+  "exclude": ["test/scene.test.ts", "test/layers.test.ts", "test/windows.test.ts"]
 }

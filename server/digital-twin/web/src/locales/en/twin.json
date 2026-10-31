@@ -57,7 +57,6 @@
   "chat": {
     "title": "Osiris",
     "new": "New conversation",
-    "hide": "Hide",
     "thinking": "Thinking…",
     "answered": "(answered)",
     "cancelled": "(cancelled)",
@@ -73,7 +72,11 @@
     "yes": "Yes, run it",
     "no": "No",
     "cancel": "Cancel",
-    "subtitle": "Answers"
+    "subtitle": "Answers",
+    "history": "Conversations",
+    "noHistory": "No conversations yet.",
+    "untitled": "Untitled conversation",
+    "empty": "Ask Osiris about the cluster below."
   },
   "bottomBar": "Bottom bar: time, display, chat",
   "display": {
@@ -141,5 +144,36 @@
     "pgs": "PGs {{clean}}/{{total}} clean",
     "mons": "MON {{quorum}}/{{total}} in quorum",
     "io": "read {{read}}, write {{write}}"
+  },
+  "windows": {
+    "title": "Windows",
+    "reset": "Default layout",
+    "show": "Show {{name}}",
+    "help": "Drag a window by its header: to an edge or a corner it snaps, onto another window's header it joins it as a tab.",
+    "restore": "Restore",
+    "maximize": "Maximize",
+    "close": "Close",
+    "arrange": "Arrange",
+    "snapTo": "Put the window",
+    "detach": "Take “{{name}}” out",
+    "joinWith": "Join with",
+    "snap": {
+      "tl": "Top left quarter",
+      "top": "Top half",
+      "tr": "Top right quarter",
+      "left": "Left half",
+      "max": "Whole view",
+      "right": "Right half",
+      "bl": "Bottom left quarter",
+      "bottom": "Bottom half",
+      "br": "Bottom right quarter"
+    },
+    "panel": {
+      "properties": "properties",
+      "logs": "logs",
+      "metrics": "metrics",
+      "traces": "traces",
+      "chat": "conversation"
+    }
   }
 }

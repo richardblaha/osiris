@@ -233,6 +233,21 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     expect(((await (await as("alice", "/api/instances/k8s/me/filters?kind=logs")).json()) as { value: unknown[] }).value).toEqual([]);
   });
 
+  it("keeps each user's preferences (the windows' layout) their own, across twins", async () => {
+    const users: TokenVerifier = { identify: async (token) => ({ sub: token, name: token, email: null, picture: null, groups: ["admin"] }) };
+    const instance = app({ verifier: users });
+    const as = (who: string, path: string, init: RequestInit = {}) =>
+      instance.request(path, { ...init, headers: { authorization: `Bearer ${who}`, "content-type": "application/json", ...init.headers } });
+    const layout = { version: 1, groups: [{ id: "chat", tabs: ["chat"], active: "chat", rect: { x: 0, y: 0, w: 0.5, h: 1 }, z: 1 }], hidden: [] };
+    expect(((await (await as("alice", "/api/me/preferences/layout")).json()) as { value: unknown }).value).toBeNull();
+    expect((await as("alice", "/api/me/preferences/layout", { method: "PUT", body: JSON.stringify({ value: layout }) })).status).toBe(204);
+    expect(((await (await as("alice", "/api/me/preferences/layout")).json()) as { value: unknown }).value).toEqual(layout);
+    expect(((await (await as("bob", "/api/me/preferences/layout")).json()) as { value: unknown }).value).toBeNull();
+    // Only known keys, and not too large.
+    expect((await as("alice", "/api/me/preferences/other")).status).toBe(400);
+    expect((await as("alice", "/api/me/preferences/layout", { method: "PUT", body: JSON.stringify({ value: "x".repeat(40_000) }) })).status).toBe(413);
+  });
+
   it("keeps named dashboards everyone shares, their panels validated", async () => {
     const instance = app();
     const put = (id: string, body: unknown) => instance.request(`/api/instances/k8s/dashboards/${id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
