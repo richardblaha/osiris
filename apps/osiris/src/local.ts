@@ -33,8 +33,15 @@ export class LocalFeatures implements FeatureSource {
   }
 }
 
-/** Who uses a local agent: the computer's user, named as in their git config when there is one. */
+/**
+ * Who uses a local agent: the computer's user, named as in their git config when there is one. In a container the
+ * launcher passes them (`OSIRIS_USER_LOGIN`, `_NAME`, `_EMAIL`), as the container has neither.
+ */
 export function localUser(): InternalUser {
+  const env = process.env;
+  if (env.OSIRIS_USER_LOGIN) {
+    return { sub: `local:${env.OSIRIS_USER_LOGIN}`, name: env.OSIRIS_USER_NAME || env.OSIRIS_USER_LOGIN, email: env.OSIRIS_USER_EMAIL || null, phone: null, picture: null };
+  }
   const git = (key: string) => {
     try {
       return execFileSync("git", ["config", "--get", key], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;

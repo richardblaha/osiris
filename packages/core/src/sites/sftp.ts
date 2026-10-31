@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { egressProxy, tunnel } from "../net/egress.ts";
 import { posix } from "node:path";
 import type { Records } from "../projects/records.ts";
 import type { PublishResult, SiteTarget } from "@osiris/shared";
@@ -87,6 +88,8 @@ async function connect(store: SiteTargetStore, target: SiteTarget & { secret: st
   await sftp.connect({
     host: target.host,
     port: target.port,
+    // Behind the egress gate, SSH runs over its tunnel.
+    ...(egressProxy() ? { sock: await tunnel(target.host, target.port) } : {}),
     username: target.username,
     ...(target.auth === "key" ? { privateKey: target.secret } : { password: target.secret }),
     readyTimeout: 15_000,

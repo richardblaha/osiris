@@ -8,7 +8,7 @@ const bin = join(import.meta.dirname, "../bin/osiris.mjs");
 /** The osiris command over a folder, without model keys (it fails at the models, after the lock). */
 const osiris = (folder: string) => {
   try {
-    return { code: 0, out: execFileSync(process.execPath, [bin, folder, "--port", "0"], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: mkdtempSync(join(tmpdir(), "osiris-home-")) }, timeout: 60_000 }) };
+    return { code: 0, out: execFileSync(process.execPath, [bin, folder, "--port", "0"], { encoding: "utf8", env: { PATH: process.env.PATH, HOME: mkdtempSync(join(tmpdir(), "osiris-home-")), OSIRIS_CONTAINER: "0" }, timeout: 60_000 }) };
   } catch (err) {
     return { code: (err as { status: number }).status, out: String((err as { stdout: string }).stdout) };
   }

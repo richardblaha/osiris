@@ -51,7 +51,7 @@ export interface MeResponse {
 }
 
 /** What a system admin can switch on or off per project. */
-export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public", "database", "workflows", "infrastructure"] as const;
+export const FEATURES = ["knowledge", "skills", "memory", "mcp", "http", "whatsapp", "files", "scheduler", "sites", "integrations", "public", "database", "workflows", "infrastructure", "customTools"] as const;
 export type Feature = (typeof FEATURES)[number];
 export type ProjectFeatures = Record<Feature, boolean>;
 
@@ -293,6 +293,10 @@ export interface BuiltinTool {
   featureOn: boolean;
   /** Switched off by a system admin. */
   disabled: boolean;
+  /** Switched off by the project's `.osiris/tools.json`. */
+  configOff?: boolean;
+  /** The project's own tool from `.osiris/tools/` (feature `customTools`). */
+  custom?: boolean;
 }
 
 /** A project as system admins see it (`/api/admin/projects`). */

@@ -19,6 +19,7 @@ import { slug } from "@osiris/core/files/sync.ts";
 import { DOCUMENT_ID } from "@osiris/core/rag/store.ts";
 import { TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
 import { SKILL_NAME } from "@osiris/core/agent/skills.ts";
+import { CUSTOM_MODULE } from "@osiris/core/tools/config.ts";
 import { FileError, type FileErrorCode, type FileLocation } from "@osiris/core/files/store.ts";
 import { streamRun, toThreadMessages } from "@osiris/core/agent/run.ts";
 import { MCP_SERVER_NAME, mcpOwner } from "@osiris/core/mcp/store.ts";
@@ -157,6 +158,10 @@ export interface RuntimeAppDeps {
   /** Members and scheduled tasks, which control counts, for the quota meters. */
   counts?: () => Promise<{ members: number; schedules: number; dashboards: number }>;
 }
+
+/** Origins the local clients run on: localhost (this agent's own PWA, dev servers), a VS Code webview, a Tauri window. */
+const LOCAL_CLIENT_ORIGINS = [/^https?:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/i, /^vscode-webview:\/\/[0-9a-z-]+$/i, /^tauri:\/\/localhost$/i, /^https?:\/\/tauri\.localhost$/i];
+const localClientOrigin = (origin: string) => (LOCAL_CLIENT_ORIGINS.some((re) => re.test(origin)) ? origin : null);
 
 /**
  * The project runtime's API. Every request carries an internal token: user calls come from the gateway (which had control
@@ -770,13 +775,31 @@ export function createRuntimeApp({ project, verifier, local, activity, snapshot,
       return c.json<UsageBreakdown>({ ...b, users: role === "admin" ? b.users : b.users.filter((u) => u.userId === user.sub) });
     })
 
-    // The assistant's built-in tools and whether each is available (its feature on, not switched off).
+    // The assistant's built-in tools and the project's own, and whether each is available (its feature on, not switched
+    // off by a system admin nor by .osiris/tools.json).
     .get("/tools", async (c) => {
       const { project } = c.get("ctx");
-      const [on, off] = await Promise.all([project.features.get(), project.features.disabledTools()]);
-      return c.json<BuiltinTool[]>(
-        project.builtinTools.map(([feature, t]) => ({ name: t.name, description: t.description, feature, featureOn: on[feature], disabled: off.includes(t.name) })),
-      );
+      const [on, off, policy, custom] = await Promise.all([
+        project.features.get(),
+        project.features.disabledTools(),
+        project.toolPolicy(),
+        project.customTools.list(project.reservedToolNames),
+      ]);
+      return c.json<BuiltinTool[]>([
+        ...project.builtinTools.map(([feature, t]) => ({
+          name: t.name,
+          description: t.description,
+          feature,
+          featureOn: on[feature],
+          disabled: off.includes(t.name),
+          configOff: !policy.allows(t.name, project.toolModules.get(t.name) ?? ""),
+        })),
+        ...custom.flatMap(({ name, tool }) =>
+          tool
+            ? [{ name, description: tool.description, feature: "customTools" as const, featureOn: on.customTools, disabled: off.includes(name), configOff: !policy.allows(name, CUSTOM_MODULE), custom: true }]
+            : [],
+        ),
+      ]);
     })
 
     .put("/settings", async (c) => {
@@ -1022,8 +1045,9 @@ export function createRuntimeApp({ project, verifier, local, activity, snapshot,
 
   const app = new Hono()
     .use(telemetryMiddleware())
-    // Local clients come from other origins (a VS Code webview, a desktop window); the token, not a cookie, lets them in.
-    .use(local ? cors({ origin: (o) => o, allowHeaders: ["authorization", "content-type", "accept-language", "x-project-id"], exposeHeaders: ["content-disposition"] }) : (_c, next) => next())
+    // Local clients come from other origins (a VS Code webview, a desktop window, the PWA this agent serves itself); the
+    // token, not a cookie, lets them in, and only their origins may read the answers.
+    .use(local ? cors({ origin: localClientOrigin, allowHeaders: ["authorization", "content-type", "accept-language", "x-project-id"], exposeHeaders: ["content-disposition"] }) : (_c, next) => next())
     .use(async (c, next) => {
       // Shutting down for sleep: the caller wakes the runtime again and retries.
       if (activity.sleeping && c.req.path !== "/health") return c.json({ error: "Runtime is going to sleep" }, 503, { [SLEEPING_HEADER]: "1" });

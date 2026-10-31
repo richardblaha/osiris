@@ -1,6 +1,7 @@
 import { connect } from "node:tls";
 import { once } from "node:events";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
+import { egressProxy, tunnel } from "@osiris/core/net/egress.ts";
 
 /** Read-only POP3 over implicit TLS. Never issues DELE; IDs are stable UIDL values. */
 export async function pop3Read(
@@ -8,7 +9,10 @@ export async function pop3Read(
   uid?: string,
   limit = 20,
 ): Promise<string> {
-  const socket = connect({ host: endpoint.host, port: endpoint.port, servername: endpoint.host });
+  // Behind the egress gate, TLS runs over its tunnel.
+  const socket = egressProxy()
+    ? connect({ socket: await tunnel(endpoint.host, endpoint.port), servername: endpoint.host })
+    : connect({ host: endpoint.host, port: endpoint.port, servername: endpoint.host });
   socket.setTimeout(15_000, () => socket.destroy(new Error("POP3 timeout")));
   // Keep the error handled between reads as well.
   let failure: Error | undefined;

@@ -1,6 +1,7 @@
 import { lookup } from "node:dns/promises";
 import { BlockList, isIP } from "node:net";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
+import { egressProxy } from "../net/egress.ts";
 
 /** Addresses a project's MCP URL must not reach: loopback, private, link-local (cloud metadata), CGNAT, ... */
 const blocked = new BlockList();
@@ -26,7 +27,8 @@ for (const [net, prefix] of [
   blocked.addSubnet(net, prefix, "ipv6");
 }
 
-function isBlocked(address: string): boolean {
+/** Loopback, private, link-local (cloud metadata), CGNAT, multicast: what no project's request may reach. */
+export function isBlockedAddress(address: string): boolean {
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/i.exec(address)?.[1];
   if (mapped) return blocked.check(mapped, "ipv4");
   return blocked.check(address, isIP(address) === 6 ? "ipv6" : "ipv4");
@@ -39,6 +41,8 @@ export class UnsafeUrlError extends LocalizedError {}
  * Requires https and a hostname that resolves only to public addresses. `allowPrivate` (development only)
  * also permits http and private addresses, for MCP servers on localhost.
  * DNS can still change between this check and the connection (rebinding); the check runs again on every connect.
+ * Behind the egress gate (a contained local agent) names aren't resolved here: the gate resolves and checks them on
+ * every connection, so only an address written in the URL is checked now.
  */
 export async function assertSafePublicUrl(raw: string, { allowPrivate = false } = {}): Promise<URL> {
   let url: URL;
@@ -55,8 +59,9 @@ export async function assertSafePublicUrl(raw: string, { allowPrivate = false } 
   if (url.protocol !== "https:") throw new UnsafeUrlError("errors.url.https");
 
   const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (egressProxy() && !isIP(host)) return url;
   const addresses = isIP(host) ? [host] : (await lookup(host, { all: true }).catch(() => [])).map((a) => a.address);
   if (!addresses.length) throw new UnsafeUrlError("errors.url.unresolved", { host });
-  if (addresses.some(isBlocked)) throw new UnsafeUrlError("errors.url.private");
+  if (addresses.some(isBlockedAddress)) throw new UnsafeUrlError("errors.url.private");
   return url;
 }

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { newState, pkcePair } from "@osiris/shared/pkce.ts";
 
 // Signing in to osiris-server as a native app (RFC 8252, authorization code with PKCE): the parts the terminal client
 // and the VS Code extension share. Where they keep the tokens is theirs.
@@ -23,14 +23,14 @@ const discover = async (server: string) => {
 
 /** Where to send the browser, with the verifier and state to keep until it comes back. */
 export async function signInUrl(server: string, clientId: string, redirect: string) {
-  const verifier = randomBytes(32).toString("base64url");
-  const state = randomBytes(16).toString("base64url");
+  const { verifier, challenge } = pkcePair();
+  const state = newState();
   const url = `${(await discover(server)).authorization_endpoint}?${new URLSearchParams({
     client_id: clientId,
     redirect_uri: redirect,
     response_type: "code",
     scope: "openid profile email",
-    code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+    code_challenge: challenge,
     code_challenge_method: "S256",
     state,
   })}`;

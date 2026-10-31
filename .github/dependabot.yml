@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # pnpm workspace: one lockfile at the root.
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Group the weekly updates into one PR per area to keep the queue small.
+    groups:
+      dev-dependencies:
+        dependency-type: "development"
+      opentelemetry:
+        patterns: ["@opentelemetry/*"]
+      aws-sdk:
+        patterns: ["@aws-sdk/*"]

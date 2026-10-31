@@ -19,14 +19,16 @@ import { configuredLocale, HttpError, ValidationError } from "@osiris/platform/i
 const scheduledRun = z.object({ title: z.string().min(1).max(100), prompt: z.string().min(1).max(4000), idempotencyKey: z.string().min(1).max(200) });
 const whatsappMessage = z.object({ messageId: z.string().min(1).max(200), text: z.string().min(1).max(20_000), attachment: z.object({ name: z.string().max(200), mime: z.string().max(100), data: z.string().max(28_000_000).regex(/^[A-Za-z0-9+/]*={0,2}$/) }).optional() });
 
-/** A run's stored answer, so a repeated request (lost lease, redelivery) doesn't run the agent twice. */
+/** A run's stored answer, so a repeated request (lost lease, redelivery) doesn't run the agent twice. The record's lock makes the check-and-store atomic: a redelivery that arrives while the run is in progress waits for it and then reads the stored answer. */
 async function once(project: Project, key: string, work: () => Promise<{ threadId: string; reply: string }>) {
   const file = `private/runs/${idName(key)}.json`;
-  const done = await project.records.read<{ threadId: string; reply: string }>(file);
-  if (done) return done;
-  const result = await work();
-  await project.records.write(file, { threadId: result.threadId, reply: result.reply });
-  return result;
+  return project.records.lock(file, async () => {
+    const done = await project.records.read<{ threadId: string; reply: string }>(file);
+    if (done) return done;
+    const result = await work();
+    await project.records.write(file, { threadId: result.threadId, reply: result.reply });
+    return result;
+  });
 }
 
 export function createInternalRoutes({

@@ -122,6 +122,13 @@ WORKDIR /app/apps/osiris
 USER node
 CMD ["node_modules/.bin/tsx", "src/index.ts"]
 
+# The local agent's image (`osiris <folder>` runs it, launcher.ts): the runtime with the PWA, started as cli.ts over
+# /project, and the gate (gate-cli.ts) from the same image. Run as the user's uid, so nothing here is written to.
+FROM runtime AS local
+COPY --from=web-build /app/apps/osiris-pwa/dist apps/osiris-pwa/dist
+ENV STATIC_DIR=/app/apps/osiris-pwa/dist
+CMD ["node_modules/.bin/tsx", "src/cli.ts", "/project"]
+
 FROM base AS operator
 RUN pnpm install --frozen-lockfile --prod --filter "@osiris/operator..." && pnpm store prune
 COPY packages/shared/src packages/shared/src

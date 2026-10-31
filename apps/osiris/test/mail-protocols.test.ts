@@ -1,4 +1,5 @@
-import { EventEmitter } from "node:events";
+import { EventEmitter, once } from "node:events";
+import { createServer, type AddressInfo } from "node:net";
 import { describe, expect, it, vi } from "vitest";
 import { pop3Read } from "@osiris/tools-integrations/pop3.ts";
 import { mailTools } from "@osiris/tools-integrations/mail.ts";
@@ -51,6 +52,26 @@ describe("standard mail protocols", () => {
     const missing = popServer();
     await expect(pop3Read(endpoint, "absent")).rejects.toThrow("not found");
     expect(missing.destroyed).toBe(true);
+  });
+
+  it("behind the egress gate, runs POP3's TLS over the gate's tunnel instead of connecting itself", async () => {
+    const asked: string[] = [];
+    const gate = createServer((s) => s.once("data", (d) => (asked.push(String(d).split("\r\n")[0]!), s.write("HTTP/1.1 200 Connection Established\r\n\r\n"))));
+    gate.listen(0, "127.0.0.1");
+    await once(gate, "listening");
+    process.env.OSIRIS_EGRESS_PROXY = `http://127.0.0.1:${(gate.address() as AddressInfo).port}`;
+    try {
+      popServer();
+      await pop3Read(endpoint, undefined, 1);
+      expect(asked).toEqual(["CONNECT mail.example.cz:995 HTTP/1.1"]);
+      const options = mocks.connect.mock.calls.at(-1)![0] as { socket?: unknown; host?: string; servername?: string };
+      expect(options.socket).toBeDefined();
+      expect(options.host).toBeUndefined();
+      expect(options.servername).toBe("mail.example.cz");
+    } finally {
+      delete process.env.OSIRIS_EGRESS_PROXY;
+      gate.close();
+    }
   });
 
   it("sends with configured sender, mandatory STARTTLS, and closes the transport", async () => {

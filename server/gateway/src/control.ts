@@ -53,4 +53,9 @@ export class ControlDirectory implements RuntimeLocator {
   async wake(project: string) {
     await this.call<void>(`/projects/${encodeURIComponent(project)}/wake`, { method: "POST" });
   }
+
+  /** The runtime may have moved (e.g. control restarted and gave it another port): resolve it again. */
+  invalidate(project: string) {
+    this.endpoints.delete(project);
+  }
 }

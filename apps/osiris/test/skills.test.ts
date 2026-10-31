@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
-import { SkillStore, loadSkills, parseSkill } from "@osiris/core/agent/skills.ts";
+import { loadSkills, parseSkill } from "@osiris/core/agent/skills.ts";
 import { createTestProjects } from "./helpers.ts";
 
 const ctx = { thread_id: "t", project_id: "a", user_id: "u", role: "admin" as const, channel: "web" as const };
@@ -60,48 +60,60 @@ describe("skills", () => {
     expect(result?.text).toBe("Uveď IČO a datum splatnosti.");
   });
 
-  it("copies the bundled skills into each project once: the project's to edit or delete for good", async () => {
+  it("keeps the bundled skills as a layer below the project's: replaced by a copy, back when the copy is deleted", async () => {
     const bundled = [{ name: "faktura", description: "Obecná", instructions: "Obecný postup.", requires: "database" as const }];
     const { projects } = createTestProjects([], bundled);
     const a = await projects.get("a");
     const b = await projects.get("b");
-    // Every project starts with them as its own.
-    expect(await a.skills.list()).toEqual([{ name: "faktura", description: "Obecná", source: "project", requires: "database" }]);
-    expect((await b.skills.get("faktura"))?.instructions).toBe("Obecný postup.");
+    // Every project has them, without a copy of its own.
+    expect(await a.skills.list()).toEqual([{ name: "faktura", description: "Obecná", source: "bundled", requires: "database" }]);
+    expect(await a.skills.projectSkills()).toEqual([]);
+    expect((await b.skills.get("faktura"))?.source).toBe("bundled");
 
-    // Edited in one project, it stays as it was in the other.
+    // The project's skill of the same name replaces it there, and only there.
     await a.skills.put({ name: "faktura", description: "Naše", instructions: "Náš postup." });
     await a.skills.put({ name: "revize", description: "Revize elektro", instructions: "Postup revize." });
+    expect((await a.skills.get("faktura"))?.instructions).toBe("Náš postup.");
     expect((await b.skills.get("faktura"))?.instructions).toBe("Obecný postup.");
+    expect((await a.skills.get("faktura", "", "bundled"))?.instructions).toBe("Obecný postup.");
 
     // A user's own skill wins over the project's, for them alone.
     await a.skills.put({ name: "faktura", description: "Moje", instructions: "Můj postup." }, "personal", "bob");
     expect((await a.skills.list("bob")).filter((s) => s.name === "faktura").map((s) => [s.source, !!s.overridden])).toEqual([
       ["personal", false],
       ["project", true],
+      ["bundled", true],
     ]);
     expect((await a.skills.get("faktura", "bob"))?.instructions).toBe("Můj postup.");
     expect((await a.skills.get("faktura", "carol"))?.instructions).toBe("Náš postup.");
     expect((await a.skills.get("faktura", "bob", "project"))?.instructions).toBe("Náš postup.");
 
-    // Deleted, it's gone — and the next init doesn't bring it back.
+    // Deleting the project's copy brings the bundled one back; the bundled one itself can't be deleted.
     expect(await a.skills.delete("faktura")).toBe(true);
-    expect(await a.skills.get("faktura")).toBeUndefined();
-    expect(await a.skills.seed()).toEqual([]);
-    expect(await a.skills.get("faktura")).toBeUndefined();
+    expect((await a.skills.get("faktura"))?.instructions).toBe("Obecný postup.");
     expect(await a.skills.delete("faktura")).toBe(false);
+    expect((await a.skills.get("faktura"))?.source).toBe("bundled");
   });
 
-  it("copies a bundled skill new in a later release into a project that has been running", async () => {
-    const { projects } = createTestProjects([], [{ name: "faktura", description: "Obecná", instructions: "Postup." }]);
-    const a = await projects.get("a");
-    const later = new SkillStore(a.records, [
-      { name: "faktura", description: "Obecná", instructions: "Postup." },
-      { name: "nabidka", description: "Nabídka", instructions: "Jak psát nabídku." },
+  it("saves a skill with save_skill: an admin's for the project, a member's for themselves", async () => {
+    const { projects } = createTestProjects([
+      new AIMessage({ content: "", tool_calls: [{ id: "s1", name: "save_skill", args: { name: "nabidka", description: "Cenová nabídka", instructions: "1. Zjisti rozsah." } }] }),
+      new AIMessage("Uloženo."),
+      new AIMessage({ content: "", tool_calls: [{ id: "s2", name: "save_skill", args: { name: "nabidka", description: "Moje", instructions: "Můj postup.", scope: "project" } }] }),
+      new AIMessage("Nejde."),
+      new AIMessage({ content: "", tool_calls: [{ id: "s3", name: "save_skill", args: { name: "nabidka", description: "Moje", instructions: "Můj postup." } }] }),
+      new AIMessage("Uloženo."),
     ]);
-    await a.skills.delete("faktura");
-    expect(await later.seed()).toEqual(["nabidka"]);
-    expect((await later.list()).map((s) => s.name)).toEqual(["nabidka"]);
+    const a = await projects.get("a");
+    await a.graph.invoke({ messages: [new HumanMessage("Ulož")] }, { configurable: { ...ctx, user_id: "admin", role: "admin" } });
+    expect((await a.skills.get("nabidka"))?.source).toBe("project");
+
+    const member = { ...ctx, thread_id: "t2", user_id: "bob", role: "member" as const };
+    const refused = await a.graph.invoke({ messages: [new HumanMessage("Ulož")] }, { configurable: member });
+    expect(refused.messages.find((m) => ToolMessage.isInstance(m))?.text).toMatch(/jen správce/);
+    await a.graph.invoke({ messages: [new HumanMessage("Ulož")] }, { configurable: { ...member, thread_id: "t3" } });
+    expect((await a.skills.get("nabidka", "bob"))?.instructions).toBe("Můj postup.");
+    expect((await a.skills.get("nabidka", "carol"))?.instructions).toBe("1. Zjisti rozsah.");
   });
 
   it("omits the skills section when there are none", async () => {
@@ -118,17 +130,18 @@ describe("skills", () => {
 });
 
 describe("bundled skills", () => {
-  it("load, and those needing a feature are offered only while it's on", async () => {
+  it("are only skill-creator, offered whenever the project has skills", async () => {
     const bundled = loadSkills(join(import.meta.dirname, "..", "skills"));
-    expect(bundled.filter((s) => s.requires === "database").map((s) => s.name)).toEqual(["crm", "kontakty"]);
+    expect(bundled.map((s) => s.name)).toEqual(["skill-creator"]);
+    expect(bundled[0]!.requires).toBeUndefined();
 
     const { projects, model } = createTestProjects([new AIMessage("Ahoj"), new AIMessage("Ahoj")], bundled);
     const a = await projects.get("a");
     const ctx = { thread_id: "t", project_id: "a", user_id: "u", role: "member" as const, channel: "web" as const };
     await a.graph.invoke({ messages: [new HumanMessage("Ahoj")] }, { configurable: ctx });
-    expect(model.calls[0]?.[0]?.text).toMatch(/- kontakty: /);
-    await a.features.set({ database: false });
+    expect(model.calls[0]?.[0]?.text).toMatch(/- skill-creator: /);
+    await a.features.set({ skills: false });
     await a.graph.invoke({ messages: [new HumanMessage("Ahoj")] }, { configurable: { ...ctx, thread_id: "t2" } });
-    expect(model.calls[1]?.[0]?.text).not.toMatch(/kontakty|# DATABÁZE/);
+    expect(model.calls[1]?.[0]?.text).not.toMatch(/skill-creator/);
   });
 });

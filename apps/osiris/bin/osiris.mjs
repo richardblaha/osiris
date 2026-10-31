@@ -19,4 +19,6 @@ if (Number(process.versions.node.split(".")[0]) < 24) {
 const { register } = await import("tsx/esm/api");
 // No tsconfig: the agent runs in the user's folder, whose own tsconfig.json must not change how Osiris compiles.
 register({ tsconfig: false });
-await import("../src/cli.ts");
+// In a container by default (launcher.ts); --no-container, or a run inside a container already, starts it as a process.
+const { launch } = await import("../src/launcher.ts");
+await launch(process.argv.slice(2));

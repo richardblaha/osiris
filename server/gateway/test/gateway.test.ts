@@ -16,8 +16,9 @@ const verifier = new InternalVerifier(keys.publicKey);
 
 /** The gateway in front of a fake control and fake runtimes that echo what they were sent. */
 function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcounter?: string } } = {}) {
-  const calls: { service: string; path: string; method: string; auth: string | null; projectHeader: string | null; body?: string }[] = [];
+  const calls: { service: string; host?: string; path: string; method: string; auth: string | null; projectHeader: string | null; body?: string }[] = [];
   const asleep = new Set<string>(["beta"]);
+  const moved = new Set<string>();
   const woken: string[] = [];
   const fetchFn = (async (url: string, init: RequestInit = {}) => {
     const u = new URL(url);
@@ -31,12 +32,15 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
         return new Response(null, { status: 204 });
       }
       const endpoint = /^\/internal\/gateway\/projects\/([^/]+)\/endpoint$/.exec(u.pathname);
-      if (endpoint) return Response.json({ url: `http://runtime-${endpoint[1]}` });
+      if (endpoint) {
+        const id = endpoint[1]!;
+        return Response.json({ url: moved.has(id) ? `http://runtime2-${id}` : `http://runtime-${id}` });
+      }
       if (u.pathname.startsWith("/project-logos/")) return new Response("png", { headers: { "content-type": "image/png", "set-cookie": "x=1", "x-internal": "secret" } });
     }
-    const service = u.host === "control" ? "control" : u.host.replace("runtime-", "");
-    // What Cilium answers for a Service without endpoints.
-    if (asleep.has(service)) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "EPERM" } });
+    const service = u.host === "control" ? "control" : u.host.replace(/^runtime2?-/, "");
+    // What Cilium answers for a Service without endpoints; a moved runtime's old address is dead too.
+    if (asleep.has(service) || (moved.has(service) && u.host === `runtime-${service}`)) throw Object.assign(new TypeError("fetch failed"), { cause: { code: "EPERM" } });
     if (u.pathname === "/health") return Response.json({ ok: true });
     if (u.host === "tts") {
       calls.push({ service: "tts", path: u.pathname, method: init.method ?? "GET", auth: headers.get("authorization"), projectHeader: null, body: String(init.body) });
@@ -44,6 +48,7 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
     }
     calls.push({
       service,
+      host: u.host,
       path: u.pathname + u.search,
       method: init.method ?? "GET",
       auth: headers.get("authorization"),
@@ -70,7 +75,7 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcount
   });
   const as = (token: string, project?: string) => (path: string, init: RequestInit = {}) =>
     app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(project ? { "x-project-id": project } : {}), ...(init.headers as Record<string, string>) } });
-  return { app, as, calls, woken };
+  return { app, as, calls, woken, move: (project: string) => moved.add(project) };
 }
 
 describe("speech", () => {
@@ -197,6 +202,17 @@ describe("gateway", () => {
     expect(res.status).toBe(200);
     expect(woken).toEqual(["beta"]);
     expect(calls).toMatchObject([{ service: "beta", method: "PUT", body: "ahoj" }]);
+  });
+
+  it("resolves the runtime's endpoint again when it moved (e.g. control restarted and gave it another port)", async () => {
+    const { as, calls, woken, move } = setup();
+    expect((await as("alice:project=acme")("/threads")).status).toBe(200);
+    expect(calls[0]).toMatchObject({ service: "acme", host: "runtime-acme" });
+    move("acme");
+    const res = await as("alice:project=acme")("/threads");
+    expect(res.status).toBe(200);
+    expect(woken).toEqual(["acme"]);
+    expect(calls[1]).toMatchObject({ service: "acme", host: "runtime2-acme", path: "/api/threads" });
   });
 
   it("limits body size and agent runs per user", async () => {

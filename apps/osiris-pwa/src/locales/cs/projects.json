@@ -56,6 +56,10 @@
     "infrastructure": {
       "label": "Infrastruktura",
       "hint": "asistent spravuje Kubernetes cluster a Ceph (před každou změnou se zeptá) a ovládá digitální dvojče; jen pro projekty, které dvojče povolí"
+    },
+    "customTools": {
+      "label": "Vlastní nástroje",
+      "hint": "vlastní nástroje projektu z .osiris/tools/, spouštěné v odděleném procesu bez přístupu k datům projektu"
     }
   },
   "new": "Nový projekt",

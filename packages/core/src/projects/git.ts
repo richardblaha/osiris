@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { egressProxy } from "../net/egress.ts";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,6 +46,8 @@ export class ProjectGit {
       GIT_CONFIG_GLOBAL: "/dev/null",
       GIT_CONFIG_NOSYSTEM: "1",
       GIT_TERMINAL_PROMPT: "0",
+      // Behind the egress gate (a contained local agent), git reaches the remote only through it.
+      ...(egressProxy() ? { https_proxy: egressProxy()!.href } : {}),
     };
     let askpass: string | undefined;
     if (auth) {

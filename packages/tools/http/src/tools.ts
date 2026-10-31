@@ -1,7 +1,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { assertSafePublicUrl, UnsafeUrlError } from "@osiris/core/mcp/url.ts";
-import { redact, SecretUseError, templateHost } from "@osiris/core/vault/template.ts";
+import { UnsafeUrlError } from "@osiris/core/mcp/url.ts";
+import { SecretUseError } from "@osiris/core/vault/template.ts";
+import { fetchWithSecrets } from "@osiris/core/vault/fetch.ts";
 import type { SecretVault } from "@osiris/core/vault/vault.ts";
 import { getRunContext } from "@osiris/core/agent/context.ts";
 
@@ -23,32 +24,14 @@ export function httpRequestTool(vault: SecretVault, { allowPrivate = false, fetc
   return tool(
     async ({ method, url, headers = {}, body }, config) => {
       const { user_id } = getRunContext(config);
-      let used: string[] = [];
       try {
-        const host = templateHost(url);
-        const texts: Record<string, string> = { url, body: body ?? "" };
-        for (const [k, v] of Object.entries(headers)) texts[`h:${k}`] = v;
-        const result = await vault.fill(texts, { userId: user_id, host });
-        used = result.used;
-        const target = await assertSafePublicUrl(result.filled.url!, { allowPrivate });
-
-        const res = await f(target, {
-          method,
-          headers: Object.fromEntries(Object.keys(headers).map((k) => [k, result.filled[`h:${k}`]!])),
-          body: body === undefined || method === "GET" ? undefined : result.filled.body,
-          redirect: "manual",
-          signal: AbortSignal.timeout(TIMEOUT_MS),
-        });
-        let text = await res.text();
-        if (text.length > MAX_RESPONSE_CHARS) text = `${text.slice(0, MAX_RESPONSE_CHARS)}\n… (zkráceno)`;
-        const location = res.headers.get("location");
-        const head = [`HTTP ${res.status}`, res.headers.get("content-type"), location && `Location: ${location}`]
-          .filter(Boolean)
-          .join("\n");
-        return redact(`${head}\n\n${text}`, used);
+        const res = await fetchWithSecrets(vault, { method, url, headers, body }, { userId: user_id, allowPrivate, fetch: f, timeoutMs: TIMEOUT_MS, maxChars: MAX_RESPONSE_CHARS });
+        const location = res.headers.location;
+        const head = [`HTTP ${res.status}`, res.headers["content-type"], location && `Location: ${location}`].filter(Boolean).join("\n");
+        return `${head}\n\n${res.text}${res.truncated ? "\n… (zkráceno)" : ""}`;
       } catch (err) {
         if (err instanceof SecretUseError || err instanceof UnsafeUrlError) return `Požadavek zamítnut: ${err.message}`;
-        return redact(`Požadavek selhal: ${err instanceof Error ? err.message : String(err)}`, used);
+        return `Požadavek selhal: ${err instanceof Error ? err.message : String(err)}`;
       }
     },
     {

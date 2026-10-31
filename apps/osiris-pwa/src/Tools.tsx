@@ -106,7 +106,7 @@ export function BuiltinTools({ projectId, systemAdmin }: { projectId: string; sy
             </h3>
             <ul className="mt-1 text-sm">
               {group.tools.map((t) => {
-                const on = t.featureOn && !t.disabled;
+                const on = t.featureOn && !t.disabled && !t.configOff;
                 return (
                   <li key={t.name} className="flex items-start gap-3 py-1.5 pe-2 pl-6">
                     {systemAdmin ? (
@@ -124,6 +124,7 @@ export function BuiltinTools({ projectId, systemAdmin }: { projectId: string; sy
                     )}
                     <span className={`min-w-0 flex-1 ${on ? "" : "text-fg-muted"}`}>
                       <code>{t.name}</code>
+                      {t.configOff && <span className="badge ms-2">{i18n("tools:configOff")}</span>}
                       <span className="line-clamp-2 text-xs text-fg-secondary">{t.description}</span>
                     </span>
                   </li>

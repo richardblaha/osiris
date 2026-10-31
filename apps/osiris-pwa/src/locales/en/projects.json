@@ -56,6 +56,10 @@
     "infrastructure": {
       "label": "Infrastructure",
       "hint": "the assistant manages the Kubernetes cluster and Ceph (asking before every change) and steers the digital twin; only for projects the twin allows"
+    },
+    "customTools": {
+      "label": "Own tools",
+      "hint": "the project's own tools from .osiris/tools/, run in a separate process without access to the project's data"
     }
   },
   "new": "New project",

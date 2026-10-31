@@ -29,6 +29,8 @@ for cmd in osiris osiris-cli; do
 #!/bin/sh
 # The agent serves this PWA, also when osiris-cli starts it.
 export STATIC_DIR="\${STATIC_DIR:-/usr/lib/osiris/pwa}"
+# The agent runs in this release's container image (osiris --no-container runs it as a process).
+export OSIRIS_IMAGE="\${OSIRIS_IMAGE:-ghcr.io/richardblaha/osiris-local:${VERSION}}"
 exec /usr/lib/osiris/node /usr/lib/osiris/$target "\$@"
 SH
   chmod 0755 "$root/usr/bin/$cmd"
@@ -40,6 +42,7 @@ Version: ${VERSION//-/\~}
 Architecture: amd64
 Maintainer: Richard Bláha <richardblaha@gmail.com>
 Depends: libc6 (>= 2.28), libstdc++6, git, ca-certificates
+Recommends: docker.io | podman-docker | docker-ce
 Section: utils
 Priority: optional
 Homepage: https://github.com/richardblaha/osiris

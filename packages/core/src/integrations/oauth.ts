@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { newState, pkcePair } from "@osiris/shared/pkce.ts";
 import { userDir, userIds, type Records } from "../projects/records.ts";
 import type { SecretBox } from "../secrets.ts";
 import { LocalizedError } from "@osiris/platform/i18n.ts";
@@ -126,8 +126,8 @@ export class IntegrationAccounts {
   async start(owner: string, provider: IntegrationProvider): Promise<string> {
     const { clientId } = this.client(provider);
     const config = PROVIDERS[provider];
-    const verifier = randomBytes(32).toString("base64url");
-    const state = randomBytes(24).toString("base64url");
+    const { verifier, challenge } = pkcePair();
+    const state = newState(24);
     const existing = await this.read(owner, provider);
     await this.write(owner, provider, { ...existing?.data, verifier }, { state });
     const params = new URLSearchParams({
@@ -136,7 +136,7 @@ export class IntegrationAccounts {
       response_type: "code",
       scope: config.scopes.join(" "),
       state,
-      code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+      code_challenge: challenge,
       code_challenge_method: "S256",
       ...config.extra,
     });

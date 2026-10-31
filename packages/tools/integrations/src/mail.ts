@@ -7,6 +7,8 @@ import { getRunContext } from "@osiris/core/agent/context.ts";
 import { assertSafePublicUrl } from "@osiris/core/mcp/url.ts";
 import type { StandardAccounts } from "@osiris/core/integrations/standard.ts";
 import { pop3Read } from "./pop3.ts";
+import type { Socket } from "node:net";
+import { egressProxy, tunnel } from "@osiris/core/net/egress.ts";
 
 export async function safeMailHost(host: string, allowPrivate = false) {
   await assertSafePublicUrl(`https://${host.includes(":") ? `[${host}]` : host}/`, { allowPrivate });
@@ -22,7 +24,9 @@ export function mailTools(accounts: StandardAccounts, allowPrivate = false, crea
       const transport = createTransport({ host: smtp.host, port: smtp.port, secure: smtp.secure,
         requireTLS: !smtp.secure, auth: { user: smtp.username, pass: smtp.password },
         connectionTimeout: 15_000, greetingTimeout: 15_000, socketTimeout: 30_000,
-        disableFileAccess: true, disableUrlAccess: true });
+        disableFileAccess: true, disableUrlAccess: true,
+        // Behind the egress gate: nodemailer gets the gate's tunnel (and then starts TLS over it itself).
+        ...(egressProxy() ? { getSocket: (_: unknown, done: (err: Error | null, s?: { connection: Socket }) => void) => void tunnel(smtp.host, smtp.port).then((connection) => done(null, { connection }), done) } : {}) });
       try {
         const result = await transport.sendMail({ from: a.from, to, subject, text: body });
         return JSON.stringify({ messageId: result.messageId, accepted: result.accepted, rejected: result.rejected });
@@ -41,6 +45,7 @@ export function mailTools(accounts: StandardAccounts, allowPrivate = false, crea
       }
       const client = new ImapFlow({ host: incoming.host, port: incoming.port, secure: true,
         auth: { user: incoming.username, pass: incoming.password }, logger: false,
+        ...(egressProxy() ? { proxy: egressProxy()!.href } : {}),
         connectionTimeout: 15_000, socketTimeout: 30_000 });
       try {
         await client.connect();

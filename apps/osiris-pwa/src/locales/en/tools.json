@@ -21,5 +21,6 @@
   "on": "switch on",
   "off": "switch off",
   "isOn": "on",
-  "isOff": "off"
+  "isOff": "off",
+  "configOff": "off in .osiris/tools.json"
 }

@@ -32,6 +32,8 @@ import { FileIndexer } from "../files/sync.ts";
 import { AssistantProfileStore, type GuardRules } from "../agent/assistant.ts";
 import { DataStore } from "../database/store.ts";
 import type { ToolHost, ToolModule } from "../tools/module.ts";
+import { CUSTOM_MODULE, readToolPolicy, type ToolPolicy } from "../tools/config.ts";
+import { CustomTools } from "../tools/custom/custom.ts";
 import { createDb } from "../db/client.ts";
 import { join } from "node:path";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -81,6 +83,14 @@ export interface Project {
   init(): Promise<void>;
   /** The built-in tools of the loaded tool modules, each with the feature it belongs to. */
   builtinTools: [Feature, StructuredToolInterface][];
+  /** The module each built-in tool comes from (for `.osiris/tools.json`), by tool name. */
+  toolModules: Map<string, string>;
+  /** The project's own tools from `.osiris/tools/` (feature `customTools`). */
+  customTools: CustomTools;
+  /** Names a custom tool can't take: the built-in tools' and ask_user. */
+  reservedToolNames: ReadonlySet<string>;
+  /** What `.osiris/tools.json` lets the agent use, read now. */
+  toolPolicy(): Promise<ToolPolicy>;
   usage: UsageStore;
   /** Persona and rules, project-wide (owner '') and per user. */
   profiles: AssistantProfileStore;
@@ -224,6 +234,10 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
   };
   const modules = (deps.tools ?? []).map((m) => ({ module: m, set: m.create(host) }));
   const builtins: [Feature, StructuredToolInterface][] = modules.flatMap(({ module, set }) => set.tools.map((t): [Feature, StructuredToolInterface] => [module.feature, t]));
+  const toolModules = new Map(modules.flatMap(({ module, set }) => set.tools.map((t): [string, string] => [t.name, module.name])));
+  const askUser = questions.tool();
+  const reservedToolNames: ReadonlySet<string> = new Set([askUser.name, ...toolModules.keys()]);
+  const customTools = new CustomTools(records.dir, secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch });
   const graph = createAgentGraph({
     questions,
     images: async (threadId, paths) => {
@@ -236,7 +250,7 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     projectId: id,
     model: deps.model,
     models: deps.models,
-    tools: [questions.tool()],
+    tools: [askUser],
     // Resolved on every step, so switching a feature or a tool applies from the next step.
     dynamicTools: async (ctx) => {
       if (ctx.channel === "public") {
@@ -257,16 +271,18 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
           : undefined;
         return publicTools({ knowledge, inquiries, skills, notify }, assistant);
       }
-      const [on, off] = await Promise.all([features.get(), features.disabledTools()]);
+      // A tool runs only when its feature is on, a system admin hasn't switched it off and .osiris/tools.json allows it.
+      const [on, off, policy] = await Promise.all([features.get(), features.disabledTools(), readToolPolicy(records)]);
       const tools: StructuredToolInterface[] = [];
       for (const { module, set } of modules) {
         if (!on[module.feature]) continue;
         const usable = (await set.usable?.(ctx, on)) ?? (() => true);
-        tools.push(...set.tools.filter((t) => !off.includes(t.name) && usable(t.name)));
+        tools.push(...set.tools.filter((t) => !off.includes(t.name) && policy.allows(t.name, module.name) && usable(t.name)));
       }
+      if (on.customTools) tools.push(...(await customTools.tools(reservedToolNames)).filter((t) => !off.includes(t.name) && policy.allows(t.name, CUSTOM_MODULE)));
       if (!on.mcp) return tools;
       const hidden = (name: string) => modules.some(({ set }) => set.hidesMcpTool?.(name));
-      return [...tools, ...(await mcp.tools(ctx.user_id)).filter((t) => !hidden(t.name))];
+      return [...tools, ...(await mcp.tools(ctx.user_id)).filter((t) => !hidden(t.name) && policy.allows(t.name, "mcp"))];
     },
     features,
     usage,
@@ -317,8 +333,6 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     await engine.initialize();
     await indexer!.reconcile();
     await knowledge.reindexStale();
-    // The bundled skills become the project's own, once each.
-    await skills.seed();
     // A chat's scratchpad lives as long as the chat; one whose chat is gone goes now.
     const threads = await threadIds(records);
     for (const thread of await files.tempThreads()) if (!threads.has(thread)) await files.removeTemp(thread);
@@ -349,6 +363,10 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     inquiries,
     vitepress,
     builtinTools: builtins,
+    toolModules,
+    customTools,
+    reservedToolNames,
+    toolPolicy: () => readToolPolicy(records),
     usage,
     profiles,
     guards,

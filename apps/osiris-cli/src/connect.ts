@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { localAgent } from "@osiris/client/agent.ts";
 import { freshToken, requestTokens, signInUrl, type OidcTokens } from "@osiris/client/oidc.ts";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -38,10 +38,13 @@ const readCredentials = (): Credentials => {
     return {};
   }
 };
-const save = (server: string) => (tokens: OidcTokens) => {
+/** Writes the credentials file readable by its owner only (`mode` alone wouldn't tighten an existing file). */
+const writeCredentials = (c: Credentials) => {
   mkdirSync(configDir(), { recursive: true, mode: 0o700 });
-  writeFileSync(credentialsFile(), JSON.stringify({ ...readCredentials(), [server]: tokens }, null, 2), { mode: 0o600 });
+  writeFileSync(credentialsFile(), JSON.stringify(c, null, 2), { mode: 0o600 });
+  chmodSync(credentialsFile(), 0o600);
 };
+const save = (server: string) => (tokens: OidcTokens) => writeCredentials({ ...readCredentials(), [server]: tokens });
 
 /** Opens a URL in the user's browser (and prints it, for a terminal without one). */
 function openBrowser(url: string) {
@@ -95,6 +98,5 @@ export function connectServer(server: string): Connection {
 export function logout(server: string) {
   const c = readCredentials();
   delete c[server.replace(/\/$/, "")];
-  mkdirSync(configDir(), { recursive: true, mode: 0o700 });
-  writeFileSync(credentialsFile(), JSON.stringify(c, null, 2), { mode: 0o600 });
+  writeCredentials(c);
 }
