@@ -72,20 +72,14 @@ statistics without cookies"). Rotating `SALT_SEED` (a new Secret value) makes ev
    kubectl -n observability exec -i clickhouse-0 -- sh -c 'clickhouse-client --user otel --password "$OTEL_PASSWORD" --multiquery' \
      < deploy/observability/web/schema.sql
    ```
-5. The visitor's IP must reach Traefik. Civo's load balancer and Cilium replace it with a cluster address, so the
-   load balancer sends it with the PROXY protocol and Traefik reads it on every entrypoint (Helm release `traefik`):
-   ```bash
-   T='{10.0.0.0/8,192.168.0.0/16}'
-   # First Traefik (it still takes connections without the header), then the load balancer.
-   helm -n traefik upgrade traefik traefik/traefik --version 41.6.1 --reuse-values \
-     --set ports.web.proxyProtocol.trustedIPs=$T --set ports.websecure.proxyProtocol.trustedIPs=$T \
-     --set ports.minecraft.proxyProtocol.trustedIPs=$T --set ports.ssh.proxyProtocol.trustedIPs=$T
-   helm -n traefik upgrade traefik traefik/traefik --version 41.6.1 --reuse-values \
-     --set service.annotations.kubernetes\.civo\.com/loadbalancer-enable-proxy-protocol=send-proxy-v2
-   ```
-   (`service.spec.externalTrafficPolicy=Local` is set too, so a connection isn't forwarded between nodes.) Sites
+5. The visitor's IP must reach Traefik. On busiris Traefik is a DaemonSet in namespace `ingress` (Helm release
+   `traefik`) behind MetalLB in L2 mode (`192.168.0.50`); with the Service's `externalTrafficPolicy: Cluster` a node
+   forwards the connection with its own address, so set it to `Local` (Traefik runs on every node, so every node
+   still answers): `kubectl -n ingress patch svc traefik -p '{"spec":{"externalTrafficPolicy":"Local"}}'`, and the
+   same in the release's values (`service.spec.externalTrafficPolicy=Local`) so a `helm upgrade` keeps it. Sites
    behind Cloudflare reach Traefik from Cloudflare's addresses: web-events then takes `CF-Connecting-IP`, but only
    when the address is Cloudflare's (`CDN_PROXIES`, its published ranges), so nobody can fake it on a direct site.
+   Requests from the cluster's own LAN come through the router and stay private.
    `web_events.private_ip` growing means the IP doesn't arrive (hashes and countries are then wrong).
 
 The image (`ghcr.io/richardblaha/osiris-web-events`) comes from CI with the rest; it carries DB-IP's free
