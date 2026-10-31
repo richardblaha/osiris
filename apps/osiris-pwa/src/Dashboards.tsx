@@ -408,8 +408,8 @@ function PanelBody({ kind, data }: { kind: DashboardPanel["kind"]; data: PanelDa
                 </span>
               </div>
               {m.limit !== null && (
-                <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-hover" role="meter" aria-label={String(r[0])} aria-valuemin={0} aria-valuemax={m.limit} aria-valuenow={m.used}>
-                  <div className={`h-full rounded-full ${state?.bar ?? "bg-primary"}`} style={{ width: `${Math.min(1, s) * 100}%` }} />
+                <div className="mt-1 h-1.5 overflow-hidden rounded bg-hover" role="meter" aria-label={String(r[0])} aria-valuemin={0} aria-valuemax={m.limit} aria-valuenow={m.used}>
+                  <div className={`h-full rounded ${state?.bar ?? "bg-primary"}`} style={{ width: `${Math.min(1, s) * 100}%` }} />
                 </div>
               )}
             </div>

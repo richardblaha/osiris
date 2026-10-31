@@ -1,12 +1,16 @@
 /**
- * The OSIRIS palette (richardblaha/osiris-theme, tokens.json v0.1.3), the one source of the clients' colors: the PWA's
- * `theme.css` holds the same values (a test checks it), the TUI and the VS Code panel take them from here.
+ * The OSIRIS palette (richardblaha/osiris-theme, assets/tokens.json), the one source of the clients' colors: the
+ * PWA's and the digital twin's `theme.css` hold the same values (a test checks them), the TUI and the VS Code panel
+ * take them from here. VS Code 2026 shape: the status bar sits in the background colour (bg.sidebar), never in the
+ * accent, and there are no pill-shaped corners anywhere (radius.sm = 4px).
  */
 export interface ThemeColors {
   bgTitlebar: string;
   bgSidebar: string;
   bgEditor: string;
   bgTabInactive: string;
+  bgStatusbar: string;
+  bgStatusbarText: string;
   bgHover: string;
   bgSelection: string;
   bgInput: string;
@@ -31,6 +35,8 @@ export const THEME: Record<"light" | "dark", ThemeColors> = {
     bgSidebar: "#f6f8fa",
     bgEditor: "#ffffff",
     bgTabInactive: "#eaeef2",
+    bgStatusbar: "#f6f8fa",
+    bgStatusbarText: "#1f2328",
     bgHover: "#eaeef2",
     bgSelection: "#dde7f3",
     bgInput: "#ffffff",
@@ -53,6 +59,8 @@ export const THEME: Record<"light" | "dark", ThemeColors> = {
     bgSidebar: "#161b22",
     bgEditor: "#0d1117",
     bgTabInactive: "#161b22",
+    bgStatusbar: "#161b22",
+    bgStatusbarText: "#e6edf3",
     bgHover: "#21262d",
     bgSelection: "#21262d",
     bgInput: "#21262d",

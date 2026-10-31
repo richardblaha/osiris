@@ -252,7 +252,7 @@ button.instance-button:hover {
   width: 2rem;
   height: 2rem;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--accent-primary-soft);
   color: var(--accent-primary);
   font-size: 12px;
@@ -635,7 +635,7 @@ button.instance-button:hover {
   width: 1.9rem;
   height: 1.05rem;
   flex-shrink: 0;
-  border-radius: 999px;
+  border-radius: var(--radius);
   background: var(--border-strong);
   transition: background 0.15s ease;
 }
@@ -646,7 +646,7 @@ button.instance-button:hover {
   left: 0.15rem;
   width: 0.75rem;
   height: 0.75rem;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--bg-editor);
   transition: transform 0.15s ease;
 }

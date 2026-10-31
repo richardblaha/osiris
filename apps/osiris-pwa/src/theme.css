@@ -1,7 +1,9 @@
 /* ============================================================================
-   OSIRIS theme for the web client.
-   Tokens are copied from richardblaha/osiris-theme (assets/tokens.json, v0.1.3).
-   When that repo changes the palette, update the values here by hand.
+   OSIRIS theme for the web client (VS Code 2026 shape: square corners with a
+   slight rounding, no pills; the status bar sits in the background colour).
+   Tokens are copied from richardblaha/osiris-theme (assets/tokens.json).
+   When that repo changes the palette, update the values here by hand —
+   packages/shared/test/theme.test.ts fails on drift.
    Light is the baseline; dark applies under `prefers-color-scheme: dark`,
    the same pattern as the theme's Forgejo `auto` variant.
    ========================================================================== */
@@ -19,7 +21,7 @@
   color-scheme: light dark;
 
   --font-ui: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, -apple-system, "Segoe UI", Ubuntu, sans-serif;
-  --radius: 6px;
+  --radius: 4px; /* radius.sm/md — one slight rounding everywhere, no pills */
   --shadow-popup: 0 16px 40px rgba(0, 0, 0, 0.5);
   --transition: 0.15s ease;
   --backdrop: rgba(3, 6, 10, 0.55);
@@ -29,8 +31,8 @@
   --bg-sidebar: #f6f8fa;
   --bg-editor: #ffffff;
   --bg-tab-inactive: #eaeef2;
-  --bg-statusbar: var(--bg-sidebar);
-  --bg-statusbar-text: var(--text-primary);
+  --bg-statusbar: #f6f8fa;
+  --bg-statusbar-text: #1f2328;
   --bg-hover: #eaeef2;
   --bg-selection: #dde7f3;
   --bg-input: #ffffff;
@@ -60,8 +62,8 @@
     --bg-sidebar: #161b22;
     --bg-editor: #0d1117;
     --bg-tab-inactive: #161b22;
-    --bg-statusbar: var(--bg-sidebar);
-    --bg-statusbar-text: var(--text-primary);
+    --bg-statusbar: #161b22;
+    --bg-statusbar-text: #e6edf3;
     --bg-hover: #21262d;
     --bg-selection: #21262d;
     --bg-input: #21262d;
@@ -114,7 +116,7 @@
   --font-sans: var(--font-ui);
   --font-mono: var(--font-ui);
 
-  /* Unified soft rounding: every radius token is --radius (6px). */
+  /* Unified slight rounding: every radius token is --radius (4px), no pills. */
   --radius-xs: var(--radius);
   --radius-sm: var(--radius);
   --radius-md: var(--radius);

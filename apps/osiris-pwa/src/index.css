@@ -191,7 +191,7 @@ body,
     flex-shrink: 0;
     width: 1.75rem;
     height: 1rem;
-    border-radius: 999px;
+    border-radius: var(--radius); /* no pill track — slight rounding only */
     background: var(--border-strong);
     cursor: pointer;
     transition: background var(--transition);
@@ -203,7 +203,7 @@ body,
     left: 2px;
     width: 0.75rem;
     height: 0.75rem;
-    border-radius: 999px;
+    border-radius: 2px;
     background: #fff;
     transition: transform var(--transition);
   }

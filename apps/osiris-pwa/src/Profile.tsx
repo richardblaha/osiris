@@ -26,10 +26,10 @@ export function Avatar({ user, size = 32 }: { user: MeResponse["user"]; size?: n
   const label = user.name ?? user.email ?? "?";
   const style = { width: size, height: size, fontSize: size * 0.4 };
   if (user.picture && !failed) {
-    return <img src={user.picture} alt="" style={style} onError={() => setFailed(true)} className="shrink-0 rounded-full object-cover" />;
+    return <img src={user.picture} alt="" style={style} onError={() => setFailed(true)} className="shrink-0 rounded object-cover" />;
   }
   return (
-    <span style={style} className="flex shrink-0 items-center justify-center rounded-full bg-primary-soft font-semibold text-primary">
+    <span style={style} className="flex shrink-0 items-center justify-center rounded bg-primary-soft font-semibold text-primary">
       {initials(label)}
     </span>
   );
