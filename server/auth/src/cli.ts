@@ -12,6 +12,7 @@ import { Users } from "./users.ts";
 //   client list                        the registered apps
 //   client add <id> <json>             registers an app ({"name":…,"redirectUris":[…],"confidential":true,…}); prints its secret
 //   client update <id> <json>          changes an app: the given settings over its current ones
+//   client accept <id> <app>           lets the API <id> introspect <app>'s tokens too (the rest stays)
 //   client remove <id>
 //   service-user <email> <name> <group,…>  creates (or updates) a user a service acts as, in those groups; prints its id
 const config = loadConfig();
@@ -45,8 +46,14 @@ if (command === "add-admin") {
     const { createdAt: _c, updatedAt: _u, id: _i, ...settings } = current;
     const { secret } = await clients.update(id, { ...settings, ...JSON.parse(raw) });
     console.log(secret ? `Updated ${id}. New secret (shown once): ${secret}` : `Updated ${id}.`);
+  } else if (action === "accept" && id && raw) {
+    const current = await clients.get(id);
+    if (!current) throw new Error(`No app ${id}.`);
+    const { createdAt: _c, updatedAt: _u, id: _i, ...settings } = current;
+    if (!current.acceptsTokensOf.includes(raw)) await clients.update(id, { ...settings, acceptsTokensOf: [...current.acceptsTokensOf, raw] });
+    console.log(`${id} accepts the tokens of ${[...new Set([...current.acceptsTokensOf, raw])].join(", ")}.`);
   } else if (action === "remove" && id) console.log((await clients.remove(id)) ? `Removed ${id}.` : `No app ${id}.`);
-  else throw new Error("Usage: client list | client add <id> <json> | client update <id> <json> | client remove <id>");
+  else throw new Error("Usage: client list | client add <id> <json> | client update <id> <json> | client accept <id> <app> | client remove <id>");
 } else if (command === "service-user") {
   const [email, name = "", groupList = ""] = args;
   if (!email?.includes("@") || !groupList) throw new Error("Usage: service-user <email> <name> <group,…>");
