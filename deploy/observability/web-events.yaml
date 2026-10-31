@@ -116,14 +116,6 @@ spec:
     sourceCriterion:
       ipStrategy: { depth: 0 }
 ---
-apiVersion: traefik.io/v1alpha1
-kind: Middleware
-metadata:
-  name: web-events-body
-spec:
-  buffering:
-    maxRequestBodyBytes: 4096
----
 # /_e on every site, first-party. Traefik takes the certificate from the store by SNI (the site's own Ingress loaded
 # it), so this lives here and the sites' namespaces stay as they are. More specific than the site's "/", so it wins.
 apiVersion: traefik.io/v1alpha1
@@ -137,7 +129,6 @@ spec:
       match: (Host(`k6labs.cz`) || Host(`www.k6labs.cz`) || Host(`richardblaha.cz`) || Host(`www.richardblaha.cz`) || Host(`richardblaha.eu`) || Host(`www.richardblaha.eu`) || Host(`tras.cz`) || Host(`www.tras.cz`) || Host(`osiris.k6labs.cz`)) && PathPrefix(`/_e`)
       middlewares:
         - { name: web-events-ratelimit }
-        - { name: web-events-body }
       services:
         - { name: web-events, port: 80 }
   tls: {}

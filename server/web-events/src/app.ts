@@ -4,6 +4,7 @@ import type { GeoLocation } from "@osiris/platform/geoip.ts";
 import { BlockList, isIP } from "node:net";
 import type { HttpBindings } from "@hono/node-server";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import { isBot, parseUserAgent, referrerOf, utmOf } from "./enrich.ts";
 import type { VisitorHasher } from "./visitor.ts";
@@ -74,7 +75,16 @@ export function createWebEventsApp(deps: WebEventsDeps) {
     }),
   );
 
-  app.post("/_e", async (c) => {
+  // The body's size is checked here as it streams in (no proxy buffering: Traefik's fails on our empty answers).
+  const limit = bodyLimit({
+    maxSize: MAX_BODY,
+    onError: (c) => {
+      deps.count("too_large");
+      return c.body(null, 413);
+    },
+  });
+
+  app.post("/_e", limit, async (c) => {
     const done = (outcome: Outcome, status: 202 | 204 | 400 | 403 | 413, privateIp?: boolean) => {
       deps.count(outcome, privateIp);
       return c.body(null, status);
