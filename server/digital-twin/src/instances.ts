@@ -3,6 +3,7 @@ import { HistoryLog, HistoryReader } from "./history.ts";
 import type { ClickHouse, Telemetry } from "./telemetry.ts";
 import type { InstanceData, InstanceRecord, TwinStore } from "./store.ts";
 import { startSync } from "./sync.ts";
+import type { TwinStateStore } from "./state.ts";
 import type { TwinSource } from "./twin.ts";
 import { SOURCE_TYPES, type SourceDefaults, type SourceType } from "./sources/registry.ts";
 
@@ -20,12 +21,16 @@ export interface RunningInstance {
 
 export interface InstancesOptions {
   store: TwinStore;
+  /** The cache each instance's twins, relationships and view telemetry go to (Redis); the API reads it. */
+  state: TwinStateStore;
   defaults: SourceDefaults;
   /** Where each instance's history goes (OpenTelemetry events); none: no history is written. */
   emit?: Emit;
   /** The ClickHouse the history is read back from (the service's own) and its records' ServiceName. */
   historyFrom?: { clickhouse: ClickHouse; service: string };
   intervalMs: number;
+  /** How long the view's telemetry outlives a sync round in the cache. */
+  telemetryTtlSeconds?: number;
   types?: Record<string, SourceType>;
   log?: (message: string, err?: unknown) => void;
 }
@@ -74,7 +79,7 @@ export class Instances {
   async restart(id: string): Promise<RunningInstance | undefined> {
     this.running.get(id)?.stop();
     this.running.delete(id);
-    const { store, defaults, emit, historyFrom, intervalMs } = this.options;
+    const { store, state, defaults, emit, historyFrom, intervalMs, telemetryTtlSeconds } = this.options;
     const record = await store.instance(id);
     if (!record) return undefined;
     const data = store.of(id);
@@ -90,8 +95,11 @@ export class Instances {
       const sync = await startSync({
         source: built.source,
         store: data,
+        state,
+        telemetry: built.telemetry,
         history: emit ? new HistoryLog(emit, id, built.source.name) : undefined,
         intervalMs,
+        telemetryTtlSeconds,
         log: this.log,
         onRound: (err) => {
           running.error = err ? `${err.message}${err.cause instanceof Error ? `: ${err.cause.message}` : ""}`.slice(0, 500) : undefined;
@@ -105,10 +113,11 @@ export class Instances {
     return running;
   }
 
-  /** Stops an instance and deletes it with everything that is its own. */
+  /** Stops an instance and deletes it with everything that is its own (its definitions here, its state in Redis). */
   async delete(id: string): Promise<boolean> {
     this.running.get(id)?.stop();
     this.running.delete(id);
+    await this.options.state.deleteInstance(id);
     return this.options.store.deleteInstance(id);
   }
 

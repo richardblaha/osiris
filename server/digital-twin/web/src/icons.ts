@@ -1,5 +1,8 @@
 import { K8S_ICONS } from "./k8s-icons.ts";
+import type { Look } from "@osiris/shared/dtdl.ts";
 import type { TwinView } from "./scene.ts";
+
+export type { Look };
 
 /** A heptagon like the Kubernetes icons', in a 0..18 box. */
 const heptagon = Array.from({ length: 7 }, (_, i) => {
@@ -31,6 +34,7 @@ const MODELS: Record<string, string> = {
 
 /** A twin's Kubernetes icon (outline SVG markup), or undefined for a model it has none for. */
 export function iconOf(node: TwinView): string | undefined {
+  if (node.icon && K8S_ICONS[node.icon]) return `<svg class="k8s-icon" viewBox="${K8S_ICONS[node.icon]!.viewBox}" aria-hidden="true">${K8S_ICONS[node.icon]!.body}</svg>`;
   const model = node.model.replace(/;.*$/, "");
   const icon =
     model === "dtmi:osiris:k8s:Container"
@@ -42,25 +46,5 @@ export function iconOf(node: TwinView): string | undefined {
 /** What kind of thing a twin is, for people: a workload's owning kind (StatefulSet…), else its model's name. */
 export const kindOf = (node: TwinView) => (typeof node.twin.ownerKind === "string" && node.twin.ownerKind ? node.twin.ownerKind : node.modelName);
 
-/**
- * How each kind of twin is drawn, by its model: a solid of its own shape, so a node, a pod, a disk and a Service are
- * told apart before any label is read. `port`: a network interface mounted on its container's wall; `hex`: a
- * Service (virtual, an outline only); `gate`: an Ingress, a frame traffic comes through; `cylinder`: storage.
- */
-export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "box";
-const LOOKS: Record<string, Look> = {
-  "dtmi:osiris:k8s:Cluster": "cluster",
-  "dtmi:osiris:k8s:Node": "node",
-  "dtmi:osiris:k8s:Workload": "workload",
-  "dtmi:osiris:k8s:Pod": "pod",
-  "dtmi:osiris:k8s:Container": "container",
-  "dtmi:osiris:k8s:PersistentVolumeClaim": "cylinder",
-  "dtmi:osiris:ceph:Pool": "cylinder",
-  "dtmi:osiris:ceph:Osd": "disk",
-  "dtmi:osiris:net:Interface": "port",
-  "dtmi:osiris:k8s:Service": "hex",
-  "dtmi:osiris:k8s:Ingress": "gate",
-};
-export const lookOf = (node: TwinView): Look => LOOKS[node.model.replace(/;.*$/, "")] ?? "box";
 /** A network interface's kind (card, router, tunnel, veth, LoadBalancer, public address). */
 export const portKind = (node: TwinView) => String(node.twin.kind ?? "veth");

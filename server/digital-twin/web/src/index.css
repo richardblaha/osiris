@@ -654,3 +654,33 @@ button.instance-button:hover {
     opacity: 0;
   }
 }
+
+/* The bar under the 3D view: the time axis, the display menu and the chat's input; the chat's conversation and the
+   display menu's popup open above it. */
+.bottom-bar {
+  position: relative;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-top: 1px solid var(--border);
+  background: var(--bg-sidebar);
+  padding: 0.25rem 0.75rem;
+  min-height: 2.75rem;
+}
+.osiris-input-dock {
+  position: static;
+  transform: none;
+  width: min(30rem, 42%);
+  box-shadow: none;
+}
+.osiris-answers-dock {
+  position: absolute;
+  right: 0.5rem;
+  bottom: calc(100% + 0.5rem);
+  left: auto;
+  top: auto;
+  transform: none;
+  width: min(26rem, calc(100vw - 2rem));
+  max-height: 50vh;
+}

@@ -3,9 +3,10 @@ import { clusterGraph, type ClusterInput } from "../src/sources/kubernetes/graph
 import type { PodObject } from "../src/sources/kubernetes/kube.ts";
 import { dtdlModel } from "../src/sources/kubernetes/models.ts";
 import { toRelationship } from "../src/twin.ts";
-import { buildScene, scopeOf, type TwinView } from "../web/src/scene.ts";
+import { buildScene, passes, scopeOf, type TwinView } from "../web/src/scene.ts";
 import { layoutTwin } from "../web/src/TwinLayout.ts";
 import { hasNetwork, interfacesOf, isStorage, routingOf, wiresOf } from "../web/src/scene.ts";
+import { PRESENTATION_CONTEXT, type DtdlInterface } from "@osiris/shared/dtdl.ts";
 
 const pod = (name: string, namespace: string, owner: [string, string] | null, node?: string, claim?: string): PodObject => ({
   metadata: { name, namespace, ...(owner ? { ownerReferences: [{ kind: owner[0], name: owner[1], apiVersion: "v1" }] } : {}) },
@@ -124,5 +125,50 @@ describe("the twin's view", () => {
       expect(p.center[2]).toBeCloseTo(n1.center[2] - n1.size[2] / 2);
     }
     expect(layout.links.filter((l) => l.kind === "wire").map((l) => [l.id, l.to])).toContainEqual(["k8s:c/node/n1/if/router", "k8s:c/node/n1/if/nic"]);
+  });
+});
+
+describe("the view's presentation and filters", () => {
+  it("draws each twin as its model's presentation says, else the built-in look of its DTMI", () => {
+    // The built-ins: a pod is a pod, an interface a port, a claim a cylinder.
+    const byModel = new Map([...scene.byId.values()].filter((v) => !v.of).map((v) => [v.model, v]));
+    expect(byModel.get("dtmi:osiris:k8s:Pod;3")!.look).toBe("pod");
+    expect(byModel.get("dtmi:osiris:net:Interface;1")!.look).toBe("port");
+    expect(byModel.get("dtmi:osiris:k8s:PersistentVolumeClaim;1")!.look).toBe("cylinder");
+    // A model with a presentation overrides it (and extends is resolved through the base).
+    const custom: DtdlInterface = {
+      "@context": [ "dtmi:dtdl:context;3", PRESENTATION_CONTEXT ],
+      "@id": "dtmi:osiris:k8s:Pod;3",
+      "@type": "Interface",
+      extends: "dtmi:osiris:twin:Entity;1",
+      contents: [{ "@type": "Property", name: "name", schema: "string" }],
+      presentation: { look: "hex", color: "#ff00ff", label: "name", layer: "logical", visible: true },
+    };
+    const withCustom = buildScene([...models.filter((m) => m.id !== custom["@id"]), { id: custom["@id"], model: custom, uploadTime: "", decommissioned: false }], snapshot.twins.map((t) => ({ ...t, $etag: "", $metadata: { $model: t.$metadata.$model } })), snapshot.relationships.map(toRelationship), {}, {}, {}, null);
+    const pod = [...withCustom.byId.values()].find((v) => !v.of && v.model === custom["@id"])!;
+    expect([pod.look, pod.color, pod.labelProp, pod.layer, pod.visible]).toEqual(["hex", "#ff00ff", "name", "logical", true]);
+  });
+
+  it("filters: a hidden model hides its twins and their children, a status and a search filter the rest", () => {
+    const all = [...scene.byId.values()].filter((v) => !v.of && !v.isBand);
+    const none = { hiddenModels: new Set<string>() };
+    expect(all.every((v) => passes(v, none))).toBe(true);
+    // Hiding the pod model hides the pods and their containers, not the node.
+    const noPods = { hiddenModels: new Set(["dtmi:osiris:k8s:Pod;3"]) };
+    const pods = all.filter((v) => v.model === "dtmi:osiris:k8s:Pod;3");
+    const containers = all.filter((v) => v.model === "dtmi:osiris:k8s:Container;3");
+    expect(pods.length).toBeGreaterThan(0);
+    expect(pods.every((v) => !passes(v, noPods))).toBe(true);
+    expect(containers.every((v) => !passes(v, noPods))).toBe(true);
+    expect(passes(scene.byId.get("k8s:c/node/n1")!, noPods)).toBe(true);
+    // A search matches a name or a descendant's.
+    const db = all.filter((v) => passes(v, { hiddenModels: new Set(), query: "db-0" }));
+    expect(db.map((v) => v.name)).toEqual(expect.arrayContaining(["db-0", "app"]));
+    expect(db.some((v) => v.name === "n2")).toBe(false);
+    // The presentation's visible=false hides the model too.
+    const invisible: DtdlInterface = { ...models.find((m) => m.id === "dtmi:osiris:k8s:Node;3")!.model, presentation: { visible: false } };
+    invisible["@context"] = ["dtmi:dtdl:context;3", PRESENTATION_CONTEXT];
+    const noNodes = buildScene([...models.filter((m) => m.id !== invisible["@id"]), { id: invisible["@id"], model: invisible, uploadTime: "", decommissioned: false }], snapshot.twins.map((t) => ({ ...t, $etag: "", $metadata: { $model: t.$metadata.$model } })), snapshot.relationships.map(toRelationship), {}, {}, {}, null);
+    expect(passes(noNodes.byId.get("k8s:c/node/n1")!, none)).toBe(false);
   });
 });

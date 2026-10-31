@@ -1,0 +1,28 @@
+# Builds the cluster's collector image with the twin/events processor:
+#   docker build -t ghcr.io/richardblaha/otel-collector:main deploy/observability/twin-events
+# The components are the ones deploy/observability/collector.yaml uses, plus this module's processor.
+dist:
+  module: github.com/richardblaha/osiris/observability/twin-events
+  name: otelcol-osiris
+  description: OpenTelemetry Collector with twin/events (warn/error log records to a Redis stream for the digital twin and Osiris's agent)
+  output_path: /build
+  otelcol_version: 0.161.0
+  version: 0.161.0
+  golang: "1.24"
+
+receivers:
+  - gomod: go.opentelemetry.io/collector/receiver/otlpreceiver v0.161.0
+  - gomod: go.opentelemetry.io/collector/receiver/k8sclusterreceiver v0.161.0
+  - gomod: go.opentelemetry.io/collector/receiver/k8sobjectsreceiver v0.161.0
+  - gomod: go.opentelemetry.io/collector/receiver/prometheusreceiver v0.161.0
+
+processors:
+  - gomod: go.opentelemetry.io/collector/processor/batchprocessor v0.161.0
+  - gomod: go.opentelemetry.io/collector/processor/memorylimiterprocessor v0.161.0
+  - gomod: go.opentelemetry.io/collector/processor/resourceprocessor v0.161.0
+  - gomod: go.opentelemetry.io/collector/processor/k8sattributesprocessor v0.161.0
+  # This module's processor (the dist module is the one that contains it, so the builder wires it in).
+  - gomod: github.com/richardblaha/osiris/observability/twin-events/processor v0.0.0
+
+exporters:
+  - gomod: github.com/open-telemetry/opentelemetry-collector-contrib/exporter/clickhouseexporter v0.161.0

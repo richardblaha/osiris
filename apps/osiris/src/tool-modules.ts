@@ -34,7 +34,7 @@ const MODULES: Record<string, (o: ToolModuleOptions) => Promise<ToolModule | und
   workflows: async () => (await import("@osiris/tools-workflows")).workflowsModule(),
   kubernetes: async (o) => (o.infrastructure ? (await import("@osiris/tools-kubernetes")).kubernetesModule(o.infrastructure) : undefined),
   ceph: async (o) => (o.infrastructure ? (await import("@osiris/tools-ceph")).cephModule(o.infrastructure) : undefined),
-  "digital-twin": async (o) => (o.infrastructure ? (await import("@osiris/tools-digital-twin")).digitalTwinModule(o.infrastructure.projects) : undefined),
+  "digital-twin": async (o) => (o.infrastructure ? (await import("@osiris/tools-digital-twin")).digitalTwinModule(o.infrastructure) : undefined),
 };
 
 export const TOOL_MODULE_NAMES = Object.keys(MODULES);

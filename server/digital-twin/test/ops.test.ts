@@ -9,6 +9,7 @@ import { loadConfig } from "../src/config.ts";
 import { checkCeph, checkKubectl, OpsRefused, run } from "../src/ops.ts";
 import { Instances } from "../src/instances.ts";
 import { TwinStore } from "../src/store.ts";
+import { memoryStateStore } from "../src/state.ts";
 
 describe("ops' checks", () => {
   it("let kubectl talk only as the twin's account, and nothing interactive", () => {
@@ -39,9 +40,10 @@ describe("the ops API and the Osiris proxy", async () => {
   const ca = join(tmpdir(), `ca-${process.pid}`);
   await writeFile(ca, "");
   const fetchFn = vi.fn(async (url: string, init?: RequestInit) => Response.json({ url, project: new Headers(init?.headers).get("x-project-id"), auth: new Headers(init?.headers).get("authorization") }));
-  const instances = new Instances({ store, defaults: { kube: { apiServer: "", tokenPath: "" } }, intervalMs: 1e9 });
+  const instances = new Instances({ store, state: memoryStateStore(), defaults: { kube: { apiServer: "", tokenPath: "" } }, intervalMs: 1e9 });
   const app = createApp(config, {
     instances,
+    state: memoryStateStore(),
     cache: noCache,
     fetchFn: fetchFn as unknown as typeof fetch,
     ops: { projects: ["twin"], identity: devRuntimeVerifier(), tools: { kubectl: { server: "https://k", tokenPath: "/nonexistent", caPath: ca } } },

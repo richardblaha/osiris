@@ -1,0 +1,64 @@
+# Redis: the cache the digital twin and the collector's twin/events processor share — the twins' current state
+# (written by the digital-twin service's sync), the API answers' cache, and the warn/error events stream
+# (osiris:otel:events, written by the collector). No persistence needed (everything is rebuildable: the state from
+# the sources, the events are recent-only), no auth (the NetworkPolicies below let only the twin and the collector in).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels: { app: redis }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: redis }
+  template:
+    metadata:
+      labels: { app: redis }
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: redis
+          image: redis:7-bookworm
+          args: [--save, "", --appendonly, "no", --maxmemory, 512mb, --maxmemory-policy, allkeys-lru]
+          ports:
+            - { name: redis, containerPort: 6379 }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { memory: 512Mi }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - { name: tmp, emptyDir: { sizeLimit: 64Mi } }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+spec:
+  selector: { app: redis }
+  ports:
+    - { name: redis, port: 6379, targetPort: redis }
+---
+# Only the digital twin (its state cache and the events it reads/pushes) and the collector (twin/events) reach Redis.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: redis
+spec:
+  podSelector: { matchLabels: { app: redis } }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        # The collector (this namespace) writes the events stream.
+        - podSelector: { matchLabels: { app: otel-collector } }
+        # The digital twin (namespace osiris) reads the state cache and the events.
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: osiris } }
+          podSelector: { matchLabels: { app: digital-twin } }
+      ports: [{ port: 6379, protocol: TCP }]

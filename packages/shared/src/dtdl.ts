@@ -7,6 +7,8 @@
  */
 
 export const DTDL_CONTEXT = "dtmi:dtdl:context;3";
+/** The context that allows a `presentation` section on an interface: how the twin's views draw its twins. */
+export const PRESENTATION_CONTEXT = "dtmi:osiris:presentation;1";
 
 /** A DTDL string for people: one text, or a language map (`{ "en": "Pod", "cs": "Pod" }`). */
 export type Localized = string | Record<string, string>;
@@ -69,6 +71,50 @@ export interface DtdlInterface {
   description?: Localized;
   extends?: string | string[];
   contents?: DtdlContent[];
+  /** How the views draw this model's twins; needs {@link PRESENTATION_CONTEXT} in `@context`. */
+  presentation?: DtdlPresentation;
+}
+
+/** How a kind of twin is drawn: a solid of its own shape, so a node, a pod, a disk and a Service are told apart
+ * before any label is read. */
+export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "box";
+export const LOOKS: readonly Look[] = ["cluster", "node", "workload", "pod", "container", "cylinder", "disk", "port", "hex", "gate", "box"];
+/** The built-in looks by model DTMI without the version, for models without a `presentation`. */
+export const BUILTIN_LOOKS: Record<string, Look> = {
+  "dtmi:osiris:k8s:Cluster": "cluster",
+  "dtmi:osiris:k8s:Node": "node",
+  "dtmi:osiris:k8s:Workload": "workload",
+  "dtmi:osiris:k8s:Pod": "pod",
+  "dtmi:osiris:k8s:Container": "container",
+  "dtmi:osiris:k8s:PersistentVolumeClaim": "cylinder",
+  "dtmi:osiris:ceph:Pool": "cylinder",
+  "dtmi:osiris:ceph:Osd": "disk",
+  "dtmi:osiris:net:Interface": "port",
+  "dtmi:osiris:k8s:Service": "hex",
+  "dtmi:osiris:k8s:Ingress": "gate",
+};
+
+/** The view's layer a model belongs to (the legend's switches). */
+export type PresentationLayer = "base" | "network" | "storage" | "logical";
+export const PRESENTATION_LAYERS: readonly PresentationLayer[] = ["base", "network", "storage", "logical"];
+
+/**
+ * A model's `presentation` section (`dtmi:osiris:presentation;1`): how the twin's views draw its twins. Everything
+ * optional; what a model doesn't say, the views decide as before.
+ */
+export interface DtdlPresentation {
+  /** The solid's shape; else the built-in look of the model's DTMI, else a box. */
+  look?: Look;
+  /** The solid's own color (`#rrggbb`), else the status colors. */
+  color?: string;
+  /** The label's icon (a Kubernetes icon id, or a custom one the views know). */
+  icon?: string;
+  /** The property whose value is the label; else `name`. */
+  label?: string;
+  /** The layer the solid is switched with (the legend); else base. */
+  layer?: PresentationLayer;
+  /** Whether the model's twins show at all; else yes. */
+  visible?: boolean;
 }
 
 /** A model as the Azure Digital Twins API lists it (`GET /models?includeModelDefinition=true`). */
@@ -159,7 +205,45 @@ export function interfaceErrors(doc: unknown): string[] {
     if (c["@type"] === "Property" || c["@type"] === "Telemetry") errors.push(...schemaErrors(c.schema, at));
     if (c["@type"] === "Relationship" && c.target !== undefined && (typeof c.target !== "string" || !DTMI.test(c.target))) errors.push(`${at}: target is not a DTMI`);
   }
+  if (d.presentation !== undefined) {
+    if (!list(d["@context"] as string | string[]).includes(PRESENTATION_CONTEXT)) errors.push(`${id}: presentation needs ${PRESENTATION_CONTEXT} in @context`);
+    errors.push(...presentationShapeErrors(id, d.presentation));
+  }
   return errors;
+}
+
+/** What's wrong with a `presentation` section itself (not against the model's contents). */
+function presentationShapeErrors(id: string, p: unknown): string[] {
+  if (!p || typeof p !== "object" || Array.isArray(p)) return [`${id}: presentation must be an object`];
+  const o = p as Record<string, unknown>;
+  const errors: string[] = [];
+  if (o.look !== undefined && !LOOKS.includes(o.look as Look)) errors.push(`${id}: presentation.look ${String(o.look)} is not one of ${LOOKS.join(", ")}`);
+  if (o.color !== undefined && (typeof o.color !== "string" || !/^#[0-9a-fA-F]{6}$/.test(o.color))) errors.push(`${id}: presentation.color must be #rrggbb`);
+  if (o.icon !== undefined && (typeof o.icon !== "string" || o.icon.length > 60)) errors.push(`${id}: presentation.icon must be a short string`);
+  if (o.label !== undefined && (typeof o.label !== "string" || !NAME.test(o.label))) errors.push(`${id}: presentation.label must be a property name`);
+  if (o.layer !== undefined && !PRESENTATION_LAYERS.includes(o.layer as PresentationLayer)) errors.push(`${id}: presentation.layer is not one of ${PRESENTATION_LAYERS.join(", ")}`);
+  if (o.visible !== undefined && typeof o.visible !== "boolean") errors.push(`${id}: presentation.visible must be a boolean`);
+  return errors;
+}
+
+/**
+ * What's wrong with a model's presentation against its contents: `label` must name one of the model's properties
+ * (its own or an inherited one).
+ */
+export function presentationErrors(id: string, models: Map<string, DtdlInterface>): string[] {
+  const p = models.get(id)?.presentation;
+  if (!p?.label) return [];
+  return resolveContents(id, models).some((c) => c["@type"] === "Property" && c.name === p.label) ? [] : [`${id}: presentation.label ${p.label} is no property of the model`];
+}
+
+/** A model's presentation: its own merged over what it extends (an own key wins). */
+export function presentationOf(id: string, models: Map<string, DtdlInterface>, seen = new Set<string>()): DtdlPresentation {
+  const doc = models.get(id);
+  if (!doc || seen.has(id)) return {};
+  seen.add(id);
+  const inherited: DtdlPresentation = {};
+  for (const parent of list(doc.extends)) Object.assign(inherited, presentationOf(parent, models, seen));
+  return { ...inherited, ...doc.presentation };
 }
 
 /** An interface with what it extends folded in: every content it has, its own last (an own one wins by name). */

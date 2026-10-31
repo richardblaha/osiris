@@ -1,5 +1,6 @@
 import type { LogRecord, MetricInfo, MetricSeries, SpanRecord, TelemetryFacets, TraceSummary, TwinChange } from "@osiris/shared";
-import type { DigitalTwin, DigitalTwinRelationship, DtdlModelData } from "@osiris/shared/dtdl.ts";
+import type { TwinEvent } from "@osiris/shared";
+import type { DigitalTwin, DigitalTwinRelationship, DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { autoSignIn, getAccessToken } from "./auth.ts";
 
 /** The digital twin the app shows: every twin call goes to `/api/instances/<id>`. */
@@ -46,14 +47,14 @@ async function call<T>(path: string): Promise<T> {
   // The session ended on the server's side: sign in again (once a minute at most).
   if (res.status === 401) autoSignIn();
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(body?.error ?? `${res.status}`);
+    const body = (await res.json().catch(() => null)) as { error?: string; detail?: string[] } | null;
+    throw new Error(body?.detail?.length ? `${body.error}: ${body.detail.join("; ")}` : (body?.error ?? `${res.status}`));
   }
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
 /** A change through the API: a JSON body, the server's message on failure. */
-async function send<T>(method: "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
+async function send<T>(method: "PUT" | "POST" | "DELETE", path: string, body?: unknown): Promise<T> {
   const token = await getAccessToken();
   const res = await fetch(path, {
     method,
@@ -61,8 +62,8 @@ async function send<T>(method: "PUT" | "DELETE", path: string, body?: unknown): 
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   if (!res.ok) {
-    const answer = (await res.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(answer?.error ?? `${res.status}`);
+    const answer = (await res.json().catch(() => null)) as { error?: string; detail?: string[] } | null;
+    throw new Error(answer?.detail?.length ? `${answer.error}: ${answer.detail.join("; ")}` : (answer?.error ?? `${res.status}`));
   }
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
@@ -122,6 +123,16 @@ export const api = {
   deleteInstance: (id: string) => send<void>("DELETE", `/api/admin/instances/${encodeURIComponent(id)}`),
   // The twin, in the shape of the Azure Digital Twins API (`at`: a past time from the history).
   models: async () => (await call<{ value: DtdlModelData[] }>(`${tw()}/models`)).value,
+  // Admins edit the DTDL: upsert one model (its `presentation` says how the views draw its twins), upload a batch,
+  // or decommission one (refused while a twin instantiates it).
+  model: (id: string) => call<DtdlModelData>(`${tw()}/models/${encodeURIComponent(id)}`),
+  putModel: (id: string, doc: DtdlInterface) => send<DtdlModelData>("PUT", `${tw()}/models/${encodeURIComponent(id)}`, doc),
+  uploadModels: (docs: DtdlInterface[]) => send<{ value: DtdlModelData[] }>("POST", `${tw()}/models`, docs),
+  deleteModel: (id: string) => send<void>("DELETE", `${tw()}/models/${encodeURIComponent(id)}`),
+  // The warn/error events the collector's twin/events processor caught (the Redis stream).
+  events: (q: { limit?: number; cluster?: string; severity?: "warn" | "error" | "fatal" } = {}) =>
+    call<{ value: TwinEvent[] }>(`${tw()}/events?${query(q)}`),
+
   twins: async (at: number | null) => (await call<{ value: DigitalTwin[] }>(`${tw()}/digitaltwins${at === null ? "" : `?at=${at}`}`)).value,
   relationships: async (at: number | null) => (await call<{ value: DigitalTwinRelationship[] }>(`${tw()}/relationships${at === null ? "" : `?at=${at}`}`)).value,
   errorLogs: async (at: number | null) => (await call<{ value: Record<string, number> }>(`${tw()}/telemetry/errorLogs${at === null ? "" : `?at=${at}`}`)).value,

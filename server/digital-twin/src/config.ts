@@ -37,14 +37,31 @@ const schema = z
     CLICKHOUSE_PASSWORD: z.string().optional(),
     CLICKHOUSE_CLUSTER: z.string().min(1).optional(),
 
-    // The twin's structure: DTDL models, twins and relationships in DATA_DIR/twin.db (SQLite, one replica), synced
-    // from the source every SYNC_INTERVAL_SECONDS. Its history goes out as OpenTelemetry events (with the service's
-    // telemetry, OTEL_EXPORTER_OTLP_ENDPOINT) and is read back from ClickHouse's otel_logs as OTEL_SERVICE_NAME's.
+    // The twin's definitions: DTDL models (the source's, plus the admins' edits) and the instances' settings,
+    // dashboards and saved filters in DATA_DIR/twin.db (SQLite, one writer). The twins' current state and the
+    // telemetry the view draws are not stored here — they live in Redis (REDIS_URL), written by the sync every
+    // SYNC_INTERVAL_SECONDS, and the warn/error events the collector catches land in its stream. The history goes
+    // out as OpenTelemetry events (with the service's telemetry, OTEL_EXPORTER_OTLP_ENDPOINT) and is read back from
+    // ClickHouse's otel_logs as OTEL_SERVICE_NAME's.
     DATA_DIR: z.string().default("./data"),
     SYNC_INTERVAL_SECONDS: z.coerce.number().int().min(5).max(3600).default(30),
     OTEL_SERVICE_NAME: z.string().min(1).default("osiris-digital-twin"),
+    // Redis: the twins' current state, the view's telemetry, the answers' cache and the collector's warn/error
+    // events (the `otel:events` stream), all under REDIS_KEY_PREFIX. Required in production.
+    REDIS_URL: z.url().optional(),
+    REDIS_KEY_PREFIX: z.string().regex(/^[a-z0-9][a-z0-9:-]{0,39}$/).default("osiris"),
+    // The telemetry the view draws is kept this many seconds longer than a sync interval, so a missed round still shows.
+    TELEMETRY_TTL_SECONDS: z.coerce.number().int().min(30).max(86_400).optional(),
+    // Push the collector's warn/error events to Osiris's agent: each new event (at least EVENTS_PUSH_MIN_SEVERITY,
+    // at most EVENTS_PUSH_MAX_PER_MINUTE) becomes a run of thread EVENTS_PUSH_THREAD in project OSIRIS_PROJECT, with
+    // EVENTS_PUSH_TOKEN's bearer (a service account's token the gateway accepts). Off without all four.
+    EVENTS_PUSH: bool,
+    EVENTS_PUSH_THREAD: z.string().min(1).optional(),
+    EVENTS_PUSH_TOKEN: z.string().min(1).optional(),
+    EVENTS_PUSH_MIN_SEVERITY: z.enum(["warn", "error", "fatal"]).default("error"),
+    EVENTS_PUSH_MAX_PER_MINUTE: z.coerce.number().int().min(1).max(600).default(10),
 
-    // Telemetry and history answers are cached in the process for this long.
+    // Telemetry and history answers are cached for this long.
     CACHE_DATA_TTL_SECONDS: z.coerce.number().int().positive().default(15),
 
     // Sign-in: osiris-auth (OIDC). The PWA signs in as WEB_CLIENT_ID (public, PKCE); the API introspects tokens as
@@ -91,6 +108,7 @@ const schema = z
       if (!env.AUTH_CLIENT_SECRET) ctx.addIssue({ code: "custom", path: ["AUTH_CLIENT_SECRET"], message: "is required in production" });
       // The cluster can be anywhere (a kubeconfig of another cluster), but its telemetry has to be reachable.
       if (!env.CLICKHOUSE_URL) ctx.addIssue({ code: "custom", path: ["CLICKHOUSE_URL"], message: "is required in production" });
+      if (!env.REDIS_URL) ctx.addIssue({ code: "custom", path: ["REDIS_URL"], message: "is required in production" });
       if (env.AUTH_DEV_BYPASS) ctx.addIssue({ code: "custom", path: ["AUTH_DEV_BYPASS"], message: "must not be enabled in production" });
       if (env.DEV_RUNTIME_AUTH) ctx.addIssue({ code: "custom", path: ["DEV_RUNTIME_AUTH"], message: "must not be enabled in production" });
     }

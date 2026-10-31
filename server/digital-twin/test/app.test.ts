@@ -13,9 +13,11 @@ import { devVerifier } from "../src/auth.ts";
 import type { TokenVerifier } from "../src/auth.ts";
 import type { Cache } from "../src/cache.ts";
 import { interfaceErrors, relationshipErrors, twinErrors, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
+import type { TwinEvent } from "@osiris/shared";
 import { TwinStore } from "../src/store.ts";
 import { seedDashboards } from "../src/dashboards.ts";
 import { Instances } from "../src/instances.ts";
+import { memoryStateStore } from "../src/state.ts";
 import { kubernetesType, type SourceType } from "../src/sources/registry.ts";
 import { bootstrapInstance } from "../src/bootstrap.ts";
 import { z } from "zod";
@@ -108,17 +110,19 @@ const testType: SourceType = {
   },
 };
 let store: TwinStore;
+let state: ReturnType<typeof memoryStateStore>;
 let instances: Instances;
 beforeAll(async () => {
   store = await TwinStore.open(join(tmpdir(), `twin-app-${process.pid}-${Date.now()}.db`));
+  state = memoryStateStore();
   await store.putInstance({ id: "k8s", name: "k8s", sourceType: "test", settings: {} }, 1);
-  instances = new Instances({ store, defaults: { kube: { apiServer: "https://kube", tokenPath: "" } }, intervalMs: 1e9, types: { test: testType, kubernetes: kubernetesType } });
+  instances = new Instances({ store, state, defaults: { kube: { apiServer: "https://kube", tokenPath: "" } }, intervalMs: 1e9, types: { test: testType, kubernetes: kubernetesType } });
   await instances.start();
 });
 
 const app = (over: { verifier?: TokenVerifier; cache?: Cache; telemetry?: Telemetry | null } = {}) => {
   instances.get("k8s")!.telemetry = over.telemetry === null ? undefined : (over.telemetry ?? telemetry);
-  return createApp(config, { instances, verifier: over.verifier ?? devVerifier(), cache: over.cache ?? noCache });
+  return createApp(config, { instances, state, verifier: over.verifier ?? devVerifier(), cache: over.cache ?? noCache });
 };
 
 const json = async <T>(path: string) => {
@@ -258,6 +262,90 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
   });
 });
 
+
+describe("the DTDL models are editable", () => {
+  const custom = {
+    "@context": ["dtmi:dtdl:context;3", "dtmi:osiris:presentation;1"],
+    "@id": "dtmi:osiris:test:Custom;1",
+    "@type": "Interface",
+    displayName: { en: "Custom", cs: "Vlastní" },
+    extends: "dtmi:osiris:twin:Entity;1",
+    contents: [{ "@type": "Property", name: "level", schema: "integer" }],
+    presentation: { look: "hex", label: "name", layer: "logical", color: "#ff00ff" },
+  };
+
+  it("lets an admin upsert a model with a presentation, and lists it", async () => {
+    const res = await app().request(`/api/instances/k8s/models/${encodeURIComponent(custom["@id"])}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(custom),
+    });
+    expect(res.status).toBe(200);
+    const { value } = await json<{ value: DtdlModelData[] }>("/api/instances/k8s/models");
+    const saved = value.find((m) => m.id === custom["@id"])!;
+    expect(saved.model.presentation).toEqual(custom.presentation);
+    expect(interfaceErrors(saved.model)).toEqual([]);
+  });
+
+  it("refuses an invalid model (bad DTDL, bad presentation label) with its errors", async () => {
+    const bad = { ...custom, contents: [] , presentation: { label: "nope" } };
+    const res = await app().request(`/api/instances/k8s/models/${encodeURIComponent(custom["@id"])}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(bad),
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { detail: string[] }).detail.join()).toContain("nope");
+    const notDtdl = await app().request(`/api/instances/k8s/models/${encodeURIComponent("dtmi:bad;1")}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ "@context": "x", "@id": "dtmi:bad;1", "@type": "Interface" }),
+    });
+    expect(notDtdl.status).toBe(400);
+  });
+
+  it("refuses to delete a model a twin instantiates; deletes a custom one", async () => {
+    const inUse = await app().request(`/api/instances/k8s/models/${encodeURIComponent("dtmi:osiris:k8s:Pod;3")}`, { method: "DELETE" });
+    expect(inUse.status).toBe(409);
+    const gone = await app().request(`/api/instances/k8s/models/${encodeURIComponent(custom["@id"])}`, { method: "DELETE" });
+    expect(gone.status).toBe(204);
+    const { value } = await json<{ value: DtdlModelData[] }>("/api/instances/k8s/models");
+    expect(value.some((m) => m.id === custom["@id"])).toBe(false);
+  });
+
+  it("keeps the source's models when an admin edited one (the sync never overwrites it)", async () => {
+    const edited = { ...custom, displayName: { en: "Edited", cs: "Upraveno" } };
+    await app().request(`/api/instances/k8s/models/${encodeURIComponent(custom["@id"])}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(edited),
+    });
+    const data = instances.get("k8s")!.data;
+    await data.putModels(source.models(), 5); // the sync's write of the source's models
+    const models = await data.models();
+    expect(models.find((m) => m.id === custom["@id"])?.model.displayName).toEqual({ en: "Edited", cs: "Upraveno" });
+    // A source model nobody edited is refreshed by the sync as before.
+    expect(models.some((m) => m.id === "dtmi:osiris:k8s:Pod;3")).toBe(true);
+    await data.deleteModel(custom["@id"]);
+  });
+});
+
+describe("the collector's events", () => {
+  it("serves the warn/error events from the stream, filtered by cluster and severity", async () => {
+    state.addEvent({ ts: "1000", severity: "WARN", severity_number: "13", message: "slow", cluster: "busiris", service: "gateway", pod: "gateway-abc", namespace: "osiris", trace_id: "0123456789abcdef0123456789abcdef" });
+    state.addEvent({ ts: "2000", severity: "ERROR", severity_number: "17", message: "boom", cluster: "busiris", service: "gateway", pod: "gateway-abc", namespace: "osiris" });
+    state.addEvent({ ts: "3000", severity: "ERROR", severity_number: "17", message: "other cluster", cluster: "other" });
+    const { value } = await json<{ value: TwinEvent[] }>("/api/instances/k8s/events");
+    expect(value.map((e) => e.message)).toEqual(["other cluster", "boom", "slow"]);
+    const errors = await json<{ value: TwinEvent[] }>("/api/instances/k8s/events?severity=error");
+    expect(errors.value.map((e) => e.message)).toEqual(["other cluster", "boom"]);
+    const ours = await json<{ value: TwinEvent[] }>("/api/instances/k8s/events?cluster=busiris&limit=1");
+    expect(ours.value).toEqual([expect.objectContaining({ message: "boom", pod: "gateway-abc", namespace: "osiris" })]);
+    const one = await json<{ value: TwinEvent[] }>("/api/instances/k8s/events?limit=1");
+    expect(one.value[0]).toMatchObject({ severity: "ERROR", severityNumber: 17, cluster: "other", ts: 3000 });
+  });
+});
+
 describe("the PWA's static files", () => {
   const dir = join(tmpdir(), "twin-static");
   beforeAll(async () => {
@@ -269,7 +357,7 @@ describe("the PWA's static files", () => {
   afterAll(() => void rm(dir, { recursive: true, force: true }));
 
   it("serves the app's files, and the index.html for every other path", async () => {
-    const instance = createApp(config, { instances, verifier: devVerifier(), cache: noCache, staticDir: dir });
+    const instance = createApp(config, { instances, state, verifier: devVerifier(), cache: noCache, staticDir: dir });
     const asset = await instance.request("/assets/app.js");
     expect(asset.status).toBe(200);
     expect(asset.headers.get("content-type")).toContain("javascript");

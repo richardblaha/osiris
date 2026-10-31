@@ -217,6 +217,45 @@ export const TWIN_ENTITY_MODEL = "dtmi:osiris:twin:Entity;1";
 /** The relationship whose instances nest twins in one another (the 3D view's boxes). */
 export const TWIN_CONTAINS = "contains";
 
+/**
+ * The OpenTelemetry Collector's `twin/events` processor writes warn/error log records here as a Redis stream
+ * (`XADD`, capped with MAXLEN), so the twin's API and Osiris's agent can react to them.
+ */
+export const TWIN_EVENTS_STREAM = "otel:events";
+
+/** One warn/error log record the collector caught: an entry of the {@link TWIN_EVENTS_STREAM} Redis stream. */
+export interface TwinEvent {
+  /** The stream entry's id (`<ms>-<seq>`). */
+  id: string;
+  ts: number;
+  severity: string;
+  severityNumber: number;
+  message: string;
+  cluster?: string;
+  service?: string;
+  namespace?: string;
+  pod?: string;
+  node?: string;
+  container?: string;
+  traceId?: string;
+}
+
+/** A stream entry's fields to a {@link TwinEvent}; unknown fields go. */
+export const twinEventOf = (id: string, fields: Record<string, string>): TwinEvent => ({
+  id,
+  ts: Number(fields.ts ?? 0),
+  severity: fields.severity ?? "",
+  severityNumber: Number(fields.severity_number ?? 0),
+  message: fields.message ?? "",
+  ...(fields.cluster ? { cluster: fields.cluster } : {}),
+  ...(fields.service ? { service: fields.service } : {}),
+  ...(fields.namespace ? { namespace: fields.namespace } : {}),
+  ...(fields.pod ? { pod: fields.pod } : {}),
+  ...(fields.node ? { node: fields.node } : {}),
+  ...(fields.container ? { container: fields.container } : {}),
+  ...(fields.trace_id ? { traceId: fields.trace_id } : {}),
+});
+
 /** One change of a twin in the history (`/api/digitaltwins/{id}/history`), read back from OpenTelemetry's logs. */
 export interface TwinChange {
   ts: number;

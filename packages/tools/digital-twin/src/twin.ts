@@ -1,5 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import type { OpsClient } from "@osiris/tools-ops";
+import type { TwinEvent } from "@osiris/shared";
 
 /** One step for the digital twin's view, carried to the PWA in the tool's artifact. */
 const action = z.discriminatedUnion("action", [
@@ -35,5 +37,42 @@ export const twinViewTool = () =>
         "vrátí pohled na celé dvojče, otevře logy, metriky, trasy nebo dashboard s filtrem, nebo ukáže stav v minulosti. Kroky se provedou v daném pořadí. " +
         "Když uživatel chce něco ukázat nebo kam se podívat, použij tento nástroj; ke zjištění stavu použij kubectl nebo ceph.",
       schema: z.object({ actions: z.array(action).min(1).max(12) }),
+    },
+  );
+
+/**
+ * The warn/error log records the cluster's collector caught (its `twin/events` processor writes them to a Redis
+ * stream; the twin's ops API reads them): the newest events, optionally of one severity. To react to one — look at
+ * the pod's logs (`kubectl logs`), show it in the twin (`twin_view`) — use this first.
+ */
+export const twinEventsTool = (client: OpsClient) =>
+  tool(
+    async ({ limit, severity, instance }) => {
+      const q = new URLSearchParams({ limit: String(limit) });
+      if (severity) q.set("severity", severity);
+      if (instance) q.set("instance", instance);
+      const res = await (client.fetch ?? fetch)(`${client.url.replace(/\/$/, "")}/ops/events?${q}`, {
+        headers: { authorization: `Bearer ${await client.token()}` },
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (!res.ok) return `Události se nepodařilo načíst: ${res.status} ${(await res.text().catch(() => "")).slice(0, 200)}`;
+      const { value } = (await res.json()) as { value: TwinEvent[] };
+      if (!value.length) return "Žádné warn/error události teď nejsou.";
+      const lines = value.map((e) => {
+        const where = [e.cluster, e.namespace, e.pod ?? e.node, e.container].filter(Boolean).join(" / ");
+        return `- ${new Date(e.ts).toISOString()} ${e.severity.toLowerCase()}${where ? ` ${where}` : ""}: ${e.message}${e.traceId ? ` (trace ${e.traceId})` : ""}`;
+      });
+      return `${value.length} událostí (nejnovější první):\n${lines.join("\n")}`;
+    },
+    {
+      name: "twin_events",
+      description:
+        "Poslední zachycené warn/error události z clusteru (logy s úrovní warn a výš, jak je zachytil OpenTelemetry Collector do dvojčete): čas, úroveň, cluster, namespace, pod, zpráva, trace id. " +
+        "Když uživatel řeší problém nebo chce vědět, co se děje, začni tady; k reakci na událost použij kubectl (např. logs) nebo twin_view.",
+      schema: z.object({
+        limit: z.number().int().min(1).max(100).default(20).describe("Kolik nejnovějších událostí (max 100)"),
+        severity: z.enum(["warn", "error", "fatal"]).optional().describe("Jen události této úrovně a výš"),
+        instance: z.string().optional().describe("Id dvojčete (instance); bez něj první běžící"),
+      }),
     },
   );

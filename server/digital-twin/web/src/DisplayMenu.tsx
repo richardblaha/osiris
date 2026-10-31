@@ -1,7 +1,8 @@
 import { t } from "i18next";
-import { useRef, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { usePopupClose } from "./Telemetry.tsx";
 import type { Layers } from "./Twin3D.tsx";
+import type { TwinScene, ViewFilters } from "./scene.ts";
 
 const C = "var(--accent-primary)";
 const A = "var(--accent-active)";
@@ -65,21 +66,91 @@ const Glyph = ({ name }: { name: string }) => (
 );
 
 /**
- * The legend of the 3D view: what each shape and line means, and the layers to show (the network, storage, the
- * logical groupings), kept in this browser.
+ * The display menu in the bottom bar: the legend of the 3D view (what each shape and line means), the layers to show
+ * (the network, storage, the logical groupings), and the filters — which models, statuses and names show. In the bar
+ * (`inBar`) the popup opens upward from it, not as a floating panel.
  */
-export function Legend({ layers, onLayers, count }: { layers: Layers; onLayers: (l: Layers) => void; count: string }) {
+export function DisplayMenu({
+  layers,
+  onLayers,
+  filters,
+  onFilters,
+  scene,
+  inBar,
+}: {
+  layers: Layers;
+  onLayers: (l: Layers) => void;
+  filters?: ViewFilters;
+  onFilters?: (f: ViewFilters) => void;
+  scene?: TwinScene;
+  inBar?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   usePopupClose(open, box, () => setOpen(false));
+  /** The models in the scene, with how many twins each has, for the filter's checkboxes. */
+  const modelList = useMemo(() => {
+    const m = new Map<string, { name: string; n: number }>();
+    for (const v of scene?.byId.values() ?? []) {
+      if (v.of || v.isBand) continue;
+      const e = m.get(v.model) ?? { name: v.modelName, n: 0 };
+      e.n++;
+      m.set(v.model, e);
+    }
+    return [...m.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
+  }, [scene]);
+  const count = scene ? String([...scene.byId.values()].filter((v) => !v.of).length) : "";
+  const setFilter = (change: (f: ViewFilters) => ViewFilters) => onFilters?.(change(filters ?? { hiddenModels: new Set() }));
   return (
-    <div ref={box} className="twin-legend">
+    <div ref={box} className={inBar ? "relative" : "twin-legend"}>
       <button type="button" className="legend-button" onClick={() => setOpen(!open)} aria-expanded={open}>
         {t("twin:legend.title")} <span className="text-fg-muted">· {count}</span>
       </button>
       {open && (
-        <div className="menu-popup start-0 w-80 p-3" role="dialog" aria-label={t("twin:legend.title")}>
-          <p className="section-header">{t("twin:legend.layers")}</p>
+        <div className={`menu-popup w-80 p-3 ${inBar ? "bottom-full start-0 mb-2" : "start-0"}`} role="dialog" aria-label={t("twin:legend.title")}>
+          {filters && onFilters && (
+            <>
+              <p className="section-header">{t("twin:display.filters")}</p>
+              <input
+                className="field mt-1 w-full px-2 py-1 text-xs"
+                placeholder={t("twin:display.search")}
+                value={filters.query ?? ""}
+                onChange={(e) => setFilter((f) => ({ ...f, query: e.target.value || undefined }))}
+              />
+              <select className="field mt-1 w-full py-1 text-xs" value={filters.minStatus ?? ""} onChange={(e) => setFilter((f) => ({ ...f, minStatus: (e.target.value || undefined) as ViewFilters["minStatus"] }))}>
+                <option value="">{t("twin:display.anyStatus")}</option>
+                <option value="warn">{t("twin:display.warnUp")}</option>
+                <option value="error">{t("twin:display.errorOnly")}</option>
+              </select>
+              {modelList.length > 0 && (
+                <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto text-xs">
+                  {modelList.map(([id, m]) => (
+                    <li key={id}>
+                      <label className="flex items-center gap-1.5">
+                        <input
+                          type="checkbox"
+                          checked={!filters.hiddenModels.has(id)}
+                          onChange={(e) =>
+                            setFilter((f) => {
+                              const hiddenModels = new Set(f.hiddenModels);
+                              if (e.target.checked) hiddenModels.delete(id);
+                              else hiddenModels.add(id);
+                              return { ...f, hiddenModels };
+                            })
+                          }
+                        />
+                        <span className="break-all" title={id}>
+                          {m.name} <span className="text-fg-muted">×{m.n}</span>
+                        </span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="section-header mt-3">{t("twin:legend.layers")}</p>
+            </>
+          )}
+          {!filters && <p className="section-header">{t("twin:legend.layers")}</p>}
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm">
             {(["network", "storage", "logical"] as const).map((k) => (
               <label key={k} className="flex items-center gap-1.5">

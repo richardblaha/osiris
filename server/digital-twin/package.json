@@ -16,6 +16,7 @@
     "@osiris/platform": "workspace:*",
     "@osiris/shared": "workspace:*",
     "hono": "4.13.13",
+    "redis": "^5.12.1",
     "tsx": "4.23.15",
     "undici": "7.16.0",
     "yaml": "2.9.1",

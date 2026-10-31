@@ -5,7 +5,8 @@
     "dashboard": "Přehled",
     "logs": "Logy",
     "metrics": "Metriky",
-    "traces": "Trasy"
+    "traces": "Trasy",
+    "models": "Modely"
   },
   "loading": "Načítám…",
   "signIn": "Přihlásit se",

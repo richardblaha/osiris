@@ -1,7 +1,7 @@
 {
   "name": "@osiris/tools-digital-twin",
   "private": true,
-  "description": "Osiris agent tools: steering the digital twin's view of the cluster.",
+  "description": "Osiris agent tools: steering the digital twin's view of the cluster and reading its warn/error events.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -13,6 +13,8 @@
   "dependencies": {
     "@langchain/core": "^1.2.17",
     "@osiris/core": "workspace:*",
+    "@osiris/shared": "workspace:*",
+    "@osiris/tools-ops": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {

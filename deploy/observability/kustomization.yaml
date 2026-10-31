@@ -8,6 +8,7 @@ kind: Kustomization
 namespace: observability
 resources:
   - namespace.yaml
+  - redis.yaml
   - clickhouse.yaml
   - collector.yaml
   - agent.yaml

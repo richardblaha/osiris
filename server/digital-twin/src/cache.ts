@@ -16,6 +16,28 @@ export const noCache: Cache = {
   async set() {},
 };
 
+/** The minimal Redis client the cache needs (node-redis's client satisfies it). */
+export interface RedisCacheClient {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string, options?: { PX?: number }): Promise<unknown>;
+}
+
+/**
+ * A cache in Redis: the answers the API gives are shared by every replica of the service (the twins run as several
+ * pods), and they expire on their own. Keys are prefixed so they are recognizable in the database.
+ */
+export function redisCache(client: RedisCacheClient, prefix = "osiris:cache"): Cache {
+  return {
+    async get<T>(key: string) {
+      const hit = await client.get(`${prefix}:${key}`);
+      return hit === null ? undefined : (JSON.parse(hit) as T);
+    },
+    async set(key, value, ttlSeconds) {
+      await client.set(`${prefix}:${key}`, JSON.stringify(value), { PX: ttlSeconds * 1000 });
+    },
+  };
+}
+
 export function memoryCache(max = 2000, now: () => number = Date.now): Cache {
   const entries = new Map<string, { json: string; expires: number }>();
   return {

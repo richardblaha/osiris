@@ -8,7 +8,7 @@
   "model": "DTDL model",
   "errors15m": "Error log records of the last 15 minutes.",
   "empty": "The twin has nothing to show.",
-  "hint": "Drag to orbit, wheel to zoom, click a box to focus it, Esc for the whole twin.",
+  "hint": "Drag to orbit, wheel to zoom, click a box to focus it, Esc for the whole twin. Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1/2/3 layers.",
   "counts": {
     "twins_one": "{{count}} twin",
     "twins_other": "{{count}} twins"
@@ -105,5 +105,41 @@
       "mount": "Mount, node wiring"
     },
     "hint": "Click an Ingress, a Service or a pod: its traffic's path lights up, from the public address to the pods."
+  },
+  "bottomBar": "Bottom bar: time, display, chat",
+  "display": {
+    "filters": "Display filters",
+    "search": "Search by name…",
+    "anyStatus": "Any status",
+    "warnUp": "Warn and worse",
+    "errorOnly": "Errors only"
+  },
+  "keysHint": "Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1/2/3 layers.",
+  "models": {
+    "title": "DTDL models",
+    "new": "New",
+    "newId": "DTMI of the new model (e.g. dtmi:osiris:test:Thing;1):",
+    "pickOne": "Pick a model on the left.",
+    "badJson": "Invalid JSON.",
+    "tab": {
+      "visual": "Visual",
+      "json": "DTDL"
+    },
+    "save": "Save",
+    "delete": "Delete",
+    "preview": "Preview",
+    "identity": "Identity",
+    "contents": "Contents",
+    "presentation": "Presentation",
+    "nameEn": "Name (en)",
+    "nameCs": "Name (cs)",
+    "extends": "Extends",
+    "look": "Shape",
+    "color": "Color",
+    "label": "Label property",
+    "layer": "Layer",
+    "icon": "Icon",
+    "visible": "Visible",
+    "remove": "remove"
   }
 }

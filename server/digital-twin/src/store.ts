@@ -1,25 +1,33 @@
-import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { DigitalTwin, DigitalTwinRelationship, DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
+import type { DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { LocalDb, run, type Statement } from "@osiris/platform/db.ts";
-import { toRelationship, type SourceSnapshot, type SourceTwin } from "./twin.ts";
 
 /**
- * The schema, version 2: everything belongs to an instance (a digital twin of its own, `instance`). The structure
- * (models, twins, relationships) is the sources' and is rebuilt by the next sync, so version 1's is dropped; its
- * dashboards and saved filters are kept, for the first instance (`claimLegacy`).
+ * The schema, version 3: everything belongs to an instance (a digital twin of its own, `instance`). SQLite keeps only
+ * the definitions — the DTDL models (the source's, marked `origin = 'source'`, and the admins' own edits, `origin =
+ * 'user'`; a deleted source model stays as a tombstone, `decommissioned`), the instances with their settings and
+ * sealed secrets, dashboards and saved filters. The twins' and relationships' current state is not stored here: the
+ * sync writes it to Redis (the cache the API and the agent read), and the history goes out as OpenTelemetry events.
+ * Version 2's twins and relationships tables are dropped; version 1's structure goes, its dashboards and filters
+ * wait for the first instance (`claimLegacy`).
  */
-const SCHEMA_VERSION = "2";
+const SCHEMA_VERSION = "3";
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS instances (id TEXT PRIMARY KEY, name TEXT NOT NULL, source_type TEXT NOT NULL, settings TEXT NOT NULL, secrets TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
-  `CREATE TABLE IF NOT EXISTS models (instance TEXT NOT NULL, id TEXT NOT NULL, document TEXT NOT NULL, upload_time INTEGER NOT NULL, PRIMARY KEY (instance, id))`,
-  `CREATE TABLE IF NOT EXISTS twins (instance TEXT NOT NULL, dt_id TEXT NOT NULL, model TEXT NOT NULL, contents TEXT NOT NULL, etag TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (instance, dt_id))`,
-  `CREATE TABLE IF NOT EXISTS relationships (instance TEXT NOT NULL, source_id TEXT NOT NULL, relationship_id TEXT NOT NULL, name TEXT NOT NULL, target_id TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (instance, source_id, relationship_id))`,
-  `CREATE INDEX IF NOT EXISTS relationships_target ON relationships (instance, target_id)`,
+  `CREATE TABLE IF NOT EXISTS models (instance TEXT NOT NULL, id TEXT NOT NULL, document TEXT NOT NULL, upload_time INTEGER NOT NULL, origin TEXT NOT NULL DEFAULT 'source', decommissioned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (instance, id))`,
   `CREATE TABLE IF NOT EXISTS dashboards (instance TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY (instance, id))`,
   `CREATE TABLE IF NOT EXISTS saved_filters (instance TEXT NOT NULL, owner TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, filter TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (instance, owner, id))`,
+];
+
+/** Version 2: the twins and relationships move to Redis; the models table gains `origin` and `decommissioned`. */
+const FROM_V2 = [
+  `DROP TABLE IF EXISTS twins`,
+  `DROP TABLE IF EXISTS relationships`,
+  `DROP INDEX IF EXISTS relationships_target`,
+  `ALTER TABLE models ADD COLUMN origin TEXT NOT NULL DEFAULT 'source'`,
+  `ALTER TABLE models ADD COLUMN decommissioned INTEGER NOT NULL DEFAULT 0`,
 ];
 
 /** Version 1 (one twin): its structure goes, its dashboards and filters wait for the first instance (`claimLegacy`). */
@@ -79,48 +87,21 @@ export interface SavedFilter {
   createdAt: number;
 }
 
-/** A twin's properties: everything but the `$` fields. */
-const contentsOf = (t: SourceTwin | DigitalTwin) => Object.fromEntries(Object.entries(t).filter(([k]) => !k.startsWith("$")).sort(([a], [b]) => a.localeCompare(b)));
-const etagOf = (model: string, contents: Record<string, unknown>) => `W/"${createHash("sha256").update(JSON.stringify([model, contents])).digest("hex").slice(0, 20)}"`;
 const iso = (ms: number) => new Date(ms).toISOString();
 
-interface TwinRow {
-  dt_id: string;
-  model: string;
-  contents: string;
-  etag: string;
-  updated_at: number;
-}
-interface RelRow {
-  source_id: string;
-  relationship_id: string;
-  name: string;
-  target_id: string;
-}
-
-const twinOf = (r: TwinRow): DigitalTwin => ({
-  $dtId: r.dt_id,
-  $etag: r.etag,
-  $metadata: { $model: r.model, $lastUpdateTime: iso(r.updated_at) },
-  ...(JSON.parse(r.contents) as Record<string, unknown>),
-});
-const relOf = (r: RelRow): DigitalTwinRelationship => ({ $relationshipId: r.relationship_id, $sourceId: r.source_id, $relationshipName: r.name, $targetId: r.target_id });
-
-/** What a sync changed: the history writes it (and a checkpoint writes everything). */
-export interface SyncResult {
-  ts: number;
-  added: DigitalTwin[];
-  changed: { before: DigitalTwin; after: DigitalTwin; changed: string[] }[];
-  removed: DigitalTwin[];
-  relationshipsAdded: DigitalTwinRelationship[];
-  relationshipsRemoved: DigitalTwinRelationship[];
+interface ModelRow {
+  id: string;
+  document: string;
+  upload_time: number;
+  origin: string;
+  decommissioned: number;
 }
 
 /**
- * Osiris Digital Twin's data in one SQLite file (DATA_DIR/twin.db; one replica, one writer): the instances (each a
- * digital twin of its own, with its source's settings and sealed secrets) and, per instance (`of`), its DTDL models,
- * twins and relationships, dashboards and users' saved filters. Time series (telemetry and history) stay in
- * OpenTelemetry's ClickHouse.
+ * Osiris Digital Twin's definitions in one SQLite file (DATA_DIR/twin.db; one writer): the instances (each a digital
+ * twin of its own, with its source's settings and sealed secrets) and, per instance (`of`), its DTDL models,
+ * dashboards and users' saved filters. The twins' current state lives in Redis (see `state.ts`), the time series
+ * (telemetry and history) in OpenTelemetry's ClickHouse.
  */
 export class TwinStore {
   private constructor(
@@ -133,10 +114,15 @@ export class TwinStore {
     const db = new LocalDb(path);
     await db.execute([run(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`)]);
     const version = (await db.query<{ value: string }>(`SELECT value FROM meta WHERE key = 'schema'`))[0]?.value;
+    const tables = new Set((await db.query<{ name: string }>(`SELECT name FROM sqlite_master WHERE type = 'table'`)).map((r) => r.name));
     if (version !== SCHEMA_VERSION) {
-      const tables = new Set((await db.query<{ name: string }>(`SELECT name FROM sqlite_master WHERE type = 'table'`)).map((r) => r.name));
       // A version 1 file (it has twins without instances): moved aside as described above.
       if (tables.has("twins") && !version) await db.execute(FROM_V1.filter((sql) => !/RENAME/.test(sql) || tables.has(sql.split(" ")[2]!)).map((sql) => run(sql)));
+      if (version === "2" || (version && tables.has("twins"))) {
+        // Version 2's structure moves to Redis; the models table gains origin and decommissioned where missing.
+        const columns = new Set((await db.query<{ name: string }>(`PRAGMA table_info(models)`)).map((r) => r.name));
+        await db.execute(FROM_V2.filter((sql) => !sql.startsWith("ALTER") || !columns.has(sql.split("ADD COLUMN ")[1]!.split(" ")[0]!)).map((sql) => run(sql)));
+      }
     }
     await db.execute([...SCHEMA.map((sql) => run(sql)), run(`INSERT OR REPLACE INTO meta (key, value) VALUES ('schema', ?)`, SCHEMA_VERSION)]);
     return new TwinStore(db, sealer);
@@ -193,11 +179,11 @@ export class TwinStore {
     return (await this.instance(input.id))!;
   }
 
-  /** Removes an instance and everything that is its own. */
+  /** Removes an instance and everything that is its own (its state in Redis goes with the caller). */
   async deleteInstance(id: string): Promise<boolean> {
     const results = await this.db.execute([
       run(`DELETE FROM instances WHERE id = ?`, id),
-      ...["models", "twins", "relationships", "dashboards", "saved_filters"].map((t) => run(`DELETE FROM ${t} WHERE instance = ?`, id)),
+      ...["models", "dashboards", "saved_filters"].map((t) => run(`DELETE FROM ${t} WHERE instance = ?`, id)),
       run(`DELETE FROM meta WHERE key LIKE ?`, `${id}:%`),
     ]);
     return (results[0]?.rowsAffected ?? 0) > 0;
@@ -255,8 +241,9 @@ interface InstanceRow {
 }
 
 /**
- * One instance's data: its DTDL models, twins and relationships (its source's, kept in step by the sync), its meta,
- * dashboards and users' saved filters.
+ * One instance's definitions: its DTDL models (the source's, plus the admins' own edits — a source model an admin
+ * edited is never overwritten by the sync), its meta, dashboards and users' saved filters. Its twins and
+ * relationships are in Redis, not here.
  */
 export class InstanceData {
   constructor(
@@ -264,21 +251,46 @@ export class InstanceData {
     readonly instance: string,
   ) {}
 
-  /** Writes the source's models (new or changed ones get a new upload time); ones it no longer has go. */
+  /**
+   * Writes the source's models (new or changed ones get a new upload time, `origin = 'source'`); ones it no longer
+   * has go — unless an admin edited them (`origin = 'user'`), those stay. A model the admin decommissioned stays
+   * hidden even when the source has it again.
+   */
   async putModels(docs: DtdlInterface[], now: number): Promise<void> {
-    const have = new Map((await this.db.query<{ id: string; document: string }>(`SELECT id, document FROM models WHERE instance = ?`, [this.instance])).map((r) => [r.id, r.document]));
+    const have = new Map((await this.db.query<ModelRow>(`SELECT id, document, origin, decommissioned FROM models WHERE instance = ?`, [this.instance])).map((r) => [r.id, r]));
     const statements: Statement[] = [];
     for (const doc of docs) {
+      const row = have.get(doc["@id"]);
+      if (row?.origin === "user" || row?.decommissioned) continue;
       const json = JSON.stringify(doc);
-      if (have.get(doc["@id"]) !== json) statements.push(run(`INSERT OR REPLACE INTO models (instance, id, document, upload_time) VALUES (?, ?, ?, ?)`, this.instance, doc["@id"], json, now));
+      if (row?.document !== json) statements.push(run(`INSERT OR REPLACE INTO models (instance, id, document, upload_time, origin, decommissioned) VALUES (?, ?, ?, ?, 'source', 0)`, this.instance, doc["@id"], json, now));
       have.delete(doc["@id"]);
     }
-    for (const id of have.keys()) statements.push(run(`DELETE FROM models WHERE instance = ? AND id = ?`, this.instance, id));
-    await this.db.execute(statements);
+    for (const [id, row] of have) if (row.origin !== "user") statements.push(run(`DELETE FROM models WHERE instance = ? AND id = ?`, this.instance, id));
+    if (statements.length) await this.db.execute(statements);
+  }
+
+  /** Saves an admin's own model (an edit of the source's or a new one): `origin = 'user'`, never touched by the sync. */
+  async putModel(doc: DtdlInterface, now: number): Promise<void> {
+    await this.db.execute([
+      run(`INSERT OR REPLACE INTO models (instance, id, document, upload_time, origin, decommissioned) VALUES (?, ?, ?, ?, 'user', 0)`, this.instance, doc["@id"], JSON.stringify(doc), now),
+    ]);
+  }
+
+  /**
+   * Removes a model: one the admin made goes; a source's one is decommissioned (a tombstone the sync respects), so
+   * its twins would be without a model — the caller refuses that while any twin instantiates it.
+   */
+  async deleteModel(id: string): Promise<boolean> {
+    const [row] = await this.db.query<ModelRow>(`SELECT origin FROM models WHERE instance = ? AND id = ?`, [this.instance, id]);
+    if (!row) return false;
+    if (row.origin === "user") await this.db.execute([run(`DELETE FROM models WHERE instance = ? AND id = ?`, this.instance, id)]);
+    else await this.db.execute([run(`UPDATE models SET decommissioned = 1 WHERE instance = ? AND id = ?`, this.instance, id)]);
+    return true;
   }
 
   async models(): Promise<DtdlModelData[]> {
-    const rows = await this.db.query<{ id: string; document: string; upload_time: number }>(`SELECT id, document, upload_time FROM models WHERE instance = ? ORDER BY id`, [this.instance]);
+    const rows = await this.db.query<ModelRow>(`SELECT id, document, upload_time, decommissioned FROM models WHERE instance = ? AND decommissioned = 0 ORDER BY id`, [this.instance]);
     return rows.map((r) => {
       const model = JSON.parse(r.document) as DtdlInterface;
       return {
@@ -290,21 +302,6 @@ export class InstanceData {
         model,
       };
     });
-  }
-
-  async twins(): Promise<DigitalTwin[]> {
-    return (await this.db.query<TwinRow>(`SELECT dt_id, model, contents, etag, updated_at FROM twins WHERE instance = ? ORDER BY dt_id`, [this.instance])).map(twinOf);
-  }
-
-  async twin(id: string): Promise<DigitalTwin | undefined> {
-    const [row] = await this.db.query<TwinRow>(`SELECT dt_id, model, contents, etag, updated_at FROM twins WHERE instance = ? AND dt_id = ?`, [this.instance, id]);
-    return row && twinOf(row);
-  }
-
-  async relationships(filter: { source?: string; target?: string } = {}): Promise<DigitalTwinRelationship[]> {
-    const where = filter.source ? `AND source_id = ?` : filter.target ? `AND target_id = ?` : "";
-    const args = filter.source ? [filter.source] : filter.target ? [filter.target] : [];
-    return (await this.db.query<RelRow>(`SELECT source_id, relationship_id, name, target_id FROM relationships WHERE instance = ? ${where} ORDER BY source_id, relationship_id`, [this.instance, ...args])).map(relOf);
   }
 
   /** The instance's own meta values (keys are kept apart per instance). */
@@ -388,58 +385,5 @@ export class InstanceData {
     const [r] = await this.db.execute([run(`DELETE FROM saved_filters WHERE instance = ? AND owner = ? AND id = ?`, this.instance, owner, id)]);
     return (r?.rowsAffected ?? 0) > 0;
   }
-
-  /**
-   * Makes the instance's twins and relationships what its source's snapshot says, in one transaction, and tells what
-   * changed. An unchanged twin keeps its etag and update time.
-   */
-  async sync(snapshot: SourceSnapshot, now: number): Promise<SyncResult> {
-    const i = this.instance;
-    const before = new Map((await this.db.query<TwinRow>(`SELECT dt_id, model, contents, etag, updated_at FROM twins WHERE instance = ?`, [i])).map((r) => [r.dt_id, twinOf(r)]));
-    const result: SyncResult = { ts: now, added: [], changed: [], removed: [], relationshipsAdded: [], relationshipsRemoved: [] };
-    const statements: Statement[] = [];
-    const seen = new Set<string>();
-    for (const t of snapshot.twins) {
-      if (seen.has(t.$dtId)) continue;
-      seen.add(t.$dtId);
-      const contents = contentsOf(t);
-      const etag = etagOf(t.$metadata.$model, contents);
-      const was = before.get(t.$dtId);
-      if (was?.$etag === etag) continue;
-      const after: DigitalTwin = { $dtId: t.$dtId, $etag: etag, $metadata: { $model: t.$metadata.$model, $lastUpdateTime: iso(now) }, ...contents };
-      statements.push(run(`INSERT OR REPLACE INTO twins (instance, dt_id, model, contents, etag, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, i, t.$dtId, t.$metadata.$model, JSON.stringify(contents), etag, now));
-      if (!was) result.added.push(after);
-      else {
-        const old = contentsOf(was);
-        const keys = [...new Set([...Object.keys(old), ...Object.keys(contents)])].filter((k) => JSON.stringify(old[k]) !== JSON.stringify(contents[k])).sort();
-        if (was.$metadata.$model !== t.$metadata.$model) keys.unshift("$model");
-        result.changed.push({ before: was, after, changed: keys });
-      }
-    }
-    for (const [id, was] of before)
-      if (!seen.has(id)) {
-        result.removed.push(was);
-        statements.push(run(`DELETE FROM twins WHERE instance = ? AND dt_id = ?`, i, id));
-      }
-
-    const relsBefore = new Map(
-      (await this.db.query<RelRow>(`SELECT source_id, relationship_id, name, target_id FROM relationships WHERE instance = ?`, [i])).map((r) => [`${r.source_id}\u0000${r.relationship_id}`, relOf(r)]),
-    );
-    const relsNow = new Set<string>();
-    for (const r of snapshot.relationships.map(toRelationship)) {
-      const key = `${r.$sourceId}\u0000${r.$relationshipId}`;
-      if (relsNow.has(key)) continue;
-      relsNow.add(key);
-      if (relsBefore.has(key)) continue;
-      result.relationshipsAdded.push(r);
-      statements.push(run(`INSERT OR REPLACE INTO relationships (instance, source_id, relationship_id, name, target_id, updated_at) VALUES (?, ?, ?, ?, ?, ?)`, i, r.$sourceId, r.$relationshipId, r.$relationshipName, r.$targetId, now));
-    }
-    for (const [key, r] of relsBefore)
-      if (!relsNow.has(key)) {
-        result.relationshipsRemoved.push(r);
-        statements.push(run(`DELETE FROM relationships WHERE instance = ? AND source_id = ? AND relationship_id = ?`, i, r.$sourceId, r.$relationshipId));
-      }
-    await this.db.execute(statements);
-    return result;
-  }
 }
+

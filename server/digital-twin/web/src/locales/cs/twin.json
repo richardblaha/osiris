@@ -8,7 +8,7 @@
   "model": "DTDL model",
   "errors15m": "Chybové logy za posledních 15 minut.",
   "empty": "Dvojče nemá nic k zobrazení.",
-  "hint": "Tažením otáčej, kolečkem přibližuj, klikem na kvádr ho zaměř, Esc ukáže celé dvojče.",
+  "hint": "Tažením otáčej, kolečkem přibližuj, klikem na kvádr ho zaměř, Esc ukáže celé dvojče. Klávesy: WASD/šipky pohyb, Q/E nahoru/dolů, +/- lupa, Tab výběr, H celé dvojče, 1/2/3 vrstvy.",
   "counts": {
     "twins_one": "{{count}} twin",
     "twins_few": "{{count}} twiny",
@@ -111,5 +111,41 @@
       "mount": "Připojení, zapojení nodu"
     },
     "hint": "Klikněte na Ingress, službu nebo pod: rozsvítí se cesta jeho provozu od veřejné adresy po pody."
+  },
+  "bottomBar": "Spodní lišta: čas, zobrazení, chat",
+  "display": {
+    "filters": "Filtry zobrazení",
+    "search": "Hledat podle jména…",
+    "anyStatus": "Jakýkoliv stav",
+    "warnUp": "Pozor a horší",
+    "errorOnly": "Jen chyby"
+  },
+  "keysHint": "Klávesy: WASD/šipky pohyb, Q/E nahoru/dolů, +/- lupa, Tab výběr, H celé dvojče, 1/2/3 vrstvy.",
+  "models": {
+    "title": "DTDL modely",
+    "new": "Nový",
+    "newId": "DTMI nového modelu (např. dtmi:osiris:test:Cos;1):",
+    "pickOne": "Vyber model vlevo.",
+    "badJson": "Neplatný JSON.",
+    "tab": {
+      "visual": "Vizuálně",
+      "json": "DTDL"
+    },
+    "save": "Uložit",
+    "delete": "Smazat",
+    "preview": "Náhled",
+    "identity": "Identita",
+    "contents": "Obsah (contents)",
+    "presentation": "Vykreslování (presentation)",
+    "nameEn": "Název (en)",
+    "nameCs": "Název (cs)",
+    "extends": "Extends",
+    "look": "Tvar",
+    "color": "Barva",
+    "label": "Popisek z property",
+    "layer": "Vrstva",
+    "icon": "Ikona",
+    "visible": "Viditelný",
+    "remove": "odebrat"
   }
 }

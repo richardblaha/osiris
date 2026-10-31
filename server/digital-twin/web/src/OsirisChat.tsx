@@ -62,7 +62,8 @@ const shown = (m: ChatMessage): ReactNode => {
  * approve) as forms, answers read aloud (Piper) when speech is on, and the `twin_view` tool's steps handed to the
  * twin as they come. The conversation is one thread, kept across visits.
  */
-export function OsirisChat({ onTwin }: { onTwin: (actions: TwinAction[]) => void }) {
+export function OsirisChat({ onTwin, dock }: { onTwin: (actions: TwinAction[]) => void; /** In the bottom bar: the input inline, the conversation in a panel above the bar. */
+  dock?: boolean }) {
   const [thread, setThread] = useState(() => stored(THREAD));
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [question, setQuestion] = useState<ChatQuestion>();
@@ -211,7 +212,7 @@ export function OsirisChat({ onTwin }: { onTwin: (actions: TwinAction[]) => void
   return (
     <>
       {open && (messages.length > 0 || error) && (
-        <section className="osiris-answers" aria-label={t("twin:chat.title")} aria-live="polite">
+        <section className={dock ? "osiris-answers osiris-answers-dock" : "osiris-answers"} aria-label={t("twin:chat.title")} aria-live="polite">
           <header className="flex items-center gap-2 border-b border-line px-3 py-1.5">
             <span className="section-header flex-1">{t("twin:chat.title")}</span>
             <button type="button" className="btn-link text-xs" onClick={newConversation}>
@@ -249,7 +250,7 @@ export function OsirisChat({ onTwin }: { onTwin: (actions: TwinAction[]) => void
           </div>
         </section>
       )}
-      <form className="osiris-input" onSubmit={submit}>
+      <form className={dock ? "osiris-input osiris-input-dock" : "osiris-input"} onSubmit={submit}>
         <button type="button" onClick={() => setOpen(!open)} className="osiris-icon" aria-pressed={open} title={t("twin:chat.title")} aria-label={t("twin:chat.title")}>
           <Icon name="chat" />
         </button>

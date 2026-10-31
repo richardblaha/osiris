@@ -1,5 +1,8 @@
 # The cluster's OpenTelemetry Collector: OTLP from applications (gRPC 4317, HTTP 4318) and from the node agents,
 # cluster metrics (k8s_cluster) and Kubernetes events, enriched with pod metadata and written to ClickHouse.
+# The twin/events processor (this repo's image, deploy/observability/twin-events) additionally appends every
+# warn/error log record to the Redis stream osiris:otel:events, where the digital twin's API and Osiris's agent
+# read it (GET /api/instances/:instance/events, and a push to the agent's thread when EVENTS_PUSH is on).
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -96,6 +99,25 @@ data:
       # ClickHouse wants few, large inserts.
       batch: { send_batch_size: 5000, timeout: 10s }
       batch/web: { send_batch_size: 1000, timeout: 5s }
+      # Warn/error log records (min_severity, else inferred from the body like the twin's SEVERITY_EXPR) to the
+      # Redis stream the digital twin and Osiris's agent read; best effort — a Redis failure never blocks the
+      # pipeline to ClickHouse. REDIS_URL and the stream's prefix must match the twin's (REDIS_KEY_PREFIX).
+      twin/events:
+        redis_url: ${env:REDIS_URL}
+        stream: ${env:REDIS_KEY_PREFIX}:otel:events
+        min_severity: warn
+        infer_from_body: true
+        max_len: 10000
+        max_message: 2000
+        attributes:
+          service.name: service
+          k8s.cluster.name: cluster
+          k8s.namespace.name: namespace
+          k8s.pod.name: pod
+          k8s.node.name: node
+          k8s.container.name: container
+        include_services: []
+        exclude_services: []
     exporters:
       clickhouse:
         endpoint: tcp://clickhouse.observability.svc.cluster.local:9000?dial_timeout=10s
@@ -125,8 +147,8 @@ data:
       pipelines:
         traces: { receivers: [otlp], processors: [memory_limiter, resource/cluster, k8sattributes, batch], exporters: [clickhouse] }
         metrics: { receivers: [otlp, k8s_cluster], processors: [memory_limiter, resource/cluster, k8sattributes, batch], exporters: [clickhouse] }
-        logs: { receivers: [otlp, k8sobjects], processors: [memory_limiter, resource/cluster, k8sattributes, batch], exporters: [clickhouse] }
-        logs/agents: { receivers: [otlp/agents], processors: [memory_limiter, resource/cluster, batch], exporters: [clickhouse] }
+        logs: { receivers: [otlp, k8sobjects], processors: [memory_limiter, resource/cluster, k8sattributes, twin/events, batch], exporters: [clickhouse] }
+        logs/agents: { receivers: [otlp/agents], processors: [memory_limiter, resource/cluster, twin/events, batch], exporters: [clickhouse] }
         metrics/agents: { receivers: [otlp/agents, prometheus], processors: [memory_limiter, resource/cluster, batch], exporters: [clickhouse] }
         logs/web: { receivers: [otlp/web], processors: [memory_limiter, batch/web], exporters: [clickhouse/web] }
 ---
@@ -143,7 +165,7 @@ spec:
       labels: { app: otel-collector }
       annotations:
         # Restart when the configuration changes.
-        config/version: "4"
+        config/version: "5"
     spec:
       serviceAccountName: otel-collector
       securityContext:
@@ -151,7 +173,8 @@ spec:
         seccompProfile: { type: RuntimeDefault }
       containers:
         - name: collector
-          image: otel/opentelemetry-collector-contrib:0.161.0
+          # This repo's build: contrib plus the twin/events processor (deploy/observability/twin-events/Dockerfile).
+          image: ghcr.io/richardblaha/otel-collector:main
           args: [--config=/conf/config.yaml]
           ports:
             - { name: otlp-grpc, containerPort: 4317 }
@@ -161,6 +184,8 @@ spec:
           env:
             - name: CLICKHOUSE_PASSWORD
               valueFrom: { secretKeyRef: { name: clickhouse-users, key: OTEL_PASSWORD } }
+            - { name: REDIS_URL, value: redis://redis.observability.svc.cluster.local:6379/0 }
+            - { name: REDIS_KEY_PREFIX, value: osiris }
           resources:
             requests: { cpu: 50m, memory: 128Mi }
             limits: { memory: 512Mi }
@@ -193,9 +218,17 @@ metadata:
   name: otel-collector
 spec:
   podSelector: { matchLabels: { app: otel-collector } }
-  policyTypes: [Ingress]
+  policyTypes: [Ingress, Egress]
   ingress:
     - ports: [{ port: 4317, protocol: TCP }, { port: 4318, protocol: TCP }, { port: 4319, protocol: TCP }]
     - from:
         - podSelector: { matchLabels: { app: web-events } }
       ports: [{ port: 4320, protocol: TCP }]
+  # The twin/events processor's Redis, and ClickHouse for the rest.
+  egress:
+    - to:
+        - podSelector: { matchLabels: { app: redis } }
+      ports: [{ port: 6379, protocol: TCP }]
+    - to:
+        - podSelector: { matchLabels: { app: clickhouse } }
+      ports: [{ port: 9000, protocol: TCP }, { port: 8123, protocol: TCP }]

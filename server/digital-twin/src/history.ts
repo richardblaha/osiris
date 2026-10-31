@@ -1,6 +1,6 @@
 import type { TwinChange, TwinStatus } from "@osiris/shared";
 import type { DigitalTwin, DigitalTwinRelationship } from "@osiris/shared/dtdl.ts";
-import type { SyncResult } from "./store.ts";
+import type { SyncResult } from "./state.ts";
 import type { ClickHouse } from "./telemetry.ts";
 import { CONTAINS } from "./twin.ts";
 

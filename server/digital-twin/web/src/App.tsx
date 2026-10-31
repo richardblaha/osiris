@@ -1,7 +1,7 @@
 import type { DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon.tsx";
-import { buildScene, scopeOf, type TwinScene } from "./scene.ts";
+import { buildScene, passes, scopeOf, type TwinScene, type TwinView, type ViewFilters } from "./scene.ts";
 import { t } from "i18next";
 import { api, currentInstance, setInstance, type DashboardSummary, type InstanceSummary } from "./api.ts";
 import { Instances } from "./Instances.tsx";
@@ -11,9 +11,9 @@ import { UserMenu, type Profile } from "./UserMenu.tsx";
 import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
 import { ALL_LAYERS, Twin3D, type CameraControl, type Layers, type Point } from "./Twin3D.tsx";
-import { Legend } from "./Legend.tsx";
+import { BottomBar } from "./BottomBar.tsx";
 import { OsirisChat, type TwinAction } from "./OsirisChat.tsx";
-import { Timeline } from "./Timeline.tsx";
+import { Models } from "./Models.tsx";
 import { FocusPanels } from "./FocusPanels.tsx";
 import { Dashboard, DashboardMenu } from "./Dashboard.tsx";
 
@@ -25,7 +25,8 @@ type View =
   | { kind: "logs"; preset: Preset; filter?: Record<string, string>; traceId?: string }
   | { kind: "metrics"; preset: Preset }
   | { kind: "traces"; preset: Preset; traceId?: string }
-  | { kind: "instances" };
+  | { kind: "instances" }
+  | { kind: "models" };
 
 const SCOPE = ["namespace", "pod", "node", "container", "claim"] as const;
 /** The logs page's own filters (besides the scope), kept in the URL. */
@@ -47,6 +48,7 @@ const parseHash = (): View => {
   if (kind === "metrics") return { kind: "metrics", preset };
   if (kind === "traces") return { kind: "traces", preset, traceId: params.get("traceId") ?? undefined };
   if (kind === "instances") return { kind: "instances" };
+  if (kind === "models") return { kind: "models" };
   return { kind: "twin" };
 };
 
@@ -102,6 +104,24 @@ export function App() {
     setLayers(next);
     try {
       localStorage.setItem("osiris.digital-twin.layers", JSON.stringify(next));
+    } catch {
+      // The choice lasts as long as the page.
+    }
+  };
+  /** The view's own filters (the bottom bar's display menu: hidden models, a lowest status, a name search). */
+  const FILTERS_KEY = "osiris.digital-twin.filters";
+  const [filters, setFilters] = useState<ViewFilters>(() => {
+    try {
+      const f = JSON.parse(localStorage.getItem(FILTERS_KEY) ?? "{}") as Partial<ViewFilters> & { hiddenModels?: string[] };
+      return { hiddenModels: new Set(f.hiddenModels ?? []), minStatus: f.minStatus, query: f.query };
+    } catch {
+      return { hiddenModels: new Set() };
+    }
+  });
+  const changeFilters = (next: ViewFilters) => {
+    setFilters(next);
+    try {
+      localStorage.setItem(FILTERS_KEY, JSON.stringify({ hiddenModels: [...next.hiddenModels], minStatus: next.minStatus, query: next.query }));
     } catch {
       // The choice lasts as long as the page.
     }
@@ -178,8 +198,8 @@ export function App() {
       setData({ twins, relationships, errors, network, storage, at });
     });
   const scene: TwinScene | undefined = useMemo(
-    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.storage, data.at) : undefined),
-    [models, data],
+    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.storage, data.at, filters) : undefined),
+    [models, data, filters],
   );
   // The selection follows the refreshed scene (its new status and properties), or goes when its twin is gone.
   const selected = selectedId ? scene?.byId.get(selectedId) : undefined;
@@ -190,6 +210,10 @@ export function App() {
     const id = setInterval(() => void loadTwin(), 60_000);
     return () => clearInterval(id);
   }, [signedIn, at, instance]);
+  // The models were cleared (an edit in the models page): load them again.
+  useEffect(() => {
+    if (signedIn && instance && models === undefined && data !== undefined) void loadTwin();
+  }, [signedIn, instance, models, data]);
 
   // After the OIDC redirect: back to where the user was. Without a token, straight on to signing in (unless that just
   // failed: then the button).
@@ -228,6 +252,23 @@ export function App() {
     return page === "metrics" ? scope : { ...scope, claim: undefined, container: page === "traces" ? undefined : scope.container };
   };
   const openPage = (page: Exclude<Page, "dashboard">) => navigate({ kind: page, preset: presetOf(page) } as View);
+
+  /** The keyboard inside the 3D view: Tab/Shift+Tab cycle the selection through the scene's tree, H the whole twin. */
+  const navigate3d = (action: "next" | "prev" | "home") => {
+    if (action === "home") return void (setSelectedId(undefined), setHome((h) => h + 1));
+    const sc = latest.current;
+    if (!sc) return;
+    const order: string[] = [];
+    const walk = (v: TwinView) => {
+      if (!v.of && passes(v, sc.filters)) order.push(v.id);
+      v.children.forEach(walk);
+    };
+    sc.top.forEach(walk);
+    for (const b of sc.bands) walk(b);
+    if (!order.length) return;
+    const i = order.indexOf(selectedId ?? "");
+    setSelectedId(action === "next" ? order[(i + 1) % order.length]! : order[(i - 1 + order.length) % order.length]!);
+  };
 
   /** The dashboards' names, for the Overview tab's choice; reloaded when one is made, renamed or deleted. */
   const [dashboards, setDashboards] = useState<DashboardSummary[]>([]);
@@ -287,8 +328,8 @@ export function App() {
     }
   };
 
-  const tabLabel = (page: Page | "instances") =>
-    page === "instances" ? t("instances:title") :
+  const tabLabel = (page: Page | "instances" | "models") =>
+    page === "instances" ? t("instances:title") : page === "models" ? t("common:nav.models") :
     page === "dashboard" ? t("common:nav.dashboard") : page === "logs" ? t("common:nav.logs") : page === "metrics" ? t("common:nav.metrics") : t("common:nav.traces");
 
   return (
@@ -324,32 +365,37 @@ export function App() {
                 </div>
               ) : scene ? (
                 scene.top.length ? (
-                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} control={camera} layers={layers} />
+                  <Twin3D scene={scene} selected={selected} home={home} onSelect={(node) => setSelectedId(node.id)} anchor={anchor} control={camera} layers={layers} onNavigate={navigate3d} onLayersChange={changeLayers} />
                 ) : (
                   <p className="grid h-full place-items-center text-sm text-fg-muted">{t("twin:empty")}</p>
                 )
               ) : null}
               {selected && scene ? (
-                <>
-                  <FocusPanels
-                    key={selected.id}
-                    node={selected}
-                    scene={scene}
-                    anchor={anchor}
-                    onSelect={setSelectedId}
-                    onOpenPage={openPage}
-                    onOpenTrace={(traceId) => navigate({ kind: "traces", preset: {}, traceId })}
-                  />
-                  <p className="twin-hint pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:escHint")}</p>
-                </>
-              ) : (
-                <>
-                  <p className="pointer-events-none absolute bottom-2 start-4 text-xs text-fg-muted">{t("twin:hint")}</p>
-                  <Legend layers={layers} onLayers={changeLayers} count={scene ? t("twin:counts.twins", { count: [...scene.byId.values()].filter((v) => !v.of).length }) : ""} />
-                </>
-              )}
+                <FocusPanels
+                  key={selected.id}
+                  node={selected}
+                  scene={scene}
+                  anchor={anchor}
+                  onSelect={setSelectedId}
+                  onOpenPage={openPage}
+                  onOpenTrace={(traceId) => navigate({ kind: "traces", preset: {}, traceId })}
+                />
+              ) : null}
+              <p className="pointer-events-none absolute bottom-12 start-4 text-xs text-fg-muted">{selected ? t("twin:escHint") : t("twin:hint")}</p>
             </div>
-            {historyFrom !== undefined && <Timeline from={historyFrom} at={at} onChange={setAt} />}
+            {signedIn && instance && (
+              <BottomBar
+                historyFrom={historyFrom}
+                at={at}
+                onAt={setAt}
+                layers={layers}
+                onLayers={changeLayers}
+                filters={filters}
+                onFilters={changeFilters}
+                scene={scene}
+                chat={<OsirisChat dock onTwin={(steps) => void runTwin(steps)} />}
+              />
+            )}
           </>
         )}
       </main>
@@ -358,6 +404,18 @@ export function App() {
         <section className="page-overlay" aria-label={tabLabel(view.kind)}>
           {view.kind === "instances" ? (
             <Instances onChanged={(id) => void loadInstances(id).catch(() => {})} />
+          ) : view.kind === "models" ? (
+            <Models
+              models={models ?? []}
+              onChanged={() => setModels(undefined)}
+              onPreview={(doc) =>
+                setModels((ms) =>
+                  ms?.some((m) => m.id === doc["@id"])
+                    ? ms.map((m) => (m.id === doc["@id"] ? { ...m, model: doc } : m))
+                    : [...(ms ?? []), { id: doc["@id"], model: doc, uploadTime: "", decommissioned: false }],
+                )
+              }
+            />
           ) : view.kind === "dashboard" ? (
             <Dashboard
               id={view.id}
@@ -391,8 +449,6 @@ export function App() {
         </section>
       )}
 
-      {signedIn && <OsirisChat onTwin={(steps) => void runTwin(steps)} />}
-
       {/* The bar over everything, see-through: the name, the pages in the middle, the user. */}
       <header className="app-bar">
         <span className="app-bar-brand">
@@ -423,6 +479,18 @@ export function App() {
               )}
             </span>
           ))}
+          {admin && (
+            <button
+              type="button"
+              onClick={() => (view.kind === "models" ? navigate({ kind: "twin" }) : navigate({ kind: "models" }))}
+              data-active={view.kind === "models"}
+              aria-pressed={view.kind === "models"}
+              disabled={!instance}
+              className="app-tab"
+            >
+              {t("common:nav.models")}
+            </button>
+          )}
         </nav>
         <span className="app-bar-user">{signedIn && <UserMenu user={user} />}</span>
       </header>

@@ -11,6 +11,8 @@ import type { Cache } from "./cache.ts";
 import type { Config } from "./config.ts";
 import type { Instances, RunningInstance } from "./instances.ts";
 import { errorsByTwin, valuesByTwin } from "./twin.ts";
+import type { TelemetryKind, TelemetryState, TwinStateStore } from "./state.ts";
+import { interfaceErrors, presentationErrors, type DigitalTwin, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
 import type { MetricType } from "./telemetry.ts";
 import { secretFields } from "./sources/registry.ts";
 import { availableTools, ceph, kubectl, OpsRefused, type CommandResult, type OpsTools } from "./ops.ts";
@@ -78,6 +80,8 @@ const csp = (authUrl?: string) =>
 export interface AppOptions {
   /** The digital twins (instances), each with its source, data, telemetry and history. */
   instances: Instances;
+  /** The cache the twins' current state, the view's telemetry and the collector's events live in (Redis). */
+  state: TwinStateStore;
   verifier?: TokenVerifier;
   cache: Cache;
   staticDir?: string;
@@ -90,14 +94,17 @@ export interface AppOptions {
 /**
  * Osiris Digital Twin's HTTP app. It holds any number of digital twins (instances, `/api/instances`; admins manage
  * them at `/api/admin/instances`), each in the shape of the Azure Digital Twins API, DTDL's de facto instance format,
- * under `/api/instances/{instance}`: `/models` (DTDL v3 interfaces), `/digitaltwins/{id}`, its relationships and
+ * under `/api/instances/{instance}`: `/models` (DTDL v3 interfaces; admins may edit them — PUT/POST/DELETE — and give
+ * them a `presentation` section that says how the views draw their twins), `/digitaltwins/{id}`, its relationships and
  * incoming relationships, plus the lists the PWA draws from (`/digitaltwins`, `/relationships`; `?at=` for a past
- * time) and each twin's history. Structure from SQLite; telemetry and history from OpenTelemetry's ClickHouse; the telemetry
- * pages' data (logs, metrics, traces) and the PWA itself. Sign-in is osiris-auth's: the PWA signs in with OIDC, the
- * API introspects the token; the admin group sees every instance, the group `twin:<id>` that one.
+ * time), each twin's history, the warn/error events the collector caught (`/events`), and the telemetry the view draws.
+ * The current state (twins, relationships, view telemetry) comes from the cache (Redis); the definitions (models,
+ * instances, dashboards, filters) from SQLite; the time series (telemetry pages, history) from OpenTelemetry's
+ * ClickHouse. Sign-in is osiris-auth's: the PWA signs in with OIDC, the API introspects the token; the admin group
+ * sees every instance, the group `twin:<id>` that one.
  */
 export function createApp(config: Config, options: AppOptions) {
-  const { instances, verifier, cache, staticDir, ops } = options;
+  const { instances, state, verifier, cache, staticDir, ops } = options;
   const store = instances.store;
   const CSP = csp(config.AUTH_URL);
   const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
@@ -124,12 +131,50 @@ export function createApp(config: Config, options: AppOptions) {
     if (!tw.telemetry) throw new HttpError(503, "errors.telemetryOff");
     return tw.telemetry;
   };
-  /** The twins and relationships now (SQLite) or at a past time (the history). */
+  /** The twins and relationships now (the Redis cache the sync writes) or at a past time (the history). */
   const stateAt = async (tw: RunningInstance, at: number | undefined) => {
-    if (at === undefined) return { twins: await tw.data.twins(), relationships: await tw.data.relationships() };
-    const state = await failing(() => h(tw).stateAt(Math.min(at, Date.now())));
-    if (!state) throw new HttpError(404, "errors.digitalTwin.historyMissing");
-    return state;
+    if (at === undefined) return { twins: await state.twins(tw.record.id), relationships: await state.relationships(tw.record.id) };
+    const past = await failing(() => h(tw).stateAt(Math.min(at, Date.now())));
+    if (!past) throw new HttpError(404, "errors.digitalTwin.historyMissing");
+    return past;
+  };
+  /** The telemetry the view draws, now (the cache) or at a past time (ClickHouse). */
+  const telemetryAt = async <K extends TelemetryKind>(tw: RunningInstance, kind: K, at: number | undefined): Promise<TelemetryState[K]> => {
+    if (at === undefined) return (await state.telemetry(tw.record.id, kind)) as TelemetryState[K];
+    return (await cached(tw, kind, { at }, config.CACHE_DATA_TTL_SECONDS, async (): Promise<unknown> => {
+      const { source, telemetry } = tw;
+      const { twins } = await stateAt(tw, at);
+      if (kind === "errorLogs") {
+        if (!telemetry || !source?.errorAttributes?.length) return {};
+        return errorsByTwin(twins, source.errorAttributes, await failing(() => telemetry.errorCounts(source.errorAttributes!, at)));
+      }
+      if (kind === "network") {
+        const metrics = source?.networkMetrics;
+        if (!telemetry || !metrics?.length) return {};
+        const rates = await Promise.all(metrics.map((m) => failing(() => telemetry.rates(m.metric, m.attributes, at))));
+        const out: Record<string, number> = {};
+        metrics.forEach((m, i) => valuesByTwin(twins, m.attributes, rates[i]!, out));
+        return out;
+      }
+      const m = source?.storageMetrics;
+      if (!telemetry || !m) return {};
+      const [capacity, available] = await Promise.all([failing(() => telemetry.latest(m.capacity, m.attributes, at)), failing(() => telemetry.latest(m.available, m.attributes, at))]);
+      const fs = valuesByTwin(twins, m.attributes, capacity);
+      const free = valuesByTwin(twins, m.attributes, available);
+      return Object.fromEntries(Object.entries(fs).flatMap(([id, size]) => (free[id] === undefined ? [] : [[id, { used: Math.max(0, size - free[id]!), fsCapacity: size }]])));
+    })) as TelemetryState[K];
+  };
+  /** One model as the API lists it, or 404. */
+  const modelOf = async (tw: RunningInstance, id: string): Promise<DtdlModelData> => {
+    const model = (await tw.data.models()).find((m) => m.id === id);
+    if (!model) throw new HttpError(404, "errors.digitalTwin.notFound");
+    return model;
+  };
+  /** A model's errors against the model set (its own document included, so `extends` and `presentation.label` resolve). */
+  const modelErrors = (doc: DtdlInterface, existing: DtdlModelData[]): string[] => {
+    const models = new Map(existing.map((m) => [m.id, m.model] as [string, DtdlInterface]));
+    models.set(doc["@id"], doc);
+    return presentationErrors(doc["@id"], models);
   };
   const T = "/api/instances/:instance";
   const atQuery = z.object({ at: z.coerce.number().int().positive().optional() });
@@ -206,6 +251,17 @@ export function createApp(config: Config, options: AppOptions) {
       // The audit: who ran what, and how it ended (the input itself may hold secrets: only its size).
       console.log(JSON.stringify({ event: "ops.command", project, tool, args: body.args, stdinBytes: body.stdin?.length ?? 0, exitCode: result.exitCode, durationMs: result.durationMs }));
       return c.json(result);
+    })
+    // The warn/error events the collector's twin/events processor caught (the Redis stream), for the agent of an
+    // allowed project: which instance's cluster they are about (the only one by default), how many, how severe.
+    .get("/ops/events", async (c) => {
+      const q = parse(
+        z.object({ instance: instanceId.optional(), limit: z.coerce.number().int().min(1).max(500).default(50), severity: z.enum(["warn", "error", "fatal"]).optional(), cluster: text }),
+        c.req.query(),
+      );
+      const id = q.instance ?? instances.list()[0]?.record.id;
+      if (!id || !instances.get(id)) throw new HttpError(404, "errors.digitalTwin.instanceNotFound");
+      return c.json({ value: await state.events({ limit: q.limit, severity: q.severity, cluster: q.cluster }) });
     })
 
     // Osiris's API for the twin's chat: the signed-in user's own calls, passed on to Osiris's gateway (which checks
@@ -302,32 +358,77 @@ export function createApp(config: Config, options: AppOptions) {
       await next();
     })
 
-    // The twin, in the shape of the Azure Digital Twins API: models, twins and their relationships.
+    // The twin, in the shape of the Azure Digital Twins API: models, twins and their relationships. The models are
+    // DTDL v3 and editable: an admin upserts one (PUT/POST) or decommissions it (DELETE, refused while a twin
+    // instantiates it); a `presentation` section on a model says how the views draw its twins.
     .get(`${T}/models`, async (c) => c.json({ value: await twinOf(c).data.models() }))
     .get(`${T}/models/:id`, async (c) => {
       const model = (await twinOf(c).data.models()).find((m) => m.id === c.req.param("id"));
       if (!model) throw new HttpError(404, "errors.digitalTwin.notFound");
       return c.json(model);
     })
+    .put(`${T}/models/:id`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      const id = c.req.param("id");
+      const doc = parse(z.record(z.string(), z.unknown()), await c.req.json().catch(() => null)) as unknown as DtdlInterface;
+      if (doc["@id"] !== id) throw new HttpError(400, "errors.digitalTwin.modelIdMismatch");
+      const errors = [...interfaceErrors(doc), ...modelErrors(doc, await tw.data.models())];
+      if (errors.length) return c.json({ error: "errors.digitalTwin.modelInvalid", detail: errors }, 400);
+      await tw.data.putModel(doc, Date.now());
+      return c.json(await modelOf(tw, id));
+    })
+    .post(`${T}/models`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      const docs = parse(z.array(z.record(z.string(), z.unknown())).min(1).max(100), await c.req.json().catch(() => null)) as unknown as DtdlInterface[];
+      const errors: string[] = [];
+      const models = await tw.data.models();
+      for (const doc of docs) errors.push(...interfaceErrors(doc), ...modelErrors(doc, models));
+      if (errors.length) return c.json({ error: "errors.digitalTwin.modelInvalid", detail: errors }, 400);
+      for (const doc of docs) await tw.data.putModel(doc, Date.now());
+      return c.json({ value: await tw.data.models() });
+    })
+    .delete(`${T}/models/:id`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      const id = c.req.param("id");
+      const used = (await state.twins(tw.record.id)).some((t) => t.$metadata.$model === id);
+      if (used) throw new HttpError(409, "errors.digitalTwin.modelInUse");
+      if (!(await tw.data.deleteModel(id))) throw new HttpError(404, "errors.digitalTwin.notFound");
+      return c.body(null, 204);
+    })
     .get(`${T}/digitaltwins`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const state = at === undefined ? { twins: await twinOf(c).data.twins() } : await cached(twinOf(c), "twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(twinOf(c), at));
-      return c.json({ value: state.twins });
+      const twins = at === undefined ? (await stateAt(twinOf(c), undefined)).twins : (await cached(twinOf(c), "twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(twinOf(c), at))).twins;
+      return c.json({ value: twins });
     })
     .get(`${T}/relationships`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const state = at === undefined ? { relationships: await twinOf(c).data.relationships() } : await cached(twinOf(c), "twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(twinOf(c), at));
-      return c.json({ value: state.relationships });
+      const rels = at === undefined ? (await stateAt(twinOf(c), undefined)).relationships : (await cached(twinOf(c), "twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(twinOf(c), at))).relationships;
+      return c.json({ value: rels });
     })
     .get(`${T}/digitaltwins/:id`, async (c) => {
-      const twin = await twinOf(c).data.twin(c.req.param("id"));
+      const { at } = parse(atQuery, c.req.query());
+      const twin = at === undefined ? await state.twin(twinOf(c).record.id, c.req.param("id")) : (await stateAt(twinOf(c), at)).twins.find((t) => t.$dtId === c.req.param("id"));
       if (!twin) throw new HttpError(404, "errors.digitalTwin.notFound");
       return c.json(twin);
     })
-    .get(`${T}/digitaltwins/:id/relationships`, async (c) => c.json({ value: await twinOf(c).data.relationships({ source: c.req.param("id") }) }))
-    .get(`${T}/digitaltwins/:id/incomingrelationships`, async (c) =>
-      c.json({ value: (await twinOf(c).data.relationships({ target: c.req.param("id") })).map((r) => ({ $relationshipId: r.$relationshipId, $sourceId: r.$sourceId, $relationshipName: r.$relationshipName })) }),
-    )
+    .get(`${T}/digitaltwins/:id/relationships`, async (c) => {
+      const { at } = parse(atQuery, c.req.query());
+      const rels = at === undefined ? await state.relationships(twinOf(c).record.id, { source: c.req.param("id") }) : (await stateAt(twinOf(c), at)).relationships.filter((r) => r.$sourceId === c.req.param("id"));
+      return c.json({ value: rels });
+    })
+    .get(`${T}/digitaltwins/:id/incomingrelationships`, async (c) => {
+      const { at } = parse(atQuery, c.req.query());
+      const rels = at === undefined ? await state.relationships(twinOf(c).record.id, { target: c.req.param("id") }) : (await stateAt(twinOf(c), at)).relationships.filter((r) => r.$targetId === c.req.param("id"));
+      return c.json({ value: rels.map((r) => ({ $relationshipId: r.$relationshipId, $sourceId: r.$sourceId, $relationshipName: r.$relationshipName })) });
+    })
+    // The warn/error log records the collector caught (its `twin/events` processor wrote them to the events stream).
+    .get(`${T}/events`, async (c) => {
+      const q = parse(z.object({ limit: z.coerce.number().int().min(1).max(500).default(100), cluster: text, severity: z.enum(["warn", "error", "fatal"]).optional() }), c.req.query());
+      return c.json({ value: await cached(twinOf(c), "events", q, Math.min(config.CACHE_DATA_TTL_SECONDS, 5), () => state.events(q)) });
+    })
     // A twin's changes and its descendants' (newest first), and how far back the history goes.
     .get(`${T}/digitaltwins/:id/history`, async (c) => {
       const f = parse(rangeQuery.and(z.object({ limit: z.coerce.number().int(twinOf(c)).min(1).max(500).default(100) })), c.req.query());
@@ -335,50 +436,21 @@ export function createApp(config: Config, options: AppOptions) {
       return c.json({ value: await cached(twinOf(c), "history", { ...f, dtId }, config.CACHE_DATA_TTL_SECONDS, () => failing(() => h(twinOf(c)).changes({ ...f, dtId }))) });
     })
     .get(`${T}/history/range`, async (c) => c.json(await failing(() => h(twinOf(c)).range())))
-    // The telemetry the models declare: `errorLogs`, each twin's error log records of the 15 minutes before `at`.
+    // The telemetry the models declare, now from the cache (the sync writes it), at a past time from ClickHouse:
+    // `errorLogs`, each twin's error log records of the 15 minutes before `at`.
     .get(`${T}/telemetry/errorLogs`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const value = await cached(twinOf(c), "errorLogs", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
-        const { source, telemetry } = twinOf(c);
-        if (!telemetry || !source?.errorAttributes?.length) return {};
-        const [{ twins }, counts] = await Promise.all([stateAt(twinOf(c), at), failing(() => telemetry.errorCounts(source.errorAttributes!, at))]);
-        return errorsByTwin(twins, source.errorAttributes, counts);
-      });
-      return c.json({ value });
+      return c.json({ value: await telemetryAt(twinOf(c), "errorLogs", at) });
     })
     // The models' `network` telemetry: each node's and pod's bytes per second over the 5 minutes before `at`.
     .get(`${T}/telemetry/network`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const value = await cached(twinOf(c), "network", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
-        const { source, telemetry } = twinOf(c);
-        const metrics = source?.networkMetrics;
-        if (!telemetry || !metrics?.length) return {};
-        const [{ twins }, ...rates] = await Promise.all([stateAt(twinOf(c), at), ...metrics.map((m) => failing(() => telemetry.rates(m.metric, m.attributes, at)))]);
-        const out: Record<string, number> = {};
-        metrics.forEach((m, i) => valuesByTwin(twins, m.attributes, rates[i]!, out));
-        return out;
-      });
-      return c.json({ value });
+      return c.json({ value: await telemetryAt(twinOf(c), "network", at) });
     })
     // The models' storage telemetry (`used`, `fsCapacity`): each volume claim's filesystem, its size and used bytes.
     .get(`${T}/telemetry/storage`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
-      const value = await cached(twinOf(c), "storage", { at: at ?? Date.now() }, config.CACHE_DATA_TTL_SECONDS, async () => {
-        const { source, telemetry } = twinOf(c);
-        const m = source?.storageMetrics;
-        if (!telemetry || !m) return {};
-        const [{ twins }, capacity, available] = await Promise.all([
-          stateAt(twinOf(c), at),
-          failing(() => telemetry.latest(m.capacity, m.attributes, at)),
-          failing(() => telemetry.latest(m.available, m.attributes, at)),
-        ]);
-        const fs = valuesByTwin(twins, m.attributes, capacity);
-        const free = valuesByTwin(twins, m.attributes, available);
-        return Object.fromEntries(
-          Object.entries(fs).flatMap(([id, size]) => (free[id] === undefined ? [] : [[id, { used: Math.max(0, size - free[id]), fsCapacity: size }]])),
-        );
-      });
-      return c.json({ value });
+      return c.json({ value: await telemetryAt(twinOf(c), "storage", at) });
     })
     .get(`${T}/facets`, async (c) => {
       const f = parse(rangeQuery.and(z.object({ namespace: text })), c.req.query());

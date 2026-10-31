@@ -6,8 +6,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { formatBytes, formatBytesRate, formatNumber } from "./i18n.ts";
-import { iconOf, kindOf, lookOf, portKind } from "./icons.ts";
-import { fillOf, hasNetwork, interfacesOf, isStorage, pathOf, routingOf, storageOf, wiresOf, type TwinScene, type TwinView } from "./scene.ts";
+import { iconOf, kindOf, portKind } from "./icons.ts";
+import { passes, fillOf, hasNetwork, interfacesOf, isStorage, pathOf, routingOf, storageOf, wiresOf, type TwinScene, type TwinView } from "./scene.ts";
 import { layoutTwin, type Box, type Link, type Scene } from "./TwinLayout.ts";
 
 /** What the view shows: the network (interfaces, Services, Ingresses, their lines), storage, the logical groupings. */
@@ -18,11 +18,14 @@ export interface Layers {
 }
 export const ALL_LAYERS: Layers = { network: true, storage: true, logical: true };
 
-/** Steering the camera around what it looks at: degrees about the vertical axis, degrees of tilt, a zoom factor. */
+/** Steering the camera around what it looks at: degrees about the vertical axis, degrees of tilt, a zoom factor,
+ * and moving the look-at point in the camera's plane (`pan`) or straight up/down (`lift`), for the keyboard. */
 export interface CameraControl {
   rotate(degrees: number): void;
   tilt(degrees: number): void;
   zoom(factor: number): void;
+  pan(right: number, forward: number): void;
+  lift(up: number): void;
 }
 
 /** A point on the view, in CSS pixels from its top left corner. */
@@ -260,6 +263,8 @@ export function Twin3D({
   anchor,
   control,
   layers = ALL_LAYERS,
+  onNavigate,
+  onLayersChange,
 }: {
   scene: TwinScene;
   selected?: TwinView;
@@ -270,6 +275,10 @@ export function Twin3D({
   control?: RefObject<CameraControl | null>;
   /** What the view shows. */
   layers?: Layers;
+  /** The keyboard's Tab/Shift+Tab (cycle the selection) and H (the whole twin). */
+  onNavigate?: (action: "next" | "prev" | "home") => void;
+  /** The keyboard's 1/2/3 (the legend's layers). */
+  onLayersChange?: (l: Layers) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const select = useRef(onSelect);
@@ -277,6 +286,7 @@ export function Twin3D({
   const chosen = useRef(selected);
   chosen.current = selected;
   const shown = useRef(layers);
+  const shownRef = shown; // the keyboard handler reads the current layers through the same ref
   shown.current = layers;
   /** The mounted scene's entry points, for the effects below. */
   const view = useRef<{ show: (twin: TwinScene) => void; focus: () => void; home: () => void }>(undefined);
@@ -368,7 +378,7 @@ export function Twin3D({
       const extras: THREE.Object3D[] = [];
       const meshes: BoxMesh[] = scene.boxes.map((box) => {
         const node = byId.get(box.id);
-        const look = node ? lookOf(node) : "box";
+        const look = node?.look ?? "box";
         const cylinder = box.shape === "cylinder";
         const r = box.size[0] / 2;
         const geometry =
@@ -521,7 +531,7 @@ export function Twin3D({
     const hidden = (node: TwinView | undefined): boolean => {
       if (!node) return false;
       const l = shown.current;
-      const look = lookOf(node);
+      const look = node.look;
       if (!l.network && (look === "port" || look === "hex" || look === "gate")) return true;
       if (!l.storage && (look === "cylinder" || look === "disk" || node.model.startsWith("dtmi:osiris:ceph:"))) return true;
       if (!l.logical && (node.isBand || look === "workload")) return true;
@@ -657,7 +667,7 @@ export function Twin3D({
         const isChosen = focus?.id === m.id;
         const isHovered = hovered === m.id;
         const leaf = !node.children.length;
-        const look = lookOf(node);
+        const look = node.look;
         const off = hidden(node);
         m.mesh.visible = m.edges.visible = !off;
         if (m.led) m.led.visible = !off;
@@ -666,7 +676,7 @@ export function Twin3D({
         const lit = focus && !isChosen && path.has(node.of ?? node.id);
         const fade = inFocus(node) ? 1 : 0.18;
         const strong = isChosen || isHovered || !!lit;
-        const color = strong ? colors.active : statusColor(node.status);
+        const color = strong ? colors.active : node.color ? new THREE.Color(node.color) : statusColor(node.status);
         m.edges.material.color = color;
         m.edges.material.opacity = (strong ? 1 : node.depth === 0 ? 0.9 : leaf ? 0.8 : 0.6) * fade;
         m.mesh.material.color = color;
@@ -859,7 +869,7 @@ export function Twin3D({
       const scene = layoutTwin(twin.top, {
         networked: (node) => hasNetwork(node, twin.models),
         storage: (node) => isStorage(node, twin.models),
-        shape: (node) => shapes[lookOf(node) as keyof typeof shapes],
+        shape: (node) => shapes[node.look as keyof typeof shapes],
         portKind,
         interfaces: interfacesOf(twin),
         wires: wiresOf(twin),
@@ -913,6 +923,25 @@ export function Twin3D({
         rotate: (degrees) => orbit((s) => (s.theta += THREE.MathUtils.degToRad(degrees))),
         tilt: (degrees) => orbit((s) => (s.phi -= THREE.MathUtils.degToRad(degrees))),
         zoom: (factor) => orbit((s) => (s.radius /= factor > 0 ? factor : 1)),
+        pan: (right, forward) => {
+          const radius = camera.position.distanceTo(controls.target);
+          const k = radius * 0.004;
+          const r = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0);
+          const f = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+          f.y = 0;
+          f.normalize();
+          const off = r.multiplyScalar(right * k).addScaledVector(f, forward * k);
+          camera.position.add(off);
+          controls.target.add(off);
+          controls.update();
+        },
+        lift: (up) => {
+          const k = camera.position.distanceTo(controls.target) * 0.004;
+          const off = new THREE.Vector3(0, up * k, 0);
+          camera.position.add(off);
+          controls.target.add(off);
+          controls.update();
+        },
       };
 
     // The selected box's corners on screen, for the panels' callout lines (none behind the camera).
@@ -1050,5 +1079,26 @@ export function Twin3D({
     if (home) view.current?.home();
   }, [home]);
 
-  return <div ref={host} className="relative isolate h-full w-full overflow-hidden" role="application" aria-label={t("twin:view3d")} />;
+  // The keyboard inside the model: WASD/arrows move the look-at point, Q/E down/up, +/- zoom, Tab/Shift+Tab cycle
+  // the selection, H the whole twin, 1/2/3 the legend's layers. Keys go to inputs (the chat) first.
+  const onKey = (e: React.KeyboardEvent) => {
+    const el = e.target as HTMLElement;
+    if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
+    const c = control?.current;
+    const k = e.key;
+    const handled = () => e.preventDefault();
+    if (k === "Tab") (handled(), onNavigate?.(e.shiftKey ? "prev" : "next"));
+    else if (k === "h" || k === "H") (handled(), onNavigate?.("home"));
+    else if (k === "1" || k === "2" || k === "3") (handled(), onLayersChange?.({ ...shownRef.current, ...{ network: k === "1", storage: k === "2", logical: k === "3" } } as Layers));
+    else if (k === "ArrowLeft" || k === "a" || k === "A") (handled(), c?.pan(-60, 0));
+    else if (k === "ArrowRight" || k === "d" || k === "D") (handled(), c?.pan(60, 0));
+    else if (k === "ArrowUp" || k === "w" || k === "W") (handled(), c?.pan(0, 60));
+    else if (k === "ArrowDown" || k === "s" || k === "S") (handled(), c?.pan(0, -60));
+    else if (k === "q" || k === "Q") (handled(), c?.lift(-60));
+    else if (k === "e" || k === "E") (handled(), c?.lift(60));
+    else if (k === "+" || k === "=") (handled(), c?.zoom(1.25));
+    else if (k === "-" || k === "_") (handled(), c?.zoom(0.8));
+  };
+
+  return <div ref={host} className="relative isolate h-full w-full overflow-hidden outline-none" role="application" aria-label={t("twin:view3d")} tabIndex={0} onKeyDown={onKey} />;
 }

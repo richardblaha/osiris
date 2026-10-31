@@ -1,13 +1,14 @@
 import type { ToolModule } from "@osiris/core/tools/module.ts";
-import { twinViewTool } from "./twin.ts";
+import type { OpsOptions } from "@osiris/tools-ops";
+import { twinEventsTool, twinViewTool } from "./twin.ts";
 
-/** Steering the digital twin's view from the chat, for the projects that manage the cluster. */
-export function digitalTwinModule(projects: string[]): ToolModule {
+/** The digital twin in the chat, for the projects that manage the cluster: steering its view and reading its events. */
+export function digitalTwinModule(ops: OpsOptions): ToolModule {
   return {
     name: "digital-twin",
     feature: "infrastructure",
     create: (host) => ({
-      tools: projects.includes(host.projectId) ? [twinViewTool()] : [],
+      tools: ops.projects.includes(host.projectId) ? [twinViewTool(), twinEventsTool(ops.ops)] : [],
     }),
   };
 }

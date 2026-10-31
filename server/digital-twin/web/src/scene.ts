@@ -1,5 +1,5 @@
 import { TWIN_CONTAINS, type TwinStatus } from "@osiris/shared";
-import { localized, resolveContents, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
+import { BUILTIN_LOOKS, localized, presentationOf, resolveContents, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData, type Look, type PresentationLayer } from "@osiris/shared/dtdl.ts";
 import { currentLocale } from "./i18n.ts";
 
 /** A twin in the view: the twin itself, its model, and its place in the containment tree with rolled-up status. */
@@ -34,6 +34,43 @@ export interface TwinView {
   band?: string;
   /** A band itself: one solid across the containers around what belongs to the group (`of`). */
   isBand?: boolean;
+  /** How the view draws it: its model's `presentation.look`, else the built-in look of its DTMI, else a box. */
+  look: Look;
+  /** Its model's own color (`presentation.color`), when set; else the status colors. */
+  color?: string;
+  /** Its model's own icon (`presentation.icon`, a Kubernetes icon id); else the built-in one of its DTMI. */
+  icon?: string;
+  /** The property that is its label (the presentation's `label`, else `name`). */
+  labelProp: string;
+  /** The legend's layer it is switched with (`presentation.layer`, else base). */
+  layer: PresentationLayer;
+  /** Whether its model's presentation shows it at all (`presentation.visible`, else yes). */
+  visible: boolean;
+}
+
+/** The view's own filters (the bottom bar's display menu): hidden models, a lowest status, a name search. */
+export interface ViewFilters {
+  hiddenModels: Set<string>;
+  minStatus?: TwinStatus;
+  query?: string;
+}
+
+const STATUS_ORDER: TwinStatus[] = ["ok", "warn", "error"];
+
+/** Whether a twin passes the view's filters (a hidden parent hides its children; the search matches a name or a descendant's). */
+export function passes(v: TwinView, f: ViewFilters | undefined): boolean {
+  if (!f) return true;
+  if (!v.visible || f.hiddenModels.has(v.model)) return false;
+  if (f.minStatus && STATUS_ORDER.indexOf(v.status) < STATUS_ORDER.indexOf(f.minStatus)) return false;
+  if (f.query) {
+    const q = f.query.toLowerCase();
+    const self = (x: TwinView) => x.name.toLowerCase().includes(q);
+    const down = (x: TwinView): boolean => self(x) || x.children.some(down);
+    const up = (x: TwinView | undefined): boolean => !!x && (self(x) || up(x.parent));
+    // A match shows with its descendants and its ancestors (the path to it); the rest is hidden.
+    if (!down(v) && !up(v)) return false;
+  }
+  return !v.parent || passes(v.parent, f);
 }
 
 /** Everything the views draw: the models, every twin by id, the tree's top and every relationship. */
@@ -47,6 +84,8 @@ export interface TwinScene {
   relationships: DigitalTwinRelationship[];
   /** The past time the scene shows; null when live. */
   at: number | null;
+  /** The view's own filters (the display menu); {@link passes} tells what they let through. */
+  filters?: ViewFilters;
 }
 
 const STATUSES: TwinStatus[] = ["ok", "warn", "error"];
@@ -71,13 +110,19 @@ export function buildScene(
   network: Record<string, number>,
   storage: Record<string, { used: number; fsCapacity: number }>,
   at: number | null,
+  filters?: ViewFilters,
 ): TwinScene {
   const modelMap = new Map(models.map((m) => [m.id, m.model]));
+  /** The presentation a model's twins are drawn with, resolved over `extends` (fallback: the built-in look). */
+  const lookOfModel = (model: string) => {
+    const p = presentationOf(model, modelMap);
+    return { look: p.look ?? BUILTIN_LOOKS[model.replace(/;.*$/, "")] ?? ("box" as Look), color: p.color, icon: p.icon, labelProp: p.label ?? "name", layer: p.layer ?? ("base" as PresentationLayer), visible: p.visible ?? true };
+  };
   const byId = new Map<string, TwinView>(
     twins.map((t) => {
       const own = statusOf(t);
       const ownErrors = errors[t.$dtId] ?? 0;
-      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], depth: 0, children: [] }];
+      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], depth: 0, children: [], ...lookOfModel(t.$metadata.$model) }];
     }),
   );
   for (const r of relationships) {
@@ -124,7 +169,7 @@ export function buildScene(
     if (known.length) b.network = known.reduce((n, m) => n + m.network!, 0);
     b.depth = 1;
   }
-  return { models: modelMap, byId, top: roots, bands, relationships, at };
+  return { models: modelMap, byId, top: roots, bands, relationships, at, filters };
 }
 
 /**
@@ -156,7 +201,7 @@ function project(roots: TwinView[], byId: Map<string, TwinView>, relationships: 
     let band = bands.get(id);
     if (!band) {
       const g = byId.get(group)!;
-      band = { id, twin: g.twin, model: g.model, modelName: g.modelName, name: g.name, ownStatus: "ok", status: "ok", ownErrors: 0, errors: 0, depth: 1, parent: root, children: [], of: group, dashed: true, isBand: true };
+      band = { id, twin: g.twin, model: g.model, modelName: g.modelName, name: g.name, ownStatus: "ok", status: "ok", ownErrors: 0, errors: 0, depth: 1, parent: root, children: [], of: group, dashed: true, isBand: true, look: g.look, color: g.color, icon: g.icon, labelProp: g.labelProp, layer: g.layer, visible: g.visible };
       bands.set(id, band);
       byId.set(id, band);
     }
@@ -204,6 +249,12 @@ function project(roots: TwinView[], byId: Map<string, TwinView>, relationships: 
             children: [],
             of: g,
             band,
+            look: group.look,
+            color: group.color,
+            icon: group.icon,
+            labelProp: group.labelProp,
+            layer: group.layer,
+            visible: group.visible,
           };
           slices.set(key, slice);
           parent.children.push(slice);
