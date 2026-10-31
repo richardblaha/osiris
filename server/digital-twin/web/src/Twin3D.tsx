@@ -53,7 +53,7 @@ export interface Point {
 function themeColors() {
   const css = getComputedStyle(document.documentElement);
   const v = (name: string) => new THREE.Color(css.getPropertyValue(name).trim() || "#888888");
-  // Cyan for what is well, bright cyan for what is selected or hovered, magenta for errors (the theme's --state-error).
+  // The accent for what is well, a stronger one (--accent-active) for what is selected or hovered, the theme's --state-error for errors.
   return { cyan: v("--accent-primary"), active: v("--accent-active"), neutral: v("--text-secondary"), warn: v("--state-warning"), error: v("--state-error") };
 }
 
@@ -328,7 +328,7 @@ function dotTexture() {
  * twins have a network (DTDL telemetry `network`), a line runs from a hub on their container's back wall to each one's
  * facing wall, and packets travel it as fast and as many as its load says; the cluster's hub reaches the internet, a
  * globe behind it. Related siblings (a container mounting a volume) are joined wall to wall. Every line ends on a
- * surface, marked with a dot: an interface, never the inside of a solid. Hovering highlights a box in magenta and names it; a click
+ * surface, marked with a dot: an interface, never the inside of a solid. Hovering highlights a box in the stronger accent (--accent-active) and names it; a click
  * selects it, and the camera flies to it until it fills the view; deselecting leaves the camera where it is, and
  * `home` changing (a second Escape) flies back to the whole twin. `anchor` gives the selected box's corners on screen, for the panels' callout lines.
  */

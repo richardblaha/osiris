@@ -1,8 +1,13 @@
+import { OSIRIS_THEME } from "./theme-tokens.ts";
+
+export { OSIRIS_THEME };
+
 /**
- * The OSIRIS palette (richardblaha/osiris-theme, assets/tokens.json), the one source of the clients' colors: the
- * PWA's and the digital twin's `theme.css` hold the same values (a test checks them), the TUI and the VS Code panel
- * take them from here. VS Code 2026 shape: the status bar sits in the background colour (bg.sidebar), never in the
- * accent, and there are no pill-shaped corners anywhere (radius.sm = 4px).
+ * The OSIRIS palette, the clients' colors: richardblaha/osiris-theme's tokens of the release in
+ * `packages/shared/theme/` (`OSIRIS_THEME`, generated with every PWA's `theme.css` by
+ * `pnpm --filter @osiris/shared theme [<tag>]`). The TUI and the VS Code panel take them from here. VS Code 2026
+ * shape: the status bar sits in the background colour (bg.sidebar), never in the accent, and there are no
+ * pill-shaped corners anywhere (radius.sm = 4px).
  */
 export interface ThemeColors {
   bgTitlebar: string;
@@ -29,56 +34,36 @@ export interface ThemeColors {
   stateError: string;
 }
 
-export const THEME: Record<"light" | "dark", ThemeColors> = {
-  light: {
-    bgTitlebar: "#ffffff",
-    bgSidebar: "#f6f8fa",
-    bgEditor: "#ffffff",
-    bgTabInactive: "#eaeef2",
-    bgStatusbar: "#f6f8fa",
-    bgStatusbarText: "#1f2328",
-    bgHover: "#eaeef2",
-    bgSelection: "#dde7f3",
-    bgInput: "#ffffff",
-    borderSubtle: "#eaeef2",
-    borderStrong: "#d0d7de",
-    textPrimary: "#1f2328",
-    textSecondary: "#57606a",
-    textMuted: "#8c959f",
-    textInverse: "#ffffff",
-    scrollbar: "#d0d7de",
-    accentPrimary: "#0969da",
-    accentSecondary: "#e01a76",
-    stateInfo: "#0969da",
-    stateSuccess: "#1a7f37",
-    stateWarning: "#9a6700",
-    stateError: "#cf222e",
-  },
-  dark: {
-    bgTitlebar: "#0d1117",
-    bgSidebar: "#161b22",
-    bgEditor: "#0d1117",
-    bgTabInactive: "#161b22",
-    bgStatusbar: "#161b22",
-    bgStatusbarText: "#e6edf3",
-    bgHover: "#21262d",
-    bgSelection: "#21262d",
-    bgInput: "#21262d",
-    borderSubtle: "#21262d",
-    borderStrong: "#30363d",
-    textPrimary: "#e6edf3",
-    textSecondary: "#8b949e",
-    textMuted: "#565f6d",
-    textInverse: "#04151a",
-    scrollbar: "#30363d",
-    accentPrimary: "#00f2fe",
-    accentSecondary: "#ff2a85",
-    stateInfo: "#00f2fe",
-    stateSuccess: "#3fb950",
-    stateWarning: "#d29922",
-    stateError: "#ff5555",
-  },
+const colors = (s: "light" | "dark"): ThemeColors => {
+  const { bg, border, text, scrollbar } = OSIRIS_THEME.themes[s];
+  const { accent, state } = OSIRIS_THEME;
+  return {
+    bgTitlebar: bg.titlebar,
+    bgSidebar: bg.sidebar,
+    bgEditor: bg.editor,
+    bgTabInactive: bg.tabInactive,
+    bgStatusbar: bg.statusbar,
+    bgStatusbarText: bg.statusbarText,
+    bgHover: bg.hover,
+    bgSelection: bg.selection,
+    bgInput: bg.input,
+    borderSubtle: border.subtle,
+    borderStrong: border.strong,
+    textPrimary: text.primary,
+    textSecondary: text.secondary,
+    textMuted: text.muted,
+    textInverse: text.inverse,
+    scrollbar,
+    accentPrimary: accent.primary[s],
+    accentSecondary: accent.secondary[s],
+    stateInfo: state.info[s],
+    stateSuccess: state.success[s],
+    stateWarning: state.warning[s],
+    stateError: state.error[s],
+  };
 };
+
+export const THEME: Record<"light" | "dark", ThemeColors> = { light: colors("light"), dark: colors("dark") };
 
 /** `bgTitlebar` → `--bg-titlebar`, the CSS variable of a token. */
 export const cssVar = (token: keyof ThemeColors) => `--${token.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`;

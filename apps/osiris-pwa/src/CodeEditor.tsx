@@ -6,6 +6,7 @@ import HtmlWorker from "monaco-editor/language/html/html.worker?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker?worker";
 import TsWorker from "monaco-editor/language/typescript/ts.worker?worker";
 import { useEffect, useState } from "react";
+import { OSIRIS_THEME } from "@osiris/shared/theme.ts";
 
 // Monaco from this app's own build (no CDN, which the CSP would refuse), with its language workers.
 self.MonacoEnvironment = {
@@ -40,21 +41,22 @@ export const languageOf = (path: string) => LANGUAGES[path.split(".").at(-1)?.to
 
 const dark = () => window.matchMedia?.("(prefers-color-scheme: dark)").matches ?? false;
 
-/** OSIRIS themes for Monaco, from richardblaha/osiris-theme (assets/tokens.json, the VS Code themes' values). */
-const PALETTES = {
-  "osiris-dark": {
-    base: "vs-dark",
-    bg: "#0d1117", widget: "#161b22", hover: "#21262d", selection: "#21262d", border: "#30363d", subtle: "#21262d",
-    fg: "#e6edf3", secondary: "#8b949e", muted: "#565f6d", accent: "#00f2fe", accentSoft: "#00f2fe24", scrollbar: "#30363d",
-    syntax: { comment: "565f6d", string: "a5d6ff", keyword: "ff2a85", function: "00f2fe", type: "79c0ff", number: "d29922", punctuation: "8b949e", variable: "e6edf3", property: "ffa198" },
-  },
-  "osiris-light": {
-    base: "vs",
-    bg: "#ffffff", widget: "#f6f8fa", hover: "#eaeef2", selection: "#dde7f3", border: "#d0d7de", subtle: "#eaeef2",
-    fg: "#1f2328", secondary: "#57606a", muted: "#8c959f", accent: "#0969da", accentSoft: "#0969da1a", scrollbar: "#d0d7de",
-    syntax: { comment: "8c959f", string: "0a3069", keyword: "e01a76", function: "0969da", type: "953800", number: "0550ae", punctuation: "57606a", variable: "1f2328", property: "cf222e" },
-  },
-} as const;
+/** Monaco wants #rrggbbaa: the theme's soft accent `rgba(r,g,b,a)` as the accent with that alpha. */
+const withAlpha = (hex: string, rgba: string) =>
+  hex + Math.round(Number(/,\s*([\d.]+)\)$/.exec(rgba)?.[1] ?? 0.12) * 255).toString(16).padStart(2, "0");
+
+/** OSIRIS themes for Monaco, from richardblaha/osiris-theme's tokens (the VS Code themes' values). */
+const palette = (s: "dark" | "light") => {
+  const { bg, border, text, syntax, scrollbar } = OSIRIS_THEME.themes[s];
+  const accent = OSIRIS_THEME.accent.primary[s];
+  return {
+    base: s === "dark" ? ("vs-dark" as const) : ("vs" as const),
+    bg: bg.editor, widget: bg.sidebar, hover: bg.hover, selection: bg.selection, border: border.strong, subtle: border.subtle,
+    fg: text.primary, secondary: text.secondary, muted: text.muted, accent, accentSoft: withAlpha(accent, OSIRIS_THEME.accent.primarySoft[s]), scrollbar,
+    syntax: Object.fromEntries(Object.entries(syntax).map(([k, v]) => [k, v.slice(1)])) as Record<keyof typeof syntax, string>,
+  };
+};
+const PALETTES = { "osiris-dark": palette("dark"), "osiris-light": palette("light") };
 
 let defined = false;
 function defineThemes(m: typeof monaco) {

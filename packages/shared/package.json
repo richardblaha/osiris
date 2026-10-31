@@ -5,6 +5,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./theme.ts": "./src/theme.ts",
+    "./theme-gen.ts": "./src/theme-gen.ts",
     "./dtdl.ts": "./src/dtdl.ts",
     "./material-icons.ts": "./src/material-icons.ts",
     "./pkce.ts": "./src/pkce.ts",
@@ -13,7 +14,8 @@
   "scripts": {
     "typecheck": "tsc -p .",
     "test": "vitest run",
-    "icons": "node scripts/material-icons.mjs"
+    "icons": "node scripts/material-icons.mjs",
+    "theme": "node scripts/theme.ts"
   },
   "devDependencies": {
     "@types/node": "26.6.4",

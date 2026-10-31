@@ -1,49 +1,48 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { BEGIN, END, THEME_CSS_FILES, tokensCss, tokensTs, tokenVariables, type Tokens } from "../src/theme-gen.ts";
 import { cssVar, THEME, type ThemeColors } from "../src/theme.ts";
 
 const read = (rel: string) => readFileSync(join(import.meta.dirname, "../../../", rel), "utf8");
-const split = (css: string) => {
-  const at = css.indexOf("@media (prefers-color-scheme: dark)");
-  return { light: css.slice(0, at), dark: css.slice(at) };
-};
-const value = (block: string, token: keyof ThemeColors) =>
-  new RegExp(`${cssVar(token)}:\\s*(#[0-9a-f]{6})`, "i").exec(block)?.[1]?.toLowerCase();
+const release = read("packages/shared/theme/RELEASE").trim();
+const tokens = JSON.parse(read("packages/shared/theme/tokens.json")) as Tokens;
+const block = tokensCss(tokens, release);
+const fix = "run `pnpm --filter @osiris/shared theme`";
 
-const pwa = split(read("apps/osiris-pwa/src/theme.css"));
-const twin = split(read("server/digital-twin/web/src/theme.css"));
-
-// Tokens the two web apps must share verbatim. The digital twin deliberately darkens the light-scheme accents
-// (#00838f / #c2007a) so its cyan/magenta read on white, so accents and state colours are only pinned for the PWA.
-const SHARED: (keyof ThemeColors)[] = (Object.keys(THEME.light) as (keyof ThemeColors)[]).filter(
-  (t) => !t.startsWith("accent") && !t.startsWith("state"),
-);
-
-describe("the palette", () => {
-  it("is the PWA's theme.css, in light and dark", () => {
-    for (const token of Object.keys(THEME.light) as (keyof ThemeColors)[]) {
-      expect(value(pwa.light, token), `pwa light ${token}`).toBe(THEME.light[token]);
-      expect(value(pwa.dark, token), `pwa dark ${token}`).toBe(THEME.dark[token]);
-    }
+describe("the osiris-theme tokens", () => {
+  it("are a release's", () => {
+    expect(release).toMatch(/^v\d+\.\d+\.\d+$/);
   });
 
-  it("is the digital twin's theme.css for the shared surface/text tokens, in light and dark", () => {
-    for (const token of SHARED) {
-      expect(value(twin.light, token), `twin light ${token}`).toBe(THEME.light[token]);
-      expect(value(twin.dark, token), `twin dark ${token}`).toBe(THEME.dark[token]);
-    }
+  it("are theme-tokens.ts as generated", () => {
+    expect(read("packages/shared/src/theme-tokens.ts"), fix).toBe(tokensTs(tokens, release));
   });
 
-  it("keeps the status bar in the background colour, never in the accent (VS Code 2026)", () => {
-    for (const [name, blocks] of [["pwa", pwa], ["twin", twin]] as const) {
-      for (const scheme of ["light", "dark"] as const) {
-        const v = value(blocks[scheme], "bgStatusbar")!;
-        expect(v, `${name} ${scheme} statusbar`).toBe(THEME[scheme].bgSidebar);
-        expect(value(blocks[scheme], "bgStatusbarText"), `${name} ${scheme} statusbar text`).toBe(
-          THEME[scheme].textPrimary,
-        );
-      }
+  for (const file of THEME_CSS_FILES) {
+    it(`are ${file}'s block as generated, and the app sets none of them again`, () => {
+      const css = read(file);
+      const from = css.indexOf(BEGIN);
+      const to = css.indexOf(END);
+      expect(from, `${file} has the markers`).toBeGreaterThanOrEqual(0);
+      expect(css.slice(from, to + END.length), fix).toBe(block);
+      const rest = css.slice(0, from) + css.slice(to + END.length);
+      for (const v of tokenVariables(block)) expect(rest, `${file} sets ${v} outside the block`).not.toMatch(new RegExp(`${v}\\s*:`));
+    });
+  }
+
+  it("give THEME the block's colours", () => {
+    const at = block.indexOf("@media (prefers-color-scheme: dark)");
+    const blocks = { light: block.slice(0, at), dark: block.slice(at) };
+    for (const scheme of ["light", "dark"] as const)
+      for (const token of Object.keys(THEME[scheme]) as (keyof ThemeColors)[])
+        expect(new RegExp(`${cssVar(token)}:\\s*(#[0-9a-f]{6})`, "i").exec(blocks[scheme])?.[1], `${scheme} ${token}`).toBe(THEME[scheme][token]);
+  });
+
+  it("keep the status bar in the background colour, never in the accent (VS Code 2026)", () => {
+    for (const scheme of ["light", "dark"] as const) {
+      expect(THEME[scheme].bgStatusbar).toBe(THEME[scheme].bgSidebar);
+      expect(THEME[scheme].bgStatusbarText).toBe(THEME[scheme].textPrimary);
     }
   });
 });
