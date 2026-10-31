@@ -16,7 +16,7 @@
     "icons": "node scripts/material-icons.mjs"
   },
   "devDependencies": {
-    "@types/node": "26.6.4",
-    "vitest": "5.0.3"
+    "@types/node": "26.6.5",
+    "vitest": "5.0.5"
   }
 }
