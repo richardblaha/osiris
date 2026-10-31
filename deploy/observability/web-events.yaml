@@ -12,7 +12,8 @@ data:
     [
       { "id": "k6labs.cz", "hosts": ["k6labs.cz", "www.k6labs.cz"] },
       { "id": "richardblaha.cz", "hosts": ["richardblaha.cz", "www.richardblaha.cz", "richardblaha.eu", "www.richardblaha.eu"] },
-      { "id": "tras.cz", "hosts": ["tras.cz", "www.tras.cz"] }
+      { "id": "tras.cz", "hosts": ["tras.cz", "www.tras.cz"] },
+      { "id": "osiris.k6labs.cz", "hosts": ["osiris.k6labs.cz"] }
     ]
 ---
 apiVersion: apps/v1
@@ -133,7 +134,7 @@ spec:
   entryPoints: [websecure]
   routes:
     - kind: Rule
-      match: (Host(`k6labs.cz`) || Host(`www.k6labs.cz`) || Host(`richardblaha.cz`) || Host(`www.richardblaha.cz`) || Host(`richardblaha.eu`) || Host(`www.richardblaha.eu`) || Host(`tras.cz`) || Host(`www.tras.cz`)) && PathPrefix(`/_e`)
+      match: (Host(`k6labs.cz`) || Host(`www.k6labs.cz`) || Host(`richardblaha.cz`) || Host(`www.richardblaha.cz`) || Host(`richardblaha.eu`) || Host(`www.richardblaha.eu`) || Host(`tras.cz`) || Host(`www.tras.cz`) || Host(`osiris.k6labs.cz`)) && PathPrefix(`/_e`)
       middlewares:
         - { name: web-events-ratelimit }
         - { name: web-events-body }

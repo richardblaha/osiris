@@ -13,7 +13,6 @@
   "dependencies": {
     "@langchain/core": "^1.2.17",
     "@osiris/core": "workspace:*",
-    "@osiris/shared": "workspace:*",
     "zod": "^4.6.5"
   },
   "devDependencies": {

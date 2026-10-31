@@ -347,9 +347,13 @@ function Workspace() {
     addEventListener("popstate", onPop);
     return () => removeEventListener("popstate", onPop);
   }, []);
-  // Visits per view for GoatCounter (when the gateway added its script): the view's kind and section, never ids.
+  // Visits per view for web-events (when the gateway added its script, in its manual mode): the view's kind and
+  // section, never ids. A view before the script ran waits in `waq`, which the script sends when it starts.
   const viewPath = view.kind === "list" || view.kind === "item" ? `/${view.section}` : `/${view.kind}`;
-  useEffect(() => window.goatcounter?.count?.({ path: viewPath }), [viewPath]);
+  useEffect(() => {
+    if (window.wa?.pageview) window.wa.pageview(viewPath);
+    else if ((window.waq ??= []).length < 20) window.waq.push(viewPath);
+  }, [viewPath]);
 
   const openThread = (threadId: string | null) =>
     setView((v) => ({ kind: "chat", threadId, session: (v.kind === "chat" ? v.session : 0) + 1 }));
@@ -840,7 +844,9 @@ function Detail({
 
 declare global {
   interface Window {
-    /** GoatCounter's count.js, when the gateway serves the page with it. */
-    goatcounter?: { count?: (vars: { path: string; title?: string }) => void };
+    /** web-events' e.js in its manual mode, when the gateway serves the page with it. */
+    wa?: { pageview?: (path: string) => void };
+    /** Views counted before e.js ran. */
+    waq?: string[];
   }
 }

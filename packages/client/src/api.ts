@@ -5,7 +5,6 @@ import type {
   AssistantProfile,
   AssistantProfiles,
   BuiltinTool,
-  DirectoryUser,
   DocumentSummary,
   FileEntry,
   FileScope,
@@ -82,7 +81,6 @@ let projectId: string | undefined;
 export const connect = (c: Connection) => {
   connection = c;
 };
-export const connectionUrl = () => connection?.url ?? "";
 
 export const setProject = (id: string) => {
   projectId = id;

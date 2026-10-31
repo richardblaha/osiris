@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { accessFromClaims, accessibleProjects, isAuthorized, isSystemAdmin, membershipsFromClaims } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, generateInternalKeys, InternalSigner, InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
-import { RuntimeClient, SLEEPING_HEADER } from "@osiris/platform/runtime-client.ts";
+import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
 import { createGatewayApp } from "../src/app.ts";
 import { ControlDirectory } from "../src/control.ts";
 import { createDevVerifier, createTokenVerifier, introspection } from "../src/oidc.ts";
@@ -15,7 +15,7 @@ const keys = await generateInternalKeys();
 const verifier = new InternalVerifier(keys.publicKey);
 
 /** The gateway in front of a fake control and fake runtimes that echo what they were sent. */
-function setup(options: { runsPerMinute?: number; web?: { dir: string; goatcounter?: string } } = {}) {
+function setup(options: { runsPerMinute?: number; web?: { dir: string; webEvents?: string } } = {}) {
   const calls: { service: string; host?: string; path: string; method: string; auth: string | null; projectHeader: string | null; body?: string }[] = [];
   const asleep = new Set<string>(["beta"]);
   const moved = new Set<string>();
@@ -280,17 +280,16 @@ describe("gateway", () => {
     expect((await web.request("/")).headers.get("x-frame-options")).toBe("DENY");
   });
 
-  it("adds GoatCounter's script to the page and its site to the CSP", async () => {
+  it("adds web-events' script in its manual mode to the page, without opening the CSP", async () => {
     const dir = mkdtempSync(join(tmpdir(), "osiris-web-"));
     writeFileSync(join(dir, "index.html"), "<html><head><title>Osiris</title></head><body></body></html>");
-    const { app } = setup({ web: { dir, goatcounter: "https://osiris.stats.example.cz" } });
+    const { app } = setup({ web: { dir, webEvents: "osiris.example.cz" } });
     for (const path of ["/", "/callback?code=x"]) {
       const page = await app.request(path);
-      expect(await page.text()).toContain('<script data-goatcounter="https://osiris.stats.example.cz/count" async src="https://osiris.stats.example.cz/count.js"></script>');
+      expect(await page.text()).toContain('<script defer src="/_e/e.js" data-site="osiris.example.cz" data-manual></script>');
       const csp = page.headers.get("content-security-policy")!;
-      expect(csp).toContain("script-src 'self' https://osiris.stats.example.cz;");
-      expect(csp).toContain("img-src 'self' data: blob: https://auth.example.cz https://osiris.stats.example.cz;");
-      expect(csp).toContain("connect-src 'self' https://auth.example.cz https://osiris.stats.example.cz;");
+      expect(csp).toContain("script-src 'self';");
+      expect(csp).toContain("connect-src 'self' https://auth.example.cz;");
     }
   });
 });

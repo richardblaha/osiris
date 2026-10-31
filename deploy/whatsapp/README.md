@@ -61,7 +61,7 @@ IDs of published Flows. When no matching Flow is found, or sending it is refused
 
 ## Delivery and scheduled messages
 
-Control's migration 010 stores the IDs of sent messages and applies sent/delivered/read/failed webhooks so that a
+Control stores (`wa_deliveries`) the IDs of sent messages and applies sent/delivered/read/failed webhooks so that a
 status already reached never goes back. Profile → Activity and sessions shows delivery statuses only for the user's
 uniquely verified phone number. Records are kept for 7 days. Status events create no messages and do not reopen the
 24-hour window.

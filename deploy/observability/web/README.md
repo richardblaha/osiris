@@ -21,7 +21,9 @@ consent banner.
 - **Script** (`server/web-events/src/e.js`, ~0.6 kB gzip): sends a pageview on load and on every SPA navigation
   (`pushState`, `replaceState`, `popstate`; the same path twice in a row once), with `navigator.sendBeacon` or
   `fetch(…, { keepalive })`. Silent with Do Not Track, for automated browsers (`navigator.webdriver`), on localhost and
-  `file://`. Custom events: `window.wa?.event("signup", { plan: "pro" })` (at most 10 props). The path is `/_e`, not
+  `file://`. Custom events: `window.wa?.event("signup", { plan: "pro" })` (at most 10 props). With `data-manual` (an app whose
+  URLs hold ids, like Osiris's PWA) it counts only `window.wa.pageview(path)` and sends that path, never the page's
+  URL, with every event; calls made before it ran wait in `window.waq`. The path is `/_e`, not
   "analytics" or "track", so blockers don't catch it by name.
 - **Service** (`server/web-events`, TypeScript like the rest of Osiris): `GET /_e/e.js`, `POST /_e`, `GET /healthz`.
   It accepts a site from the allowlist (ConfigMap `web-events`, `SITES`) only when the page's URL and the request's

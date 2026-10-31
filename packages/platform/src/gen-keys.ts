@@ -2,8 +2,8 @@ import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { generateInternalKeys } from "./internal-auth.ts";
 
 // Prints new secrets as .env lines: the internal JWT key pair (PEM, newlines as \n), the master key that project keys
-// are derived from, and control's sign-in keys (ID token signing key, cookie and TOTP secret). Configs turn \n back
-// into newlines.
+// are derived from, and osiris-auth's keys (ID token signing key; the secret its cookie, TOTP and client keys come
+// from). Configs turn \n back into newlines.
 const { privateKey, publicKey } = await generateInternalKeys();
 const oneLine = (pem: string) => pem.trim().replace(/\n/g, "\\n");
 const signing = generateKeyPairSync("ec", { namedCurve: "P-256" }).privateKey.export({ format: "pem", type: "pkcs8" }).toString();

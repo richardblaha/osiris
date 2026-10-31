@@ -34,7 +34,7 @@ Requires Node.js 24 or newer and pnpm.
 ```bash
 pnpm install
 pnpm --filter @osiris/platform gen-keys   # internal JWT key pair, master key and sign-in keys for the .env files
-pnpm dev                                  # gateway :3001, control :3002 (starts runtimes on :4100+), osiris-auth :3003, web :5173
+pnpm dev                                  # gateway :3001, control :3002 (starts runtimes on :4100+), osiris-auth :3003, vitepress :3005, web :5173
 node apps/osiris/bin/osiris.mjs <folder>  # or just the agent over a folder, without the server
 ```
 

@@ -13,7 +13,7 @@ import type { Config } from "./config.ts";
 import type { Instances, RunningInstance } from "./instances.ts";
 import { errorsByTwin, valuesByTwin } from "./twin.ts";
 import type { TelemetryKind, TelemetryState, TwinStateStore } from "./state.ts";
-import { DATA_ID, dataProfileErrors, dataProfilesOf, interfaceErrors, presentationErrors, type DigitalTwin, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
+import { DATA_ID, dataProfileErrors, dataProfilesOf, interfaceErrors, presentationErrors, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { bindingErrors, CONNECTOR_TYPES } from "./datasources/connectors.ts";
 import type { DataValueStore } from "./datasources/hub.ts";
 import type { MetricType } from "./telemetry.ts";
@@ -215,6 +215,12 @@ export function createApp(config: Config, options: AppOptions) {
   const adminOnly = (c: Context<Env>) => {
     if (!isAdmin(c.get("identity"), ADMIN)) throw new HttpError(403, "errors.digitalTwin.adminOnly");
   };
+  /** The running twin an ops call names (`instance`), else the first one. */
+  const opsTwin = (id: string | undefined) => {
+    const tw = id ? instances.get(id) : instances.list()[0];
+    if (!tw) throw new HttpError(404, "errors.digitalTwin.instanceNotFound");
+    return tw;
+  };
   /** An instance as its viewers see it: name, source type and whether it runs. */
   const summary = (r: RunningInstance) => ({ id: r.record.id, name: r.record.name, sourceType: r.record.sourceType, error: r.error ?? null });
 
@@ -283,6 +289,47 @@ export function createApp(config: Config, options: AppOptions) {
       const id = q.instance ?? instances.list()[0]?.record.id;
       if (!id || !instances.get(id)) throw new HttpError(404, "errors.digitalTwin.instanceNotFound");
       return c.json({ value: await state.events({ limit: q.limit, severity: q.severity, cluster: q.cluster }) });
+    })
+
+    // The twins themselves for the agent of an allowed project, read-only and compact: the twins (instances), each
+    // one's models, its objects (filtered by model, status or a word) and one object with its relationships.
+    .get("/ops/twin/instances", (c) => c.json({ value: instances.list().map(summary) }))
+    .get("/ops/twin/models", async (c) => {
+      const tw = opsTwin(c.req.query("instance"));
+      const value = (await tw.data.models()).map((m) => ({
+        id: m.id,
+        name: m.displayName?.cs ?? m.displayName?.en ?? Object.values(m.displayName ?? {})[0],
+        extends: m.model.extends ?? null,
+        contents: (m.model.contents ?? []).map((x) => `${String(x["@type"])}:${x.name}`),
+      }));
+      return c.json({ value });
+    })
+    .get("/ops/twin/digitaltwins", async (c) => {
+      const q = parse(
+        z.object({ instance: instanceId.optional(), model: z.string().max(300).optional(), status: z.string().max(40).optional(), q: z.string().max(200).optional(), limit: z.coerce.number().int().min(1).max(500).default(100) }),
+        c.req.query(),
+      );
+      const tw = opsTwin(q.instance);
+      const word = q.q?.toLowerCase();
+      const found = (await state.twins(tw.record.id)).filter(
+        (t) =>
+          (!q.model || t.$metadata.$model === q.model || t.$metadata.$model.startsWith(`${q.model.replace(/;\d+$/, "")};`)) &&
+          (!q.status || t.status === q.status) &&
+          (!word || t.$dtId.toLowerCase().includes(word) || String(t.name ?? "").toLowerCase().includes(word)),
+      );
+      return c.json({ total: found.length, value: found.slice(0, q.limit).map((t) => ({ $dtId: t.$dtId, model: t.$metadata.$model, name: t.name ?? null, status: t.status ?? null })) });
+    })
+    .get("/ops/twin/digitaltwins/:id", async (c) => {
+      const tw = opsTwin(c.req.query("instance"));
+      const id = c.req.param("id");
+      const twin = await state.twin(tw.record.id, id);
+      if (!twin) throw new HttpError(404, "errors.digitalTwin.notFound");
+      const [out, incoming] = await Promise.all([state.relationships(tw.record.id, { source: id }), state.relationships(tw.record.id, { target: id })]);
+      return c.json({
+        twin,
+        relationships: out.map((r) => ({ name: r.$relationshipName, target: r.$targetId })),
+        incoming: incoming.map((r) => ({ name: r.$relationshipName, source: r.$sourceId })),
+      });
     })
 
     // Osiris's API for the twin's chat: the signed-in user's own calls, passed on to Osiris's gateway (which checks

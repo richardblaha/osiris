@@ -1,4 +1,8 @@
--- osiris-auth: users, their sign-in methods, groups (access) and the OpenID Connect provider's state.
+-- osiris-auth: users, their sign-in methods, groups (access), the apps that sign users in and the OpenID Connect
+-- provider's state. Times are epoch milliseconds passed in by the application. Statements end with ";" at the end of a
+-- line, which is where the runner splits them
+--
+-- baseline after: 002_clients.sql
 
 CREATE TABLE users (
   id TEXT PRIMARY KEY,
@@ -133,3 +137,22 @@ CREATE TABLE auth_session_revocations (
   uid TEXT PRIMARY KEY,
   at INTEGER NOT NULL
 );
+
+-- Applications that sign users in (OpenID Connect clients), registered by admins
+CREATE TABLE clients (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  -- URL of the app's logo, shown on the sign-in page; NULL = none
+  logo TEXT,
+  -- JSON: redirect_uris, post_logout_redirect_uris, application_type (web | native), confidential (true = has a secret)
+  metadata TEXT NOT NULL,
+  -- The client secret sealed with a key derived from AUTH_SECRET; NULL for public clients (PKCE only)
+  secret TEXT,
+  -- JSON list of groups whose members may sign in to it; empty = everyone
+  allowed_groups TEXT NOT NULL DEFAULT '[]',
+  -- JSON list of client ids whose access tokens this client may introspect (a resource server); empty = none
+  accepts_tokens_of TEXT NOT NULL DEFAULT '[]',
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+

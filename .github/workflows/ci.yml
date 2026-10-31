@@ -19,6 +19,34 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
 
+  # The collector's twin_events processor (Go): its tests, with the committed go.sum only.
+  collector:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: deploy/observability/twin-events
+    env:
+      GOFLAGS: -mod=readonly
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: deploy/observability/twin-events/go.mod
+          cache-dependency-path: deploy/observability/twin-events/go.sum
+      - run: go vet .
+      - run: go test ./...
+
+  # The desktop app (Tauri, Rust) otherwise compiles only when a release is tagged.
+  desktop:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update && sudo apt-get install -y libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: node apps/osiris-desktop/scripts/theme.mjs
+      - run: cargo check --locked
+        working-directory: apps/osiris-desktop/src-tauri
+
   image:
     if: github.event_name == 'push'
     needs: test
@@ -58,7 +86,7 @@ jobs:
   # (deploy/observability/twin-events/Dockerfile; deploy/observability/collector.yaml pulls it).
   image-otel-collector:
     if: github.event_name == 'push'
-    needs: test
+    needs: [test, collector]
     runs-on: ubuntu-latest
     permissions:
       contents: read

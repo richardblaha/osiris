@@ -5,8 +5,6 @@ import { estimate } from "@osiris/core/public/assistant.ts";
 import type { RunEvent } from "@osiris/shared";
 import { createTestApp, createTestProjects } from "./helpers.ts";
 
-const text = (s: string) => Buffer.from(s);
-
 async function setup(script: AIMessage[] = []) {
   const notified: { subject: string; text: string }[] = [];
   const { projects, model } = createTestProjects(script, [], undefined, { notifyAdmins: async (subject, text) => void notified.push({ subject, text }) });

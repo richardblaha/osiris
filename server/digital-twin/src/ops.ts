@@ -2,13 +2,14 @@ import { spawn } from "node:child_process";
 import { access, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { cephReads, kubectlReads } from "@osiris/shared/ops.ts";
 
 /**
  * Running the cluster's and Ceph's command-line tools for Osiris's agent (its `kubectl` and `ceph` tools), here in
- * the twin's service rather than in the agent's isolated runtime: kubectl with the `osiris-ops` ServiceAccount's
- * token (cluster-admin), ceph with an admin keyring from a secret. The agent asks the user before anything that
- * changes the cluster; this side refuses what would change whose or which cluster the command talks to, interactive
- * sessions and runaway output. Commands are argument lists, never a shell.
+ * the twin's service rather than in the agent's isolated runtime, read-only: only reads run (`kubectlReads`,
+ * `cephReads`), kubectl with the `osiris-ops` ServiceAccount's token (view, no Secrets), ceph with the keyring of a
+ * secret (a read-only key). This side also refuses what would change whose or which cluster the command talks to,
+ * interactive sessions and runaway output. Commands are argument lists, never a shell.
  */
 export interface OpsTools {
   kubectl?: { server: string; tokenPath: string; caPath: string };
@@ -115,12 +116,14 @@ async function kubeconfigOf(k: NonNullable<OpsTools["kubectl"]>): Promise<string
 export async function kubectl(tools: OpsTools, args: string[], stdin?: string): Promise<CommandResult> {
   if (!tools.kubectl) throw new OpsRefused("kubectl is not set up for the twin");
   checkKubectl(args);
+  if (!kubectlReads(args)) throw new OpsRefused("the agent's access is read-only: this kubectl command would change the cluster");
   return run("kubectl", [`--kubeconfig=${await kubeconfigOf(tools.kubectl)}`, "--request-timeout=60s", ...args], stdin);
 }
 
 export async function ceph(tools: OpsTools, args: string[], stdin?: string): Promise<CommandResult> {
   if (!tools.ceph) throw new OpsRefused("ceph is not set up for the twin");
   checkCeph(args);
+  if (!cephReads(args)) throw new OpsRefused("the agent's access is read-only: this ceph command would change the storage");
   const c = tools.ceph;
   return run("ceph", [`--conf=${c.confPath}`, `--keyring=${c.keyringPath}`, `--name=${c.user}`, "--connect-timeout=20", ...args], stdin);
 }

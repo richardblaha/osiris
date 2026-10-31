@@ -15,8 +15,12 @@ const schema = z
     CORS_ORIGIN: z.string().default("http://localhost:5173"),
     // Built web app (apps/osiris-pwa/dist); unset in development, where Vite serves it.
     STATIC_DIR: z.string().optional(),
-    // A GoatCounter site (e.g. https://osiris.stats.k6labs.cz) the web app counts its visits to; unset = no counting.
-    GOATCOUNTER_URL: z.url().optional().transform((v) => v?.replace(/\/$/, "")),
+    // The web-events site (deploy/observability/web-events.yaml, e.g. osiris.k6labs.cz) the web app counts its visits
+    // to, as paths without ids; unset = no counting.
+    WEB_EVENTS_SITE: z
+      .union([z.literal(""), z.string().regex(/^[a-z0-9][a-z0-9.-]{0,252}$/)])
+      .optional()
+      .transform((v) => v || undefined),
 
     // Development only: the bearer token itself is the user (see CLAUDE.md). Otherwise osiris-auth introspects tokens.
     AUTH_DEV_BYPASS: bool,

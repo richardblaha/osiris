@@ -1,6 +1,6 @@
 # Conversational images through Comfy Cloud
 
-The existing project LangGraph agent provides image generation and editing through its native tool registry. It reuses the MCP adapter, OAuth, project vault, libSQL database/checkpointer, file storage, usage accounting, streaming, PWA and WhatsApp delivery. No separate agent, queue, server, database or mandatory paid service is introduced.
+The existing project LangGraph agent provides image generation and editing through its native tool registry. It reuses the MCP adapter, OAuth, project vault, checkpointer, project records, file storage, usage accounting, streaming, PWA and WhatsApp delivery. No separate agent, queue, server, database or mandatory paid service is introduced.
 
 ## Configuration and authentication
 
@@ -92,7 +92,7 @@ Failed alpha, size, seamless or visual checks may trigger refinement only within
 
 ## Persistence, replay and limits
 
-Migrations `020_images.sql` and `021_image_execution.sql` extend the existing project DB with jobs, capability metadata and selected revisions. Binary images stay in FileStore; graph checkpoints and database rows retain lightweight references. Requests, original/parent revisions, selected variants, masks, constraints, workflow/model/seed metadata, provider identifiers, attempts and validation results survive process reconstruction. Selections use compare-and-set updates for concurrent branches.
+Jobs, capability metadata and selected revisions are JSON records in the project folder (`.osiris/private/images/jobs/<id>.json`, `catalog.json` and `selections/` there; `packages/tools/images/src/store.ts`). Binary images stay in FileStore; graph checkpoints and job records retain lightweight references. Requests, original/parent revisions, selected variants, masks, constraints, workflow/model/seed metadata, provider identifiers, attempts and validation results survive process reconstruction. Selections use compare-and-set updates for concurrent branches.
 
 The graph's stable tool-call id is the unique submission key for each user/thread. Atomic claims, execution leases and a conditional pre-submission write prevent concurrent/replayed paid calls. Provider ids are parsed and persisted immediately without another model call. An interrupted preparation can resume; a known job can be polled after restart. A saved raw submission response can recover its id if parsing was interrupted. The unavoidable window between remote acceptance and receipt/persistence of its id becomes `unknown` and is **not** automatically resubmitted. Inspect the Comfy queue to reconcile it; never invent provider-side idempotency.
 

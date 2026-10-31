@@ -802,7 +802,7 @@ export interface ChatQuestion {
 }
 
 /** Tools whose result may be a chat question (`{ question }`), shown as a form even with tool calls hidden. */
-export const QUESTION_TOOLS: readonly string[] = ["ask_user", "run_workflow", "kubectl", "ceph"];
+export const QUESTION_TOOLS: readonly string[] = ["ask_user", "run_workflow"];
 
 /** Agent orchestration patterns (`@osiris/tools-workflows`). `Composite`: a plan mixing several of them. */
 export type AgentPattern = "ReAct" | "PEV" | "JEV" | "MapReduce" | "Reflexion" | "HITL" | "Composite";

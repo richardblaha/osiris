@@ -14,7 +14,6 @@
     "@langchain/core": "^1.2.17",
     "@langchain/langgraph": "^1.4.21",
     "@osiris/core": "workspace:*",
-    "@osiris/shared": "workspace:*",
     "sharp": "0.35.5",
     "zod": "^4.6.5"
   },

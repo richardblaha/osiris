@@ -7,7 +7,8 @@
     "./theme.ts": "./src/theme.ts",
     "./dtdl.ts": "./src/dtdl.ts",
     "./material-icons.ts": "./src/material-icons.ts",
-    "./pkce.ts": "./src/pkce.ts"
+    "./pkce.ts": "./src/pkce.ts",
+    "./ops.ts": "./src/ops.ts"
   },
   "scripts": {
     "typecheck": "tsc -p .",

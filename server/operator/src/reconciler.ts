@@ -1,6 +1,6 @@
 import { projectAudience, type InternalSigner } from "@osiris/platform/internal-auth.ts";
-import { KubeError, type Kube, type KubeObject } from "./kube.ts";
-import { namespaceOf, RUNTIME_PORT, PROJECT_LABEL, projectResources, type OperatorSettings, type ProjectResource } from "./resources.ts";
+import { KubeError, type Kube } from "./kube.ts";
+import { namespaceOf, RUNTIME_PORT, projectResources, type OperatorSettings, type ProjectResource } from "./resources.ts";
 
 export const FINALIZER = "osiris.k6labs.cz/cleanup";
 

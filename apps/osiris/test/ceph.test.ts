@@ -1,8 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { QuestionStore } from "@osiris/core/agent/questions.ts";
 import type { RunContext } from "@osiris/core/agent/context.ts";
 import { cephReads, cephTool, cephModule } from "@osiris/tools-ceph";
-import { createTestRecords } from "./helpers.ts";
 
 const ctx: RunContext = { thread_id: "t1", project_id: "twin", user_id: "bob", role: "admin", channel: "web", locale: "cs" };
 
@@ -14,31 +12,23 @@ describe("the ceph tool's reads and changes", () => {
 });
 
 describe("the ceph tool", () => {
-  const setup = () => {
-    const calls: { url: string; body: { args: string[] } }[] = [];
-    const fetchFn = vi.fn(async (url: string, init?: RequestInit) => {
-      calls.push({ url, body: JSON.parse(String(init?.body)) });
-      return Response.json({ exitCode: 0, stdout: "", stderr: "", truncated: false });
+  it("runs reads and refuses changes without calling the twin", async () => {
+    const calls: string[][] = [];
+    const fetchFn = vi.fn(async (_url: string, init?: RequestInit) => {
+      calls.push((JSON.parse(String(init?.body)) as { args: string[] }).args);
+      return Response.json({ exitCode: 0, stdout: "HEALTH_OK", stderr: "", truncated: false });
     });
-    const questions = new QuestionStore(createTestRecords());
-    const client = { url: "http://twin:3004", token: async () => "projected", fetch: fetchFn as unknown as typeof fetch };
-    return { calls, questions, ceph: cephTool(client, questions) };
-  };
-
-  it("doesn't run a change the user said no to", async () => {
-    const { calls, questions, ceph } = setup();
-    await ceph.invoke({ args: ["osd", "out", "7"] }, { configurable: ctx });
-    const q = (await questions.get("bob", "t1"))!;
-    await questions.prepare("bob", "t1", `@osiris-answer:${JSON.stringify({ id: q.id, values: { confirm: false } })}`);
-    expect(await ceph.invoke({ args: ["osd", "out", "7"] }, { configurable: ctx })).toMatch(/zamítl/);
-    expect(calls).toHaveLength(0);
+    const ceph = cephTool({ url: "http://twin:3004", token: async () => "projected", fetch: fetchFn as unknown as typeof fetch });
+    expect(await ceph.invoke({ args: ["status"] }, { configurable: ctx })).toContain("HEALTH_OK");
+    expect(await ceph.invoke({ args: ["osd", "out", "7"] }, { configurable: ctx })).toMatch(/jen pro čtení/);
+    expect(calls).toEqual([["status"]]);
   });
 });
 
 describe("the ceph module", () => {
   it("gives the ceph tool only to the projects it names", () => {
     const m = cephModule({ projects: ["twin"], ops: { url: "http://t", token: async () => "" } });
-    const host = (projectId: string) => ({ projectId, questions: new QuestionStore(createTestRecords()) }) as never;
+    const host = (projectId: string) => ({ projectId }) as never;
     expect(m.create(host("twin")).tools.map((t) => t.name)).toEqual(["ceph"]);
     expect(m.create(host("acme")).tools).toEqual([]);
   });

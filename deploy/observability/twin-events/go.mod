@@ -2,7 +2,7 @@ module github.com/richardblaha/osiris/observability/twin_events
 
 go 1.26.0
 
-// `go mod tidy` runs in the Dockerfile build; the versions below are the floor.
+// The image builds exactly these versions (-mod=readonly): change them here with `go get`/`go mod tidy` and commit.
 require (
 	github.com/redis/go-redis/v9 v9.7.0
 	// The collector's component modules are versioned v1.x; v1.67.0 is the release paired with collector v0.161.0.

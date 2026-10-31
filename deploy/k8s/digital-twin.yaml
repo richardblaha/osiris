@@ -72,7 +72,7 @@ spec:
             # The twin's chat: Osiris's gateway and the project of its agent.
             - { name: OSIRIS_URL, value: https://osiris.k6labs.cz }
             - { name: OSIRIS_PROJECT, value: twin }
-            # kubectl (the osiris-ops account) and ceph (the ceph-ops secret) for that project's agent only.
+            # kubectl (the osiris-ops account) and ceph (the ceph-ops secret) for that project's agent only, read-only.
             - { name: OPS_PROJECTS, value: twin }
             # The alerts service (digital-twin-alerts.yaml), asked with this pod's token projected for it.
             - { name: ALERTS_URL, value: http://digital-twin-alerts.osiris.svc.cluster.local:3006 }
@@ -102,10 +102,10 @@ spec:
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 1Gi }
-        # The osiris-ops ServiceAccount's token (cluster-admin) for the agent's kubectl, only in this pod.
+        # The osiris-ops ServiceAccount's token (read-only: view and osiris-ops-read) for the agent's kubectl, only in this pod.
         - name: ops-token
           secret: { secretName: osiris-ops-token, items: [{ key: token, path: token }] }
-        # Ceph's admin config and keyring for the agent's ceph (not in git; see deploy/README.md). Optional: without
+        # Ceph's config and keyring for the agent's ceph (not in git; see deploy/README.md; the twin runs reads only). Optional: without
         # it the agent has no ceph tool.
         - name: ceph-ops
           secret: { secretName: ceph-ops, optional: true, items: [{ key: ceph.conf, path: ceph.conf }, { key: keyring, path: keyring }] }

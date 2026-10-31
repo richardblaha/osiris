@@ -58,7 +58,6 @@ PRIVATE.addSubnet("fc00::", 7, "ipv6");
 PRIVATE.addSubnet("::1", 128, "ipv6");
 
 const family = (ip: string) => (isIP(ip) === 6 ? "ipv6" : "ipv4");
-const plain = (ip: string) => ip.replace(/^::ffff:/, "");
 
 
 export function createWebEventsApp(deps: WebEventsDeps) {

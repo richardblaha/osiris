@@ -31,7 +31,6 @@
     "@osiris/tools-skills": "workspace:*",
     "@osiris/tools-workflows": "workspace:*",
     "hono": "^4.13.13",
-    "jose": "^6.2.12",
     "tar": "7.5.22",
     "tsx": "^4.23.15",
     "zod": "^4.6.5"

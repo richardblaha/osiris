@@ -109,8 +109,9 @@ metadata:
 roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: system:auth-delegator }
 subjects: [{ kind: ServiceAccount, name: digital-twin, namespace: osiris }]
 ---
-# The account the agent's kubectl runs as (in the twin's pod, for OPS_PROJECTS only; every change is the user's yes
-# in the chat first). Its token is a secret mounted only into the twin.
+# The account the agent's kubectl runs as (in the twin's pod, for OPS_PROJECTS only), read-only: the built-in view
+# role (namespaced resources, no Secrets) and the cluster's own objects below. The twin also refuses every command
+# that isn't a read. Its token is a secret mounted only into the twin.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -127,5 +128,48 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: osiris-ops
-roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: cluster-admin }
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: view }
+subjects: [{ kind: ServiceAccount, name: osiris-ops, namespace: osiris }]
+---
+# What view leaves out and the agent reads: nodes, volumes, storage and scheduling, the API's own registrations, RBAC,
+# the metrics behind `kubectl top`, and the custom resources of what runs here (never Secrets).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: osiris-ops-read
+rules:
+  - apiGroups: [""]
+    resources: [nodes, persistentvolumes, namespaces, componentstatuses]
+    verbs: [get, list, watch]
+  - apiGroups:
+      - storage.k8s.io
+      - scheduling.k8s.io
+      - node.k8s.io
+      - networking.k8s.io
+      - apiextensions.k8s.io
+      - apiregistration.k8s.io
+      - admissionregistration.k8s.io
+      - rbac.authorization.k8s.io
+      - certificates.k8s.io
+      - coordination.k8s.io
+      - discovery.k8s.io
+      - metrics.k8s.io
+      - snapshot.storage.k8s.io
+      - osiris.k6labs.cz
+      - traefik.io
+      - cert-manager.io
+      - acme.cert-manager.io
+      - metallb.io
+      - crd.projectcalico.org
+      - ceph.rook.io
+    resources: ["*"]
+    verbs: [get, list, watch]
+  - nonResourceURLs: [/api, /api/*, /apis, /apis/*, /version, /healthz, /livez, /readyz, /openapi/*]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: osiris-ops-read
+roleRef: { apiGroup: rbac.authorization.k8s.io, kind: ClusterRole, name: osiris-ops-read }
 subjects: [{ kind: ServiceAccount, name: osiris-ops, namespace: osiris }]

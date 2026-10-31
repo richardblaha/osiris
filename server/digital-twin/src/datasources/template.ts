@@ -1,4 +1,4 @@
-import type { DigitalTwin } from "@osiris/shared/dtdl.ts";
+import { DATA_PLACEHOLDER as PLACEHOLDER, type DigitalTwin } from "@osiris/shared/dtdl.ts";
 
 /**
  * A binding's parameters name the twin they are for with placeholders — `{id}`, `{name}`, `{twin.<property>}`,
@@ -7,8 +7,6 @@ import type { DigitalTwin } from "@osiris/shared/dtdl.ts";
  * add a level or a wildcard).
  */
 export type TwinVars = Record<string, string>;
-
-const PLACEHOLDER = /\{(id|name|twin\.[A-Za-z][A-Za-z0-9_]{0,63}|otel\.[A-Za-z0-9_.]{1,100})\}/g;
 
 /** A twin's values for placeholders: its id and name, its scalar properties, its OpenTelemetry resource. */
 export function varsOf(twin: DigitalTwin): TwinVars {

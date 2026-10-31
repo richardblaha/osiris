@@ -1,7 +1,6 @@
-import { AIMessage, HumanMessage, ToolMessage } from "@langchain/core/messages";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
 import { describe, expect, it } from "vitest";
-import { MemoryStore } from "@osiris/core/agent/memory.ts";
-import { createTestRecords, createTestProjects } from "./helpers.ts";
+import { createTestProjects } from "./helpers.ts";
 
 const ctx = (user: string, role: "admin" | "member") => ({
   thread_id: `t-${user}`,

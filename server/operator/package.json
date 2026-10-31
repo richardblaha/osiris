@@ -9,7 +9,6 @@
   },
   "dependencies": {
     "@osiris/platform": "workspace:*",
-    "@osiris/shared": "workspace:*",
     "tsx": "4.23.15",
     "zod": "4.6.5"
   },

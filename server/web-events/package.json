@@ -16,7 +16,6 @@
     "@opentelemetry/sdk-logs": "0.223.0",
     "@osiris/platform": "workspace:*",
     "hono": "4.13.13",
-    "mmdb-lib": "3.0.3",
     "tsx": "4.23.15",
     "zod": "4.6.5"
   },

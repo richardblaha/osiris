@@ -574,6 +574,33 @@ button.instance-button:hover {
   color: var(--accent-primary);
   box-shadow: 0 0 0 2px var(--accent-primary-soft);
 }
+/* The bar's panel buttons: lit while the panel shows, dim while it can't (no selection). */
+.panel-toggles {
+  display: inline-flex;
+  gap: 2px;
+}
+.panel-toggle {
+  display: grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+}
+.panel-toggle:hover:not(:disabled) {
+  border-color: var(--accent-active);
+  color: var(--text-primary);
+}
+.panel-toggle[aria-pressed="true"] {
+  border-color: var(--border-strong);
+  background: var(--accent-primary-soft);
+  color: var(--accent-primary);
+}
+.panel-toggle:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 /* A pop-up that opens upward from the bar, within the window, scrolling when taller. */
 .menu-popup.menu-up {
   top: auto;
@@ -817,40 +844,48 @@ button.instance-button:hover {
   pointer-events: none;
   transition: all 0.12s ease;
 }
-/* The window menu's 3×3 grid: each cell a small drawing of where the window goes. */
-.wm-grid {
+/* The grid of the area's 9 parts (columns and rows 20 %, 60 %, 20 %), drawn to scale: in the window menu, and as the
+   compass in the middle of the area while a window is dragged (dropped on a cell, it docks in that part). */
+.wm-grid,
+.wm-compass {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.25rem;
+  grid-template-columns: 1fr 3fr 1fr;
+  gap: 2px;
+}
+.wm-grid {
+  grid-template-rows: 0.9rem 2.7rem 0.9rem;
+}
+.wm-compass {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 50%;
+  width: 10rem;
+  height: 7.5rem;
+  translate: -50% -50%;
+  grid-template-rows: 1fr 3fr 1fr;
+  padding: 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sidebar);
+  box-shadow: var(--shadow-popup);
+  pointer-events: none;
 }
 .wm-grid-cell {
-  position: relative;
-  height: 2rem;
+  min-width: 0;
   border: 1px solid var(--border-strong);
-  border-radius: 4px;
+  border-radius: 3px;
+  background: var(--accent-primary-soft);
 }
-.wm-grid-cell:hover {
+.wm-grid-cell:hover,
+.wm-grid-cell:focus-visible,
+.wm-grid-cell[data-hot="true"] {
   border-color: var(--accent-active);
+  background: var(--accent-active-soft);
 }
-.wm-grid-cell > span {
-  position: absolute;
-  border-radius: 2px;
-  background: var(--accent-primary);
-  opacity: 0.6;
+.wm-grid-cell[data-docked="true"] {
+  border-style: dashed;
 }
-.wm-grid-cell:hover > span {
-  background: var(--accent-active);
-  opacity: 1;
-}
-.wm-grid-cell[data-snap="tl"] > span { inset: 3px 50% 50% 3px; }
-.wm-grid-cell[data-snap="top"] > span { inset: 3px 3px 50% 3px; }
-.wm-grid-cell[data-snap="tr"] > span { inset: 3px 3px 50% 50%; }
-.wm-grid-cell[data-snap="left"] > span { inset: 3px 50% 3px 3px; }
-.wm-grid-cell[data-snap="max"] > span { inset: 3px; }
-.wm-grid-cell[data-snap="right"] > span { inset: 3px 3px 3px 50%; }
-.wm-grid-cell[data-snap="bl"] > span { inset: 50% 50% 3px 3px; }
-.wm-grid-cell[data-snap="bottom"] > span { inset: 50% 3px 3px 3px; }
-.wm-grid-cell[data-snap="br"] > span { inset: 50% 3px 3px 50%; }
 @media (prefers-reduced-motion: reduce) {
   .wm-preview {
     transition: none;

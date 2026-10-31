@@ -3,7 +3,6 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { SecurityOverview, SignInState, SocialProvider } from "@osiris/shared";
 import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
-import { HTTPException } from "hono/http-exception";
 import type Provider from "oidc-provider";
 import { z } from "zod";
 import { HttpError, requestLocale, translate, ValidationError } from "@osiris/platform/i18n.ts";

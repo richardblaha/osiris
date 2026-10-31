@@ -87,9 +87,19 @@ Users verify their phone number for WhatsApp themselves (My profile → Account 
 
 ### From control (one-off, 2026-10)
 
-Before osiris-auth, control was the provider and kept users in rqlite; the one-off `import-control` command brought
+Before osiris-auth, control was the provider and kept users in rqlite; a one-off `import-control` command (since removed) brought
 them over (users, passwords, authenticators, passkeys and linked accounts, claims turned into groups). Control's
-migration `013_no_auth.sql` then dropped its auth tables.
+schema no longer has its old auth tables: a database from before the baseline loses them when it is taken over (below).
+
+### Database migrations (baseline, 2026-10)
+
+Control's and osiris-auth's migrations were squashed into one `001_init.sql` each, the current schema. A new database
+is made from it; an existing one is taken over at startup when its history reaches the last replaced migration
+(`-- baseline after:` in the file: control `012_no_cluster_sites.sql`, osiris-auth `002_clients.sql`): its old rows
+in `_migrations` give way to `001_init.sql`, its data stays, and control drops the old sign-in tables named in
+`-- baseline drops:` (users, passkeys, sessions, sign-in links and events, nothing else). A database whose history
+ends earlier is refused, so the service doesn't start on an unknown schema. Take a copy of `/data/control.db` before
+the first rollout with the baseline (`control-backup`); the dropped tables can't be brought back otherwise.
 
 ## WhatsApp
 
@@ -218,12 +228,12 @@ get them from the operator's secret (`RUNTIME_SECRET_*`, see Secrets). A provide
 
 Then recreate the `osiris-operator` secret and restart the operator; runtimes pick the clients up on their next start.
 
-## Visits (GoatCounter)
+## Visits (web-events)
 
-The web app counts visits with GoatCounter (cookieless, in namespace `goatcounter`): set `GOATCOUNTER_URL` in
-`gateway.yaml` to the Osiris site's URL (created in GoatCounter, e.g. `https://osiris.stats.k6labs.cz`). The gateway
-then adds its `count.js` to the page and the site to the CSP; the app counts each view as a path (`/chat`,
-`/skills`, …), never with ids or names.
+The web app counts visits with web-events (cookieless, ClickHouse; `deploy/observability/web/README.md`):
+`WEB_EVENTS_SITE` in `gateway.yaml` names its site (`osiris.k6labs.cz`, listed in `SITES` and in the IngressRoute of
+`deploy/observability/web-events.yaml`). The gateway then adds `/_e/e.js` with `data-manual` to the page; the app
+counts each view as a path (`/chat`, `/skills`, …), never with ids or names, and `/_e` on the host goes to web-events.
 
 ## Object storage (Ceph RGW)
 
@@ -238,8 +248,9 @@ Generate the internal keys once and keep them in `.env` (losing `SECRETS_MASTER_
 unreadable; changing the JWT keys only needs a restart of all services):
 
 ```bash
-pnpm --filter @osiris/platform gen-keys   # → OSIRIS_INTERNAL_JWT_PRIVATE_KEY, OSIRIS_INTERNAL_JWT_PUBLIC_KEY, OSIRIS_SECRETS_MASTER_KEY,
-                                          #   OSIRIS_AUTH_SIGNING_KEY, OSIRIS_AUTH_SECRET (osiris-auth's)
+pnpm --filter @osiris/platform gen-keys   # → INTERNAL_JWT_PRIVATE_KEY, INTERNAL_JWT_PUBLIC_KEY, SECRETS_MASTER_KEY,
+                                          #   AUTH_SIGNING_KEY, AUTH_SECRET (osiris-auth's); keep them in this
+                                          #   .env with the prefix OSIRIS_ (OSIRIS_SECRETS_MASTER_KEY, …), as below
                                           #   (put the PEM values in single quotes in .env: they contain spaces)
 ```
 
@@ -311,7 +322,7 @@ kubectl get ns -o name | grep '^namespace/osiris-t-' | xargs -r kubectl delete
 kubectl delete crd tenants.osiris.k6labs.cz
 ```
 
-Control's migration `011_projects.sql` renames the tables and rewrites users' claims (`tenant` → `project`, `tenant-admin` → `project-admin`), so accounts and sign-in stay. Recreate the projects in System > Projects.
+Control's database renamed the tables then and rewrote users' claims (`tenant` → `project`, `tenant-admin` → `project-admin`), so accounts and sign-in stayed. Recreate the projects in System > Projects.
 
 ## Checks after a rollout
 
@@ -369,8 +380,8 @@ that the hosting provider permits the selected port (see the Civo SMTP restricti
 
 ### Account activity, session revocation and GeoIP
 
-Control migration `009_auth_activity.sql` creates user-scoped login events, session metadata and revocation
-tombstones. Profile > Aktivita a relace shows up to 100 events from the last 90 days and active OIDC sessions.
+osiris-auth keeps user-scoped login events, session metadata and revocation tombstones (`auth_events`,
+`auth_session_info`, `auth_session_revocations`). Profile > Aktivita a relace shows up to 100 events from the last 90 days and active OIDC sessions.
 Successful sign-ins and failed password/second-factor attempts of known accounts are recorded; unknown
 accounts and unidentifiable passkey/social failures are not attached to a user. Metadata is IP, approximate
 country/region/city, ASN/provider and parsed browser/OS/device, never passwords, codes or raw User-Agent.
@@ -393,28 +404,31 @@ for cache settings and the ClickHouse schema upgrade required before the analyti
 ### Interactive PWA and WhatsApp chat
 
 See `deploy/whatsapp/README.md` for durable agent questions/forms, media processing, published Meta Flow
-mappings and approved notification templates. Project migration 019 and control migration 010 run at startup.
+mappings and approved notification templates.
 No live Flow or template is created by deploying these images. Without configured Meta assets, simple choices
 use native buttons/lists, questionnaires link to PWA and out-of-window scheduled replies remain in web chat.
 Runtime OCR/transcription uses `MISTRAL_API_KEY`, `OCR_MODEL` and `AUDIO_MODEL`; configure them at system level.
 
 ## Osiris over the digital twin (project `twin`, kubectl, ceph, speech)
 
-The twin's chat talks to Osiris project **twin**, whose agent manages the cluster and Ceph through the twin
-(`OPS_PROJECTS=twin` in `deploy/k8s/digital-twin.yaml`, `RUNTIME_ENV_OPS_PROJECTS=twin` in `operator.yaml`).
+The twin's chat talks to Osiris project **twin**, whose agent reads the cluster, Ceph and the twin itself through the
+twin, read-only (`OPS_PROJECTS=twin` in `deploy/k8s/digital-twin.yaml`, `RUNTIME_ENV_OPS_PROJECTS=twin` in
+`operator.yaml`); it proposes changes, people make them.
 
 1. Create the project **twin** (System > Projects). System admins are admins of every project; others need the
    group `project:twin`.
 2. osiris-auth (`/admin` → Apps → `osiris-gateway`): add `digital-twin` to the apps whose tokens it accepts, so the
    gateway takes the twin's sign-in.
-3. Ceph (optional; without it the agent has kubectl only). On a Ceph host (microceph):
+3. Ceph (optional; without it the agent has kubectl only). On a Ceph host (microceph), a read-only key:
    ```bash
    sudo microceph.ceph config generate-minimal-conf > ceph.conf
-   sudo microceph.ceph auth get client.admin > keyring
+   sudo microceph.ceph auth get-or-create client.osiris-ro mon 'allow r' mgr 'allow r' osd 'allow r' > keyring
    kubectl -n osiris create secret generic ceph-ops --from-file=ceph.conf --from-file=keyring
-   kubectl -n osiris rollout restart deploy/digital-twin
    ```
-4. `kubectl apply -k deploy/k8s` creates the `osiris-ops` ServiceAccount (cluster-admin, its token mounted only
-   into the twin), the TokenReview binding, the `tts` service and the network rules; restart the operator so it
-   lets runtimes reach the twin's ops API. Every command the agent runs is logged by the twin (`ops.command`), and
-   every change waits for the user's yes in the chat.
+   and set `OPS_CEPH_USER=client.osiris-ro` on the twin (`digital-twin.yaml`), then
+   `kubectl -n osiris rollout restart deploy/digital-twin`. The twin runs only ceph's reads whichever key it has;
+   an existing `ceph-ops` secret with `client.admin` keeps working until it is replaced.
+4. `kubectl apply -k deploy/k8s` creates the `osiris-ops` ServiceAccount (read-only: `view` and `osiris-ops-read`,
+   no Secrets; its token mounted only into the twin), the TokenReview binding, the `tts` service and the network
+   rules; restart the operator so it lets runtimes reach the twin's ops API. Every command the agent runs is logged
+   by the twin (`ops.command`); a change is refused by the twin and by the account.

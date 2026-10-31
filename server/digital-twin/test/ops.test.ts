@@ -59,6 +59,14 @@ describe("the ops API and the Osiris proxy", async () => {
     expect((await post("/ops/ceph", "dev-runtime:twin", { args: ["status"] })).status).toBe(400);
   });
 
+  it("refuses every change, whatever the runtime sends: the agent only reads", async () => {
+    for (const args of [["delete", "pod", "x"], ["apply", "-f", "-"], ["exec", "x", "--", "ls"], ["scale", "deploy/x", "--replicas=0"]]) {
+      const res = await post("/ops/kubectl", "dev-runtime:twin", { args });
+      expect(res.status, args.join(" ")).toBe(400);
+      expect(((await res.json()) as { refused: string }).refused).toMatch(/read-only/);
+    }
+  });
+
   it("passes the user's own Osiris calls on, to the twin's project", async () => {
     const res = await app.request("/osiris/api/threads?x=1", { headers: { authorization: "Bearer user-token" } });
     expect(await res.json()).toEqual({ url: "https://osiris.example/api/threads?x=1", project: "twin", auth: "Bearer user-token" });

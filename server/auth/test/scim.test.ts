@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyPatch, parseFilter } from "../src/scim.ts";
-import { createTestAuth, createTestDb } from "./helpers.ts";
+import { createTestAuth } from "./helpers.ts";
 
 const PATCH = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
 

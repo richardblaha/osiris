@@ -1,5 +1,4 @@
-import type { Client } from "@libsql/client";
-import { FEATURES, NO_QUOTAS, type Feature, type Guard, type ProjectFeatures, type UserDefaults, type ProjectQuotas } from "@osiris/shared";
+import { FEATURES, type Feature, type Guard, type ProjectFeatures, type UserDefaults, type ProjectQuotas } from "@osiris/shared";
 
 /** Everything is on until a system admin switches it off, so existing projects keep working. */
 export const DEFAULT_FEATURES: ProjectFeatures = Object.fromEntries(FEATURES.map((f) => [f, true])) as ProjectFeatures;

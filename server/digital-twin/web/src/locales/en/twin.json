@@ -160,24 +160,24 @@
     "title": "Windows",
     "reset": "Default layout",
     "show": "Show {{name}}",
-    "help": "Drag a window by its header: to an edge or a corner it snaps, onto another window's header it joins it as a tab.",
+    "help": "Drag a window by its header onto a cell of the grid in the middle (9 parts: columns and rows 20 %, 60 %, 20 %), to an edge or corner, or to the top to maximize; onto another window or a part that holds one, it joins it as a tab.",
     "restore": "Restore",
     "maximize": "Maximize",
     "close": "Close",
     "arrange": "Arrange",
-    "snapTo": "Put the window",
+    "snapTo": "Dock in",
     "detach": "Take “{{name}}” out",
     "joinWith": "Join with",
     "snap": {
-      "tl": "Top left quarter",
-      "top": "Top half",
-      "tr": "Top right quarter",
-      "left": "Left half",
-      "max": "Whole view",
-      "right": "Right half",
-      "bl": "Bottom left quarter",
-      "bottom": "Bottom half",
-      "br": "Bottom right quarter"
+      "tl": "Top left",
+      "top": "Top middle",
+      "tr": "Top right",
+      "left": "Middle left",
+      "center": "Centre",
+      "right": "Middle right",
+      "bl": "Bottom left",
+      "bottom": "Bottom middle",
+      "br": "Bottom right"
     },
     "panel": {
       "properties": "properties",
@@ -185,7 +185,11 @@
       "metrics": "metrics",
       "traces": "traces",
       "chat": "conversation"
-    }
+    },
+    "panels": "Panels",
+    "open": "Show {{name}}",
+    "hide": "Close {{name}}",
+    "needsSelection": "Select an object in the twin to show its {{name}}"
   },
   "data": {
     "title": "Data ({{profile}})"

@@ -168,24 +168,24 @@
     "title": "Okna",
     "reset": "Výchozí rozložení",
     "show": "Zobrazit {{name}}",
-    "help": "Okno přetáhněte za hlavičku: u okraje nebo v rohu se přichytí, na hlavičce jiného okna se k němu připojí jako záložka.",
+    "help": "Okno přetáhněte za hlavičku na buňku mřížky uprostřed (9 částí: sloupce i řádky 20 %, 60 %, 20 %), k okraji nebo do rohu, nebo nahoru pro maximalizaci; na jiné okno nebo do části, kde už okno je, se k němu připojí jako záložka.",
     "restore": "Obnovit",
     "maximize": "Maximalizovat",
     "close": "Zavřít",
     "arrange": "Rozmístit",
-    "snapTo": "Umístit okno",
+    "snapTo": "Ukotvit do",
     "detach": "Vyjmout „{{name}}“",
     "joinWith": "Sloučit s",
     "snap": {
-      "tl": "Levá horní čtvrtina",
-      "top": "Horní polovina",
-      "tr": "Pravá horní čtvrtina",
-      "left": "Levá polovina",
-      "max": "Celé zobrazení",
-      "right": "Pravá polovina",
-      "bl": "Levá dolní čtvrtina",
-      "bottom": "Dolní polovina",
-      "br": "Pravá dolní čtvrtina"
+      "tl": "Vlevo nahoře",
+      "top": "Nahoře uprostřed",
+      "tr": "Vpravo nahoře",
+      "left": "Vlevo uprostřed",
+      "center": "Střed",
+      "right": "Vpravo uprostřed",
+      "bl": "Vlevo dole",
+      "bottom": "Dole uprostřed",
+      "br": "Vpravo dole"
     },
     "panel": {
       "properties": "vlastnosti",
@@ -193,7 +193,11 @@
       "metrics": "metriky",
       "traces": "trasy",
       "chat": "konverzaci"
-    }
+    },
+    "panels": "Panely",
+    "open": "Zobrazit {{name}}",
+    "hide": "Zavřít {{name}}",
+    "needsSelection": "Vyberte objekt ve dvojčeti, ať můžete zobrazit {{name}}"
   },
   "data": {
     "title": "Data ({{profile}})"

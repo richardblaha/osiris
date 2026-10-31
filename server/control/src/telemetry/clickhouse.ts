@@ -1,4 +1,4 @@
-import type { LogRecord, MetricInfo, MetricSeries, WebStats, WebSummary, WebTopRow } from "@osiris/shared";
+import type { LogRecord, MetricSeries, WebStats, WebSummary, WebTopRow } from "@osiris/shared";
 
 /** ClickHouse's HTTP interface with a read-only user; values go in as query parameters (`{name:Type}`), never as SQL. */
 export class ClickHouse {

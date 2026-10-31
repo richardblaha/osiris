@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, open, readdir, readFile, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 /** A folder name for an id that may hold `/` or `..` (a user's sub, a thread id). */
@@ -50,8 +50,20 @@ export class Records {
     const abs = this.path(path);
     await mkdir(dirname(abs), { recursive: true, mode: 0o750 });
     const tmp = join(dirname(abs), `.${randomUUID()}.tmp`);
-    await writeFile(tmp, text, { mode: 0o640 });
-    await rename(tmp, abs);
+    try {
+      // Synced before the rename, so a crash leaves the old record or the new one, never an empty file.
+      const handle = await open(tmp, "wx", 0o640);
+      try {
+        await handle.writeFile(text);
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await rename(tmp, abs);
+    } catch (err) {
+      await rm(tmp, { force: true });
+      throw err;
+    }
   }
 
   async write(path: string, value: unknown): Promise<void> {

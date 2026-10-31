@@ -17,7 +17,6 @@ let enabled = (() => {
 const listeners = new Set<() => void>();
 let player: HTMLAudioElement | undefined;
 
-export const speechEnabled = () => enabled;
 export function setSpeechEnabled(on: boolean) {
   enabled = on;
   try {

@@ -5,10 +5,6 @@ export const SECRET_NAME = /^[A-Z][A-Z0-9_]{0,63}$/;
 
 export class SecretUseError extends LocalizedError {}
 
-export function secretRefs(text: string): string[] {
-  return [...text.matchAll(SECRET_REF)].map((m) => m[1]!);
-}
-
 /**
  * The host a templated URL points to. Placeholders must not decide the host (or the scheme),
  * otherwise a secret could pick where it is sent.

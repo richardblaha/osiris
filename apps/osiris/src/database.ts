@@ -1,7 +1,6 @@
 import { DB_COLUMN_TYPES, type DbQueryResult, type DbRows, type DbTable } from "@osiris/shared";
 import { DataError, MAX_ROWS_PER_WRITE, type DataErrorCode } from "@osiris/core/database/store.ts";
 import { Hono } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import type { AuthEnv, RequestContext } from "./auth.ts";
 import { HttpError, ValidationError } from "@osiris/platform/i18n.ts";

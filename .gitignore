@@ -151,5 +151,8 @@ vite.config.ts.timestamp-*
 # Kubernetes config files
 .kubeconfig
 .kubeconfig.*
-data/
+# Local services' data (DATA_DIR=./data in each app's .env), not any folder named data
+/data/
+/apps/*/data/
+/server/*/data/
 

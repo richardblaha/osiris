@@ -8,9 +8,12 @@ import {
   PANELS,
   placeGroup,
   showPanel,
+  gridAreaAt,
+  isShown,
   snapAt,
   snapGroup,
   snapRect,
+  togglePanel,
   visibleGroups,
   type WindowLayout,
 } from "../web/src/windowLayout.ts";
@@ -53,7 +56,7 @@ describe("the windows' layout", () => {
     expect(out.layout.groups.find((g) => g.id === out.id)!.z).toBe(Math.max(...out.layout.groups.map((g) => g.z)));
   });
 
-  it("snaps to halves, quarters and the whole area by where the pointer is let go", () => {
+  it("docks in a grid area or the whole area by where the pointer is let go", () => {
     expect(snapAt(500, 5, 1000, 600)).toBe("max");
     expect(snapAt(5, 300, 1000, 600)).toBe("left");
     expect(snapAt(995, 300, 1000, 600)).toBe("right");
@@ -122,5 +125,44 @@ describe("the agent's window steps", () => {
     sound(l);
     l = windowStep(l, { op: "close", panel: "traces" });
     expect(l.hidden).toContain("traces");
+  });
+});
+
+describe("the grid of 9 parts", () => {
+  const near = (r: { x: number; y: number; w: number; h: number }, e: { x: number; y: number; w: number; h: number }) => {
+    for (const k of ["x", "y", "w", "h"] as const) expect(r[k]).toBeCloseTo(e[k], 2);
+  };
+
+  it("divides the area into columns and rows of 20 %, 60 % and 20 %, with gaps between", () => {
+    near(snapRect("tl"), { x: 0, y: 0, w: 0.195, h: 0.195 });
+    near(snapRect("center"), { x: 0.205, y: 0.205, w: 0.59, h: 0.59 });
+    near(snapRect("right"), { x: 0.805, y: 0.205, w: 0.195, h: 0.59 });
+    near(snapRect("bottom"), { x: 0.205, y: 0.805, w: 0.59, h: 0.195 });
+    expect(snapRect("max")).toEqual({ x: 0, y: 0, w: 1, h: 1 });
+    expect([gridAreaAt(0.1, 0.1), gridAreaAt(0.5, 0.5), gridAreaAt(0.9, 0.5), gridAreaAt(0.5, 0.95), gridAreaAt(0.95, 0.95)]).toEqual(["tl", "center", "right", "bottom", "br"]);
+  });
+
+  it("keeps one window per part: docking into a held part joins it as a tab; moving lets the dock go", () => {
+    let l = snapGroup(defaultLayout(), "logs", "right");
+    expect(l.groups.find((g) => g.id === "logs")).toMatchObject({ dock: "right", rect: snapRect("right") });
+    l = snapGroup(l, "metrics", "right");
+    expect(l.groups.find((g) => g.id === "logs")).toMatchObject({ tabs: ["logs", "metrics"], active: "metrics", dock: "right" });
+    expect(l.groups.some((g) => g.id === "metrics")).toBe(false);
+    sound(l);
+    l = placeGroup(l, "logs", { x: 0.3, y: 0.3, w: 0.3, h: 0.3 });
+    expect(l.groups.find((g) => g.id === "logs")?.dock).toBeUndefined();
+    // A stored dock comes back at its part's rectangle; an unknown one is dropped.
+    const stored = normalizeLayout({ version: 1, hidden: [], groups: [{ id: "chat", tabs: ["chat"], active: "chat", rect: { x: 0.5, y: 0.5, w: 0.1, h: 0.1 }, dock: "center", z: 1 }, { id: "logs", tabs: ["logs"], active: "logs", rect: { x: 0, y: 0, w: 0.3, h: 0.3 }, dock: "nowhere", z: 2 }] });
+    expect(stored.groups.find((g) => g.id === "chat")).toMatchObject({ dock: "center", rect: snapRect("center") });
+    expect(stored.groups.find((g) => g.id === "logs")?.dock).toBeUndefined();
+  });
+
+  it("shows or closes a panel from the bar", () => {
+    const available = new Set(PANELS);
+    let l = togglePanel(defaultLayout(), "logs", available);
+    expect(isShown(l, "logs", available)).toBe(false);
+    l = togglePanel(l, "logs", available);
+    expect(isShown(l, "logs", available)).toBe(true);
+    expect(isShown(l, "logs", new Set(["chat"]))).toBe(false);
   });
 });

@@ -15,7 +15,7 @@ import { BottomBar } from "./BottomBar.tsx";
 import { chatPanel, ChatInput, useOsirisChat, type TwinAction } from "./OsirisChat.tsx";
 import { detailPanels } from "./FocusPanels.tsx";
 import { Windows, type PanelView } from "./Windows.tsx";
-import { defaultLayout, normalizeLayout, showPanel, windowStep, type PanelId, type WindowLayout } from "./windowLayout.ts";
+import { defaultLayout, isShown, normalizeLayout, PANELS, showPanel, togglePanel, windowStep, type PanelId, type WindowLayout } from "./windowLayout.ts";
 import { Dashboard, DashboardMenu } from "./Dashboard.tsx";
 
 /** The views, in the URL's hash so a selection or a page survives reloading and signing in: the twin is always there,
@@ -401,6 +401,22 @@ export function App() {
     ...(chat.open ? { chat: chatPanel(chat) } : {}),
   };
 
+  /** The bar's panel buttons: which panels show, which could (the conversation always can), showing or closing one. */
+  const available = new Set(Object.keys(panels) as PanelId[]);
+  const barWindows = {
+    hidden: layout.hidden,
+    show: (p: PanelId) => changeLayout(showPanel(layout, p)),
+    reset: () => changeLayout(defaultLayout()),
+    shown: new Set(PANELS.filter((p) => isShown(layout, p, available))),
+    available: new Set<PanelId>([...available, "chat"]),
+    toggle: (p: PanelId) => {
+      if (p !== "chat") return changeLayout(togglePanel(layout, p, available));
+      if (isShown(layout, "chat", available)) return chat.setOpen(false);
+      chat.setOpen(true);
+      if (layout.hidden.includes("chat") || !layout.groups.some((g) => g.tabs.includes("chat"))) changeLayout(showPanel(layout, "chat"));
+    },
+  };
+
   const tabLabel = (page: Page | "instances") =>
     page === "instances" ? t("instances:title") :
     page === "dashboard" ? t("common:nav.dashboard") : page === "logs" ? t("common:nav.logs") : page === "metrics" ? t("common:nav.metrics") : t("common:nav.traces");
@@ -458,7 +474,7 @@ export function App() {
                 onFilters={changeFilters}
                 scene={scene}
                 chat={<ChatInput chat={chat} />}
-                windows={{ hidden: layout.hidden, show: (p) => changeLayout(showPanel(layout, p)), reset: () => changeLayout(defaultLayout()) }}
+                windows={barWindows}
               />
             )}
           </>

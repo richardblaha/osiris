@@ -14,7 +14,6 @@ import {
 import { run, type Db } from "@osiris/platform/db.ts";
 import { HttpError, requestLocale, translate, ValidationError, type Params } from "@osiris/platform/i18n.ts";
 import { Hono, type Context } from "hono";
-import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import type { Backups } from "./backups.ts";
 import type { Orchestrator } from "./orchestrator/types.ts";

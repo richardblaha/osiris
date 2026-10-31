@@ -17,8 +17,15 @@ export interface Rect {
   h: number;
 }
 
-/** Where a window snaps to: a half, a quarter, or the whole area. */
-export type Snap = "left" | "right" | "top" | "bottom" | "tl" | "tr" | "bl" | "br" | "max";
+/**
+ * Where a window docks: one of the 9 areas of the grid that divides the whole area (columns and rows 20 %, 60 %,
+ * 20 %: the corners, the edges' middles, the centre), or the whole area.
+ */
+export type Snap = "tl" | "top" | "tr" | "left" | "center" | "right" | "bl" | "bottom" | "br" | "max";
+/** The grid's areas by row, then column. */
+export const GRID_AREAS: readonly Exclude<Snap, "max">[] = ["tl", "top", "tr", "left", "center", "right", "bl", "bottom", "br"];
+/** Where the grid's columns (and rows) start and end, in fractions of the area. */
+export const GRID_LINES = [0, 0.2, 0.8, 1] as const;
 
 export interface WindowGroup {
   id: string;
@@ -31,6 +38,8 @@ export interface WindowGroup {
   maximized?: boolean;
   /** Stacking: higher is in front. */
   z: number;
+  /** The grid area it is docked in (moving or resizing it lets go). */
+  dock?: Exclude<Snap, "max">;
 }
 
 export interface WindowLayout {
@@ -58,34 +67,31 @@ export const defaultLayout = (): WindowLayout => ({
 /** The gap kept between windows that share the area (a fraction of it). */
 const GAP = 0.01;
 
-/** A snap's rectangle. */
+/** A grid line's span [from, to) of column or row `i`, with half the gap kept on each inner side. */
+const span = (i: number) => {
+  const from = GRID_LINES[i]! + (i > 0 ? GAP / 2 : 0);
+  const to = GRID_LINES[i + 1]! - (i < 2 ? GAP / 2 : 0);
+  return { from, size: to - from };
+};
+
+/** A snap's rectangle: its grid area, or the whole area. */
 export function snapRect(snap: Snap): Rect {
-  const half = 0.5 - GAP / 2;
-  switch (snap) {
-    case "left":
-      return { x: 0, y: 0, w: half, h: 1 };
-    case "right":
-      return { x: 1 - half, y: 0, w: half, h: 1 };
-    case "top":
-      return { x: 0, y: 0, w: 1, h: half };
-    case "bottom":
-      return { x: 0, y: 1 - half, w: 1, h: half };
-    case "tl":
-      return { x: 0, y: 0, w: half, h: half };
-    case "tr":
-      return { x: 1 - half, y: 0, w: half, h: half };
-    case "bl":
-      return { x: 0, y: 1 - half, w: half, h: half };
-    case "br":
-      return { x: 1 - half, y: 1 - half, w: half, h: half };
-    case "max":
-      return { x: 0, y: 0, w: 1, h: 1 };
-  }
+  if (snap === "max") return { x: 0, y: 0, w: 1, h: 1 };
+  const i = GRID_AREAS.indexOf(snap);
+  const col = span(i % 3);
+  const row = span(Math.floor(i / 3));
+  return { x: col.from, y: row.from, w: col.size, h: row.size };
+}
+
+/** The grid area at (x, y) in fractions of the area. */
+export function gridAreaAt(x: number, y: number): Exclude<Snap, "max"> {
+  const index = (v: number) => (v < GRID_LINES[1] ? 0 : v < GRID_LINES[2] ? 1 : 2);
+  return GRID_AREAS[index(y) * 3 + index(x)]!;
 }
 
 /**
- * The snap a pointer at (x, y) px in an area of `w`×`h` px asks for: near a corner its quarter, near the left, right or
- * bottom edge that half, near the top edge the whole area (maximized); elsewhere none.
+ * The snap a pointer at (x, y) px in an area of `w`×`h` px asks for: near a corner that corner's area, near the left,
+ * right or bottom edge the middle area of that edge, near the top edge the whole area (maximized); elsewhere none.
  */
 export function snapAt(x: number, y: number, w: number, h: number, edge = 28): Snap | undefined {
   const left = x <= edge;
@@ -128,12 +134,19 @@ const tidy = (l: WindowLayout): WindowLayout => ({ ...l, groups: l.groups.filter
 /** Brings a group to the front. */
 export const focusGroup = (l: WindowLayout, id: string): WindowLayout => (l.groups.find((g) => g.id === id)?.z === top(l) - 1 ? l : update(l, id, (g) => ({ ...g, z: top(l) })));
 
-/** Moves or resizes a group (no longer maximized). */
-export const placeGroup = (l: WindowLayout, id: string, rect: Rect): WindowLayout => update(l, id, (g) => ({ ...g, rect: clampRect(rect), maximized: false }));
+/** Moves or resizes a group (no longer maximized or docked). */
+export const placeGroup = (l: WindowLayout, id: string, rect: Rect): WindowLayout => update(l, id, ({ dock: _, ...g }) => ({ ...g, rect: clampRect(rect), maximized: false }));
 
-/** Snaps a group: to a half or quarter, or maximized (keeping where it goes back to). */
-export const snapGroup = (l: WindowLayout, id: string, snap: Snap): WindowLayout =>
-  update(l, id, (g) => (snap === "max" ? { ...g, maximized: true, z: top(l) } : { ...g, rect: snapRect(snap), maximized: false, z: top(l) }));
+/**
+ * Docks a group in a grid area, or maximizes it (keeping where it goes back to). A window already docked in that
+ * area takes it in as tabs instead, so an area holds one window.
+ */
+export function snapGroup(l: WindowLayout, id: string, snap: Snap): WindowLayout {
+  if (snap === "max") return update(l, id, (g) => ({ ...g, maximized: true, z: top(l) }));
+  const there = l.groups.find((g) => g.id !== id && g.dock === snap && !g.maximized);
+  if (there) return mergeInto(l, there.id, id);
+  return update(l, id, (g) => ({ ...g, rect: snapRect(snap), dock: snap, maximized: false, z: top(l) }));
+}
 
 export const toggleMaximized = (l: WindowLayout, id: string): WindowLayout => update(l, id, (g) => ({ ...g, maximized: !g.maximized, z: top(l) }));
 
@@ -199,6 +212,12 @@ export function showPanel(l: WindowLayout, tab: PanelId): WindowLayout {
   return { ...l, hidden: l.hidden.filter((t) => t !== tab), groups: [...l.groups, { id: fresh(l, tab), tabs: [tab], active: tab, rect: { ...HOME[tab] }, z: top(l) }] };
 }
 
+/** Whether a panel shows now: available, in a window, not closed. */
+export const isShown = (l: WindowLayout, tab: PanelId, available: ReadonlySet<PanelId>) => available.has(tab) && !l.hidden.includes(tab) && !!groupOf(l, tab);
+
+/** The bar's button for a panel: closes it when it shows, else shows it (in front). */
+export const togglePanel = (l: WindowLayout, tab: PanelId, available: ReadonlySet<PanelId>): WindowLayout => (isShown(l, tab, available) ? closePanel(l, tab) : showPanel(l, tab));
+
 /** The groups to draw: those with an available panel, their tabs only the available ones (the active one among them). */
 export function visibleGroups(l: WindowLayout, available: ReadonlySet<PanelId>): WindowGroup[] {
   return l.groups
@@ -228,7 +247,16 @@ export function normalizeLayout(raw: unknown): WindowLayout {
     for (const t of x.tabs) if (PANELS.includes(t as PanelId) && !seen.has(t as PanelId)) (tabs.push(t as PanelId), seen.add(t as PanelId));
     if (!tabs.length) continue;
     const id = typeof x.id === "string" && x.id && !groups.some((o) => o.id === x.id) ? x.id.slice(0, 40) : `${tabs[0]}-${groups.length}`;
-    groups.push({ id, tabs, active: tabs.includes(x.active as PanelId) ? (x.active as PanelId) : tabs[0]!, rect: clampRect(x.rect), maximized: x.maximized === true, z: typeof x.z === "number" && Number.isFinite(x.z) ? x.z : groups.length + 1 });
+    const dock = GRID_AREAS.includes(x.dock as Exclude<Snap, "max">) ? (x.dock as Exclude<Snap, "max">) : undefined;
+    groups.push({
+      id,
+      tabs,
+      active: tabs.includes(x.active as PanelId) ? (x.active as PanelId) : tabs[0]!,
+      rect: dock ? snapRect(dock) : clampRect(x.rect),
+      ...(dock ? { dock } : {}),
+      maximized: x.maximized === true,
+      z: typeof x.z === "number" && Number.isFinite(x.z) ? x.z : groups.length + 1,
+    });
   }
   const layout: WindowLayout = { version: 1, groups, hidden: [] };
   const hidden = Array.isArray((raw as { hidden?: unknown }).hidden) ? ((raw as { hidden: unknown[] }).hidden.filter((t) => PANELS.includes(t as PanelId)) as PanelId[]) : [];

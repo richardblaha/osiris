@@ -59,12 +59,33 @@ const normalize = (v: unknown): Value => (typeof v === "bigint" ? Number(v) : v 
  * Applies pending `*.sql` files from `dir` in order, each atomically with its `_migrations` row. Statements are split
  * on `;` at line ends. Replicas starting together may race: the loser's batch fails on the `_migrations` key and is
  * rolled back, so it only re-checks.
+ *
+ * The first file may be a baseline that replaces older migrations (`-- baseline after: <last replaced file>`): a
+ * database made before it, whose history names files no longer in `dir`, is taken as being at the baseline when its
+ * history has that last file (its old rows give way to the baseline's), and refused otherwise. Tables the baseline
+ * leaves out are dropped then (`-- baseline drops: a, b`), in that order.
  */
 export async function migrate(db: Db, dir: string): Promise<string[]> {
   await db.execute([run("CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY, applied_at INTEGER NOT NULL)")]);
-  const applied = new Set((await db.query<{ name: string }>("SELECT name FROM _migrations", [], { fresh: true })).map((r) => r.name));
+  const files = readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
+  let applied = new Set((await db.query<{ name: string }>("SELECT name FROM _migrations", [], { fresh: true })).map((r) => r.name));
+  const first = files[0];
+  const head = first ? readFileSync(join(dir, first), "utf8") : "";
+  const baseline = /^--\s*baseline after:\s*(\S+)\s*$/m.exec(head)?.[1];
+  const drops = (/^--\s*baseline drops:\s*(.+)$/m.exec(head)?.[1] ?? "").split(",").map((t) => t.trim()).filter(Boolean);
+  const stale = [...applied].filter((n) => !files.includes(n));
+  if (first && baseline && stale.length) {
+    if (!applied.has(baseline)) throw new Error(`The database's migrations end before ${baseline}, which ${first} replaces: upgrade it with an earlier release first`);
+    for (const t of drops) if (!/^[a-z_][a-z0-9_]*$/.test(t)) throw new Error(`${first}: ${t} is not a table name`);
+    await db.execute([
+      ...drops.map((t) => run(`DROP TABLE IF EXISTS ${t}`)),
+      ...stale.map((n) => run("DELETE FROM _migrations WHERE name = ?", n)),
+      run("INSERT INTO _migrations (name, applied_at) VALUES (?, ?) ON CONFLICT DO NOTHING", first, Date.now()),
+    ]);
+    applied = new Set((await db.query<{ name: string }>("SELECT name FROM _migrations", [], { fresh: true })).map((r) => r.name));
+  }
   const done: string[] = [];
-  for (const name of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
+  for (const name of files) {
     if (applied.has(name)) continue;
     const statements = readFileSync(join(dir, name), "utf8")
       .split(/;\s*$/m)

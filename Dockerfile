@@ -167,6 +167,7 @@ FROM base AS twin-web-build
 RUN NODE_ENV=development pnpm install --frozen-lockfile --filter "@osiris/digital-twin-web..."
 COPY packages/shared packages/shared
 COPY packages/client packages/client
+COPY apps/osiris-pwa/src/fonts apps/osiris-pwa/src/fonts
 COPY server/digital-twin/web server/digital-twin/web
 RUN pnpm --filter @osiris/digital-twin-web build
 

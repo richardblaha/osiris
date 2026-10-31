@@ -1,5 +1,5 @@
 import type { Channel, ThreadSummary } from "@osiris/shared";
-import { idName, type Records } from "../projects/records.ts";
+import { fromIdName, idName, type Records } from "../projects/records.ts";
 
 // A thread is `private/threads/<id>/thread.json`; threads are scoped to the user (OIDC sub).
 
@@ -14,12 +14,22 @@ interface StoredThread {
 const file = (id: string) => `private/threads/${idName(id)}/thread.json`;
 const read = (records: Records, id: string) => records.read<StoredThread>(file(id));
 
+/** A folder's thread; "damaged" when its file can't be read (a crash mid-write), so one bad file never hides the rest. */
+async function readDir(records: Records, dir: string): Promise<StoredThread | "damaged" | undefined> {
+  try {
+    return await records.read<StoredThread>(`private/threads/${dir}/thread.json`);
+  } catch (err) {
+    console.warn(`Thread ${fromIdName(dir)} can't be read`, err instanceof Error ? err.message : err);
+    return "damaged";
+  }
+}
+
 // ponytail: lists by reading every thread file; an index per user once projects hold thousands of threads.
 export async function listThreads(records: Records, userId: string): Promise<ThreadSummary[]> {
   const threads: StoredThread[] = [];
   for (const dir of await records.list("private/threads")) {
-    const t = await records.read<StoredThread>(`private/threads/${dir}/thread.json`);
-    if (t?.userId === userId) threads.push(t);
+    const t = await readDir(records, dir);
+    if (t !== "damaged" && t?.userId === userId) threads.push(t);
   }
   return threads
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -27,12 +37,13 @@ export async function listThreads(records: Records, userId: string): Promise<Thr
     .map((t) => ({ id: t.id, title: t.title, channel: t.channel, updatedAt: t.updatedAt }));
 }
 
-/** Every thread that exists, by id (to drop leftovers of deleted ones). */
+/** Every thread that exists, by id (to drop leftovers of deleted ones). A damaged one counts, so its files stay. */
 export async function threadIds(records: Records): Promise<Set<string>> {
   const ids = new Set<string>();
   for (const dir of await records.list("private/threads")) {
-    const t = await records.read<StoredThread>(`private/threads/${dir}/thread.json`);
-    if (t) ids.add(t.id);
+    const t = await readDir(records, dir);
+    if (t === "damaged") ids.add(fromIdName(dir));
+    else if (t) ids.add(t.id);
   }
   return ids;
 }

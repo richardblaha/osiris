@@ -3,6 +3,7 @@ webview/**
 test/**
 build.mjs
 tsconfig.json
+vitest.config.ts
 node_modules/**
 *.vsix
 **/*.map

@@ -35,8 +35,9 @@ spec:
             - { name: DEFAULT_LOCALE, value: cs }
             - { name: OTEL_EXPORTER_OTLP_ENDPOINT, value: http://otel-collector.observability.svc.cluster.local:4318 }
             - { name: OTEL_RESOURCE_ATTRIBUTES, value: deployment.environment.name=production }
-            # The GoatCounter site the web app counts visits to (cookieless); unset = no counting.
-            # - { name: GOATCOUNTER_URL, value: https://osiris.stats.k6labs.cz }
+            # The web-events site the web app counts its visits to (cookieless, paths without ids; /_e on this host is
+            # web-events' IngressRoute, deploy/observability/web-events.yaml); unset = no counting.
+            - { name: WEB_EVENTS_SITE, value: osiris.k6labs.cz }
             - { name: CORS_ORIGIN, value: https://osiris.k6labs.cz }
             - { name: CONTROL_URL, value: http://control.osiris.svc.cluster.local:3002 }
             - { name: TTS_URL, value: http://tts.osiris.svc.cluster.local:8080 }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { ServiceError } from "@osiris/platform/http.ts";
+import { devRuntimeVerifier } from "@osiris/platform/runtime-identity.ts";
 import { createApp } from "../src/app.ts";
 import { noCache } from "../src/cache.ts";
 import { loadConfig } from "../src/config.ts";
@@ -533,5 +534,30 @@ describe("instances", () => {
     await own.deleteInstance("busiris");
     await bootstrapInstance(own, cfg, 6);
     expect(await own.instances()).toEqual([]);
+  });
+});
+
+describe("the twin for Osiris's agent (ops)", () => {
+  const ops = () => createApp(config, { instances, state, verifier: devVerifier(), cache: noCache, ops: { projects: ["twin"], identity: devRuntimeVerifier(), tools: {} } });
+  const get = async <T>(path: string, token = "dev-runtime:twin") => {
+    const res = await ops().request(path, { headers: { authorization: `Bearer ${token}` } });
+    return { status: res.status, body: (await res.json()) as T };
+  };
+
+  it("reads the twins, their models and objects with the runtime's token, read-only", async () => {
+    expect((await get("/ops/twin/instances", "nonsense")).status).toBe(401);
+    expect((await get("/ops/twin/instances", "dev-runtime:acme")).status).toBe(403);
+    expect((await get<{ value: { id: string }[] }>("/ops/twin/instances")).body.value.map((i) => i.id)).toContain("k8s");
+    const models = (await get<{ value: { id: string; contents: string[] }[] }>("/ops/twin/models?instance=k8s")).body.value;
+    expect(models.some((m) => m.id.startsWith("dtmi:osiris:k8s:Pod;"))).toBe(true);
+    const found = (await get<{ total: number; value: { $dtId: string; model: string }[] }>("/ops/twin/digitaltwins?instance=k8s&q=gateway-abc&model=dtmi:osiris:k8s:Pod")).body;
+    expect(found.total).toBe(1);
+    const pod = found.value[0]!;
+    const detail = (await get<{ twin: DigitalTwin; relationships: { name: string; target: string }[]; incoming: { name: string; source: string }[] }>(`/ops/twin/digitaltwins/${encodeURIComponent(pod.$dtId)}?instance=k8s`)).body;
+    expect(detail.twin.$dtId).toBe(pod.$dtId);
+    expect(detail.relationships.length + detail.incoming.length).toBeGreaterThan(0);
+    expect((await get(`/ops/twin/digitaltwins/${encodeURIComponent("k8s:nope")}`)).status).toBe(404);
+    // Nothing under /ops/twin changes the twin.
+    expect((await ops().request("/ops/twin/models", { method: "POST", headers: { authorization: "Bearer dev-runtime:twin" }, body: "[]" })).status).toBe(404);
   });
 });

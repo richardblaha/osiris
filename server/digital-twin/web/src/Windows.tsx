@@ -10,6 +10,8 @@ import {
   closePanel,
   detach,
   focusGroup,
+  GRID_AREAS,
+  gridAreaAt,
   mergeInto,
   placeGroup,
   snapAt,
@@ -52,8 +54,10 @@ type Drag =
 
 /**
  * The windows over the twin: each a group of panels as tabs, placed as the user's layout says. A window moves by its
- * header and snaps when dropped at an edge (a half), in a corner (a quarter) or at the top (maximized); dropped on
- * another window's header it joins it as tabs, and a tab dragged out becomes a window of its own. Windows resize by
+ * header and docks in one of the area's 9 parts (the grid of 20 %, 60 %, 20 % columns and rows) when dropped on that
+ * cell of the compass shown while dragging, or at an edge or corner (the top edge maximizes); a part that holds a
+ * window takes it in as tabs. Dropped on another window's header it joins it as tabs, and a tab dragged out becomes a
+ * window of its own. Windows resize by
  * their edges and corners, maximize (the button or a double click on the header) and come to the front when touched;
  * the menu in the header does the same without dragging. The selection's panels have a line to its box.
  */
@@ -75,6 +79,7 @@ export function Windows({
   const [preview, setPreview] = useState<{ snap?: Snap; into?: string }>({});
   const [narrowTab, setNarrowTab] = useState<PanelId>();
   const drag = useRef<Drag | null>(null);
+  const compass = useRef<HTMLDivElement>(null);
   const live = useRef(layout);
   live.current = draft ?? layout;
   const commit = useRef(onLayout);
@@ -184,14 +189,17 @@ export function Windows({
       const now = l.groups.find((x) => x.id === d.id)!;
       const px = pxOf(now.rect);
       l = placeGroup(l, d.id, fractionOf(p.x - d.dx, p.y - d.dy, px.w, px.h));
-      // Over another window's header: join it; else near an edge: snap.
+      // Over another window's header: join it; else over the compass: dock in its cell's part; else near an edge.
       let into: string | undefined;
       for (const id of visibleIds.current) {
         if (id === d.id) continue;
         const r = headers.current.get(id)?.getBoundingClientRect();
         if (r && e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom) into = id;
       }
-      setPreview({ into, snap: into ? undefined : snapAt(p.x, p.y, size.w, size.h) });
+      const c = compass.current?.getBoundingClientRect();
+      const onCompass = !!c && e.clientX >= c.left && e.clientX <= c.right && e.clientY >= c.top && e.clientY <= c.bottom;
+      const snap = into ? undefined : onCompass ? gridAreaAt((e.clientX - c!.left) / c!.width, (e.clientY - c!.top) / c!.height) : snapAt(p.x, p.y, size.w, size.h);
+      setPreview({ into, snap });
       setDraft(l);
     };
     const onUp = () => {
@@ -241,6 +249,7 @@ export function Windows({
   };
 
   const previewRect = preview.snap ? pxOf(snapRect(preview.snap)) : undefined;
+  const moving = !!draft && drag.current?.kind === "move" && drag.current.started;
 
   return (
     <div ref={area} className="wm-area" data-dragging={!!draft}>
@@ -252,6 +261,13 @@ export function Windows({
           ))}
       </svg>
       {previewRect && <div className="wm-preview" style={{ left: previewRect.l, top: previewRect.t, width: previewRect.w, height: previewRect.h }} />}
+      {moving && (
+        <div ref={compass} className="wm-compass" style={{ zIndex: 20 + front }} aria-hidden="true">
+          {GRID_AREAS.map((a) => (
+            <span key={a} className="wm-grid-cell" data-hot={preview.snap === a} />
+          ))}
+        </div>
+      )}
       {size.w > 0 &&
         groups.map((g) => {
           const px = g.maximized ? { l: 0, t: 0, w: size.w, h: size.h } : pxOf(g.rect);
@@ -342,10 +358,7 @@ function narrowGroup(l: WindowLayout, available: ReadonlySet<PanelId>, chosen?: 
   return [{ id: "narrow", tabs, active, rect: { x: 0, y: 0.42, w: 1, h: 0.58 }, z: 1 }];
 }
 
-/** Where a window can go from its menu, as a 3×3 grid of the area. */
-const GRID: (Snap | undefined)[] = ["tl", "top", "tr", "left", "max", "right", "bl", "bottom", "br"];
-
-/** A window's menu: snap it to a half, a quarter or the whole area, take its tab out, join another window. */
+/** A window's menu: dock it in one of the area's 9 parts (drawn to scale), take its tab out, join another window. */
 function WindowMenu({ group, groups, panels, layout, onLayout }: { group: WindowGroup; groups: WindowGroup[]; panels: Partial<Record<PanelId, PanelView>>; layout: WindowLayout; onLayout: (l: WindowLayout) => void }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
@@ -361,10 +374,8 @@ function WindowMenu({ group, groups, panels, layout, onLayout }: { group: Window
         <div className="menu-popup end-0 w-56 p-2" role="menu" aria-label={t("twin:windows.arrange")}>
           <p className="section-header px-1">{t("twin:windows.snapTo")}</p>
           <div className="wm-grid mt-1">
-            {GRID.map((s) => (
-              <button key={s} type="button" role="menuitem" className="wm-grid-cell" data-snap={s} onClick={() => done(snapGroup(layout, group.id, s!))} title={t(`twin:windows.snap.${s!}`)} aria-label={t(`twin:windows.snap.${s!}`)}>
-                <span />
-              </button>
+            {GRID_AREAS.map((s) => (
+              <button key={s} type="button" role="menuitem" className="wm-grid-cell" data-docked={group.dock === s} onClick={() => done(snapGroup(layout, group.id, s))} title={t(`twin:windows.snap.${s}`)} aria-label={t(`twin:windows.snap.${s}`)} />
             ))}
           </div>
           {group.tabs.length > 1 && (

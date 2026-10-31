@@ -1,7 +1,7 @@
 {
   "name": "@osiris/tools-kubernetes",
   "private": true,
-  "description": "Osiris agent tools: managing the Kubernetes cluster through the digital twin.",
+  "description": "Osiris agent tools: reading the Kubernetes cluster through the digital twin.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@osiris/core": "workspace:*",
+    "@osiris/shared": "workspace:*",
     "@osiris/tools-ops": "workspace:*"
   },
   "devDependencies": {

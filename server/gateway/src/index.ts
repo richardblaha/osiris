@@ -28,7 +28,7 @@ const app = createGatewayApp({
   maxBodyBytes: config.MAX_BODY_MB * 1024 * 1024,
   limits: { requestsPerMinute: config.RATE_LIMIT_PER_MINUTE, runsPerMinute: config.RUN_LIMIT_PER_MINUTE },
   auth: { issuer: config.AUTH_URL },
-  web: config.STATIC_DIR ? { dir: config.STATIC_DIR, goatcounter: config.GOATCOUNTER_URL } : undefined,
+  web: config.STATIC_DIR ? { dir: config.STATIC_DIR, webEvents: config.WEB_EVENTS_SITE } : undefined,
 });
 
 const server = serve({ fetch: app.fetch, port: config.PORT }, ({ port }) => console.log(`Gateway listening on http://localhost:${port}`));

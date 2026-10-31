@@ -165,10 +165,10 @@ describe("POST /_e", () => {
 
 describe("e.js", () => {
   /** Runs the script in a minimal browser: what it sends, and its history hooks. */
-  const browser = ({ host = "k6labs.cz", dnt = "0", site = "k6labs.cz" } = {}) => {
+  const browser = ({ host = "k6labs.cz", dnt = "0", site = "k6labs.cz", manual = false, queued = [] as string[] } = {}) => {
     const sent: Record<string, unknown>[] = [];
     const listeners: Record<string, () => void> = {};
-    const location = { href: `https://${host}/`, pathname: "/", hostname: host, protocol: "https:" };
+    const location = { href: `https://${host}/`, origin: `https://${host}`, pathname: "/", hostname: host, protocol: "https:" };
     const history = {
       pushState(_: unknown, __: string, url: string) {
         location.pathname = url;
@@ -179,10 +179,10 @@ describe("e.js", () => {
         location.href = `https://${host}${url}`;
       },
     };
-    const window: Record<string, unknown> = { addEventListener: (k: string, f: () => void) => (listeners[k] = f) };
+    const window: Record<string, unknown> = { addEventListener: (k: string, f: () => void) => (listeners[k] = f), ...(queued.length ? { waq: [...queued] } : {}) };
     runInNewContext(SCRIPT, {
       window,
-      document: { currentScript: { getAttribute: () => site }, referrer: "https://www.google.com/" },
+      document: { currentScript: { getAttribute: (k: string) => (k === "data-site" ? site : k === "data-manual" && manual ? "" : null) }, referrer: "https://www.google.com/" },
       navigator: { doNotTrack: dnt, language: "cs", sendBeacon: (_: string, blob: { text: string }) => (sent.push(JSON.parse(blob.text)), true) },
       location,
       history,
@@ -211,6 +211,22 @@ describe("e.js", () => {
       ["signup", "https://k6labs.cz/kontakt", ""],
     ]);
     expect(sent[3]).toMatchObject({ s: "k6labs.cz", w: 1280, l: "cs", p: { plan: "pro" } });
+  });
+
+  it("counts only the paths an app names with data-manual, never its own URL, and sends what waited", () => {
+    const { sent, history, window, listeners } = browser({ host: "osiris.k6labs.cz", site: "osiris.k6labs.cz", manual: true, queued: ["/chat"] });
+    history.pushState(null, "", "/chat/thread-123?code=secret");
+    const wa = window.wa as { pageview: (p: string) => void; event: (n: string) => void };
+    wa.pageview("/chat");
+    wa.pageview("/files");
+    wa.event("upload");
+    expect(sent.map((e) => [e.e, e.u])).toEqual([
+      ["pageview", "https://osiris.k6labs.cz/chat"],
+      ["pageview", "https://osiris.k6labs.cz/files"],
+      ["upload", "https://osiris.k6labs.cz/files"],
+    ]);
+    expect(window.waq).toBeUndefined();
+    expect(listeners.popstate).toBeUndefined();
   });
 
   it("stays silent with Do Not Track, on localhost and without data-site", () => {

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Records } from "../projects/records.ts";
 import { tool, type StructuredToolInterface } from "@langchain/core/tools";
-import { PUBLIC_ASSISTANT_NAME as PUBLIC_NAME, PUBLIC_TOOLS, type Inquiry, type Memory, type Persona, type PublicAssistantSettings, type PublicTool } from "@osiris/shared";
+import { PUBLIC_ASSISTANT_NAME as PUBLIC_NAME, PUBLIC_TOOLS, type Inquiry, type Memory, type Persona, type PublicAssistantSettings } from "@osiris/shared";
 import { z } from "zod";
 import { hasRules, rulesText, type GuardRules } from "../agent/assistant.ts";
 import { getRunContext } from "../agent/context.ts";

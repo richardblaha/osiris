@@ -117,7 +117,7 @@ export function alertPrompt(a: Alert): string {
     a.message.slice(0, 2000),
     a.traceId ? `\nTrace: ${a.traceId}` : "",
     "",
-    "Prozkoumej příčinu: podívej se na události (twin_events), logy a stav dotčených objektů (kubectl, případně ceph). " +
+    "Prozkoumej příčinu: podívej se na události (twin_events), logy a stav dotčených objektů (kubectl, případně ceph) a jejich vazby ve dvojčeti (twin_query). " +
       "Pak napiš krátce: co se stalo, proč, jaký to má dopad a jak to vyřešit (konkrétní kroky a příkazy). " +
       "Nic neměň a nespouštěj žádný měnící příkaz: běžíš automaticky, nikdo ti teď neodpoví; řešení navrhni, schválí ho člověk.",
   ]
