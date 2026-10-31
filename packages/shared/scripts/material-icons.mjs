@@ -13,6 +13,8 @@ export const ICONS = [
   "left_panel_close", "left_panel_open", "menu_book", "mic", "open_in_new", "psychology", "remove", "schedule",
   "school", "send", "settings", "star", "stop", "support_agent", "verified_user", "volume_off", "volume_up", "warning",
   "account_tree", "deployed_code", "hub", "lan", "layers", "storage", "tune", "view_in_ar",
+  "add_comment", "close_fullscreen", "dock_to_bottom", "dock_to_left", "dock_to_right", "drag_indicator", "history", "more_vert",
+  "open_in_full", "restart_alt",
 ];
 
 const root = dirname(createRequire(import.meta.url).resolve("@material-symbols/svg-400/package.json"));

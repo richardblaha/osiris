@@ -252,7 +252,6 @@ button.instance-button:hover {
   width: 2rem;
   height: 2rem;
   overflow: hidden;
-  border: 2px solid var(--accent-primary);
   border-radius: 999px;
   background: var(--accent-primary-soft);
   color: var(--accent-primary);
@@ -264,8 +263,9 @@ button.instance-button:hover {
   height: 100%;
   object-fit: cover;
 }
-.avatar[aria-expanded="true"] {
-  box-shadow: 0 0 0 3px var(--accent-active-soft);
+.avatar:focus-visible {
+  outline: 2px solid var(--border-strong);
+  outline-offset: 2px;
 }
 /* A small menu or pop-up under its button. */
 .menu-popup {

@@ -1124,6 +1124,9 @@ importers:
 
   server/digital-twin/web:
     dependencies:
+      '@monaco-editor/react':
+        specifier: 4.7.0
+        version: 4.7.0(monaco-editor@0.57.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@osiris/client':
         specifier: workspace:*
         version: link:../../../packages/client
@@ -1133,6 +1136,9 @@ importers:
       i18next:
         specifier: 26.4.2
         version: 26.4.2(typescript@6.0.3)
+      monaco-editor:
+        specifier: 0.57.0
+        version: 0.57.0
       oidc-client-ts:
         specifier: ^3.5.0
         version: 3.5.0

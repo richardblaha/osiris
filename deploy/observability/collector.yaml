@@ -225,8 +225,14 @@ spec:
     - from:
         - podSelector: { matchLabels: { app: web-events } }
       ports: [{ port: 4320, protocol: TCP }]
-  # The twin_events processor's Redis, and ClickHouse for the rest.
+  # The twin_events processor's Redis, and ClickHouse for the rest; DNS must stay reachable.
   egress:
+    - to:
+        - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: kube-system } }
+          podSelector: { matchLabels: { k8s-app: kube-dns } }
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
     - to:
         - podSelector: { matchLabels: { app: redis } }
       ports: [{ port: 6379, protocol: TCP }]

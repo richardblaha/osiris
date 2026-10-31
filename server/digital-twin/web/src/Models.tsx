@@ -1,9 +1,12 @@
 import { t } from "i18next";
-import { useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { LOOKS, PRESENTATION_CONTEXT, PRESENTATION_LAYERS, type DtdlContent, type DtdlInterface, type DtdlModelData, type DtdlPresentation, type Localized, PRIMITIVE_SCHEMAS, type DtdlSchema } from "@osiris/shared/dtdl.ts";
 import { api } from "./api.ts";
 import { attempt, ErrorNotice } from "./ui.tsx";
 import { currentLocale } from "./i18n.ts";
+
+/** Monaco, fetched the first time the DTDL tab opens so the twin itself stays small. */
+const CodeEditor = lazy(() => import("./CodeEditor.tsx"));
 
 const SCHEMAS = [...PRIMITIVE_SCHEMAS, "Enum", "Map", "Object", "Array"] as const;
 
@@ -120,7 +123,7 @@ export function Models({ models, onChanged, onPreview }: { models: DtdlModelData
       </aside>
       <div className="min-w-0 flex-1 overflow-y-auto p-4">
         <ErrorNotice error={error} />
-        {!selected || !draft ? (
+        {!selected || (!draft && tab !== "json") ? (
           <p className="text-sm text-fg-muted">{json && !draft ? t("twin:models.badJson") : t("twin:models.pickOne")}</p>
         ) : (
           <>
@@ -146,14 +149,13 @@ export function Models({ models, onChanged, onPreview }: { models: DtdlModelData
             </div>
 
             {tab === "json" ? (
-              <textarea
-                className="mt-3 h-[32rem] w-full font-mono text-xs field"
-                value={json || JSON.stringify(selected.model, null, 2)}
-                onChange={(e) => setJson(e.target.value)}
-                spellCheck={false}
-                aria-label="DTDL"
-              />
-            ) : (
+              <div className="mt-3">
+                <Suspense fallback={<p className="text-sm text-fg-muted">{t("common:loading")}</p>}>
+                  <CodeEditor value={json || JSON.stringify(selected.model, null, 2)} onChange={setJson} height="calc(100vh - var(--app-bar) - 12rem)" />
+                </Suspense>
+                {!draft && <p className="mt-1 text-xs text-error">{t("twin:models.badJson")}</p>}
+              </div>
+            ) : !draft ? null : (
               <div className="mt-3 max-w-3xl space-y-4">
                 <section>
                   <p className="section-header">{t("twin:models.identity")}</p>
