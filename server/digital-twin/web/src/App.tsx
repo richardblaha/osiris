@@ -15,7 +15,7 @@ import { BottomBar } from "./BottomBar.tsx";
 import { chatPanel, ChatInput, useOsirisChat, type TwinAction } from "./OsirisChat.tsx";
 import { detailPanels } from "./FocusPanels.tsx";
 import { Windows, type PanelView } from "./Windows.tsx";
-import { defaultLayout, normalizeLayout, showPanel, type PanelId, type WindowLayout } from "./windowLayout.ts";
+import { defaultLayout, normalizeLayout, showPanel, windowStep, type PanelId, type WindowLayout } from "./windowLayout.ts";
 import { Dashboard, DashboardMenu } from "./Dashboard.tsx";
 
 /** The views, in the URL's hash so a selection or a page survives reloading and signing in: the twin is always there,
@@ -140,7 +140,11 @@ export function App() {
     }
   });
   const saveLayout = useRef<ReturnType<typeof setTimeout>>(undefined);
+  /** The newest layout, for the agent's steps (each builds on the one before). */
+  const layoutNow = useRef(layout);
+  layoutNow.current = layout;
   const changeLayout = (next: WindowLayout) => {
+    layoutNow.current = next;
     setLayout(next);
     try {
       localStorage.setItem(LAYOUT_KEY, JSON.stringify(next));
@@ -372,6 +376,11 @@ export function App() {
       else if (step.action === "tilt") camera.current?.tilt(step.degrees);
       else if (step.action === "zoom") camera.current?.zoom(step.factor);
       else if (step.action === "close") navigate({ kind: "twin" });
+      else if (step.action === "window") {
+        // The conversation's window is the chat's own: shown or closed with it.
+        if (step.panel === "chat" && (step.op === "show" || step.op === "close")) chat.setOpen(step.op === "show");
+        changeLayout(windowStep(layoutNow.current, step));
+      } else if (step.action === "layout") changeLayout(defaultLayout());
       else if (step.action === "history") setAt(step.at && !Number.isNaN(Date.parse(step.at)) ? Date.parse(step.at) : null);
       else if (step.action === "open") {
         if (step.page === "dashboard") navigate({ kind: "dashboard", id: step.filter?.id });
@@ -435,7 +444,6 @@ export function App() {
                 )
               ) : null}
               {scene ? <Windows layout={layout} onLayout={changeLayout} panels={panels} anchor={anchor} /> : null}
-              <p className="pointer-events-none absolute bottom-12 start-4 text-xs text-fg-muted">{selected ? t("twin:escHint") : t("twin:hint")}</p>
             </div>
             {signedIn && instance && (
               <BottomBar

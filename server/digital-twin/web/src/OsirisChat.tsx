@@ -8,6 +8,7 @@ import { autoSignIn, getAccessToken } from "./auth.ts";
 import { currentLocale, formatDateTime } from "./i18n.ts";
 import { usePopupClose } from "./Telemetry.tsx";
 import type { PanelView } from "./Windows.tsx";
+import type { PanelId, Snap } from "./windowLayout.ts";
 
 /** A step for the twin's view, as Osiris's `twin_view` tool sends it. */
 export type TwinAction =
@@ -16,7 +17,9 @@ export type TwinAction =
   | { action: "rotate" | "tilt"; degrees: number }
   | { action: "zoom"; factor: number }
   | { action: "open"; page: "dashboard" | "logs" | "metrics" | "traces"; filter?: Record<string, string> }
-  | { action: "history"; at?: string };
+  | { action: "history"; at?: string }
+  | { action: "window"; op: "show" | "close" | "focus" | "maximize" | "restore" | "snap" | "merge" | "detach"; panel: PanelId; snap?: Snap; with?: PanelId }
+  | { action: "layout"; op: "reset" };
 
 // Osiris through the twin's own proxy (/osiris/api/… → its gateway, with the twin's project), as the signed-in user.
 connect({ url: "/osiris", token: getAccessToken, signIn: async () => void autoSignIn(), locale: currentLocale });

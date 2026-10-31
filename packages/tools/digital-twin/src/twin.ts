@@ -18,6 +18,16 @@ const action = z.discriminatedUnion("action", [
   }),
   z.object({ action: z.literal("close").describe("Zavře otevřenou stránku") }),
   z.object({ action: z.literal("history"), at: z.string().optional().describe("Čas ISO 8601 pro stav v minulosti; bez něj živě") }),
+  z.object({
+    action: z.literal("window").describe("Práce s okny nad dvojčetem (panely vybraného objektu a konverzace)"),
+    op: z
+      .enum(["show", "close", "focus", "maximize", "restore", "snap", "merge", "detach"])
+      .describe("show = zobrazí (i dříve zavřený), close = zavře, focus = přenese dopředu a ukáže jeho záložku, maximize/restore, snap = přichytí (pole snap), merge = sloučí do okna panelu `with` jako záložku, detach = vyjme záložku do vlastního okna"),
+    panel: z.enum(["properties", "logs", "metrics", "traces", "chat"]).describe("Panel: properties (vlastnosti), logs, metrics, traces (vybraného objektu), chat (tato konverzace)"),
+    snap: z.enum(["left", "right", "top", "bottom", "tl", "tr", "bl", "br", "max"]).optional().describe("Kam přichytit: polovina (left, right, top, bottom), čtvrtina (tl, tr, bl, br), max = celé zobrazení"),
+    with: z.enum(["properties", "logs", "metrics", "traces", "chat"]).optional().describe("U merge: panel, k jehož oknu se připojí"),
+  }),
+  z.object({ action: z.literal("layout").describe("Vrátí okna do výchozího rozložení"), op: z.literal("reset") }),
 ]);
 export type TwinAction = z.infer<typeof action>;
 
@@ -34,7 +44,8 @@ export const twinViewTool = () =>
       responseFormat: "content_and_artifact",
       description:
         "Ovládá pohled digitálního dvojčete clusteru, ve kterém uživatel s tebou mluví: vybere a ukáže objekt (pod, node, namespace, workload, disk, pool), otočí, nakloní, přiblíží, " +
-        "vrátí pohled na celé dvojče, otevře logy, metriky, trasy nebo dashboard s filtrem, nebo ukáže stav v minulosti. Kroky se provedou v daném pořadí. " +
+        "vrátí pohled na celé dvojče, otevře logy, metriky, trasy nebo dashboard s filtrem, nebo ukáže stav v minulosti. Uspořádá také okna nad dvojčetem (panely vlastností, logů, metrik a tras vybraného objektu a tuto konverzaci): " +
+        "zobrazí, zavře, přenese dopředu, maximalizuje, přichytí k polovině nebo čtvrtině, sloučí do jednoho okna se záložkami, vyjme záložku, nebo vrátí výchozí rozložení. Panely objektu existují jen při výběru (nejdřív select). Kroky se provedou v daném pořadí. " +
         "Když uživatel chce něco ukázat nebo kam se podívat, použij tento nástroj; ke zjištění stavu použij kubectl nebo ceph.",
       schema: z.object({ actions: z.array(action).min(1).max(12) }),
     },

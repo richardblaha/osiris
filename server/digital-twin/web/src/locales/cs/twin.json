@@ -8,7 +8,6 @@
   "model": "DTDL model",
   "errors15m": "Chybové logy za posledních 15 minut.",
   "empty": "Dvojče nemá nic k zobrazení.",
-  "hint": "Tažením otáčej, kolečkem přibližuj, klikem na kvádr ho zaměř, Esc ukáže celé dvojče. Klávesy: WASD/šipky pohyb, Q/E nahoru/dolů, +/- lupa, Tab výběr, H celé dvojče, 1–4 jedna vrstva, 0 všechny vrstvy.",
   "counts": {
     "twins_one": "{{count}} twin",
     "twins_few": "{{count}} twiny",
@@ -34,7 +33,6 @@
   "more_other": "a {{count}} dalších",
   "yes": "ano",
   "no": "ne",
-  "escHint": "Esc: zavřít panely, znovu: celé dvojče",
   "view3d": "Digitální dvojče ve 3D",
   "inside": "v",
   "errorCount_one": "{{count}} chyba",

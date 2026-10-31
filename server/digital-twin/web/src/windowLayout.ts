@@ -238,3 +238,31 @@ export function normalizeLayout(raw: unknown): WindowLayout {
   const order = [...out.groups].sort((a, b) => a.z - b.z).map((g) => g.id);
   return { ...out, hidden: [...new Set(hidden)], groups: out.groups.map((g) => ({ ...g, z: order.indexOf(g.id) + 1 })) };
 }
+
+/**
+ * One step of the agent's window work (`twin_view`'s `window` action) on a layout: show, close, bring forward,
+ * maximize, restore, snap, join another panel's window, take a tab out. A panel that isn't anywhere is shown first.
+ */
+export function windowStep(l: WindowLayout, step: { op: "show" | "close" | "focus" | "maximize" | "restore" | "snap" | "merge" | "detach"; panel: PanelId; snap?: Snap; with?: PanelId }): WindowLayout {
+  if (step.op === "close") return closePanel(l, step.panel);
+  let out = showPanel(l, step.panel);
+  const g = groupOf(out, step.panel)!;
+  switch (step.op) {
+    case "maximize":
+      return g.maximized ? out : toggleMaximized(out, g.id);
+    case "restore":
+      return g.maximized ? toggleMaximized(out, g.id) : out;
+    case "snap":
+      return step.snap ? snapGroup(out, g.id, step.snap) : out;
+    case "merge": {
+      if (!step.with || step.with === step.panel) return out;
+      out = showPanel(out, step.with);
+      const into = groupOf(out, step.with)!;
+      return into.id === g.id ? activate(out, step.panel) : mergeInto(out, into.id, g.id, step.panel);
+    }
+    case "detach":
+      return g.tabs.length > 1 ? detach(out, step.panel, { ...g.rect, x: Math.min(0.97 - g.rect.w, g.rect.x + 0.03), y: Math.min(0.97 - g.rect.h, g.rect.y + 0.03) }).layout : out;
+    default:
+      return out;
+  }
+}

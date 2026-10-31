@@ -106,3 +106,21 @@ describe("the windows' layout", () => {
     expect(normalizeLayout("garbage")).toEqual(defaultLayout());
   });
 });
+
+describe("the agent's window steps", () => {
+  it("shows, snaps, maximizes, joins and takes out panels as twin_view asks", async () => {
+    const { windowStep } = await import("../web/src/windowLayout.ts");
+    let l = windowStep(closePanel(defaultLayout(), "logs"), { op: "snap", panel: "logs", snap: "left" });
+    expect(l.hidden).not.toContain("logs");
+    expect(l.groups.find((g) => g.tabs.includes("logs"))?.rect).toEqual(snapRect("left"));
+    l = windowStep(l, { op: "merge", panel: "metrics", with: "logs" });
+    expect(l.groups.find((g) => g.tabs.includes("logs"))?.tabs).toEqual(["logs", "metrics"]);
+    l = windowStep(l, { op: "maximize", panel: "metrics" });
+    expect(l.groups.find((g) => g.tabs.includes("metrics"))?.maximized).toBe(true);
+    l = windowStep(l, { op: "detach", panel: "metrics" });
+    expect(l.groups.find((g) => g.tabs.includes("metrics"))?.tabs).toEqual(["metrics"]);
+    sound(l);
+    l = windowStep(l, { op: "close", panel: "traces" });
+    expect(l.hidden).toContain("traces");
+  });
+});
