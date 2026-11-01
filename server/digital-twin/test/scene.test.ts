@@ -3,7 +3,7 @@ import { clusterGraph, type ClusterInput } from "../src/sources/kubernetes/graph
 import type { PodObject } from "../src/sources/kubernetes/kube.ts";
 import { dtdlModel } from "../src/sources/kubernetes/models.ts";
 import { toRelationship } from "../src/twin.ts";
-import { buildScene, passes, scopeOf, workloadLayer, type TwinView } from "../web/src/scene.ts";
+import { buildScene, passes, scopeOf, visualNumber, visualValue, visualWhen, workloadLayer, type TwinView } from "../web/src/scene.ts";
 import { layoutTwin } from "../web/src/TwinLayout.ts";
 import { hasNetwork, interfacesOf, isStorage, routingOf, wiresOf } from "../web/src/scene.ts";
 import { PRESENTATION_CONTEXT, type DtdlInterface } from "@osiris/shared/dtdl.ts";
@@ -154,6 +154,24 @@ describe("the view's presentation and filters", () => {
     const pod = [...withCustom.byId.values()].find((v) => !v.of && v.model === custom["@id"])!;
     // The older single grouping layer reads as the namespaces'.
     expect([pod.look, pod.color, pod.labelProp, pod.layer, pod.visible]).toEqual(["hex", "#ff00ff", "name", "namespaces", true]);
+  });
+
+  it("carries a model's own drawing to its twins, and reads the values its parts follow", () => {
+    const visual = { mode: "replace" as const, parts: [{ shape: "box" as const, fill: { value: "used/size" } }] };
+    const custom: DtdlInterface = { ...dtdlModel().find((m) => m["@id"] === "dtmi:osiris:k8s:Pod;3")!, presentation: { visual } };
+    custom["@context"] = ["dtmi:dtdl:context;3", PRESENTATION_CONTEXT];
+    const twins = snapshot.twins.map((t) => ({ ...t, $etag: "", $metadata: { $model: t.$metadata.$model } }));
+    const withVisual = buildScene([...models.filter((m) => m.id !== custom["@id"]), { id: custom["@id"], model: custom, uploadTime: "", decommissioned: false }], twins, snapshot.relationships.map(toRelationship), {}, { "k8s:c/namespace/osiris/pod/db-0": 2048 }, {}, null, undefined, { "k8s:c/namespace/osiris/pod/db-0": { used: 1, size: 4, io: 10 } });
+    const pod = withVisual.byId.get("k8s:c/namespace/osiris/pod/db-0")!;
+    expect(pod.visual).toEqual(visual);
+    // The view's readings, then the twin's own properties; a/b one over the other.
+    expect(visualValue(pod, "network")).toBe(2048);
+    expect(visualValue(pod, "io")).toBe(10);
+    expect(visualNumber(pod, "used/size")).toBe(0.25);
+    expect(visualValue(pod, "phase")).toBe("running");
+    expect(visualNumber(pod, "nothing")).toBe(0);
+    expect(visualNumber(pod, "used/missing")).toBe(0);
+    expect([visualWhen(pod, "network"), visualWhen(pod, "nothing"), visualWhen(pod, "status=ok"), visualWhen(pod, "status=error")]).toEqual([true, false, true, false]);
   });
 
   it("puts each workload in the layer of its kind, its projections into the nodes too", () => {

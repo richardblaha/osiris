@@ -1,5 +1,6 @@
 import { TWIN_CONTAINS, type TwinStatus } from "@osiris/shared";
 import { BUILTIN_LAYERS, BUILTIN_LOOKS, localized, presentationOf, resolveContents, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData, type Look, type PresentationLayer } from "@osiris/shared/dtdl.ts";
+import type { DtdlVisual } from "@osiris/shared/dtdl.ts";
 import { currentLocale } from "./i18n.ts";
 import type { LayoutRules, Shape } from "./TwinLayout.ts";
 
@@ -91,6 +92,8 @@ export interface TwinView {
   layer: ViewLayer | "base";
   /** Whether its model's presentation shows it at all (`presentation.visible`, else yes). */
   visible: boolean;
+  /** Its model's own drawing (`presentation.visual`), when it has one. */
+  visual?: DtdlVisual;
 }
 
 /** The view's own filters (the bottom bar's display menu): hidden models, a lowest status, a name search. */
@@ -163,7 +166,7 @@ export function buildScene(
   const lookOfModel = (model: string) => {
     const p = presentationOf(model, modelMap);
     const base = model.replace(/;.*$/, "");
-    return { look: p.look ?? BUILTIN_LOOKS[base] ?? ("box" as Look), color: p.color, icon: p.icon, labelProp: p.label ?? "name", layer: p.layer ?? BUILTIN_LAYERS[base] ?? ("base" as PresentationLayer), ownLayer: !!p.layer, visible: p.visible ?? true };
+    return { look: p.look ?? BUILTIN_LOOKS[base] ?? ("box" as Look), color: p.color, icon: p.icon, labelProp: p.label ?? "name", layer: p.layer ?? BUILTIN_LAYERS[base] ?? ("base" as PresentationLayer), ownLayer: !!p.layer, visible: p.visible ?? true, visual: p.visual };
   };
   /** A twin's layer: its model's, but an interface that carries outside traffic belongs to the network services and a
    * node's network card (its LAN port) to the hardware. */
@@ -325,6 +328,43 @@ function project(roots: TwinView[], byId: Map<string, TwinView>, relationships: 
   for (const r of roots) walk(r, new Set());
   return [...bands.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
+
+/** The readings a model's drawing may follow by name (else a property of the twin). */
+const READINGS: Record<string, (v: TwinView) => unknown> = {
+  fill: (v) => fillOf(v),
+  network: (v) => v.network,
+  status: (v) => v.status,
+  errors: (v) => v.errors,
+};
+/**
+ * The value a part of a model's drawing follows (`presentation.visual`): one of the view's readings (`fill`,
+ * `network`, `status`, `errors`, a hardware or workload reading: `load`, `io`, `cpu`, `memory`, `used`, `size`), else a
+ * property of the twin; `a/b` is one over the other (undefined unless both are numbers and `b` isn't 0).
+ */
+export function visualValue(v: TwinView, name: string): unknown {
+  const slash = name.indexOf("/");
+  if (slash > 0) {
+    const a = visualValue(v, name.slice(0, slash));
+    const b = visualValue(v, name.slice(slash + 1));
+    return typeof a === "number" && typeof b === "number" && b !== 0 ? a / b : undefined;
+  }
+  const reading = READINGS[name];
+  if (reading) return reading(v);
+  const resource = v.resources?.[name as keyof Resources];
+  return resource !== undefined ? resource : v.twin[name];
+}
+/** Whether a part's `when` holds: the value is there and not 0, false or empty, or it equals `name=value`'s value. */
+export function visualWhen(v: TwinView, condition: string): boolean {
+  const eq = condition.indexOf("=");
+  const value = visualValue(v, eq > 0 ? condition.slice(0, eq) : condition);
+  if (eq > 0) return String(value) === condition.slice(eq + 1);
+  return value !== undefined && value !== null && value !== 0 && value !== false && value !== "";
+}
+/** A value as a number for a fill, a blink or a spin (0 without). */
+export const visualNumber = (v: TwinView, name: string): number => {
+  const value = visualValue(v, name);
+  return typeof value === "number" && Number.isFinite(value) ? value : typeof value === "boolean" ? Number(value) : 0;
+};
 
 /** The twin a view shows: itself, or for a projection the grouping twin it projects. */
 export const twinIdOf = (node: TwinView) => node.of ?? node.id;

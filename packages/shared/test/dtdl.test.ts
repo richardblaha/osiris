@@ -57,3 +57,31 @@ describe("DTDL presentation", () => {
     expect(resolveContents(pod["@id"], models()).map((c) => c.name).sort()).toEqual(["name", "phase"]);
   });
 });
+
+describe("a model's own drawing (presentation.visual)", () => {
+  const model = (visual: unknown) => ({ "@context": [DTDL_CONTEXT, PRESENTATION_CONTEXT], "@id": "dtmi:x:Rack;1", "@type": "Interface", presentation: { visual } }) as never;
+  it("takes parts with values to follow", () => {
+    const visual = {
+      mode: "replace",
+      parts: [
+        { shape: "box", at: [0, -0.4, 0], size: [1, 0.2, 1], color: "neutral", outline: true },
+        { shape: "box", size: [0.2, 0.8, 0.8], color: "level", fill: { value: "used/size", axis: "y" } },
+        { shape: "cylinder", size: [0.05, 0.6, 0.05], at: [-0.4, 0.8, -0.4], repeat: { count: 4, axis: "x", step: 0.25 } },
+        { shape: "plane", size: [0.05, 0.05, 1], color: "#22cc66", blink: "network", when: "status=ok" },
+        { shape: "sphere", spin: 0.5, repeat: { count: "readyEndpoints", step: 0.1 } },
+      ],
+    };
+    expect(interfaceErrors(model(visual))).toEqual([]);
+  });
+  it("refuses what isn't a drawing: unknown keys, code, bad numbers, too many parts", () => {
+    const errors = (visual: unknown) => interfaceErrors(model(visual)).join("\n");
+    expect(errors({ parts: [{ shape: "mesh" }] })).toMatch(/shape is not one of/);
+    expect(errors({ parts: [{ shape: "box", onFrame: "alert(1)" }] })).toMatch(/unknown key onFrame/);
+    expect(errors({ parts: [{ shape: "box", blink: "a; b" }] })).toMatch(/blink must be/);
+    expect(errors({ parts: [{ shape: "box", size: [1, 0, 1] }] })).toMatch(/size must be/);
+    expect(errors({ parts: [{ shape: "box", color: "red" }] })).toMatch(/color must be/);
+    expect(errors({ parts: [{ shape: "box", repeat: { count: 1000, step: 1 } }] })).toMatch(/repeat must be/);
+    expect(errors({ parts: Array.from({ length: 65 }, () => ({ shape: "box" })) })).toMatch(/more than 64/);
+    expect(errors({ mode: "eval", parts: [] })).toMatch(/mode must be/);
+  });
+});

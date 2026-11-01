@@ -8,6 +8,7 @@ import type { Box } from "../TwinLayout.ts";
 import { cylinderEdges, diskEdges, drumEdges, facing, frame, gateEdges, gateGeometry, gaugeGeometry, pinGeometry, ring, roundedEdges, SOCKET, spokes, ventGeometry } from "./geometry.ts";
 import { num } from "./info.ts";
 import { reducedMotion, sameAppearance, type Appearance, type Colors } from "./paint.ts";
+import { VisualParts } from "./visual.tsx";
 
 /**
  * The registry of looks: how each kind of twin is drawn, one React component per look (`presentation.look` of its
@@ -459,6 +460,19 @@ function Socket({ box, ap, usb, colors }: { box: Box; ap: Appearance; usb: boole
   );
 }
 
+/** A model that draws its twins itself (`presentation.visual` with `mode: "replace"`): only the solid's outline,
+ * carrying its status, and an invisible body the pointer picks; the model's parts do the rest. */
+function OutlineLook({ box, node, ap, order, total }: LookProps) {
+  const geometry = useMemo(() => roundedBox(box), [box.size.join(), box.radius]);
+  const outline = useMemo(() => roundedEdges(box.size, box.radius), [box.size.join(), box.radius]);
+  return (
+    <>
+      <Body id={box.id} geometry={geometry} ap={{ ...ap, bodyOpacity: 0 }} order={order} />
+      <Outline geometry={outline} ap={ap} order={order + total} dash={node.dashed ? DASHED : undefined} />
+    </>
+  );
+}
+
 /** The looks by name: a box's by its twin's look, any other shape by its shape. */
 export const LOOK_COMPONENTS: Record<string, LookComponent> = {
   box: BoxLook,
@@ -478,10 +492,14 @@ export const lookOf = (box: Box, node: TwinView): LookComponent => (box.shape !=
 /** One solid of the scene at its place, drawn by its look; drawn again only when its appearance or size changes. */
 export const Solid = memo(
   function Solid(props: LookProps) {
-    const Look = lookOf(props.box, props.node);
+    const { colors } = useLook();
+    const visual = props.node.visual;
+    // A model's own drawing goes over its look, or instead of it.
+    const Look = visual?.mode === "replace" ? OutlineLook : lookOf(props.box, props.node);
     return (
       <group position={props.box.center} visible={!props.ap.hidden}>
         <Look {...props} />
+        {visual && <VisualParts parts={visual.parts} node={props.node} box={props.box} ap={props.ap} colors={colors} />}
       </group>
     );
   },

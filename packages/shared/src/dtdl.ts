@@ -1,3 +1,5 @@
+import { visualErrors, type DtdlVisual } from "./visual.ts";
+export * from "./visual.ts";
 /**
  * DTDL (Digital Twins Definition Language) v3, the part the digital twin uses: interfaces with properties, telemetry,
  * relationships and commands, `extends`, and the schemas Enum, Map, Object and Array. DTDL defines models only; the
@@ -186,6 +188,8 @@ export interface DtdlPresentation {
   layer?: PresentationLayer;
   /** Whether the model's twins show at all; else yes. */
   visible?: boolean;
+  /** The model's own drawing: parts over (or instead of) its look, following the twin's values. */
+  visual?: DtdlVisual;
 }
 
 /** A model as the Azure Digital Twins API lists it (`GET /models?includeModelDefinition=true`). */
@@ -361,6 +365,7 @@ function presentationShapeErrors(id: string, p: unknown): string[] {
   if (o.label !== undefined && (typeof o.label !== "string" || !NAME.test(o.label))) errors.push(`${id}: presentation.label must be a property name`);
   if (o.layer !== undefined && !PRESENTATION_LAYERS.includes(o.layer as PresentationLayer)) errors.push(`${id}: presentation.layer is not one of ${PRESENTATION_LAYERS.join(", ")}`);
   if (o.visible !== undefined && typeof o.visible !== "boolean") errors.push(`${id}: presentation.visible must be a boolean`);
+  if (o.visual !== undefined) errors.push(...visualErrors(id, o.visual));
   return errors;
 }
 

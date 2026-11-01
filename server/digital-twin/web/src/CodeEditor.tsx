@@ -3,7 +3,43 @@ import * as monaco from "monaco-editor";
 import EditorWorker from "monaco-editor/editor/editor.worker?worker";
 import JsonWorker from "monaco-editor/language/json/json.worker?worker";
 import { useEffect, useState } from "react";
-import { DATA_PROFILE_KINDS, LOOKS, PRESENTATION_LAYERS } from "@osiris/shared/dtdl.ts";
+import { DATA_PROFILE_KINDS, LOOKS, PRESENTATION_LAYERS, VISUAL_COLORS, VISUAL_SHAPES } from "@osiris/shared/dtdl.ts";
+
+const vec3 = { type: "array", items: { type: "number" }, minItems: 3, maxItems: 3 };
+const valueName = { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_]{0,63}(/[A-Za-z][A-Za-z0-9_]{0,63})?$" };
+const axis = { enum: ["x", "y", "z"] };
+/** A model's own drawing (`presentation.visual`, `@osiris/shared/visual.ts`), as a hint while typing. */
+const VISUAL_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["parts"],
+  properties: {
+    mode: { enum: ["add", "replace"], description: "add: over the model's look (default); replace: instead of it" },
+    parts: {
+      type: "array",
+      maxItems: 64,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["shape"],
+        properties: {
+          shape: { enum: [...VISUAL_SHAPES] },
+          at: { ...vec3, description: "center, as fractions of the solid's size ([-0.5, 0.5] spans it)" },
+          size: { ...vec3, description: "fractions of the solid's size" },
+          rotate: { ...vec3, description: "degrees about x, y, z" },
+          color: { anyOf: [{ enum: [...VISUAL_COLORS] }, { type: "string", pattern: "^#[0-9a-fA-F]{6}$" }] },
+          opacity: { type: "number", minimum: 0, maximum: 1 },
+          outline: { type: "boolean" },
+          when: { type: "string", description: "a value's name, or name=value" },
+          fill: { type: "object", additionalProperties: false, required: ["value"], properties: { value: valueName, axis } },
+          blink: { ...valueName, description: "bytes per second: dark while idle, faster the more" },
+          spin: { anyOf: [{ type: "number" }, valueName] },
+          repeat: { type: "object", additionalProperties: false, required: ["count", "step"], properties: { count: { anyOf: [{ type: "integer", minimum: 0, maximum: 64 }, valueName] }, axis, step: { type: "number" } } },
+        },
+      },
+    },
+  },
+};
 
 // Monaco from this app's own build (no CDN, which the CSP would refuse), with the JSON worker for DTDL.
 self.MonacoEnvironment = {
@@ -92,6 +128,7 @@ const DTDL_SCHEMA = {
         label: { type: "string" },
         layer: { enum: [...PRESENTATION_LAYERS] },
         visible: { type: "boolean" },
+        visual: VISUAL_SCHEMA,
       },
     },
   },
