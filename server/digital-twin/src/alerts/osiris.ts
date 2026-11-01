@@ -20,8 +20,24 @@ export class OsirisClient {
       clientId: string;
       clientSecret: string;
       fetchFn?: typeof fetch;
+      /** Waits between attempts while osiris-auth or the gateway is briefly away (a restart); tests pass none. */
+      retryDelaysMs?: number[];
     },
   ) {}
+
+  /** `fetch`, again after the delays while the answer is a 5xx or the host can't be reached. */
+  private async retrying(url: string, init: () => RequestInit): Promise<Response> {
+    const delays = this.o.retryDelaysMs ?? [2_000, 5_000, 15_000];
+    for (let attempt = 0; ; attempt++) {
+      const res = await this.fetch(url, init()).catch((err: unknown) => {
+        if (attempt >= delays.length) throw err;
+        return undefined;
+      });
+      if (res && (res.status < 500 || attempt >= delays.length)) return res;
+      await res?.body?.cancel();
+      await new Promise((r) => setTimeout(r, delays[attempt]));
+    }
+  }
 
   private get fetch() {
     return this.o.fetchFn ?? fetch;
@@ -30,7 +46,7 @@ export class OsirisClient {
   /** A valid access token of the service account. */
   async accessToken(): Promise<string> {
     if (this.token && this.token.until > Date.now()) return this.token.value;
-    const res = await this.fetch(`${this.o.authUrl.replace(/\/$/, "")}/token`, {
+    const res = await this.retrying(`${this.o.authUrl.replace(/\/$/, "")}/token`, () => ({
       method: "POST",
       headers: {
         "content-type": "application/x-www-form-urlencoded",
@@ -38,7 +54,7 @@ export class OsirisClient {
       },
       body: new URLSearchParams({ grant_type: "client_credentials" }),
       signal: AbortSignal.timeout(15_000),
-    });
+    }));
     if (!res.ok) throw new Error(`osiris-auth refused the service's token: ${res.status}`);
     const answer = (await res.json()) as { access_token: string; expires_in?: number };
     this.token = { value: answer.access_token, until: Date.now() + Math.max(30, (answer.expires_in ?? 300) - 60) * 1000 };
@@ -50,6 +66,8 @@ export class OsirisClient {
       ...init,
       headers: { authorization: `Bearer ${await this.accessToken()}`, "x-project-id": this.o.project, "content-type": "application/json", "accept-language": "cs", ...(init.headers as Record<string, string>) },
     });
+    // A token osiris-auth forgot (its restart, a revocation): the next call fetches a new one.
+    if (res.status === 401) this.token = undefined;
     if (!res.ok) throw new Error(`Osiris answered ${path} with ${res.status}: ${(await res.text().catch(() => "")).slice(0, 200)}`);
     return res;
   }

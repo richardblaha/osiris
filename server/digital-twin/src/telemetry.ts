@@ -107,6 +107,15 @@ export const SEVERITY: Record<string, number> = { debug: 5, info: 9, warn: 13, e
  * colours are made of. With `cluster`, only that cluster's records (`k8s.cluster.name`, set by the collector's
  * resource/cluster processor): several clusters can share one ClickHouse without their telemetry mixing.
  */
+/** A query's data point attributes: their values as part of the key, and values points must have. */
+export interface KeyedBy {
+  points?: string[];
+  where?: Record<string, string>;
+}
+
+/** The queries a source's own telemetry mapping (`TwinSource.resources`) needs. */
+export type TelemetryReader = Pick<Telemetry, "latest" | "rates">;
+
 export class Telemetry {
   constructor(
     readonly ch: ClickHouse,
@@ -176,64 +185,83 @@ export class Telemetry {
   }
 
   /**
-   * A monotonic counter's rate per second over the 5 minutes before `at` (now without it), by the values of the given
-   * resource attributes (keyed with `errorKey`): each source (its attributes and resource) is differenced on its own,
-   * then summed (a node's interfaces, both directions).
+   * The key columns of a query by attributes: the resource attributes (`k0`…), then the data points' own (`p0`…, e.g.
+   * hostmetrics' `cpu` or `device`), and the points' required values (`where`, e.g. `state = idle`). Names and values
+   * go in as parameters, never as SQL.
    */
-  async rates(metric: string, attributes: string[], at?: number): Promise<Map<string, number>> {
-    if (!attributes.length) return new Map();
-    const columns = attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`);
-    const keys = attributes.map((_, i) => `k${i}`).join(", ");
-    const params: Record<string, string | number> = { ...this.of().params, metric };
+  private keyed(attributes: string[], by: KeyedBy = {}) {
+    const points = by.points ?? [];
+    const where = Object.entries(by.where ?? {});
+    const params: Record<string, string | number> = { ...this.of().params };
     attributes.forEach((a, i) => (params[`a${i}`] = a));
+    points.forEach((a, i) => (params[`p${i}`] = a));
+    where.forEach(([k, v], i) => ((params[`w${i}`] = k), (params[`wv${i}`] = v)));
+    const names = [...attributes.map((_, i) => `k${i}`), ...points.map((_, i) => `q${i}`)];
+    return {
+      params,
+      columns: [...attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`), ...points.map((_, i) => `Attributes[{p${i}:String}] AS q${i}`)].join(", "),
+      keys: names.join(", "),
+      present: names.map((k) => `${k} <> ''`).join(" AND "),
+      filter: where.map((_, i) => ` AND Attributes[{w${i}:String}] = {wv${i}:String}`).join(""),
+      keyOf: (r: Record<string, string>) => errorKey(names.map((k) => r[k] ?? "")),
+    };
+  }
+
+  /**
+   * A monotonic counter's rate per second over the 5 minutes before `at` (now without it), by the values of the given
+   * resource attributes (and the points' own, `by.points`), keyed with `errorKey`: each source (its attributes and
+   * resource) is differenced on its own, then summed (a node's interfaces, both directions).
+   */
+  async rates(metric: string, attributes: string[], at?: number, by: KeyedBy = {}): Promise<Map<string, number>> {
+    if (!attributes.length) return new Map();
+    const q = this.keyed(attributes, by);
+    const params: Record<string, string | number> = { ...q.params, metric };
     if (at !== undefined) params.at = at;
     const window =
       at === undefined
         ? "TimeUnix >= now() - INTERVAL 5 MINUTE"
         : "TimeUnix BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 5 MINUTE AND fromUnixTimestamp64Milli({at:Int64})";
     const rows = await this.ch.query<Record<string, string>>(
-      `SELECT ${keys}, sum(rate) AS rate FROM (
-         SELECT ${columns.join(", ")}, cityHash64(Attributes, ResourceAttributes) AS src,
+      `SELECT ${q.keys}, sum(rate) AS rate FROM (
+         SELECT ${q.columns}, cityHash64(Attributes, ResourceAttributes) AS src,
                 if(max(TimeUnix) > min(TimeUnix), greatest(argMax(Value, TimeUnix) - argMin(Value, TimeUnix), 0) / dateDiff('second', min(TimeUnix), max(TimeUnix)), 0) AS rate
          FROM otel_metrics_sum
-         WHERE MetricName = {metric:String} AND ${window}${this.of().where}
-         GROUP BY ${keys}, src)
-       WHERE ${attributes.map((_, i) => `k${i} <> ''`).join(" AND ")}
-       GROUP BY ${keys}`,
+         WHERE MetricName = {metric:String} AND ${window}${q.filter}${this.of().where}
+         GROUP BY ${q.keys}, src)
+       WHERE ${q.present}
+       GROUP BY ${q.keys}`,
       params,
     );
-    return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.rate)]));
+    return new Map(rows.map((r) => [q.keyOf(r), Number(r.rate)]));
   }
 
   /**
    * A gauge's newest value in the 10 minutes before `at` (now without it), by the values of the given resource
-   * attributes (keyed with `errorKey`); several sources of one key (a claim mounted by two pods) give the largest.
+   * attributes (and the points' own, `by.points`, only points with `by.where`), keyed with `errorKey`; several sources
+   * of one key (a claim mounted by two pods) give the largest.
    */
-  async latest(metric: string, attributes: string[], at?: number): Promise<Map<string, number>> {
+  async latest(metric: string, attributes: string[], at?: number, by: KeyedBy = {}): Promise<Map<string, number>> {
     if (!attributes.length) return new Map();
-    const columns = attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`);
-    const keys = attributes.map((_, i) => `k${i}`).join(", ");
-    const params: Record<string, string | number> = { ...this.of().params, metric };
-    attributes.forEach((a, i) => (params[`a${i}`] = a));
+    const q = this.keyed(attributes, by);
+    const params: Record<string, string | number> = { ...q.params, metric };
     if (at !== undefined) params.at = at;
     const window =
       at === undefined
         ? "TimeUnix >= now() - INTERVAL 10 MINUTE"
         : "TimeUnix BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 10 MINUTE AND fromUnixTimestamp64Milli({at:Int64})";
     const rows = await this.ch.query<Record<string, string>>(
-      `SELECT ${keys}, max(v) AS latest FROM (
-         SELECT ${columns.join(", ")}, cityHash64(ResourceAttributes) AS src, argMax(Value, TimeUnix) AS v
+      `SELECT ${q.keys}, max(v) AS latest FROM (
+         SELECT ${q.columns}, cityHash64(Attributes, ResourceAttributes) AS src, argMax(Value, TimeUnix) AS v
          FROM otel_metrics_gauge
-         WHERE MetricName = {metric:String} AND ${window}${this.of().where}
-         GROUP BY ${keys}, src)
-       WHERE ${attributes.map((_, i) => `k${i} <> ''`).join(" AND ")}
-       GROUP BY ${keys}`,
+         WHERE MetricName = {metric:String} AND ${window}${q.filter}${this.of().where}
+         GROUP BY ${q.keys}, src)
+       WHERE ${q.present}
+       GROUP BY ${q.keys}`,
       params,
     );
-    return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.latest)]));
+    return new Map(rows.map((r) => [q.keyOf(r), Number(r.latest)]));
   }
 
-  /** How many log records match the filters per `step` seconds, split by severity (errors, warnings, the rest). */
   async logHistogram(f: Range & Scope & { service?: string; severity?: string; q?: string; traceId?: string; step: number }): Promise<LogBucket[]> {
     const where = ["Timestamp BETWEEN toDateTime64({from:UInt32}, 9) AND toDateTime64({to:UInt32}, 9)" + this.of().where];
     const params: Record<string, string | number> = { ...this.of().params, ...range(f), step: f.step, warn: SEVERITY.warn ?? 13, error: SEVERITY.error ?? 17 };

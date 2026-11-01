@@ -8,22 +8,19 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { formatBytes, formatBytesRate, formatNumber } from "./i18n.ts";
 import { iconOf, kindOf, portKind } from "./icons.ts";
-import { fillOf, hasNetwork, interfacesOf, isStorage, pathOf, routingOf, storageLinksOf, storageOf, wiresOf, type TwinScene, type TwinView } from "./scene.ts";
+import { fillOf, layoutRules, pathOf, storageOf, type TwinScene, type TwinView, type ViewLayer } from "./scene.ts";
 import { layoutTwin, type Box, type Link, type LinkLayer, type Scene } from "./TwinLayout.ts";
 
 /**
- * What the view shows besides the base (cluster, nodes, pods, containers): the low-level network (interfaces,
- * bridges, routers, tunnels and their wiring), the network services (Services, Ingresses, LoadBalancer and public
- * addresses, their routing), storage (volume claims, Ceph with its pools and disks), the logical groupings.
+ * What the view shows besides the base (cluster, nodes, pods, containers): the hardware (CPUs with their cores,
+ * memory, disks, LAN and USB ports, what runs on them), the low-level network (interfaces, bridges, routers, tunnels
+ * and their wiring), the network services (load balancers, Services, Ingresses, public addresses, their routing),
+ * storage (volume claims, Ceph with its pools and disks), the namespaces (bands) and the workloads.
  */
-export interface Layers {
-  network: boolean;
-  services: boolean;
-  storage: boolean;
-  logical: boolean;
-}
-export const ALL_LAYERS: Layers = { network: true, services: true, storage: true, logical: true };
-export const LAYER_KEYS = ["network", "services", "storage", "logical"] as const;
+export type Layers = Record<ViewLayer, boolean>;
+/** The layers in the menu's and the keys' order (1–6). */
+export const LAYER_KEYS = ["hardware", "network", "services", "storage", "namespaces", "workloads"] as const satisfies readonly ViewLayer[];
+export const ALL_LAYERS: Layers = { hardware: true, network: true, services: true, storage: true, namespaces: true, workloads: true };
 
 /** How the view draws: labels by level of detail, every name, or none; the interfaces' addresses; moving traffic. */
 export interface DisplayOptions {
@@ -82,8 +79,32 @@ function cephInfo(node: TwinView): string[] {
   return out;
 }
 
+/** A load's colour band: well up to 80 %, a warning to 95 %, then an error. */
+const loadLevel = (load: number | undefined): TwinStatus => (load === undefined ? "ok" : load >= 0.95 ? "error" : load >= 0.8 ? "warn" : "ok");
+
+/** What a piece of hardware or a workload reads, in short: a CPU's cores busy, a load, bytes of a size, a disk's bus,
+ * model and I/O, a container's CPU and memory; a Service's endpoints. */
+function resourceInfo(node: TwinView): string[] {
+  const r = node.resources ?? {};
+  const out: string[] = [];
+  const percent = (v: number) => formatNumber(v, { style: "percent" });
+  if (node.look === "drive") {
+    const bus = String(node.twin.bus ?? "unknown");
+    out.push([t(`twin:hw.bus.${bus}`, { defaultValue: bus }), typeof node.twin.model === "string" ? node.twin.model : ""].filter(Boolean).join(" "));
+  }
+  if (node.look === "cpu" && r.used !== undefined && r.size) out.push(t("twin:hw.cpu", { used: formatNumber(r.used, { maximumFractionDigits: 2 }), cores: r.size }));
+  if (r.load !== undefined) out.push(r.estimated ? t("twin:hw.estimated", { share: percent(r.load) }) : percent(r.load));
+  if ((node.look === "memory" || node.look === "drive") && r.used !== undefined && r.size) out.push(t("twin:hw.bytes", { used: formatBytes(r.used), size: formatBytes(r.size) }));
+  if (node.look === "drive" && r.used === undefined && num(node.twin.size)) out.push(formatBytes(num(node.twin.size)!));
+  if (r.io !== undefined) out.push(t("twin:hw.io", { rate: formatBytesRate(r.io) }));
+  if (r.cpu !== undefined) out.push(t("twin:hw.cores", { value: formatNumber(r.cpu, { maximumFractionDigits: r.cpu < 0.1 ? 3 : 2 }) }));
+  if (r.memory !== undefined) out.push(formatBytes(r.memory));
+  if (node.look === "hex" && num(node.twin.readyEndpoints) !== undefined) out.push(t("twin:hw.endpoints", { count: num(node.twin.readyEndpoints) }));
+  return out;
+}
+
 /** A twin's basic state in one line: its status, traffic, how full it is, its recent errors; a storage cluster's
- * health in short, an Ingress's hosts. */
+ * health in short, an Ingress's hosts, the hardware's readings. */
 function infoOf(node: TwinView): string {
   const full = fillOf(node);
   const hosts = node.look === "gate" && typeof node.twin.hosts === "string" ? node.twin.hosts.split(", ").filter(Boolean) : [];
@@ -92,6 +113,7 @@ function infoOf(node: TwinView): string {
     node.network !== undefined ? formatBytesRate(node.network) : "",
     storageText(node, full),
     ...(node.look === "ceph" ? cephInfo(node) : []),
+    ...resourceInfo(node),
     hosts.length ? (hosts.length > 2 ? `${hosts.slice(0, 2).join(", ")} +${hosts.length - 2}` : hosts.join(", ")) : "",
     node.twin.tls === true ? "TLS" : "",
     node.errors ? t("twin:errorCount", { count: node.errors }) : "",
@@ -109,15 +131,23 @@ interface BoxMesh {
   box: Box;
   mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
   edges: THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial | THREE.LineDashedMaterial>;
-  /** A cylinder's content: a smaller cylinder from its floor up to how full it is, with a ring at the level. */
-  fill?: { body: THREE.Mesh<THREE.CylinderGeometry, THREE.MeshBasicMaterial>; level: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial> };
+  /**
+   * Its content: a cylinder's (storage) a smaller cylinder from its floor up to how full it is with a ring at the
+   * level; a core's, memory's or disk's a box as high (or, along `x`, as long) as its load, a frame at the level.
+   */
+  fill?: { body: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>; level: THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial>; axis: "x" | "y"; span: number; base: number };
   /** A node's status light: a strip along the bottom of its front. */
   led?: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>;
   /**
    * A look's own parts: an Ingress's portal membrane and TLS lock, a storage cluster's lid gauge (its track and how
    * full it is) and health halo.
    */
-  decor: { role: "membrane" | "lock" | "track" | "gauge" | "halo"; object: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | THREE.LineLoop<THREE.BufferGeometry, THREE.LineBasicMaterial> }[];
+  decor: {
+    role: "membrane" | "lock" | "track" | "gauge" | "halo" | "activity" | "rotor" | "spokes" | "sweep" | "die";
+    object: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+    /** How many spokes a rotor or a sweep turns between (a load balancer's nodes, a Service's endpoints). */
+    steps?: number;
+  }[];
   /** The fill the lid gauge was drawn for, so it is made again only when that changes. */
   gaugeAt?: number;
 }
@@ -272,6 +302,26 @@ function ring(radius: number): THREE.BufferGeometry {
   return g;
 }
 
+/** A rectangle of `a` by `b` around the origin, in the x/z plane (or, `upright`, the y/z plane), for a fill's level. */
+function frame(a: number, b: number, upright = false): THREE.BufferGeometry {
+  const corners = [[-a / 2, -b / 2], [a / 2, -b / 2], [a / 2, b / 2], [-a / 2, b / 2]];
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(corners.flatMap(([u, v]) => (upright ? [0, u!, v!] : [u!, 0, v!])), 3));
+  return g;
+}
+
+/** `n` spokes from the center of a disc of `radius` (lying in x/y, facing +z), one every 1/n of the way round. */
+function spokes(n: number, inner: number, radius: number): THREE.BufferGeometry {
+  const points: number[] = [];
+  for (let i = 0; i < Math.max(1, n); i++) {
+    const a = Math.PI / 2 - (i / Math.max(1, n)) * Math.PI * 2;
+    points.push(Math.cos(a) * inner, Math.sin(a) * inner, 0, Math.cos(a) * radius, Math.sin(a) * radius, 0);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
 /** A network link as drawn: its path's lengths, for the packets that travel it. */
 interface LinkPath extends Link {
   lengths: number[];
@@ -291,6 +341,8 @@ interface Content {
   vertexAt: { dashed: boolean; from: number }[];
   /** Decorations without a twin of their own (the cluster's floor grid): removed with the scene. */
   extras: THREE.Object3D[];
+  /** The machines' boards under their hardware decks, shown with the hardware layer. */
+  boards: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[];
   packets: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   /** The interfaces' addresses (an IP) beside their dots, each shown while its owner is big enough on screen. */
   portLabels: { object: CSS2DObject; node: string; owner: string }[];
@@ -467,13 +519,13 @@ export function Twin3D({
         const r = box.size[0] / 2;
         // An interface by its kind: a router a disc, a tunnel a hexagonal one, a bridge a bar, the rest a plate.
         const kind = box.shape === "port" && node ? portKind(node) : "";
-        const disc = kind === "router" || kind === "tunnel";
+        const disc = kind === "router" || kind === "tunnel" || kind === "loadbalancer";
         const geometry =
           cylinder ? new THREE.CylinderGeometry(r, r, box.size[1], 40)
           : box.shape === "drum" ? new THREE.CylinderGeometry(r, r, box.size[1], 64)
           : box.shape === "hex" ? new THREE.CylinderGeometry(r, r, box.size[1], 6)
           : box.shape === "gate" ? gateGeometry(box.size)
-          : disc ? new THREE.CylinderGeometry(box.size[0] / 2, box.size[0] / 2, box.size[2], kind === "tunnel" ? 6 : 24).rotateX(Math.PI / 2)
+          : disc ? new THREE.CylinderGeometry(box.size[0] / 2, box.size[0] / 2, box.size[2], kind === "tunnel" ? 6 : kind === "loadbalancer" ? 40 : 24).rotateX(Math.PI / 2)
           : new RoundedBoxGeometry(box.size[0], box.size[1], box.size[2], box.shape === "port" ? 2 : 3, box.radius);
         const mesh = new THREE.Mesh(geometry as THREE.BufferGeometry, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
         mesh.position.set(...box.center);
@@ -545,17 +597,72 @@ export function Twin3D({
           halo.position.set(box.center[0], lid + 0.3, box.center[2]);
           add("halo", halo);
         }
+        if (look === "drive") {
+          // A disk's activity light on its front, blinking with its I/O.
+          const light = new THREE.Mesh(new THREE.BoxGeometry(0.16, Math.min(0.08, box.size[1] * 0.4), 0.04), new THREE.MeshBasicMaterial({ transparent: true }));
+          light.position.set(box.center[0] + box.size[0] / 2 - 0.2, box.center[1], box.center[2] + box.size[2] / 2 + 0.03);
+          add("activity", light);
+        }
+        if (box.shape === "port" && kind === "loadbalancer") {
+          // A load balancer: a rotor of spokes, one per node it hands traffic to, turning on the disc's face.
+          const steps = Math.max(1, scenePaths?.relationships.filter((x) => x.$relationshipName === "connectedTo" && x.$sourceId === box.id).length ?? 1);
+          const rotor = new THREE.LineSegments(spokes(steps, r * 0.18, r * 0.82), new THREE.LineBasicMaterial({ transparent: true }));
+          rotor.position.set(box.center[0], box.center[1], box.center[2] + box.size[2] / 2 + 0.02);
+          add("rotor", rotor);
+          decor[decor.length - 1]!.steps = steps;
+          const rim = new THREE.LineLoop(ring(r * 0.95).rotateX(Math.PI / 2), new THREE.LineBasicMaterial({ transparent: true }));
+          rim.position.copy(rotor.position);
+          add("halo", rim);
+        }
+        if (box.shape === "hex") {
+          // A Service's endpoints: spokes on its lid, one per ready pod, and a sweep handing each request to the next.
+          const steps = Math.min(12, Math.max(0, num(node?.twin.readyEndpoints) ?? 0));
+          if (steps) {
+            const lid = box.center[1] + box.size[1] / 2 + 0.02;
+            const fan = new THREE.LineSegments(spokes(steps, r * 0.15, r * 0.8).rotateX(-Math.PI / 2), new THREE.LineBasicMaterial({ transparent: true }));
+            fan.position.set(box.center[0], lid, box.center[2]);
+            add("spokes", fan);
+            const sweep = new THREE.LineSegments(spokes(1, 0, r * 0.86).rotateX(-Math.PI / 2), new THREE.LineBasicMaterial({ transparent: true }));
+            sweep.position.set(box.center[0], lid + 0.01, box.center[2]);
+            add("sweep", sweep);
+            decor[decor.length - 1]!.steps = steps;
+          }
+        }
         let fill: BoxMesh["fill"];
         if (cylinder) {
           // A unit-high cylinder standing on the floor, scaled to the level in `paint`.
-          const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.86, r * 0.86, 1, 40).translate(0, 0.5, 0), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+          const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.86, r * 0.86, 1, 40).translate(0, 0.5, 0) as THREE.BufferGeometry, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
           const level = new THREE.LineLoop(ring(r * 0.86), new THREE.LineBasicMaterial({ transparent: true }));
           body.position.set(box.center[0], box.center[1] - box.size[1] / 2, box.center[2]);
           level.position.copy(body.position);
           world.add(body, level);
-          fill = { body, level };
+          fill = { body, level, axis: "y", span: box.size[1], base: body.position.y };
+        } else if ((look === "core" || look === "memory" || look === "drive") && !node?.children.length) {
+          // A part's load: from its floor up (a core, memory), along a flat disk from its left end.
+          const [w, h, d] = box.size;
+          const along = look === "drive";
+          const k = 0.84;
+          const body = new THREE.Mesh(
+            (along ? new THREE.BoxGeometry(1, h * k, d * k).translate(0.5, 0, 0) : new THREE.BoxGeometry(w * k, 1, d * k).translate(0, 0.5, 0)) as THREE.BufferGeometry,
+            new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }),
+          );
+          const level = new THREE.LineLoop(along ? frame(h * k, d * k, true) : frame(w * k, d * k), new THREE.LineBasicMaterial({ transparent: true }));
+          if (along) body.position.set(box.center[0] - (w * k) / 2, box.center[1], box.center[2]);
+          else body.position.set(box.center[0], box.center[1] - h / 2 + (h * (1 - k)) / 2, box.center[2]);
+          level.position.copy(body.position);
+          world.add(body, level);
+          fill = { body, level, axis: along ? "x" : "y", span: along ? w * k : h * k, base: along ? body.position.x : body.position.y };
         }
         return { id: box.id, box, mesh, edges, fill, led, decor };
+      });
+      // The machines' boards: thin plates under their hardware.
+      const boards = scene.boards.map((b) => {
+        const plate = new THREE.Mesh(new THREE.BoxGeometry(...b.size), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+        plate.position.set(...b.center);
+        plate.renderOrder = -2;
+        world.add(plate);
+        extras.push(plate);
+        return plate;
       });
       // Outer shells behind inner ones, so transparency stacks whole cuboids in the right order.
       meshes.forEach((m, i) => {
@@ -634,6 +741,7 @@ export function Twin3D({
         dashed,
         vertexAt,
         extras,
+        boards,
         packets,
         ports,
         portLabels: portLabelsOf(scene.boxes, byId),
@@ -794,7 +902,10 @@ export function Twin3D({
         const lit = focus && !isChosen && path.has(node.of ?? node.id);
         const fade = inFocus(node) ? 1 : 0.18;
         const strong = isChosen || isHovered || !!lit;
-        const color = strong ? colors.active : node.color ? new THREE.Color(node.color) : statusColor(node.status);
+        // A part of a machine carries its load's colour while it is well.
+        const load = node.resources?.load;
+        const own = node.status === "ok" && load !== undefined ? loadLevel(load) : node.status;
+        const color = strong ? colors.active : node.color ? new THREE.Color(node.color) : statusColor(own);
         m.edges.material.color = color;
         m.edges.material.opacity = (strong ? 1 : node.depth === 0 ? 0.9 : leaf ? 0.8 : 0.6) * fade;
         m.mesh.material.color = color;
@@ -806,6 +917,9 @@ export function Twin3D({
           : look === "hex" ? 0.02
           : look === "gate" ? 0.3
           : look === "ceph" ? 0.07
+          : look === "core" || look === "memory" ? 0.1
+          : look === "cpu" ? 0.14
+          : look === "drive" ? 0.16
           : leaf ? 0.2
           : 0.035;
         m.mesh.material.opacity = (strong ? Math.max(body, leaf ? 0.4 : 0.1) : body) * fade;
@@ -819,6 +933,8 @@ export function Twin3D({
           m.mesh.material.color = c;
           m.edges.material.color = c;
           if (kind === "bridge") m.mesh.material.opacity = 0.4 * fade;
+          if (kind === "usb" || kind === "physical") (m.mesh.material.color = colors.neutral), (m.edges.material.color = colors.neutral);
+          if (kind === "loadbalancer") m.mesh.material.opacity = 0.3 * fade;
         }
         for (const d of m.decor) {
           d.object.visible = !off;
@@ -826,6 +942,9 @@ export function Twin3D({
           const material = d.object.material;
           if (d.role === "membrane") (material.color = strong ? colors.active : statusColor(node.status)), (material.opacity = (strong ? 0.22 : 0.1) * fade);
           else if (d.role === "lock") (material.color = colors.active), (material.opacity = 0.9 * fade);
+          else if (d.role === "activity") material.color = colors.active;
+          else if (d.role === "rotor" || d.role === "sweep") (material.color = colors.active), (material.opacity = (strong ? 1 : 0.7) * fade);
+          else if (d.role === "spokes") (material.color = statusColor(node.status)), (material.opacity = (strong ? 0.8 : 0.4) * fade);
           else if (d.role === "track") (material.color = colors.neutral), (material.opacity = 0.15 * fade);
           else if (d.role === "gauge") {
             if (m.gaugeAt !== full) {
@@ -842,28 +961,38 @@ export function Twin3D({
           m.led.material.opacity = 0.9 * fade;
         }
         if (m.fill) {
-          // A storage's content: as high as it is full, cyan up to 80 %, then warning, then error from 95 %.
-          const full = fillOf(node);
-          m.mesh.material.opacity = (strong ? 0.18 : 0.08) * fade;
-          const level = full === undefined ? 0 : Math.max(0.001, full * m.box.size[1]);
-          const fillColor = full === undefined ? colors.cyan : full >= 0.95 ? colors.error : full >= 0.8 ? colors.warn : colors.cyan;
-          m.fill.body.scale.y = level;
-          m.fill.body.visible = full !== undefined;
+          // Its content: as high (or as long) as it is full or busy, cyan up to 80 %, then warning, then error from 95 %.
+          const full = m.box.shape === "cylinder" ? fillOf(node) : load;
+          if (m.box.shape === "cylinder") m.mesh.material.opacity = (strong ? 0.18 : 0.08) * fade;
+          const level = full === undefined ? 0 : Math.max(0.001, full * m.fill.span);
+          const fillColor = full === undefined ? colors.cyan : statusColor(loadLevel(full));
+          m.fill.body.scale[m.fill.axis] = level;
+          m.fill.body.visible = full !== undefined && !off;
           m.fill.body.material.color = fillColor;
-          m.fill.body.material.opacity = 0.45 * fade;
-          m.fill.level.position.y = m.box.center[1] - m.box.size[1] / 2 + level;
-          m.fill.level.visible = full !== undefined;
+          m.fill.body.material.opacity = (node.resources?.estimated ? 0.25 : 0.45) * fade;
+          m.fill.level.position[m.fill.axis] = m.fill.base + level;
+          m.fill.level.visible = full !== undefined && !off;
           m.fill.level.material.color = fillColor;
           m.fill.level.material.opacity = 0.9 * fade;
         }
       }
 
+      for (const b of content.boards) {
+        b.visible = layerOn("hardware");
+        b.material.color = colors.neutral;
+        b.material.opacity = 0.08;
+      }
       // Each network link's share of its network's load (interfaces carry no traffic).
       const byParent = new Map<string, number>();
-      for (const l of content.links) if (l.kind !== "interface") byParent.set(l.parent, Math.max(byParent.get(l.parent) ?? 0, content.byId.get(l.id)?.network ?? 0));
+      for (const l of content.links) if (l.kind !== "interface" && l.kind !== "resource" && l.kind !== "cable") byParent.set(l.parent, Math.max(byParent.get(l.parent) ?? 0, content.byId.get(l.id)?.network ?? 0));
       const linkShown = (l: Link) => layerOn(l.layer) && !hidden(content!.byId.get(l.id)) && !hidden(l.to ? content!.byId.get(l.to) : content!.byId.get(l.parent));
+      /** A line of what runs on what shows only for the selection: a container (or its pod) and its node's parts, or a part
+       * and everything running on it. */
+      const runsHere = (l: Link) => !!focus && (l.id === focus.id || l.to === focus.id || content!.byId.get(l.id)?.parent?.id === focus.id);
       loads = content.links.map((l) => {
         if (!linkShown(l)) return 0;
+        if (l.kind === "resource") return runsHere(l) ? Math.min(1, 0.25 + (content!.byId.get(l.id)?.resources?.cpu ?? 0) * 2) : 0;
+        if (l.kind === "cable") return Math.min(1, Math.log1p(content!.byId.get(l.to ?? "")?.resources?.io ?? 0) / Math.log1p(50_000_000));
         // The selection's traffic moves along its path.
         if (path.has(l.id) && (!l.to || path.has(l.to)) && focus) return 0.6;
         if (l.kind === "wire" || l.kind === "overlay" || l.kind === "virtual" || l.kind === "lan" || l.kind === "storage") return 0;
@@ -884,9 +1013,11 @@ export function Twin3D({
         const near = inFocus(content!.byId.get(l.parent)) || inFocus(a);
         // Networks in cyan by load; a node's wiring and the tunnels quieter; mounts and storage grey; routing faint,
         // glowing on the path of the selection's traffic.
-        const c = onPath ? colors.active : l.kind === "interface" || l.kind === "wire" || l.kind === "storage" ? colors.neutral : colors.cyan;
+        const c = onPath || l.kind === "resource" ? colors.active : l.kind === "interface" || l.kind === "wire" || l.kind === "storage" || l.kind === "cable" ? colors.neutral : colors.cyan;
         const alpha = !visible
           ? 0
+          : l.kind === "resource" ? (runsHere(l) ? 0.85 : 0)
+          : l.kind === "cable" ? 0.6 * (near ? 1 : 0.2)
           : onPath && l.kind !== "network" && l.kind !== "internet"
             ? 0.9
             : l.kind === "virtual" ? 0.3 * (near ? 1 : 0.2)
@@ -898,7 +1029,7 @@ export function Twin3D({
         const at = content!.vertexAt[k]!;
         const target = at.dashed ? broken : solid;
         for (let i = 0; i < (l.path.length - 1) * 2; i++) target.setXYZW(at.from + i, c.r, c.g, c.b, alpha);
-        for (const e of [2 * k, 2 * k + 1]) portColor.setXYZW(e, c.r, c.g, c.b, alpha ? (near || onPath ? 0.95 : 0.15) : 0);
+        for (const e of [2 * k, 2 * k + 1]) portColor.setXYZW(e, c.r, c.g, c.b, alpha ? (near || onPath || l.kind === "resource" ? 0.95 : 0.15) : 0);
       });
       solid.needsUpdate = true;
       broken.needsUpdate = true;
@@ -930,7 +1061,7 @@ export function Twin3D({
       for (const [k, l] of content.links.entries()) {
         const load = loads[k] ?? 0;
         if (load <= 0) continue;
-        if (!inFocus(content.byId.get(l.parent)) && !inFocus(content.byId.get(l.id))) continue;
+        if (l.kind !== "resource" && !inFocus(content.byId.get(l.parent)) && !inFocus(content.byId.get(l.id))) continue;
         const count = 1 + Math.round(load * (MAX_PACKETS - 1));
         const speed = 1.5 + 9 * load; // scene units per second
         for (let k = 0; k < count; k++) {
@@ -1013,18 +1144,7 @@ export function Twin3D({
       for (const band of twin.bands) byId.set(band.id, band);
       path = new Set();
       scenePaths = twin;
-      const shapes = { port: "port", hex: "hex", gate: "gate", ceph: "drum" } as const;
-      const scene = layoutTwin(twin.top, {
-        networked: (node) => hasNetwork(node, twin.models),
-        storage: (node) => isStorage(node, twin.models),
-        shape: (node) => shapes[node.look as keyof typeof shapes],
-        portKind,
-        sharesNetwork: (node) => node.look === "container",
-        interfaces: interfacesOf(twin),
-        wires: wiresOf(twin),
-        virtual: routingOf(twin),
-        storageLinks: storageLinksOf(twin),
-      });
+      const scene = layoutTwin(twin.top, layoutRules(twin));
       const shape = scene.boxes.map((x) => `${x.id}@${x.center.join(",")}:${x.size.join(",")}`).join("|");
       if (content && content.shape === shape) content.byId = byId;
       else {
@@ -1184,7 +1304,18 @@ export function Twin3D({
         for (const m of content.meshes)
           for (const d of m.decor) {
             if (d.role === "membrane") d.object.scale.setScalar(0.94 + 0.06 * wave);
-            if (d.role === "halo") d.object.scale.setScalar(content.byId.get(m.id)?.status === "ok" ? 1 : 1 + 0.08 * wave);
+            if (d.role === "halo" && m.box.shape !== "port") d.object.scale.setScalar(content.byId.get(m.id)?.status === "ok" ? 1 : 1 + 0.08 * wave);
+            const node = content.byId.get(m.id);
+            const lit = chosen.current?.id === m.id || path.has(m.id) || hovered === m.id;
+            // A disk blinks with its I/O (faster the more), a load balancer turns (faster on the selection's path), a
+            // Service's sweep hands requests to its endpoints in turn.
+            if (d.role === "activity") {
+              const io = node?.resources?.io ?? 0;
+              const rate = io > 0 ? 1 + Math.min(12, Math.log10(1 + io / 1000) * 3) : 0;
+              d.object.material.opacity = d.object.visible ? (rate ? (Math.sin((time / 1000) * rate * Math.PI * 2) > 0 ? 0.95 : 0.15) : 0.1) : 0;
+            }
+            if (d.role === "rotor") d.object.rotation.z = -(time / 1000) * (lit ? 2.4 : 0.5);
+            if (d.role === "sweep" && d.steps) d.object.rotation.y = -(Math.floor(time / (lit ? 260 : 700)) % d.steps) * ((Math.PI * 2) / d.steps);
           }
       }
       renderer.render(world, camera);
@@ -1233,13 +1364,13 @@ export function Twin3D({
 
   useEffect(() => view.current?.show(twin), [twin]);
   useEffect(() => view.current?.focus(), [selected]);
-  useEffect(() => view.current?.focus(), [layers.network, layers.services, layers.storage, layers.logical, displayOptions.labels, displayOptions.addresses, displayOptions.traffic]);
+  useEffect(() => view.current?.focus(), [...LAYER_KEYS.map((k) => layers[k]), displayOptions.labels, displayOptions.addresses, displayOptions.traffic]);
   useEffect(() => {
     if (home) view.current?.home();
   }, [home]);
 
   // The keyboard inside the model: WASD/arrows move the look-at point, Q/E down/up, +/- zoom, Tab/Shift+Tab cycle
-  // the selection, H the whole twin, 1–4 one layer alone, 0 every layer. Keys go to inputs (the chat) first.
+  // the selection, H the whole twin, 1–6 one layer alone, 0 every layer. Keys go to inputs (the chat) first.
   const onKey = (e: React.KeyboardEvent) => {
     const el = e.target as HTMLElement;
     if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
@@ -1248,7 +1379,7 @@ export function Twin3D({
     const handled = () => e.preventDefault();
     if (k === "Tab") (handled(), onNavigate?.(e.shiftKey ? "prev" : "next"));
     else if (k === "h" || k === "H") (handled(), onNavigate?.("home"));
-    else if (k >= "1" && k <= "4" && k.length === 1) (handled(), onLayersChange?.(Object.fromEntries(LAYER_KEYS.map((l, i) => [l, String(i + 1) === k])) as unknown as Layers));
+    else if (k >= "1" && k <= String(LAYER_KEYS.length) && k.length === 1) (handled(), onLayersChange?.(Object.fromEntries(LAYER_KEYS.map((l, i) => [l, String(i + 1) === k])) as unknown as Layers));
     else if (k === "0") (handled(), onLayersChange?.(ALL_LAYERS));
     else if (k === "ArrowLeft" || k === "a" || k === "A") (handled(), c?.pan(-60, 0));
     else if (k === "ArrowRight" || k === "d" || k === "D") (handled(), c?.pan(60, 0));

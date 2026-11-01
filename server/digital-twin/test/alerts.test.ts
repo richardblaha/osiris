@@ -106,6 +106,22 @@ describe("the alerts service and Osiris", () => {
     expect(osirisInvestigator).toBeTypeOf("function");
   });
 
+  it("fetches its token again while osiris-auth restarts, and a new one after the gateway forgets it", async () => {
+    let tokenCalls = 0;
+    let threadCalls = 0;
+    const fetchFn = vi.fn(async (url: unknown) => {
+      const u = String(url);
+      if (u.endsWith("/token")) return ++tokenCalls === 1 ? new Response("restarting", { status: 503 }) : Response.json({ access_token: `svc-${tokenCalls}`, expires_in: 600 });
+      if (u.endsWith("/api/threads")) return ++threadCalls === 1 ? new Response("gone", { status: 401 }) : Response.json({ id: "t2" }, { status: 201 });
+      return new Response("nope", { status: 404 });
+    });
+    const osiris = new OsirisClient({ url: "https://osiris.test", project: "twin", authUrl: "https://auth.test", clientId: "osiris-twin-alerts", clientSecret: "s".repeat(32), fetchFn: fetchFn as unknown as typeof fetch, retryDelaysMs: [0] });
+    await expect(osiris.createThread()).rejects.toThrow(/401/);
+    expect(tokenCalls).toBe(2);
+    expect(await osiris.createThread()).toBe("t2");
+    expect(tokenCalls).toBe(3);
+  });
+
   it("answers only the twin, an alert's conversation through the service, a cluster's alerts", async () => {
     const store = memoryAlertStore();
     const fake = fakeInvestigator();

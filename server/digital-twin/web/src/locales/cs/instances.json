@@ -36,6 +36,7 @@
       "context": "Kontext",
       "clusterName": "Název clusteru ve dvojčeti",
       "cephManagers": "Ceph managery",
+      "externalDisks": "Externí disky (sdX)",
       "clickhouseUrl": "Telemetrie: ClickHouse",
       "clickhouseUser": "Uživatel ClickHouse",
       "clickhousePassword": "Heslo ClickHouse",
@@ -49,6 +50,7 @@
       "context": "Prázdné: aktuální kontext kubeconfigu.",
       "clusterName": "Popisek kořenového dvojčete; prázdné: id dvojčete.",
       "cephManagers": "Stránky Prometheus Ceph managerů (http://host:9283/metrics) oddělené čárkami: pooly a disky ve dvojčeti.",
+      "externalDisks": "Jak jsou k nodům připojené disky mimo interní NVMe/eMMC (sdX Cephu): kreslí se jako USB disky na USB portech, nebo jako interní SATA disky.",
       "clickhouseUrl": "Kam OpenTelemetry Collector clusteru zapisuje logy, metriky a trasy; prázdné: vlastní ClickHouse této služby.",
       "clickhouseUser": "Jen pro čtení; prázdné: default.",
       "clickhouseCluster": "k8s.cluster.name, kterým collector označuje telemetrii; prázdné: vše v tom ClickHouse."
@@ -59,6 +61,10 @@
       "connection": {
         "inCluster": "Cluster, ve kterém tahle služba běží",
         "kubeconfig": "Jiný cluster (kubeconfig)"
+      },
+      "externalDisks": {
+        "usb": "USB",
+        "sata": "SATA (interní)"
       }
     }
   },

@@ -100,16 +100,20 @@
     "layers": "Layers",
     "reset": "Show everything",
     "layer": {
+      "hardware": "Hardware",
       "network": "Network",
       "services": "Network services",
       "storage": "Storage",
-      "logical": "Groupings"
+      "namespaces": "Namespaces",
+      "workloads": "Workloads"
     },
     "layerHelp": {
+      "hardware": "CPUs with their cores, memory, disks, LAN and USB ports; what runs on them",
       "network": "Interfaces, bridges, routers, tunnels and their wiring",
-      "services": "Services, Ingresses and the way from the internet to the pods",
+      "services": "Load balancers, Services, Ingresses and the way from the internet to the pods",
       "storage": "Volumes, Ceph with its pools and disks",
-      "logical": "Namespaces and workloads"
+      "namespaces": "Each namespace a band across the nodes",
+      "workloads": "Deployments, StatefulSets, DaemonSets around their pods"
     },
     "drawing": "Drawing",
     "labels": "Labels",
@@ -120,9 +124,9 @@
     },
     "addresses": "Addresses at the interfaces",
     "traffic": "Moving traffic",
-    "hint": "Keys 1–4 show one layer alone, 0 all of them. Click an Ingress, a Service or a pod: the way of its traffic lights up."
+    "hint": "Keys 1–6 show one layer alone, 0 all of them. Click an Ingress, a Service or a pod: the way of its traffic lights up. Click a container or a CPU: what runs on what lights up."
   },
-  "keysHint": "Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1/2/3 layers.",
+  "keysHint": "Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1–6 layers.",
   "models": {
     "title": "DTDL models",
     "new": "New",
@@ -193,5 +197,21 @@
   },
   "data": {
     "title": "Data ({{profile}})"
+  },
+  "hw": {
+    "cpu": "{{used}} of {{cores}} cores",
+    "cores": "CPU {{value}} cores",
+    "io": "I/O {{rate}}",
+    "estimated": "{{share}} (CPU average)",
+    "bytes": "{{used}} of {{size}}",
+    "endpoints_one": "{{count}} endpoint",
+    "endpoints_other": "{{count}} endpoints",
+    "bus": {
+      "nvme": "NVMe",
+      "sata": "SATA",
+      "usb": "USB",
+      "mmc": "eMMC",
+      "unknown": "Disk"
+    }
   }
 }

@@ -26,6 +26,13 @@ const schema = z
     // (introspects their tokens) with GATEWAY_CLIENT_SECRET. Empty = none.
     WEB_ORIGINS: list,
     GATEWAY_CLIENT_SECRET: z.string().min(32).optional(),
+    // More apps whose tokens osiris-gateway accepts (comma-separated, e.g. digital-twin,osiris-twin-alerts): added to
+    // its app at every start, never removed, so a client calling Osiris with its users' tokens isn't refused.
+    GATEWAY_ACCEPTS: z
+      .string()
+      .default("")
+      .transform((v) => v.split(",").map((s) => s.trim()).filter(Boolean))
+      .pipe(z.array(z.string().regex(/^[a-z0-9][a-z0-9._-]{0,63}$/))),
 
     // Signs ID tokens: an EC P-256 private key (PEM). `pnpm --filter @osiris/platform gen-keys` makes one.
     AUTH_SIGNING_KEY: pem.optional(),

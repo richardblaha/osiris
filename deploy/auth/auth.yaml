@@ -51,6 +51,8 @@ spec:
             - { name: ADMIN_GROUP, value: admin }
             # Osiris's apps (osiris-web/-cli/-vscode/-gateway), registered at startup when missing; edited at /admin after.
             - { name: WEB_ORIGINS, value: https://osiris.k6labs.cz }
+            # Apps calling Osiris with their users' tokens: the digital twin's chat and its alerting (service account).
+            - { name: GATEWAY_ACCEPTS, value: "digital-twin,osiris-twin-alerts" }
             - { name: MAIL_FROM, value: "Osiris <auth@k6labs.cz>" }
             - { name: GEOIP_AUTO_UPDATE, value: "false" }
             # Traefik (pods) is the trusted proxy. Its service SNATs (externalTrafficPolicy: Cluster), so the last hop is

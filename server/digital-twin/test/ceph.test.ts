@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { cephState, parsePrometheus, readCeph } from "../src/sources/kubernetes/ceph.ts";
 import { clusterGraph } from "../src/sources/kubernetes/graph.ts";
+import { kubernetesResources } from "../src/sources/kubernetes/source.ts";
 import { dtdlModel, MODEL } from "../src/sources/kubernetes/models.ts";
 import { toRelationship } from "../src/twin.ts";
 import { interfaceErrors, relationshipErrors, twinErrors, type DigitalTwin, type DtdlInterface } from "@osiris/shared/dtdl.ts";
@@ -30,6 +31,7 @@ describe("Ceph from its manager's metrics", () => {
   it("reads health, capacity, the OSDs with their disks and the pools", () => {
     expect(state).toMatchObject({ health: 1, version: "19.2.3", size: 2855314841600, used: 231001784320 });
     expect(state.osds[0]).toMatchObject({ id: 7, host: "n2", device: "/dev/sdb", model: "ST500LM0 00-1EJ162 18A2", dbDevice: "/dev/dm-1", deviceClass: "hdd", up: true, in: true });
+    expect(state.osds[0]!.devices).toEqual({ nvme0n1: "SAMSUNG_X", sdb: "ST500LM0_00-1EJ162_18A2" });
     expect(state.osds[1]).toMatchObject({ id: 9, up: false });
     expect(state.pools).toEqual([{ id: 2, name: "microk8s-rbd0", stored: 4600000000, maxAvailable: 979000000000 }]);
   });
@@ -41,11 +43,11 @@ describe("Ceph from its manager's metrics", () => {
     expect(await readCeph(["http://a/metrics"], fetchFn)).toBeUndefined();
   });
 
-  it("puts Ceph in the cluster, its pools in it and each disk in its node; a pool holds the claims on it", () => {
+  it("puts Ceph in the cluster, its pools in it and each OSD on its node's disk; a pool holds the claims on it", () => {
     const g = clusterGraph({
       clusterName: "c",
       namespaces: [{ metadata: { name: "db" } }],
-      nodes: [{ metadata: { name: "n2" }, status: { addresses: [{ type: "InternalIP", address: "192.168.0.242" }] } }],
+      nodes: [{ metadata: { name: "n2" }, status: { addresses: [{ type: "InternalIP", address: "192.168.0.242" }], capacity: { cpu: "4", memory: "6498908Ki" } } }],
       pods: [],
       pvcs: [{ metadata: { name: "data", namespace: "db" }, spec: { volumeName: "pv-1" }, status: { phase: "Bound" } }],
       pvs: [{ metadata: { name: "pv-1" }, spec: { csi: { driver: "rbd", volumeAttributes: { pool: "microk8s-rbd0" } } } }],
@@ -56,7 +58,18 @@ describe("Ceph from its manager's metrics", () => {
     const id = (model: string, name: string) => g.twins.find((t) => t.$metadata.$model === model && t.name === name)!.$dtId;
     const has = (name: string, from: string, to: string) => expect(g.relationships).toContainEqual({ name, source: from, target: to });
     has("contains", "k8s:c", id(MODEL.Ceph, "Ceph"));
-    has("contains", "k8s:c/node/n2", id(MODEL.CephOsd, "osd.7"));
+    // The OSD stands on its USB disk, plugged into a USB port of the node; its DB is on the internal NVMe.
+    const sdb = "k8s:c/node/n2/hw/disk/sdb";
+    const nvme = "k8s:c/node/n2/hw/disk/nvme0n1";
+    has("contains", "k8s:c/node/n2", sdb);
+    has("contains", sdb, id(MODEL.CephOsd, "osd.7"));
+    has("attaches", "k8s:c/node/n2/hw/usb/1", sdb);
+    has("dbOn", id(MODEL.CephOsd, "osd.7"), nvme);
+    expect(g.twins.find((t) => t.$dtId === sdb)).toMatchObject({ bus: "usb", internal: false, model: "ST500LM0 00-1EJ162", serial: "18A2", device: "/dev/sdb" });
+    expect(g.twins.find((t) => t.$dtId === nvme)).toMatchObject({ bus: "nvme", internal: true, model: "SAMSUNG", serial: "X", otelResource: { "hw.rootfs": "true", device: "nvme0n1" } });
+    // Its CPU with four cores, its memory.
+    expect(g.relationships.filter((r) => r.source === "k8s:c/node/n2/hw/cpu")).toHaveLength(4);
+    expect(g.twins.find((t) => t.$dtId === "k8s:c/node/n2/hw/memory")).toMatchObject({ capacity: 6498908 * 1024 });
     // A disk of a host the cluster doesn't know stays in Ceph.
     has("contains", id(MODEL.Ceph, "Ceph"), id(MODEL.CephOsd, "osd.9"));
     has("contains", id(MODEL.Ceph, "Ceph"), id(MODEL.CephPool, "microk8s-rbd0"));
@@ -70,5 +83,48 @@ describe("Ceph from its manager's metrics", () => {
     const twins = new Map(g.twins.map((t) => [t.$dtId, t as DigitalTwin]));
     for (const t of twins.values()) expect(twinErrors(t, models)).toEqual([]);
     for (const r of g.relationships.map(toRelationship)) expect(relationshipErrors(r, twins, models)).toEqual([]);
+  });
+});
+
+describe("the hardware's and the workloads' readings", () => {
+  it("maps kubeletstats and hostmetrics to cores, CPU, memory, disks and containers; a core without its own is estimated", async () => {
+    const g = clusterGraph({
+      clusterName: "c",
+      namespaces: [{ metadata: { name: "web" } }],
+      nodes: ["n1", "n2"].map((name) => ({ metadata: { name }, status: { capacity: { cpu: "2", memory: "4Gi" } } })),
+      pods: [{ metadata: { name: "p", namespace: "web" }, spec: { nodeName: "n1", containers: [{ name: "app" }] }, status: { phase: "Running", containerStatuses: [{ name: "app", ready: true, restartCount: 0, image: "x" }] } }],
+      replicasets: [],
+      version: null,
+      ceph: { ...cephState(parsePrometheus(METRICS))!, osds: [{ ...cephState(parsePrometheus(METRICS))!.osds[0]!, host: "n1" }] },
+    });
+    const k = (...v: string[]) => v.join("\u0000");
+    const calls: { metric: string; by?: unknown }[] = [];
+    const reader = {
+      latest: async (metric: string, _attributes: string[], _at?: number, by?: unknown) => {
+        calls.push({ metric, by });
+        const values: Record<string, [string, number][]> = {
+          "k8s.node.cpu.usage": [[k("n1"), 1], [k("n2"), 0.5]],
+          "system.cpu.utilization": [[k("n1", "cpu0"), 0.25], [k("n1", "cpu1"), 0.75]],
+          "k8s.node.memory.working_set": [[k("n1"), 2 ** 31]],
+          "k8s.node.filesystem.usage": [[k("n1"), 40]],
+          "k8s.node.filesystem.capacity": [[k("n1"), 100]],
+          "container.cpu.usage": [[k("web", "p", "app"), 0.12]],
+          "container.memory.working_set": [[k("web", "p", "app"), 3e8]],
+        };
+        return new Map(values[metric] ?? []);
+      },
+      rates: async (metric: string) => new Map(metric === "system.disk.io" ? [[k("n1", "sdb"), 5e6]] : []),
+    };
+    const r = await kubernetesResources(reader, g.twins);
+    expect(r["k8s:c/node/n1/hw/cpu"]).toEqual({ load: 0.5, used: 1, size: 2 });
+    expect(r["k8s:c/node/n1/hw/cpu/core/0"]).toEqual({ load: 0.75 });
+    expect(r["k8s:c/node/n1/hw/cpu/core/1"]).toEqual({ load: 0.25 });
+    // n2's agent sends no per-core metric: its cores show the CPU's average, marked.
+    expect(r["k8s:c/node/n2/hw/cpu/core/0"]).toEqual({ load: 0.25, estimated: true });
+    expect(r["k8s:c/node/n1/hw/memory"]).toEqual({ load: 0.5, used: 2 ** 31, size: 4 * 2 ** 30 });
+    expect(r["k8s:c/node/n1/hw/disk/nvme0n1"]).toEqual({ load: 0.4, used: 40, size: 100 });
+    expect(r["k8s:c/node/n1/hw/disk/sdb"]).toEqual({ io: 5e6 });
+    expect(r["k8s:c/namespace/web/pod/p/container/app"]).toEqual({ cpu: 0.12, memory: 3e8 });
+    expect(calls.find((c) => c.metric === "system.cpu.utilization")?.by).toEqual({ points: ["cpu"], where: { state: "idle" } });
   });
 });

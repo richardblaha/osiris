@@ -53,6 +53,7 @@ export interface TwinAlert {
 }
 import type { DigitalTwin, DigitalTwinRelationship, DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { autoSignIn, getAccessToken } from "./auth.ts";
+import type { Resources } from "./scene.ts";
 
 /** The digital twin the app shows: every twin call goes to `/api/instances/<id>`. */
 let instance = "";
@@ -205,6 +206,7 @@ export const api = {
   errorLogs: async (at: number | null) => (await call<{ value: Record<string, number> }>(`${tw()}/telemetry/errorLogs${at === null ? "" : `?at=${at}`}`)).value,
   storage: async (at: number | null) =>
     (await call<{ value: Record<string, { used: number; fsCapacity: number }> }>(`${tw()}/telemetry/storage${at === null ? "" : `?at=${at}`}`)).value,
+  resources: async (at: number | null) => (await call<{ value: Record<string, Resources> }>(`${tw()}/telemetry/resources${at === null ? "" : `?at=${at}`}`)).value,
   network: async (at: number | null) => (await call<{ value: Record<string, number> }>(`${tw()}/telemetry/network${at === null ? "" : `?at=${at}`}`)).value,
   range: () => call<{ from: number | null; to: number }>(`${tw()}/history/range`),
   history: async (dtId: string, f: { from: number; to: number; limit?: number }) =>

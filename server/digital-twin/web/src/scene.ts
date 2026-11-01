@@ -1,6 +1,25 @@
 import { TWIN_CONTAINS, type TwinStatus } from "@osiris/shared";
 import { BUILTIN_LAYERS, BUILTIN_LOOKS, localized, presentationOf, resolveContents, type DigitalTwin, type DigitalTwinRelationship, type DtdlInterface, type DtdlModelData, type Look, type PresentationLayer } from "@osiris/shared/dtdl.ts";
 import { currentLocale } from "./i18n.ts";
+import type { LayoutRules, Shape } from "./TwinLayout.ts";
+
+/** What a piece of hardware or a workload reads (the API's `resources` telemetry): see the service's `ResourceReading`. */
+export interface Resources {
+  load?: number;
+  used?: number;
+  size?: number;
+  io?: number;
+  cpu?: number;
+  memory?: number;
+  estimated?: boolean;
+}
+
+/** The view's layers, the base aside (it always shows). */
+export type ViewLayer = Exclude<PresentationLayer, "base" | "logical">;
+/** A model's layer as the view switches it: the older `logical` is the namespaces' (a workload's look: the workloads'). */
+export const viewLayer = (layer: PresentationLayer, look: Look): ViewLayer | "base" => (layer === "logical" ? (look === "workload" ? "workloads" : "namespaces") : layer);
+/** The looks of a machine's parts: they stand on its floor (a deck under its workloads). */
+export const HARDWARE_LOOKS: ReadonlySet<Look> = new Set(["cpu", "memory", "drive"]);
 
 /** A twin in the view: the twin itself, its model, and its place in the containment tree with rolled-up status. */
 export interface TwinView {
@@ -20,6 +39,8 @@ export interface TwinView {
   network?: number;
   /** The storage's filesystem (its `used` and `fsCapacity` telemetry); undefined without it. */
   storage?: { used: number; fsCapacity: number };
+  /** Its hardware or workload readings (a core's load, a disk's I/O, a container's CPU and memory); undefined without. */
+  resources?: Resources;
   depth: number;
   parent?: TwinView;
   children: TwinView[];
@@ -44,7 +65,7 @@ export interface TwinView {
   labelProp: string;
   /** The layer it is switched with: `presentation.layer`, else its model's built-in one (an interface carrying
    * outside traffic — a LoadBalancer, a public address — is the services'), else base. */
-  layer: PresentationLayer;
+  layer: ViewLayer | "base";
   /** Whether its model's presentation shows it at all (`presentation.visible`, else yes). */
   visible: boolean;
 }
@@ -112,6 +133,7 @@ export function buildScene(
   storage: Record<string, { used: number; fsCapacity: number }>,
   at: number | null,
   filters?: ViewFilters,
+  resources: Record<string, Resources> = {},
 ): TwinScene {
   const modelMap = new Map(models.map((m) => [m.id, m.model]));
   /** The presentation a model's twins are drawn with, resolved over `extends` (fallback: the built-in look). */
@@ -120,15 +142,18 @@ export function buildScene(
     const base = model.replace(/;.*$/, "");
     return { look: p.look ?? BUILTIN_LOOKS[base] ?? ("box" as Look), color: p.color, icon: p.icon, labelProp: p.label ?? "name", layer: p.layer ?? BUILTIN_LAYERS[base] ?? ("base" as PresentationLayer), ownLayer: !!p.layer, visible: p.visible ?? true };
   };
-  /** A twin's layer: its model's, but an interface that carries outside traffic belongs to the network services. */
-  const layerOf = (t: DigitalTwin, l: ReturnType<typeof lookOfModel>): PresentationLayer =>
-    !l.ownLayer && l.layer === "network" && (t.kind === "loadbalancer" || t.kind === "public") ? "services" : l.layer;
+  /** A twin's layer: its model's, but an interface that carries outside traffic belongs to the network services and a
+   * node's network card (its LAN port) to the hardware. */
+  const layerOf = (t: DigitalTwin, l: ReturnType<typeof lookOfModel>): ViewLayer | "base" =>
+    !l.ownLayer && l.layer === "network" && (t.kind === "loadbalancer" || t.kind === "public") ? "services"
+    : !l.ownLayer && l.layer === "network" && t.kind === "physical" ? "hardware"
+    : viewLayer(l.layer, l.look);
   const byId = new Map<string, TwinView>(
     twins.map((t) => {
       const own = statusOf(t);
       const ownErrors = errors[t.$dtId] ?? 0;
       const { ownLayer: _, ...look } = lookOfModel(t.$metadata.$model);
-      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], depth: 0, children: [], ...look, layer: layerOf(t, lookOfModel(t.$metadata.$model)) }];
+      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], resources: resources[t.$dtId], depth: 0, children: [], ...look, layer: layerOf(t, lookOfModel(t.$metadata.$model)) }];
     }),
   );
   for (const r of relationships) {
@@ -330,7 +355,7 @@ export function interfacesOf(scene: Pick<TwinScene, "byId" | "relationships">): 
   const out: [string, string][] = [];
   for (const r of scene.relationships) {
     // Not containment, and not the network's own lines (wires, routing): those are drawn their own way.
-    if ([TWIN_CONTAINS, "connectedTo", "routesTo", "exposes", "servedBy", "hasOsd", "holds"].includes(r.$relationshipName)) continue;
+    if ([TWIN_CONTAINS, "connectedTo", "routesTo", "exposes", "servedBy", "hasOsd", "holds", "dbOn", "runsOn", "attaches"].includes(r.$relationshipName)) continue;
     const a = scene.byId.get(r.$sourceId);
     const b = scene.byId.get(r.$targetId);
     if (!a?.parent || a.parent !== b?.parent) continue;
@@ -350,8 +375,31 @@ const pairsOf = (scene: Pick<TwinScene, "byId" | "relationships">, names: string
 export const wiresOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["connectedTo"]);
 /** Routing: an Ingress to Services and its LoadBalancer, a Service to pods, a LoadBalancer to its Service. */
 export const routingOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["routesTo", "exposes", "servedBy"]);
-/** Storage: a storage cluster to its disks (Ceph's OSDs), a pool to the volume claims it holds. */
-export const storageLinksOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["hasOsd", "holds"]);
+/** Storage: a storage cluster to its disks (Ceph's OSDs), a pool to the volume claims it holds, an OSD to its DB's disk. */
+export const storageLinksOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["hasOsd", "holds", "dbOn"]);
+/** What runs on what: a container on its node's CPU and memory. */
+export const resourceLinksOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["runsOn"]);
+/** Cables: a port to what is plugged into it (a USB disk). */
+export const cablesOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["attaches"]);
+
+/** The solids of the looks with a shape of their own; the rest are boxes (storage leaves cylinders). */
+const SHAPES: Partial<Record<Look, Shape>> = { port: "port", hex: "hex", gate: "gate", ceph: "drum" };
+
+/** The rules the 3D view lays a scene out by: shapes, networks, storage and every kind of line, from its models. */
+export const layoutRules = (twin: TwinScene): LayoutRules => ({
+  networked: (node) => hasNetwork(node, twin.models),
+  storage: (node) => isStorage(node, twin.models),
+  shape: (node) => SHAPES[node.look],
+  portKind: (node) => String(node.twin.kind ?? "veth"),
+  sharesNetwork: (node) => node.look === "container",
+  hardware: (node) => HARDWARE_LOOKS.has(node.look),
+  interfaces: interfacesOf(twin),
+  wires: wiresOf(twin),
+  virtual: routingOf(twin),
+  storageLinks: storageLinksOf(twin),
+  resources: resourceLinksOf(twin),
+  cables: cablesOf(twin),
+});
 
 /**
  * The path traffic takes through a twin, for showing it lit: the routing both ways (an Ingress's Services and their

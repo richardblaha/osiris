@@ -12,6 +12,8 @@ export interface CephOsd {
   device: string;
   model: string;
   dbDevice: string;
+  /** Every device the OSD uses (its data disk, the disk holding its DB), by kernel name, with its id (MODEL_SERIAL). */
+  devices: Record<string, string>;
   up: boolean;
   in: boolean;
   size: number;
@@ -83,7 +85,11 @@ export function cephState(samples: Sample[]): CephState | undefined {
       const disk = disks.get(daemon) ?? {};
       const device = (disk.device ?? "").replace(/^\/dev\//, "");
       // device_ids: "nvme0n1=MODEL_SERIAL,sdb=MODEL_SERIAL"; the data device's.
-      const model = (disk.device_ids ?? "").split(",").find((d) => d.startsWith(`${device}=`))?.split("=")[1] ?? "";
+      const ids = Object.fromEntries((disk.device_ids ?? "").split(",").filter((d) => d.includes("=")).map((d) => d.split("=", 2) as [string, string]));
+      const devices: Record<string, string> = {};
+      for (const name of (disk.devices ?? "").split(",").map((d) => d.trim()).filter(Boolean)) devices[name] = ids[name] ?? "";
+      for (const [name, id] of Object.entries(ids)) devices[name] ??= id;
+      const model = ids[device] ?? "";
       return {
         id: Number(daemon.replace(/^osd\./, "")),
         host: s.labels.hostname ?? "",
@@ -92,6 +98,7 @@ export function cephState(samples: Sample[]): CephState | undefined {
         device: disk.device ?? "",
         model: model.replace(/_/g, " "),
         dbDevice: disk.db_device ?? "",
+        devices,
         up: up.get(daemon) === 1,
         in: inside.get(daemon) === 1,
         size: size.get(daemon) ?? 0,

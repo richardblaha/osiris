@@ -228,6 +228,17 @@ export class Clients {
     return (await this.list()).some((c) => c.type === "web" && c.redirectUris.some((r) => URL.canParse(r) && new URL(r).origin === u.origin));
   }
 
+  /** Lets `id` (an API) introspect the tokens of `apps` too, keeping what it accepts already; the ids added. */
+  async accept(id: string, apps: string[]): Promise<string[]> {
+    const current = await this.get(id);
+    if (!current) return [];
+    const added = [...new Set(apps)].filter((a) => a !== id && !current.acceptsTokensOf.includes(a));
+    if (!added.length) return [];
+    const { createdAt: _c, updatedAt: _u, id: _i, ...settings } = current;
+    await this.update(id, { ...settings, acceptsTokensOf: [...current.acceptsTokensOf, ...added] });
+    return added;
+  }
+
   /** Registers apps that aren't there yet; never changes one that is (admins own them afterwards). */
   async ensure(defaults: { id: string; input: ClientInput; secret?: string }[]): Promise<string[]> {
     const added: string[] = [];

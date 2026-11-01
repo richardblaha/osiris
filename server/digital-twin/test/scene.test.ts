@@ -41,6 +41,7 @@ describe("the twin's view", () => {
       "      app",
       "  n1",
       "    calico",
+      "    CPU",
       "    (db) @osiris",
       "      db-0",
       "        app",
@@ -48,12 +49,17 @@ describe("the twin's view", () => {
       "    lone @obs",
       "      app",
       "    nic",
+      "    RAM",
+      "    system",
       "  n2",
       "    calico",
+      "    CPU",
       "    (db) @osiris",
       "      db-1",
       "        app",
       "    nic",
+      "    RAM",
+      "    system",
     ]);
     expect(scene.bands.map((b) => [b.name, b.dashed, b.parent?.name])).toEqual([
       ["obs", true, "c"],
@@ -146,7 +152,8 @@ describe("the view's presentation and filters", () => {
     };
     const withCustom = buildScene([...models.filter((m) => m.id !== custom["@id"]), { id: custom["@id"], model: custom, uploadTime: "", decommissioned: false }], snapshot.twins.map((t) => ({ ...t, $etag: "", $metadata: { $model: t.$metadata.$model } })), snapshot.relationships.map(toRelationship), {}, {}, {}, null);
     const pod = [...withCustom.byId.values()].find((v) => !v.of && v.model === custom["@id"])!;
-    expect([pod.look, pod.color, pod.labelProp, pod.layer, pod.visible]).toEqual(["hex", "#ff00ff", "name", "logical", true]);
+    // The older single grouping layer reads as the namespaces'.
+    expect([pod.look, pod.color, pod.labelProp, pod.layer, pod.visible]).toEqual(["hex", "#ff00ff", "name", "namespaces", true]);
   });
 
   it("filters: a hidden model hides its twins and their children, a status and a search filter the rest", () => {

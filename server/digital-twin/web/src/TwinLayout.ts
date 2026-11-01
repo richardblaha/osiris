@@ -21,7 +21,7 @@ export interface Box {
 }
 
 /** The view's layer a line belongs to (the display menu switches them with the solids). */
-export type LinkLayer = "base" | "network" | "services" | "storage";
+export type LinkLayer = "base" | "hardware" | "network" | "services" | "storage";
 
 /**
  * A line between two interfaces, both on a solid's surface (a wall, a mantle, a port), never inside one, and always
@@ -31,10 +31,11 @@ export type LinkLayer = "base" | "network" | "services" | "storage";
  * `internet` from the cluster's LoadBalancer to its public address on the globe, `wire` between a node's own
  * interfaces (card, router, bridge, tunnel), `overlay` a VXLAN tunnel between nodes, `interface` between related
  * siblings (a container mounting a volume), `virtual` a Service's or an Ingress's routing (to Services, pods' eth0,
- * from a LoadBalancer), `storage` Ceph to its disks and its pools to the claims they hold.
+ * from a LoadBalancer), `storage` Ceph to its disks and its pools to the claims they hold, `cable` a USB port to the
+ * disk plugged into it (under the floor), `resource` a container down to the CPU and memory of its node.
  */
 export interface Link {
-  kind: "network" | "lan" | "interface" | "internet" | "wire" | "overlay" | "virtual" | "storage";
+  kind: "network" | "lan" | "interface" | "internet" | "wire" | "overlay" | "virtual" | "storage" | "cable" | "resource";
   layer: LinkLayer;
   /** The twin whose load the link carries (network, internet), or the relationship's source. */
   id: string;
@@ -56,10 +57,19 @@ export interface Internet {
 /** The parent id of the links to the internet: they share their own load scale. */
 export const INTERNET = "@internet";
 
+/** A machine's board: a thin plate under its hardware deck (no twin of its own). */
+export interface Board {
+  /** The machine it belongs to. */
+  id: string;
+  center: Vec;
+  size: Vec;
+}
+
 export interface Scene {
   /** Every node's solid, outermost first. */
   boxes: Box[];
   links: Link[];
+  boards: Board[];
   internet: Internet[];
   /** Everything together, to fit the camera. */
   bounds: { center: Vec; size: Vec };
@@ -83,6 +93,12 @@ export interface LayoutRules {
   virtual?: [string, string][];
   /** Storage relations between twins anywhere (Ceph hasOsd, a pool holds a claim). */
   storageLinks?: [string, string][];
+  /** A machine's part (CPU, memory, a disk): on the deck at its floor, under its workloads. */
+  hardware?: (node: TwinView) => boolean;
+  /** What runs on what (a container on its node's CPU and memory). */
+  resources?: [string, string][];
+  /** A port to what is plugged into it (a USB disk). */
+  cables?: [string, string][];
 }
 
 /** What a node's own layout measured: its size, with solids and links relative to its floor center. */
@@ -94,6 +110,8 @@ interface Measured {
   port?: Vec;
   /** Its interfaces that belong outside it (public addresses: on the globe). */
   outside?: TwinView[];
+  /** The boards under hardware decks inside it. */
+  boards?: Board[];
 }
 
 /** The space between siblings: wide between the outer shells (nodes), tight between the innermost (containers). */
@@ -104,7 +122,13 @@ const padAt = (depth: number) => gapAt(depth) * 0.55 + 0.45;
 const roundness = (size: Vec) => Math.min(Math.min(...size) * 0.2, Math.min(...size) * 0.06 + 0.1, 1.2);
 /** A port: a small plate standing out of a wall; a bridge a wider bar, a router a bigger disc. */
 const PORT: Vec = [0.55, 0.55, 0.16];
-const portSize = (kind: string): Vec => (kind === "bridge" ? [1.2, 0.5, 0.16] : kind === "router" ? [0.75, 0.75, 0.16] : PORT);
+const portSize = (kind: string): Vec =>
+  kind === "bridge" ? [1.2, 0.5, 0.16]
+  : kind === "router" ? [0.75, 0.75, 0.16]
+  : kind === "loadbalancer" ? [1.3, 1.3, 0.3]
+  : kind === "usb" ? [0.5, 0.22, 0.16]
+  : kind === "physical" ? [0.6, 0.5, 0.2]
+  : PORT;
 /** The space between two ports side by side on a wall. */
 const PORT_GAP = 0.6;
 /** How far a line leaves a surface before it turns. */
@@ -138,6 +162,12 @@ export function orthogonal(points: Vec[], order: Axis[] = [0, 2, 1]): Vec[] {
 
 /** A leaf's size by its shape: a small cube (or cylinder) at the bottom of the tree, a bigger one higher up. */
 function leafOf(node: TwinView, shape: Shape): Vec {
+  // A machine's parts by what they are: a core a tile, memory a module standing up, a CPU a flat chip, an NVMe disk a
+  // stick, a SATA or USB disk a 2.5" drive.
+  if (node.look === "core") return [0.62, 0.24, 0.62];
+  if (node.look === "memory") return [2.4, 1, 0.34];
+  if (node.look === "cpu") return [1.8, 0.4, 1.8];
+  if (node.look === "drive") return node.twin.bus === "nvme" ? [0.8, 0.16, 2.2] : node.twin.internal === true ? [1.6, 0.4, 2.2] : [1.7, 0.55, 2.4];
   if (shape === "port") return PORT;
   if (shape === "hex") return [1.4, 0.8, 1.4];
   if (shape === "gate") return [2.4, 2, 0.7];
@@ -163,7 +193,7 @@ const backOf = (p: Placed): Vec => [p.at[0], p.at[1] + p.size[1] / 2, p.at[2] - 
 const shapeOf = (node: TwinView, rules: LayoutRules): Shape => rules.shape?.(node) ?? (rules.storage(node) && !node.children.length ? "cylinder" : "box");
 const isPort = (node: TwinView, rules: LayoutRules) => rules.shape?.(node) === "port";
 /** Where a container's own interfaces go on its back wall, left to right: card, router, bridge (the hub), tunnel, the rest. */
-const PORT_ORDER = ["physical", "router", "bridge", "tunnel", "loadbalancer", "veth"];
+const PORT_ORDER = ["physical", "usb", "router", "bridge", "tunnel", "loadbalancer", "veth"];
 /** How wide a row of ports is on a wall. */
 const portsWidth = (ports: TwinView[], rules: LayoutRules) => ports.reduce((n, p) => n + portSize(rules.portKind?.(p) ?? "veth")[0] + PORT_GAP, 0);
 
@@ -279,9 +309,10 @@ function arrange(children: { node: TwinView; m: Measured }[], gap: number): Arra
 }
 
 /** Puts a measured child's solids and links at `at` (its floor center) and remembers where it is and its port. */
-function place(child: TwinView, m: Measured, at: Vec, boxes: Box[], links: Link[], placed: Map<string, Placed & { port?: Vec }>) {
+function place(child: TwinView, m: Measured, at: Vec, boxes: Box[], links: Link[], placed: Map<string, Placed & { port?: Vec }>, boards?: Board[]) {
   for (const b of m.boxes) boxes.push({ ...b, center: shift(b.center, at) });
   for (const l of m.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
+  if (boards) for (const b of m.boards ?? []) boards.push({ ...b, center: shift(b.center, at) });
   placed.set(child.id, { at, size: m.size, shape: m.boxes[0]!.shape, port: m.port && shift(m.port, at) });
 }
 
@@ -324,6 +355,8 @@ function measure(node: TwinView, rules: LayoutRules): Measured {
   const shape = shapeOf(node, rules);
   const ports = node.children.filter((c) => isPort(c, rules));
   const inner = node.children.filter((c) => !isPort(c, rules));
+  if (node.look === "cpu" && inner.length) return measureChip(node, inner, rules);
+  if (node.look === "drive" && inner.length) return measureDrive(node, inner, rules, shape);
   if (!inner.length) {
     const size = leafOf(node, shape);
     const boxes: Box[] = [{ id: node.id, shape, center: [0, size[1] / 2, 0], size, radius: shape === "port" ? 0.08 : roundness(size) }];
@@ -341,6 +374,7 @@ function measure(node: TwinView, rules: LayoutRules): Measured {
 
   const boxes: Box[] = [{ id: node.id, shape, center: [0, size[1] / 2, 0], size, radius: roundness(size) }];
   const links: Link[] = [];
+  const boards: Board[] = [];
   const placed = new Map<string, Placed & { port?: Vec }>();
   // The hub: the node's router on its back wall, halfway between its floor and its children's.
   const hub: Vec = [0, pad * 0.5, -size[2] / 2];
@@ -348,7 +382,7 @@ function measure(node: TwinView, rules: LayoutRules): Measured {
   const mounted = ports.length ? mountPorts(ports, rules.networked(node) ? [0, size[1] / 2, -size[2] / 2] : hub, rules, boxes) : new Map<string, Vec>();
   const own = rules.networked(node) ? mounted.values().next().value : undefined;
   for (const { node: child, m, at: rel } of items) {
-    place(child, m, [rel[0], pad + rel[1], rel[2]], boxes, links, placed);
+    place(child, m, [rel[0], pad + rel[1], rel[2]], boxes, links, placed, boards);
     const p = placed.get(child.id)!;
     if (rules.networked(child)) links.push(networkLink(child.id, node.id, hub, p, gap * 0.45));
     // A pod's containers share its eth0: from it into the pod, along, up and into each one's back.
@@ -359,7 +393,63 @@ function measure(node: TwinView, rules: LayoutRules): Measured {
     }
   }
   addInterfaces(rules, placed, links, node.id, pad);
-  return { size, boxes, links, port: own };
+  return { size, boxes, links, port: own, boards };
+}
+
+/** A CPU: a flat chip with its cores as tiles in a square grid on it. */
+function measureChip(node: TwinView, cores: TwinView[], rules: LayoutRules): Measured {
+  const cell = leafOf(cores[0]!, shapeOf(cores[0]!, rules));
+  const gap = 0.14;
+  const pad = 0.3;
+  const cols = Math.ceil(Math.sqrt(cores.length));
+  const rows = Math.ceil(cores.length / cols);
+  const size: Vec = [cols * (cell[0] + gap) - gap + 2 * pad, cell[1] + 0.2, rows * (cell[2] + gap) - gap + 2 * pad];
+  const boxes: Box[] = [{ id: node.id, shape: "box", center: [0, size[1] / 2, 0], size, radius: 0.08 }];
+  cores.forEach((core, i) => {
+    const x = -size[0] / 2 + pad + (i % cols) * (cell[0] + gap) + cell[0] / 2;
+    const z = -size[2] / 2 + pad + Math.floor(i / cols) * (cell[2] + gap) + cell[2] / 2;
+    boxes.push({ id: core.id, shape: "box", center: [x, 0.1 + cell[1] / 2, z], size: cell, radius: 0.05 });
+  });
+  return { size, boxes, links: [] };
+}
+
+/** A disk with what stores on it (a Ceph OSD): the drive, and its contents standing on top of it. */
+function measureDrive(node: TwinView, inner: TwinView[], rules: LayoutRules, shape: Shape): Measured {
+  const base = leafOf(node, shape);
+  const { inner: footprint, placed: items } = arrange(inner.map((child) => ({ node: child, m: measure(child, rules) })), 0.3);
+  const size: Vec = [Math.max(base[0], footprint[0] + 0.3), base[1], Math.max(base[2], footprint[2] + 0.3)];
+  const boxes: Box[] = [{ id: node.id, shape: "box", center: [0, size[1] / 2, 0], size, radius: Math.min(0.12, roundness(size)) }];
+  const links: Link[] = [];
+  const placed = new Map<string, Placed & { port?: Vec }>();
+  const lift = size[1] + 0.06;
+  for (const { node: child, m, at } of items) place(child, m, [at[0], lift + at[1], at[2]], boxes, links, placed);
+  return { size: [size[0], lift + footprint[1], size[2]], boxes, links };
+}
+
+/** A machine's hardware deck: its CPU, memory and internal disks in a row at the back, its USB disks in front. */
+interface Deck {
+  rows: { items: { node: TwinView; m: Measured }[]; width: number; depth: number }[];
+  width: number;
+  depth: number;
+  height: number;
+}
+const DECK_GAP = 0.5;
+function deckOf(parts: TwinView[], rules: LayoutRules): Deck {
+  const order = (v: TwinView) => (v.look === "cpu" ? 0 : v.look === "memory" ? 1 : v.twin.internal === false ? 3 : 2);
+  const sorted = [...parts].sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+  const rows = [sorted.filter((v) => order(v) < 3), sorted.filter((v) => order(v) === 3)]
+    .filter((r) => r.length)
+    .map((r) => {
+      const items = r.map((node) => ({ node, m: measure(node, rules) }));
+      return { items, width: items.reduce((n, x) => n + x.m.size[0], 0) + DECK_GAP * (items.length - 1), depth: Math.max(...items.map((x) => x.m.size[2])) };
+    });
+  if (!rows.length) return { rows, width: 0, depth: 0, height: 0 };
+  return {
+    rows,
+    width: Math.max(...rows.map((r) => r.width)),
+    depth: rows.reduce((n, r) => n + r.depth, 0) + DECK_GAP * (rows.length - 1),
+    height: Math.max(...rows.flatMap((r) => r.items.map((x) => x.m.size[1]))),
+  };
 }
 
 /** A twin whose contents' contents belong to bands (a cluster: its nodes' pods to namespaces). */
@@ -394,14 +484,20 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const columns = node.children.filter((c) => isColumn(c, rules));
   const loose = node.children.filter((c) => !columns.includes(c) && !isPort(c, rules));
   const keyOf = (v: TwinView) => v.band ?? "";
-  const contents = (holder: TwinView) => holder.children.filter((v) => !isPort(v, rules));
+  const isPart = (v: TwinView) => !!rules.hardware?.(v);
+  const contents = (holder: TwinView) => holder.children.filter((v) => !isPort(v, rules) && !isPart(v));
+  // Each column's hardware deck, on its floor under the bands; every column's deck as high as the highest.
+  const decks = columns.map((c) => deckOf(c.children.filter((v) => !isPort(v, rules) && isPart(v)), rules));
+  const deckH = Math.max(0, ...decks.map((d) => d.height));
+  const deckD = Math.max(0, ...decks.map((d) => d.depth));
+  const deckRise = deckH ? deckH + Math.max(gapAt(node.depth + 1), 0.8) : 0;
   const rows = [...new Set([...columns.flatMap((c) => contents(c).map(keyOf)), ...loose.map(keyOf)])].sort((a, b) => (a === "" ? 1 : b === "" ? -1 : a.localeCompare(b)));
   // Each cell's contents, arranged; the loose column is the last.
   const holders: (TwinView | undefined)[] = [...columns, ...(loose.length ? [undefined] : [])];
   const cells = holders.map((holder) =>
     rows.map((row) => arrange((holder ? contents(holder) : loose).filter((v) => keyOf(v) === row).map((v) => ({ node: v, m: measure(v, rules) })), itemGap)),
   );
-  const colW = holders.map((holder, c) => Math.max(1, portsWidth(holder?.children.filter((v) => isPort(v, rules)) ?? [], rules), ...cells[c]!.map((cell) => cell.inner[0])));
+  const colW = holders.map((holder, c) => Math.max(1, portsWidth(holder?.children.filter((v) => isPort(v, rules)) ?? [], rules), decks[c]?.width ?? 0, ...cells[c]!.map((cell) => cell.inner[0])));
   const rowD = rows.map((_, r) => Math.max(1, ...cells.map((col) => col[r]!.inner[2])));
   const rowH = rows.map((_, r) => Math.max(0, ...cells.map((col) => col[r]!.inner[1])));
 
@@ -419,9 +515,9 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const levelsOf = (count: number) => {
     const per = Math.ceil(rows.length / count);
     const levels = Array.from({ length: count }, (_, l) => rows.map((_, r) => r).slice(l * per, (l + 1) * per)).filter((l) => l.length);
-    const depthIn = Math.max(1, ...levels.map((l) => l.reduce((n, r) => n + rowD[r]!, 0) + rowGap * (l.length - 1)));
+    const depthIn = Math.max(1, deckD, ...levels.map((l) => l.reduce((n, r) => n + rowD[r]!, 0) + rowGap * (l.length - 1)));
     const heights = levels.map((l) => Math.max(0, ...l.map((r) => rowH[r]!)));
-    const heightIn = Math.max(1, heights.reduce((n, h) => n + h, 0) + rowGap * (levels.length - 1));
+    const heightIn = Math.max(1, deckRise + heights.reduce((n, h) => n + h, 0) + rowGap * (levels.length - 1));
     return { levels, heights, depthIn, heightIn };
   };
   let plan = levelsOf(1);
@@ -434,7 +530,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const itemFloor = pad + colPad;
   const rowZ: number[] = [];
   const rowY: number[] = [];
-  let y = itemFloor;
+  let y = itemFloor + deckRise;
   plan.levels.forEach((level, l) => {
     let z = pad + colPad;
     for (const r of level) {
@@ -452,6 +548,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
 
   const boxes: Box[] = [{ id: node.id, shape: shapeOf(node, rules), center: [0, height / 2, 0], size: [width, height, depth], radius: roundness([width, height, depth]) }];
   const links: Link[] = [];
+  const boards: Board[] = [];
   const placed = new Map<string, Placed & { port?: Vec }>();
   const hub: Vec = [0, pad * 0.5, -depth / 2];
   // The container's own interfaces (LoadBalancers) on its back wall, beside the hub; public addresses go outside.
@@ -470,13 +567,34 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
       const card = holder.children.find((v) => isPort(v, rules) && rules.portKind?.(v) === "physical");
       placed.set(holder.id, { at: floor, size, shape: "box", port: card && mounted.get(card.id) });
       if (rules.networked(holder)) links.push(networkLink(holder.id, node.id, hub, placed.get(holder.id)!, pad * 0.45));
+      // Its hardware deck on its floor, rows from the back, each centered across the column; a board under it; the
+      // cables from its ports (USB) to what is plugged in, under the floor and up into the disk's back.
+      const deck = decks[c];
+      if (deck?.rows.length) {
+        const deckX = colX[c]! + colW[c]! / 2;
+        let z = pad + colPad;
+        for (const row of deck.rows) {
+          let x = deckX - row.width / 2;
+          for (const { node: part, m } of row.items) {
+            place(part, m, at(x + m.size[0] / 2, itemFloor, z + row.depth / 2), boxes, links, placed, boards);
+            x += m.size[0] + DECK_GAP;
+          }
+          z += row.depth + DECK_GAP;
+        }
+        boards.push({ id: holder.id, center: at(deckX, itemFloor - 0.04, pad + colPad + deck.depth / 2), size: [deck.width + 0.5, 0.05, deck.depth + 0.5] });
+        for (const [port, part] of rules.cables ?? []) {
+          const from = mounted.get(port);
+          const to = placed.get(part);
+          if (from && to) links.push({ ...networkLink(port, holder.id, from, to, DECK_GAP * 0.45), kind: "cable", layer: "hardware", to: part });
+        }
+      }
     }
     rows.forEach((_, r) => {
       const cell = cells[c]![r]!;
       // The cell's contents centered in it.
       const center = at(colX[c]! + colW[c]! / 2, rowY[r]!, rowZ[r]! + rowD[r]! / 2);
       for (const { node: item, m, at: rel } of cell.placed) {
-        place(item, m, [center[0] + rel[0], rowY[r]! + rel[1], center[2] + rel[2]], boxes, links, placed);
+        place(item, m, [center[0] + rel[0], rowY[r]! + rel[1], center[2] + rel[2]], boxes, links, placed, boards);
         if (rules.networked(item)) links.push(networkLink(item.id, holder?.id ?? node.id, colHub ?? hub, placed.get(item.id)!, Math.min(itemGap, rowGap) * 0.45));
       }
     });
@@ -498,7 +616,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     boxes.push({ id: bandId(node.id, row), shape: "box", center: at((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), size, radius: roundness(size) * 0.5 });
   });
   addInterfaces(rules, placed, links, node.id, pad);
-  return { size: [width, height, depth], boxes, links, outside };
+  return { size: [width, height, depth], boxes, links, outside, boards };
 }
 
 /** Related siblings (a container mounting a claim): over the top of both, at right angles, under the container's
@@ -522,10 +640,11 @@ function addInterfaces(rules: LayoutRules, placed: Map<string, Placed>, links: L
  */
 export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
   const roots = top.map((node) => measure(node, rules));
-  if (!roots.length) return { boxes: [], links: [], internet: [], bounds: { center: [0, 1, 0], size: [4, 2, 4] } };
+  if (!roots.length) return { boxes: [], links: [], boards: [], internet: [], bounds: { center: [0, 1, 0], size: [4, 2, 4] } };
   const gap = gapAt(0) * 2;
   const boxes: Box[] = [];
   const links: Link[] = [];
+  const boards: Board[] = [];
   const internet: Internet[] = [];
   let x = 0;
   top.forEach((node, i) => {
@@ -533,6 +652,7 @@ export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
     const at: Vec = [x + r.size[0] / 2, 0, 0];
     for (const b of r.boxes) boxes.push({ ...b, center: shift(b.center, at) });
     for (const l of r.links) links.push({ ...l, path: l.path.map((p) => shift(p, at)) });
+    for (const b of r.boards ?? []) boards.push({ ...b, center: shift(b.center, at) });
     // Behind the twin, up in the air: the internet; its public addresses on the globe, facing the twin, each reached
     // from the LoadBalancers on the back wall (else from the hub).
     if (r.links.some((l) => l.kind === "network")) {
@@ -615,11 +735,22 @@ export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
     });
   relate(rules.virtual ?? [], "virtual");
   relate(rules.storageLinks ?? [], "storage");
+  // What runs on what: from a container's floor straight down to just over the hardware, across, and onto the part's
+  // top (its node's CPU or memory).
+  (rules.resources ?? []).forEach(([a, b], k) => {
+    const ba = byId.get(a);
+    const bb = byId.get(b);
+    if (!ba || !bb) return;
+    const from: Vec = [ba.center[0], ba.center[1] - ba.size[1] / 2, ba.center[2]];
+    const to = topOf(placedOf(bb));
+    const lane = to[1] + 0.35 + 0.05 * (k % 6);
+    links.push({ kind: "resource", layer: "hardware", id: a, to: b, parent: a, path: orthogonal([from, [from[0], lane, from[2]], [to[0], lane, to[2]], to], [1, 0, 2]) });
+  });
 
   const minX = Math.min(...boxes.map((b) => b.center[0] - b.size[0] / 2));
   const maxX = Math.max(...boxes.map((b) => b.center[0] + b.size[0] / 2));
   const minZ = Math.min(...boxes.map((b) => b.center[2] - b.size[2] / 2), ...internet.map((n) => n.center[2] - n.radius));
   const maxZ = Math.max(...boxes.map((b) => b.center[2] + b.size[2] / 2));
   const maxY = Math.max(...boxes.map((b) => b.center[1] + b.size[1] / 2), ...internet.map((n) => n.center[1] + n.radius));
-  return { boxes, links, internet, bounds: { center: [(minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxY, maxZ - minZ] } };
+  return { boxes, links, boards, internet, bounds: { center: [(minX + maxX) / 2, maxY / 2, (minZ + maxZ) / 2], size: [maxX - minX, maxY, maxZ - minZ] } };
 }

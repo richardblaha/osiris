@@ -66,6 +66,26 @@ data:
         # of each PVC. The API lookup finds a claim's volume (the ClusterRole may get pvcs and pvs).
         extra_metadata_labels: [k8s.volume.type]
         k8s_api_config: { auth_type: serviceAccount }
+      # The node's hardware the digital twin draws: each core's busy share (system.cpu.utilization by cpu and state)
+      # and each disk's bytes read and written (system.disk.io by device: the NVMe, the USB disks under Ceph). Only
+      # the host's /proc and /sys are mounted, read-only, under /hostfs.
+      hostmetrics:
+        collection_interval: 60s
+        root_path: /hostfs
+        scrapers:
+          cpu:
+            metrics:
+              system.cpu.time: { enabled: false }
+              system.cpu.utilization: { enabled: true }
+          disk:
+            include: { devices: ["nvme[0-9]+n[0-9]+", "sd[a-z]+", "mmcblk[0-9]+", "vd[a-z]+"], match_type: regexp }
+            metrics:
+              system.disk.operations: { enabled: false }
+              system.disk.io_time: { enabled: false }
+              system.disk.operation_time: { enabled: false }
+              system.disk.merged: { enabled: false }
+              system.disk.pending_operations: { enabled: false }
+              system.disk.weighted_io_time: { enabled: false }
     processors:
       memory_limiter: { check_interval: 1s, limit_percentage: 80, spike_limit_percentage: 20 }
       # The node's own logs: which node.
@@ -104,6 +124,7 @@ data:
         logs: { receivers: [filelog], processors: [memory_limiter, k8sattributes, transform/service, batch], exporters: [otlp/collector] }
         logs/node: { receivers: [filelog/k3s, filelog/syslog], processors: [memory_limiter, resource/node, batch], exporters: [otlp/collector] }
         metrics: { receivers: [kubeletstats], processors: [memory_limiter, k8sattributes, batch], exporters: [otlp/collector] }
+        metrics/host: { receivers: [hostmetrics], processors: [memory_limiter, resource/node, batch], exporters: [otlp/collector] }
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -116,7 +137,7 @@ spec:
     metadata:
       labels: { app: otel-agent }
       annotations:
-        config/version: "5"
+        config/version: "6"
     spec:
       serviceAccountName: otel-collector
       tolerations:
@@ -142,8 +163,14 @@ spec:
           volumeMounts:
             - { name: config, mountPath: /conf }
             - { name: logs, mountPath: /var/log, readOnly: true }
+            - { name: proc, mountPath: /hostfs/proc, readOnly: true }
+            - { name: sys, mountPath: /hostfs/sys, readOnly: true }
       volumes:
         - name: config
           configMap: { name: otel-agent }
         - name: logs
           hostPath: { path: /var/log }
+        - name: proc
+          hostPath: { path: /proc }
+        - name: sys
+          hostPath: { path: /sys }

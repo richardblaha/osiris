@@ -10,6 +10,15 @@ export const POD_ATTR = "k8s.pod.name";
 export const CONTAINER_ATTR = "k8s.container.name";
 export const NODE_ATTR = "k8s.node.name";
 export const PVC_ATTR = "k8s.persistentvolumeclaim.name";
+/**
+ * A node's hardware twins: the node's attribute plus the component (cpu, memory, disk, port), and hostmetrics' own
+ * point attributes where they name one part (a core's `cpu`, a disk's `device`); the root filesystem's disk is marked.
+ * Never the node's attribute alone, which names the node's own telemetry.
+ */
+export const HW_ATTR = "hw.component";
+export const CPU_ATTR = "cpu";
+export const DEVICE_ATTR = "device";
+export const ROOT_FS_ATTR = "hw.rootfs";
 
 /** A pod's phase, lowercased the way the twin's DTDL enum spells it. */
 const phase = (pod: PodObject) => (pod.status?.phase ?? "unknown").toLowerCase();
@@ -59,7 +68,27 @@ export interface ClusterInput {
   ingressRoutes?: IngressRouteObject[];
   /** The addresses the internet reaches the cluster at (its Ingress hosts' DNS), host by address. */
   publicAddresses?: Record<string, string[]>;
+  /** How the nodes' disks other than the internal ones are attached (Ceph's sdX on mini PCs: USB). Default usb. */
+  externalBus?: "usb" | "sata";
   version: string | null;
+}
+
+/** A Kubernetes quantity in base units: 4, 3500m, 6498908Ki, 100Gi, 1e3. NaN when it isn't one. */
+export function quantity(q: string | undefined): number {
+  const m = /^([0-9.]+(?:e[0-9]+)?)([a-zA-Z]*)$/.exec((q ?? "").trim());
+  if (!m) return NaN;
+  const units: Record<string, number> = { "": 1, m: 1e-3, k: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15, Ki: 2 ** 10, Mi: 2 ** 20, Gi: 2 ** 30, Ti: 2 ** 40, Pi: 2 ** 50 };
+  return m[2]! in units ? Number(m[1]) * units[m[2]!]! : NaN;
+}
+
+/** A disk's bus by its kernel name: nvme0n1 NVMe, mmcblk0 eMMC, sdX the external bus (USB on mini PCs), else unknown. */
+export const busOf = (device: string, external: "usb" | "sata"): string =>
+  /^nvme/.test(device) ? "nvme" : /^mmcblk/.test(device) ? "mmc" : /^(sd|hd)[a-z]+$/.test(device) ? external : /^(vd|xvd)/.test(device) ? "unknown" : "unknown";
+
+/** A device id as Ceph spells it (MODEL_SERIAL, spaces as underscores): its model and serial number. */
+export function modelSerial(id: string): { model: string; serial: string } {
+  const at = id.lastIndexOf("_");
+  return at > 0 ? { model: id.slice(0, at).replace(/_/g, " ").trim(), serial: id.slice(at + 1) } : { model: id.replace(/_/g, " "), serial: "" };
 }
 
 /** What a pod belongs to: a Deployment (through its ReplicaSet), another owning kind, or itself when ownerless. */
@@ -72,6 +101,15 @@ function owner(pod: PodObject, deploymentOf: Map<string, string>): { kind: strin
   }
   return { kind: ownerRef.kind, name: ownerRef.name };
 }
+
+/** The CPU, memory, disks and USB ports of a node, by the ids `hardware` gives them. */
+export const hardwareIds = (nodeId: string) => ({
+  cpu: `${nodeId}/hw/cpu`,
+  core: (i: number) => `${nodeId}/hw/cpu/core/${i}`,
+  memory: `${nodeId}/hw/memory`,
+  disk: (device: string) => `${nodeId}/hw/disk/${encodeURIComponent(device)}`,
+  usb: (n: number) => `${nodeId}/hw/usb/${n}`,
+});
 
 const STATUSES: TwinStatus[] = ["ok", "warn", "error"];
 const worst = (statuses: TwinStatus[]): TwinStatus => statuses.reduce((a, b) => (STATUSES.indexOf(b) > STATUSES.indexOf(a) ? b : a), "ok");
@@ -127,7 +165,21 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
       { [NODE_ATTR]: node.metadata.name },
     );
     link(CONTAINS, root, id);
+    // Its CPU with the cores, its memory.
+    const hw = hardwareIds(id);
+    const cores = Math.max(0, Math.floor(quantity(node.status?.capacity?.cpu)) || 0);
+    const otel = (component: string, more: Record<string, string> = {}) => ({ [NODE_ATTR]: node.metadata.name, [HW_ATTR]: component, ...more });
+    add(hw.cpu, MODEL.Cpu, "CPU", "ok", { cores }, otel("cpu"));
+    link(CONTAINS, id, hw.cpu);
+    for (let i = 0; i < cores; i++) {
+      add(hw.core(i), MODEL.CpuCore, `cpu${i}`, "ok", { core: i }, otel("cpu", { [CPU_ATTR]: `cpu${i}` }));
+      link(CONTAINS, hw.cpu, hw.core(i));
+    }
+    const memory = quantity(node.status?.capacity?.memory);
+    add(hw.memory, MODEL.Memory, "RAM", "ok", Number.isFinite(memory) ? { capacity: memory } : {}, otel("memory"));
+    link(CONTAINS, id, hw.memory);
   }
+  hardwareDisks(input, { nodeIds, add, link, cluster });
 
   // Volume claims: each a twin, in the first pod (by name) that mounts it, else in the cluster.
   const claimIds = new Map<string, string>();
@@ -230,6 +282,8 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
           link(CONTAINS, podId, containerId);
           const mounted = new Set((pod.spec.containers?.find((s) => s.name === c.name)?.volumeMounts ?? []).flatMap((m) => (claimOf.has(m.name) ? [claimIds.get(claimOf.get(m.name)!)] : [])));
           for (const claim of mounted) if (claim) link("mounts", containerId, claim);
+          const nodeId = pod.spec.nodeName && nodeIds.get(pod.spec.nodeName);
+          if (nodeId) (link("runsOn", containerId, hardwareIds(nodeId).cpu), link("runsOn", containerId, hardwareIds(nodeId).memory));
         }
         for (const key of new Set(claimOf.values())) if (claimIds.has(key) && claimHolder.get(key) === podId) link(CONTAINS, podId, claimIds.get(key)!);
       }
@@ -271,8 +325,14 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
         // The disk's own bytes where the manager reports them, else the cluster's average fill.
         ...(o.size > 0 ? { size: o.size, used: o.used, fill: o.used / o.size } : { fill }),
       });
-      link(CONTAINS, nodeIds.get(o.host) ?? cephId, id);
+      // On the node's disk it stores its data on (the disk twin, made by `hardwareDisks`), else in the node, else in Ceph.
+      const nodeId = nodeIds.get(o.host);
+      const device = o.device.replace(/^\/dev\//, "");
+      link(CONTAINS, nodeId ? (device ? hardwareIds(nodeId).disk(device) : nodeId) : cephId, id);
       link("hasOsd", cephId, id);
+      // Its DB: the node's internal disk among its devices.
+      const db = Object.keys(o.devices ?? {}).find((d) => d !== device && busOf(d, "sata") !== "sata");
+      if (nodeId && db) link("dbOn", id, hardwareIds(nodeId).disk(db));
     }
     // A claim's pool: its volume's CSI attribute.
     const poolOfVolume = new Map((input.pvs ?? []).flatMap((pv) => (pv.spec?.csi?.volumeAttributes?.pool ? [[pv.metadata.name, pv.spec.csi.volumeAttributes.pool] as const] : [])));
@@ -294,6 +354,61 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
   const held = new Set(relationships.filter((r) => r.name === CONTAINS).map((r) => r.target));
   for (const id of claimIds.values()) if (!held.has(id)) link(CONTAINS, root, id);
   return { twins, relationships };
+}
+
+/**
+ * The nodes' disks and USB ports. Ceph's OSDs tell the devices: each OSD's data disk (sdX on a mini PC: a USB disk,
+ * one port each) and the other devices it uses (its DB on the internal NVMe). A node Ceph knows nothing of gets one
+ * internal disk standing for its root filesystem. The disks are named by their kernel device, with Ceph's model and
+ * serial number.
+ */
+function hardwareDisks(
+  input: ClusterInput,
+  g: {
+    cluster: string;
+    nodeIds: Map<string, string>;
+    add: (id: string, model: string, name: string, status: TwinStatus, properties: Record<string, unknown>, otelResource?: Record<string, string>) => void;
+    link: (name: string, source: string, target: string) => void;
+  },
+) {
+  const external = input.externalBus ?? "usb";
+  for (const node of input.nodes) {
+    const nodeId = g.nodeIds.get(node.metadata.name);
+    if (!nodeId) continue;
+    const hw = hardwareIds(nodeId);
+    const otel = (component: string, more: Record<string, string> = {}) => ({ [NODE_ATTR]: node.metadata.name, [HW_ATTR]: component, ...more });
+    const osds = (input.ceph?.osds ?? []).filter((o) => o.host === node.metadata.name).sort((a, b) => a.device.localeCompare(b.device));
+    const disks = new Map<string, { id: string; size?: number; osd?: boolean }>();
+    for (const o of osds) {
+      const device = o.device.replace(/^\/dev\//, "");
+      if (device) disks.set(device, { id: o.devices?.[device] ?? "", size: o.size > 0 ? o.size : undefined, osd: true });
+      for (const [d, id] of Object.entries(o.devices ?? {})) if (!disks.has(d)) disks.set(d, { id });
+    }
+    const internal = [...disks.keys()].filter((d) => !disks.get(d)!.osd || busOf(d, external) === "nvme" || busOf(d, external) === "mmc");
+    // The root filesystem's disk: the first internal one, else a stand-in.
+    if (!internal.length) disks.set("system", { id: "" }), internal.push("system");
+    let usb = 0;
+    for (const [device, d] of [...disks].sort(([a], [b]) => a.localeCompare(b))) {
+      const bus = device === "system" ? "unknown" : busOf(device, external);
+      const isInternal = internal.includes(device);
+      const { model, serial } = modelSerial(d.id);
+      g.add(
+        hw.disk(device),
+        MODEL.Disk,
+        device,
+        "ok",
+        { device: device === "system" ? "" : `/dev/${device}`, model, serial, bus, internal: isInternal, ...(d.size ? { size: d.size } : {}) },
+        otel("disk", { [DEVICE_ATTR]: device, ...(device === internal[0] ? { [ROOT_FS_ATTR]: "true" } : {}) }),
+      );
+      g.link(CONTAINS, nodeId, hw.disk(device));
+      if (bus === "usb") {
+        const port = hw.usb(++usb);
+        g.add(port, MODEL.Port, `usb${usb}`, "ok", { kind: "usb" }, otel("port"));
+        g.link(CONTAINS, nodeId, port);
+        g.link("attaches", port, hw.disk(device));
+      }
+    }
+  }
 }
 
 /** Traefik's match rule's hosts and path prefixes: Host(`a`) && PathPrefix(`/b`). */

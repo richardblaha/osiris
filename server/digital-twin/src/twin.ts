@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { DigitalTwinRelationship, DtdlInterface } from "@osiris/shared/dtdl.ts";
 import { TWIN_CONTAINS } from "@osiris/shared";
+import type { ResourceReading } from "./state.ts";
+import type { TelemetryReader } from "./telemetry.ts";
 
 export { TWIN_CONTAINS as CONTAINS };
 
@@ -50,6 +52,12 @@ export interface TwinSource {
    * bytes, for the twins whose `otelResource` holds exactly these attributes (a claim by namespace and name).
    */
   storageMetrics?: { capacity: string; available: string; attributes: string[] };
+  /**
+   * The hardware's and the workloads' readings (a core's load, a node's memory, a disk's fill and I/O, a container's
+   * CPU and memory) for the snapshot's twins: the source maps its own metrics, since they don't name twins one to one
+   * (a core is a point attribute, a load a quotient of two metrics). None: no readings.
+   */
+  resources?(telemetry: TelemetryReader, twins: SourceTwin[], at?: number): Promise<Record<string, ResourceReading>>;
 }
 
 /** A relationship's id (ADT's `$relationshipId`, unique per source twin): its name and its target, hashed. */

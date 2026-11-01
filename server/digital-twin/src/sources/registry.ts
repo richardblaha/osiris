@@ -80,6 +80,7 @@ export const kubernetesType: SourceType = {
     { name: "context", kind: "text", when: { field: "connection", value: "kubeconfig" } },
     { name: "clusterName", kind: "text" },
     { name: "cephManagers", kind: "list" },
+    { name: "externalDisks", kind: "select", options: ["usb", "sata"], default: "usb" },
     { name: "clickhouseUrl", kind: "url" },
     { name: "clickhouseUser", kind: "text" },
     { name: "clickhousePassword", kind: "text", secret: true },
@@ -90,6 +91,7 @@ export const kubernetesType: SourceType = {
     context: optionalText(200),
     clusterName: optionalText(100),
     cephManagers: httpUrls,
+    externalDisks: z.enum(["usb", "sata"]).default("usb"),
     clickhouseUrl: z.string().trim().pipe(httpUrl).default(""),
     clickhouseUser: optionalText(100),
     clickhouseCluster: optionalText(100),
@@ -107,7 +109,7 @@ export const kubernetesType: SourceType = {
       ? new ClickHouse(settings.clickhouseUrl, settings.clickhouseUser || "default", secrets.clickhousePassword ?? "", defaults.fetchFn)
       : defaults.clickhouse;
     return {
-      source: kubernetesSource(kube, settings.clusterName || id, { cephManagers: list(settings.cephManagers), fetchFn: defaults.fetchFn }),
+      source: kubernetesSource(kube, settings.clusterName || id, { cephManagers: list(settings.cephManagers), externalBus: settings.externalDisks === "sata" ? "sata" : "usb", fetchFn: defaults.fetchFn }),
       telemetry: clickhouse ? new Telemetry(clickhouse, settings.clickhouseCluster || undefined) : undefined,
     };
   },

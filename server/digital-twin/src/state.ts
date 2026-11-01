@@ -9,7 +9,28 @@ export interface TelemetryState {
   errorLogs: Record<string, number>;
   network: Record<string, number>;
   storage: Record<string, { used: number; fsCapacity: number }>;
+  /** Hardware and what runs on it: loads, bytes, I/O, a container's CPU and memory (`ResourceReading`). */
+  resources: Record<string, ResourceReading>;
 }
+
+/**
+ * What the view draws of a piece of hardware or a workload: a share from 0 to 1 (a core's or a CPU's busy time,
+ * memory or a filesystem used), bytes used of a size, bytes per second through a disk, and a container's or a pod's CPU
+ * (cores) and memory (bytes). `estimated`: a stand-in (a core shown at its CPU's average).
+ */
+export interface ResourceReading {
+  load?: number;
+  used?: number;
+  size?: number;
+  io?: number;
+  cpu?: number;
+  memory?: number;
+  estimated?: boolean;
+}
+
+/** The telemetry kinds whose values are objects (JSON in the cache), not numbers. */
+const OBJECT_KINDS = new Set<TelemetryKind>(["storage", "resources"]);
+export const TELEMETRY_KINDS = ["errorLogs", "network", "storage", "resources"] as const satisfies readonly TelemetryKind[];
 
 export type TelemetryKind = keyof TelemetryState;
 
@@ -98,7 +119,7 @@ export function redisStateStore(client: RedisClient, prefix: string): TwinStateS
       if (twins.length) swap.hSet(twinsTmp, Object.fromEntries(twins.map((t) => [t.$dtId, JSON.stringify(t)])));
       if (relationships.length) swap.hSet(relsTmp, Object.fromEntries(relationships.map((r) => [r.$relationshipId, JSON.stringify(r)])));
       await swap.rename(twinsTmp, key(instance, "twins")).rename(relsTmp, key(instance, "relationships")).set(key(instance, "synced_at"), String(at)).exec();
-      for (const kind of ["errorLogs", "network", "storage"] as const) {
+      for (const kind of TELEMETRY_KINDS) {
         const k = key(instance, `telemetry:${kind}`);
         const values = telemetry[kind] as Record<string, unknown>;
         const fields = Object.fromEntries(Object.entries(values).map(([id, v]) => [id, typeof v === "number" ? String(v) : JSON.stringify(v)]));
@@ -125,7 +146,7 @@ export function redisStateStore(client: RedisClient, prefix: string): TwinStateS
     async telemetry(instance, kind) {
       const all = await client.hGetAll(key(instance, `telemetry:${kind}`));
       return Object.fromEntries(
-        Object.entries(all).map(([id, v]) => [id, kind === "storage" ? (JSON.parse(v) as { used: number; fsCapacity: number }) : Number(v)]),
+        Object.entries(all).map(([id, v]) => [id, OBJECT_KINDS.has(kind) ? (JSON.parse(v) as object) : Number(v)]),
       ) as TelemetryState[TelemetryKind];
     },
     async syncedAt(instance) {
@@ -153,7 +174,7 @@ export function redisStateStore(client: RedisClient, prefix: string): TwinStateS
       return (reply ?? []).flatMap((s) => s.messages.map((m) => twinEventOf(m.id, m.message)));
     },
     async deleteInstance(instance) {
-      await client.del([key(instance, "twins"), key(instance, "relationships"), key(instance, "synced_at"), ...(["errorLogs", "network", "storage"] as const).map((k) => key(instance, `telemetry:${k}`))]);
+      await client.del([key(instance, "twins"), key(instance, "relationships"), key(instance, "synced_at"), ...TELEMETRY_KINDS.map((k) => key(instance, `telemetry:${k}`))]);
     },
   };
 }
@@ -192,7 +213,7 @@ export function memoryStateStore(now: () => number = Date.now): TwinStateStore &
     },
     async telemetry(instance, kind) {
       const all = telemetry.get(instance)?.get(kind) ?? new Map<string, string>();
-      return Object.fromEntries([...all.entries()].map(([id, v]) => [id, kind === "storage" ? JSON.parse(v) : Number(v)])) as never;
+      return Object.fromEntries([...all.entries()].map(([id, v]) => [id, OBJECT_KINDS.has(kind) ? JSON.parse(v) : Number(v)])) as never;
     },
     async syncedAt(instance) {
       return synced.get(instance);

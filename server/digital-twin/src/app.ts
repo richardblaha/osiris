@@ -168,6 +168,10 @@ export function createApp(config: Config, options: AppOptions) {
         metrics.forEach((m, i) => valuesByTwin(twins, m.attributes, rates[i]!, out));
         return out;
       }
+      if (kind === "resources") {
+        if (!telemetry || !source?.resources) return {};
+        return await failing(() => source.resources!(telemetry, twins as never, at));
+      }
       const m = source?.storageMetrics;
       if (!telemetry || !m) return {};
       const [capacity, available] = await Promise.all([failing(() => telemetry.latest(m.capacity, m.attributes, at)), failing(() => telemetry.latest(m.available, m.attributes, at))]);
@@ -653,6 +657,12 @@ export function createApp(config: Config, options: AppOptions) {
     .get(`${T}/telemetry/storage`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
       return c.json({ value: await telemetryAt(twinOf(c), "storage", at) });
+    })
+    // The hardware's and the workloads' readings: each core's, CPU's, memory's and disk's load, bytes and I/O, each
+    // container's and pod's CPU and memory (the source maps its own metrics).
+    .get(`${T}/telemetry/resources`, async (c) => {
+      const { at } = parse(atQuery, c.req.query());
+      return c.json({ value: await telemetryAt(twinOf(c), "resources", at) });
     })
     .get(`${T}/facets`, async (c) => {
       const f = parse(rangeQuery.and(z.object({ namespace: text })), c.req.query());

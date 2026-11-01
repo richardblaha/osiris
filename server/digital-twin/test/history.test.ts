@@ -19,7 +19,7 @@ const second = snap([thing("root"), thing("a", { v: 2, status: "warn" })], [["ro
 /** Diffs a snapshot against the last sync's result and writes the after state to the cache, as the sync does. */
 const syncState = async (state: TwinStateStore, instance: string, snapshot: SourceSnapshot, now: number, before?: SyncResult) => {
   const result = diffSnapshots(before && { twins: before.twins, relationships: before.relationships }, snapshot, now);
-  await state.writeSnapshot(instance, result.twins, result.relationships, { errorLogs: {}, network: {}, storage: {} }, now, 60);
+  await state.writeSnapshot(instance, result.twins, result.relationships, { errorLogs: {}, network: {}, storage: {}, resources: {} }, now, 60);
   return result;
 };
 

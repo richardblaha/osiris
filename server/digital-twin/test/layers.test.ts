@@ -3,7 +3,7 @@ import { clusterGraph, type ClusterInput } from "../src/sources/kubernetes/graph
 import { cephState, parsePrometheus, type CephState } from "../src/sources/kubernetes/ceph.ts";
 import { dtdlModel, MODEL } from "../src/sources/kubernetes/models.ts";
 import { toRelationship } from "../src/twin.ts";
-import { buildScene, hasNetwork, interfacesOf, isStorage, routingOf, storageLinksOf, wiresOf, type TwinScene } from "../web/src/scene.ts";
+import { buildScene, layoutRules, type TwinScene } from "../web/src/scene.ts";
 import { layoutTwin, orthogonal } from "../web/src/TwinLayout.ts";
 import { PRESENTATION_CONTEXT, type DtdlInterface } from "@osiris/shared/dtdl.ts";
 
@@ -57,26 +57,13 @@ const sceneOf = (graph: ReturnType<typeof clusterGraph>, extra: DtdlInterface[] 
   return buildScene(models, graph.twins.map((t) => ({ ...t, $etag: "", $metadata: { $model: t.$metadata.$model } })), graph.relationships.map(toRelationship), {}, {}, {}, null);
 };
 /** The layout with the rules the 3D view gives it. */
-const layoutOf = (scene: TwinScene) => {
-  const shapes = { port: "port", hex: "hex", gate: "gate", ceph: "drum" } as const;
-  return layoutTwin(scene.top, {
-    networked: (n) => hasNetwork(n, scene.models),
-    storage: (n) => isStorage(n, scene.models),
-    shape: (n) => shapes[n.look as keyof typeof shapes],
-    portKind: (n) => String(n.twin.kind ?? "veth"),
-    sharesNetwork: (n) => n.look === "container",
-    interfaces: interfacesOf(scene),
-    wires: wiresOf(scene),
-    virtual: routingOf(scene),
-    storageLinks: storageLinksOf(scene),
-  });
-};
+const layoutOf = (scene: TwinScene) => layoutTwin(scene.top, layoutRules(scene));
 const graph = clusterGraph(input);
 const scene = sceneOf(graph);
 const layout = layoutOf(scene);
 
 describe("the view's layers", () => {
-  it("puts each twin in its model's layer: the low-level network, the network services, storage, the groupings", () => {
+  it("puts each twin in its model's layer: hardware, the low-level network, the network services, storage, the groupings", () => {
     const layerOf = (id: string) => scene.byId.get(id)?.layer;
     expect(layerOf("k8s:c/node/n1/if/router")).toBe("network");
     expect(layerOf("k8s:c/namespace/web/pod/site-1/if/eth0")).toBe("network");
@@ -87,7 +74,9 @@ describe("the view's layers", () => {
     expect(layerOf("k8s:c/namespace/web/ingress-ingress/site")).toBe("services");
     expect(layerOf("k8s:c/ceph/ceph")).toBe("storage");
     expect(layerOf("k8s:c/ceph/ceph/osd/0")).toBe("storage");
-    expect(scene.bands.every((b) => b.layer === "logical")).toBe(true);
+    expect(scene.bands.every((b) => b.layer === "namespaces")).toBe(true);
+    expect(layerOf("k8s:c/node/n1/hw/cpu")).toBe("hardware");
+    expect(layerOf("k8s:c/node/n1/if/nic")).toBe("hardware");
     expect(layerOf("k8s:c/namespace/web/pod/site-1")).toBe("base");
     expect(layerOf("k8s:c")).toBe("base");
   });
@@ -101,7 +90,7 @@ describe("the view's layers", () => {
   it("gives every line a layer and draws each at right angles only", () => {
     expect(layout.links.length).toBeGreaterThan(10);
     for (const l of layout.links) {
-      expect(["base", "network", "services", "storage"]).toContain(l.layer);
+      expect(["base", "hardware", "network", "services", "storage"]).toContain(l.layer);
       expect(l.path.length, `${l.kind} ${l.id}`).toBeGreaterThanOrEqual(2);
       for (let i = 1; i < l.path.length; i++) {
         const moved = [0, 1, 2].filter((k) => Math.abs(l.path[i]![k]! - l.path[i - 1]![k]!) > 1e-6);
@@ -195,5 +184,70 @@ describe("bridges", () => {
     const l = layoutOf(s);
     const cni0 = l.boxes.find((b) => b.id === "k8s:c/node/n1/if/cni0")!;
     expect(l.links.find((x) => x.kind === "network" && x.id === "k8s:c/namespace/web/pod/site-1")?.path[0]).toEqual(cni0.center);
+  });
+});
+
+describe("the machines' hardware in the view", () => {
+  const withHardware: ClusterInput = {
+    ...input,
+    nodes: input.nodes.map((n) => ({ ...n, status: { ...n.status, capacity: { cpu: "4", memory: "6498908Ki" } } })),
+    ceph: { ...ceph, osds: ceph.osds.map((o) => ({ ...o, deviceClass: "hdd", devices: { nvme0n1: "SKHynix_HFS256_AN99", sdb: "ST500LM0_00-1EJ162_18A2" } })) },
+  };
+  const g = clusterGraph(withHardware);
+  const s = sceneOf(g);
+  const resources = { "k8s:c/node/n1/hw/cpu/core/0": { load: 0.97 }, "k8s:c/namespace/web/pod/site-1/container/app": { cpu: 0.2, memory: 3e8 } };
+  const withReadings = buildScene(
+    [...dtdlModel()].map((m) => ({ id: m["@id"], model: m, uploadTime: "", decommissioned: false })),
+    g.twins.map((t) => ({ ...t, $etag: "", $metadata: { $model: t.$metadata.$model } })),
+    g.relationships.map(toRelationship),
+    {},
+    {},
+    {},
+    null,
+    undefined,
+    resources,
+  );
+  const l = layoutOf(s);
+  const box = (id: string) => l.boxes.find((b) => b.id === id)!;
+  const bottom = (id: string) => box(id).center[1] - box(id).size[1] / 2;
+  const top = (id: string) => box(id).center[1] + box(id).size[1] / 2;
+
+  it("stands the CPU with its cores, the memory and the disks on the node's floor, its workloads above them", () => {
+    const node = box("k8s:c/node/n1");
+    const cpu = box("k8s:c/node/n1/hw/cpu");
+    const pod = box("k8s:c/namespace/web/pod/site-1");
+    // On a board, under the namespaces' bands: every pod is above the deck's top.
+    expect(l.boards.some((b) => b.id === "k8s:c/node/n1")).toBe(true);
+    expect(bottom("k8s:c/namespace/web/pod/site-1")).toBeGreaterThan(top("k8s:c/node/n1/hw/memory"));
+    expect(bottom("k8s:c/node/n1/hw/cpu")).toBeLessThan(pod.center[1]);
+    expect(bottom("k8s:c/node/n1/hw/cpu")).toBeGreaterThan(bottom("k8s:c/node/n1"));
+    expect(Math.abs(cpu.center[0] - node.center[0])).toBeLessThan(node.size[0] / 2);
+    // Four cores as tiles inside the chip.
+    for (let i = 0; i < 4; i++) {
+      const core = box(`k8s:c/node/n1/hw/cpu/core/${i}`);
+      expect(Math.abs(core.center[0] - cpu.center[0])).toBeLessThan(cpu.size[0] / 2);
+      expect(Math.abs(core.center[2] - cpu.center[2])).toBeLessThan(cpu.size[2] / 2);
+      expect(core.size[1]).toBeLessThan(cpu.size[1]);
+    }
+  });
+
+  it("puts each OSD on top of the USB disk it stores on, cabled to a USB port on the node's back wall", () => {
+    const disk = "k8s:c/node/n1/hw/disk/sdb";
+    const osd = "k8s:c/ceph/ceph/osd/0";
+    expect(s.byId.get(osd)!.parent!.id).toBe(disk);
+    expect(bottom(osd)).toBeGreaterThanOrEqual(top(disk));
+    expect(s.byId.get(disk)!.layer).toBe("hardware");
+    const cable = l.links.find((x) => x.kind === "cable" && x.to === disk)!;
+    expect(cable.layer).toBe("hardware");
+    expect(cable.path[0]).toEqual(box("k8s:c/node/n1/hw/usb/1").center);
+    // Its DB on the internal NVMe: a storage line.
+    expect(l.links.some((x) => x.kind === "storage" && x.id === osd && x.to === "k8s:c/node/n1/hw/disk/nvme0n1")).toBe(true);
+  });
+
+  it("joins each container to its node's CPU and memory, and carries the readings", () => {
+    const runs = l.links.filter((x) => x.kind === "resource" && x.id === "k8s:c/namespace/web/pod/site-1/container/app").map((x) => x.to);
+    expect(runs.sort()).toEqual(["k8s:c/node/n1/hw/cpu", "k8s:c/node/n1/hw/memory"]);
+    expect(withReadings.byId.get("k8s:c/node/n1/hw/cpu/core/0")!.resources).toEqual({ load: 0.97 });
+    expect(withReadings.byId.get("k8s:c/namespace/web/pod/site-1/container/app")!.resources).toEqual({ cpu: 0.2, memory: 3e8 });
   });
 });

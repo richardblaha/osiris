@@ -8,11 +8,11 @@ import type { TwinScene, ViewFilters } from "./scene.ts";
 import type { PanelId } from "./windowLayout.ts";
 
 /** Each layer's icon in the menu. */
-const LAYER_ICONS: Record<(typeof LAYER_KEYS)[number], MaterialIcon> = { network: "lan", services: "hub", storage: "storage", logical: "account_tree" };
+const LAYER_ICONS: Record<(typeof LAYER_KEYS)[number], MaterialIcon> = { hardware: "dashboard", network: "lan", services: "hub", storage: "storage", namespaces: "folder", workloads: "deployed_code" };
 
 /**
  * The display menu in the bottom bar (its button an icon): the layers to show — the low-level network, the network
- * services, storage, the logical groupings — how the twin is drawn (labels, addresses, moving traffic), and the
+ * services, storage, the hardware, namespaces and workloads — how the twin is drawn (labels, addresses, moving traffic), and the
  * filters (which models, statuses and names show). It opens upward from the bar, within the window.
  */
 export function DisplayMenu({

@@ -13,7 +13,7 @@ const CHECKPOINT_KEY = "history.checkpoint_at";
  * error log count, network bytes/s and storage filesystem, by the source's attribute mappings.
  */
 export async function telemetryState(source: TwinSource, telemetry: Telemetry | undefined, snapshot: SourceSnapshot, at?: number): Promise<TelemetryState> {
-  const out: TelemetryState = { errorLogs: {}, network: {}, storage: {} };
+  const out: TelemetryState = { errorLogs: {}, network: {}, storage: {}, resources: {} };
   if (!telemetry) return out;
   const twins = snapshot.twins.map((t) => ({ $dtId: t.$dtId, otelResource: t.otelResource }));
   if (source.errorAttributes?.length) out.errorLogs = errorsByTwin(twins, source.errorAttributes, await telemetry.errorCounts(source.errorAttributes, at));
@@ -26,6 +26,8 @@ export async function telemetryState(source: TwinSource, telemetry: Telemetry | 
     const free = valuesByTwin(twins, m.attributes, available);
     for (const [id, size] of Object.entries(fs)) if (free[id] !== undefined) out.storage[id] = { used: Math.max(0, size - free[id]!), fsCapacity: size };
   }
+  // A source's own readings fail on their own: the rest of the view's telemetry still goes out.
+  if (source.resources) out.resources = await source.resources(telemetry, snapshot.twins, at).catch((err: unknown) => (console.error(`Reading the ${source.name} source's resources failed`, err), {}));
   return out;
 }
 

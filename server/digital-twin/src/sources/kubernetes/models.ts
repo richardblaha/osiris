@@ -22,6 +22,11 @@ export const MODEL = {
   Interface: "dtmi:osiris:net:Interface;1",
   Service: "dtmi:osiris:k8s:Service;1",
   Ingress: "dtmi:osiris:k8s:Ingress;1",
+  Cpu: "dtmi:osiris:hw:Cpu;1",
+  CpuCore: "dtmi:osiris:hw:CpuCore;1",
+  Memory: "dtmi:osiris:hw:Memory;1",
+  Disk: "dtmi:osiris:hw:Disk;1",
+  Port: "dtmi:osiris:hw:Port;1",
 } as const;
 
 const enumOf = (...values: string[]): DtdlSchema => ({ "@type": "Enum", valueSchema: "string", enumValues: values.map((v) => ({ name: v, enumValue: v })) });
@@ -50,6 +55,13 @@ const network: DtdlContent = {
   displayName: l("Network", "Síť"),
   description: "Bytes per second received and sent, averaged over the last 5 minutes.",
 };
+/** A share from 0 to 1: a CPU's or a core's busy time, memory or a filesystem used. */
+const load = (description: string): DtdlContent => ({ "@type": "Telemetry", name: "load", schema: "double", displayName: l("Load", "Zatížení"), description });
+/** What a container or a pod uses of its node: CPU in cores, memory in bytes (kubeletstats). */
+const usage: DtdlContent[] = [
+  { "@type": "Telemetry", name: "cpu", schema: "double", displayName: l("CPU (cores)", "CPU (jádra)"), description: "CPU used, in cores, averaged by the kubelet." },
+  { "@type": "Telemetry", name: "memory", schema: "double", displayName: l("Memory", "Paměť"), description: "The working set, in bytes." },
+];
 const iface = (id: string, displayName: Localized, description: string, contents: DtdlContent[], base = true): DtdlInterface => ({
   "@context": DTDL_CONTEXT,
   "@id": id,
@@ -112,12 +124,15 @@ export function dtdlModel(): DtdlInterface[] {
       property("namespace", "string", l("Namespace", "Namespace")),
       contains(undefined, "The pod's containers, and the volume claims it mounts."),
       network,
+      ...usage,
     ]),
     iface(MODEL.Container, l("Container", "Kontejner"), "One container of a pod.", [
       property("image", "string", l("Image", "Image")),
       property("ready", "boolean", l("Ready", "Připraven")),
       property("restarts", "integer", l("Restarts", "Restarty")),
       relationship("mounts", MODEL.PersistentVolumeClaim, l("mounts", "připojuje"), "The volume claims the container mounts."),
+      { "@type": "Relationship", name: "runsOn", displayName: l("runs on", "běží na"), description: "The CPU and the memory of the node the container runs on." },
+      ...usage,
     ]),
     iface(MODEL.Interface, l("Network interface", "Síťové rozhraní"), "A point where traffic enters or leaves: a node's network card, its router (Calico routes, no bridge), the bridge of a bridge CNI (flannel's cni0), its VXLAN tunnel, a pod's eth0, a LoadBalancer address (MetalLB), the public address the internet reaches.", [
       property("kind", enumOf("physical", "router", "bridge", "tunnel", "veth", "loadbalancer", "public"), l("Kind", "Druh")),
@@ -181,6 +196,7 @@ export function dtdlModel(): DtdlInterface[] {
       property("size", "double", l("Size", "Velikost"), "The disk's bytes, where the manager reports them."),
       property("used", "double", l("Used", "Obsazeno"), "The disk's used bytes, where the manager reports them."),
       property("fill", "double", l("Fill", "Zaplnění"), "Used of size; where the manager reports no per-OSD bytes, the cluster's raw fill (Ceph spreads data by weight)."),
+      relationship("dbOn", MODEL.Disk, l("keeps its DB on", "má DB na"), "The disk holding the OSD's RocksDB and WAL (an LVM volume on the node's internal disk)."),
     ]),
     iface(MODEL.PersistentVolumeClaim, l("Volume claim", "Svazek (PVC)"), "A PersistentVolumeClaim: storage a pod mounts; pending is a warning, lost an error.", [
       property("phase", enumOf("pending", "bound", "lost"), l("Phase", "Fáze")),
@@ -209,8 +225,38 @@ export function dtdlModel(): DtdlInterface[] {
       property("cpu", "string", l("CPU capacity", "Kapacita CPU")),
       property("memory", "string", l("Memory capacity", "Kapacita paměti")),
       property("ip", "string", l("IP address", "IP adresa"), "The node's InternalIP."),
-      contains(undefined, "The pods scheduled on the node, and the disks (Ceph's OSDs) in it."),
+      contains(undefined, "The pods scheduled on the node, and its hardware: CPU, memory, disks and USB ports."),
       network,
+    ]),
+    iface(MODEL.Cpu, l("CPU", "CPU"), "The node's processor: its cores, and how busy they are together.", [
+      property("cores", "integer", l("Cores", "Jádra"), "Logical CPUs the kubelet reports."),
+      load("Busy share of all cores (kubeletstats' k8s.node.cpu.usage over the cores)."),
+      contains(MODEL.CpuCore, "The CPU's cores."),
+    ]),
+    iface(MODEL.CpuCore, l("CPU core", "Jádro CPU"), "One logical CPU.", [
+      property("core", "integer", l("Core", "Jádro"), "Its number, from 0."),
+      property("estimated", "boolean", l("Estimated", "Odhad"), "No per-core metric: the CPU's average stands in."),
+      load("Busy share (hostmetrics' system.cpu.utilization: all but idle), else the CPU's average."),
+    ]),
+    iface(MODEL.Memory, l("Memory", "Paměť"), "The node's RAM.", [
+      property("capacity", "double", l("Capacity", "Kapacita"), "Bytes."),
+      load("Working set of the capacity."),
+      { "@type": "Telemetry", name: "bytesUsed", schema: "double", displayName: l("Used", "Využito"), description: "The node's working set, in bytes (kubeletstats)." },
+    ]),
+    iface(MODEL.Disk, l("Disk", "Disk"), "A physical disk of the node: internal (NVMe, SATA, eMMC) or attached over USB. A Ceph OSD on it is inside it.", [
+      property("device", "string", l("Device", "Zařízení")),
+      property("model", "string", l("Model", "Model")),
+      property("serial", "string", l("Serial number", "Sériové číslo")),
+      property("bus", enumOf("nvme", "sata", "usb", "mmc", "unknown"), l("Bus", "Sběrnice")),
+      property("internal", "boolean", l("Internal", "Interní")),
+      property("size", "double", l("Size", "Velikost"), "Bytes, where known (an OSD's disk: the OSD's)."),
+      load("The node's root filesystem used of its size (kubeletstats), for the disk it is on."),
+      { "@type": "Telemetry", name: "io", schema: "double", displayName: l("I/O", "I/O"), description: "Bytes per second read and written (hostmetrics' system.disk.io)." },
+      contains(MODEL.CephOsd, "The Ceph OSD storing its data on the disk."),
+    ]),
+    iface(MODEL.Port, l("Port", "Port"), "A physical port of the node: USB with what is attached to it.", [
+      property("kind", enumOf("usb", "lan"), l("Kind", "Druh")),
+      relationship("attaches", MODEL.Disk, l("attaches", "připojuje"), "The disk plugged into the port."),
     ]),
   ];
 }

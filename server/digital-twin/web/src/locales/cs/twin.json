@@ -108,16 +108,20 @@
     "layers": "Vrstvy",
     "reset": "Zobrazit vše",
     "layer": {
+      "hardware": "Hardware",
       "network": "Síť",
       "services": "Síťové služby",
       "storage": "Úložiště",
-      "logical": "Skupiny"
+      "namespaces": "Namespaces",
+      "workloads": "Workloady"
     },
     "layerHelp": {
-      "network": "Rozhraní, mosty, routery, tunely a jejich zapojení",
-      "services": "Služby, Ingressy a cesta z internetu k podům",
+      "hardware": "CPU s jádry, paměť, disky, LAN a USB porty; co na nich běží",
+      "network": "Rozhraní, bridge, routery, tunely a jejich zapojení",
+      "services": "Load balancery, Services, Ingressy a cesta z internetu k podům",
       "storage": "Svazky, Ceph s pooly a disky",
-      "logical": "Namespaces a workloady"
+      "namespaces": "Každý namespace jako pás přes nody",
+      "workloads": "Deploymenty, StatefulSety, DaemonSety kolem svých podů"
     },
     "drawing": "Vykreslení",
     "labels": "Popisky",
@@ -128,9 +132,9 @@
     },
     "addresses": "Adresy u rozhraní",
     "traffic": "Pohyb provozu",
-    "hint": "Klávesy 1–4 ukážou jen jednu vrstvu, 0 všechny. Klikněte na Ingress, službu nebo pod: rozsvítí se cesta jeho provozu."
+    "hint": "Klávesy 1–6 ukážou jedinou vrstvu, 0 všechny. Klikněte na Ingress, Service nebo pod: rozsvítí se cesta jeho provozu. Klikněte na kontejner nebo CPU: rozsvítí se, co na čem běží."
   },
-  "keysHint": "Klávesy: WASD/šipky pohyb, Q/E nahoru/dolů, +/- lupa, Tab výběr, H celé dvojče, 1/2/3 vrstvy.",
+  "keysHint": "Klávesy: WASD/šipky posun, Q/E dolů/nahoru, +/- zoom, Tab výběr, H celé dvojče, 1–6 vrstvy.",
   "models": {
     "title": "DTDL modely",
     "new": "Nový",
@@ -201,5 +205,23 @@
   },
   "data": {
     "title": "Data ({{profile}})"
+  },
+  "hw": {
+    "cpu": "{{used}} z {{cores}} jader",
+    "cores": "CPU {{value}} jader",
+    "io": "I/O {{rate}}",
+    "estimated": "{{share}} (průměr CPU)",
+    "bytes": "{{used}} z {{size}}",
+    "endpoints_one": "{{count}} cíl",
+    "endpoints_few": "{{count}} cíle",
+    "endpoints_many": "{{count}} cíle",
+    "endpoints_other": "{{count}} cílů",
+    "bus": {
+      "nvme": "NVMe",
+      "sata": "SATA",
+      "usb": "USB",
+      "mmc": "eMMC",
+      "unknown": "Disk"
+    }
   }
 }

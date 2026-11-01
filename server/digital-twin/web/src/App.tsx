@@ -1,7 +1,7 @@
 import type { DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon.tsx";
-import { buildScene, passes, scopeOf, type TwinScene, type TwinView, type ViewFilters } from "./scene.ts";
+import { buildScene, passes, scopeOf, type Resources, type TwinScene, type TwinView, type ViewFilters } from "./scene.ts";
 import { t } from "i18next";
 import { api, currentInstance, setInstance, type DashboardSummary, type InstanceSummary } from "./api.ts";
 import { Instances } from "./Instances.tsx";
@@ -87,6 +87,7 @@ export function App() {
     errors: Record<string, number>;
     network: Record<string, number>;
     storage: Record<string, { used: number; fsCapacity: number }>;
+    resources: Record<string, Resources>;
     at: number | null;
   }>();
   const [selectedId, setSelectedId] = useState<string>();
@@ -94,10 +95,12 @@ export function App() {
   const [home, setHome] = useState(0);
   /** The selected box's corners on screen (the 3D view's), for the panels' lines. */
   const anchor = useRef<(() => Point[] | null) | null>(null);
-  /** The layers the 3D view shows (network, storage, logical groupings), kept in this browser. */
+  /** The layers the 3D view shows (hardware, network, services, storage, namespaces, workloads), kept in this browser. */
   const [layers, setLayers] = useState<Layers>(() => {
     try {
-      return { ...ALL_LAYERS, ...(JSON.parse(localStorage.getItem("osiris.digital-twin.layers") ?? "{}") as Partial<Layers>) };
+      // The older single grouping layer (`logical`) switched namespaces and workloads together.
+      const { logical, ...stored } = JSON.parse(localStorage.getItem("osiris.digital-twin.layers") ?? "{}") as Partial<Layers> & { logical?: boolean };
+      return { ...ALL_LAYERS, ...(logical === false ? { namespaces: false, workloads: false } : {}), ...stored };
     } catch {
       return ALL_LAYERS;
     }
@@ -232,19 +235,20 @@ export function App() {
   /** The twin loads once signed in and, live, refreshes every minute (the server syncs every 30 s). */
   const loadTwin = () =>
     attempt(setBusy, setError, async () => {
-      const [m, twins, relationships, errors, network, storage] = await Promise.all([
+      const [m, twins, relationships, errors, network, storage, resources] = await Promise.all([
         models ? Promise.resolve(models) : api.models(),
         api.twins(at),
         api.relationships(at),
         api.errorLogs(at).catch(() => ({})),
         api.network(at).catch(() => ({})),
         api.storage(at).catch(() => ({})),
+        api.resources(at).catch(() => ({})),
       ]);
       setModels(m);
-      setData({ twins, relationships, errors, network, storage, at });
+      setData({ twins, relationships, errors, network, storage, resources, at });
     });
   const scene: TwinScene | undefined = useMemo(
-    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.storage, data.at, filters) : undefined),
+    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.storage, data.at, filters, data.resources) : undefined),
     [models, data, filters],
   );
   // The selection follows the refreshed scene (its new status and properties), or goes when its twin is gone.

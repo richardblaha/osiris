@@ -115,6 +115,14 @@ describe("registered applications", () => {
     await auth.auth.clients.ensure(osirisClients([WEB, "https://other.example"], GATEWAY_SECRET));
     expect((await auth.auth.clients.get("osiris-web"))?.name).toBe("Renamed");
   });
+
+  it("adds the apps the gateway accepts, keeping those it accepts already", async () => {
+    const auth = await setup();
+    expect(await auth.auth.clients.accept("osiris-gateway", ["digital-twin", "osiris-web"])).toEqual(["digital-twin"]);
+    expect(await auth.auth.clients.accept("osiris-gateway", ["digital-twin"])).toEqual([]);
+    expect((await auth.auth.clients.get("osiris-gateway"))?.acceptsTokensOf).toEqual(["osiris-web", "osiris-cli", "osiris-vscode", "digital-twin"]);
+    expect(await auth.auth.clients.accept("missing", ["digital-twin"])).toEqual([]);
+  });
 });
 
 describe("administration", () => {

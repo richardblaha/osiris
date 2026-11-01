@@ -36,6 +36,7 @@
       "context": "Context",
       "clusterName": "Cluster's name in the twin",
       "cephManagers": "Ceph managers",
+      "externalDisks": "External disks (sdX)",
       "clickhouseUrl": "Telemetry: ClickHouse",
       "clickhouseUser": "ClickHouse user",
       "clickhousePassword": "ClickHouse password",
@@ -49,6 +50,7 @@
       "context": "Empty: the kubeconfig's current context.",
       "clusterName": "The root twin's label; empty: the twin's id.",
       "cephManagers": "The Ceph managers' Prometheus pages (http://host:9283/metrics), comma-separated: pools and disks in the twin.",
+      "externalDisks": "How the nodes' disks other than the internal NVMe/eMMC (Ceph's sdX) are attached: drawn as USB disks on USB ports, or as internal SATA disks.",
       "clickhouseUrl": "Where the cluster's OpenTelemetry Collector writes logs, metrics and traces; empty: this service's own ClickHouse.",
       "clickhouseUser": "Read-only; empty: default.",
       "clickhouseCluster": "The k8s.cluster.name the collector stamps the telemetry with; empty: everything in that ClickHouse."
@@ -59,6 +61,10 @@
       "connection": {
         "inCluster": "The cluster this service runs in",
         "kubeconfig": "Another cluster (kubeconfig)"
+      },
+      "externalDisks": {
+        "usb": "USB",
+        "sata": "SATA (internal)"
       }
     }
   },

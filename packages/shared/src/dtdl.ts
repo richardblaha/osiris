@@ -113,8 +113,8 @@ export const DATA_PLACEHOLDER = /\{(id|name|twin\.[A-Za-z][A-Za-z0-9_]{0,63}|ote
 
 /** How a kind of twin is drawn: a solid of its own shape, so a node, a pod, a disk and a Service are told apart
  * before any label is read. */
-export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "ceph" | "box";
-export const LOOKS: readonly Look[] = ["cluster", "node", "workload", "pod", "container", "cylinder", "disk", "port", "hex", "gate", "ceph", "box"];
+export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "ceph" | "cpu" | "core" | "memory" | "drive" | "box";
+export const LOOKS: readonly Look[] = ["cluster", "node", "workload", "pod", "container", "cylinder", "disk", "port", "hex", "gate", "ceph", "cpu", "core", "memory", "drive", "box"];
 /** The built-in looks by model DTMI without the version, for models without a `presentation`. */
 export const BUILTIN_LOOKS: Record<string, Look> = {
   "dtmi:osiris:k8s:Cluster": "cluster",
@@ -129,16 +129,23 @@ export const BUILTIN_LOOKS: Record<string, Look> = {
   "dtmi:osiris:net:Interface": "port",
   "dtmi:osiris:k8s:Service": "hex",
   "dtmi:osiris:k8s:Ingress": "gate",
+  "dtmi:osiris:hw:Cpu": "cpu",
+  "dtmi:osiris:hw:CpuCore": "core",
+  "dtmi:osiris:hw:Memory": "memory",
+  "dtmi:osiris:hw:Disk": "drive",
+  "dtmi:osiris:hw:Port": "port",
 };
 
 /**
  * The view's layer a model belongs to (the display menu's switches): `base` always shows (the cluster, nodes, pods,
  * containers), `network` the low-level network (interfaces, bridges, routers, tunnels and their wiring), `services`
  * the network services (Services, Ingresses, LoadBalancer and public addresses, their routing), `storage` the
- * storage (volume claims, Ceph with its pools and disks), `logical` the groupings (namespaces, workloads).
+ * storage (volume claims, Ceph with its pools and disks), `hardware` the machines' parts (CPU and cores, memory,
+ * disks, physical ports), `namespaces` and `workloads` the groupings. `logical` is the older single grouping layer:
+ * the views read it as `namespaces` (or `workloads` for a workload's look).
  */
-export type PresentationLayer = "base" | "network" | "services" | "storage" | "logical";
-export const PRESENTATION_LAYERS: readonly PresentationLayer[] = ["base", "network", "services", "storage", "logical"];
+export type PresentationLayer = "base" | "hardware" | "network" | "services" | "storage" | "namespaces" | "workloads" | "logical";
+export const PRESENTATION_LAYERS: readonly PresentationLayer[] = ["base", "hardware", "network", "services", "storage", "namespaces", "workloads", "logical"];
 /** The built-in layers by model DTMI without the version, for models whose presentation names none. */
 export const BUILTIN_LAYERS: Record<string, PresentationLayer> = {
   "dtmi:osiris:net:Interface": "network",
@@ -149,8 +156,13 @@ export const BUILTIN_LAYERS: Record<string, PresentationLayer> = {
   "dtmi:osiris:ceph:Pool": "storage",
   "dtmi:osiris:ceph:Osd": "storage",
   "dtmi:osiris:ceph:Monitor": "storage",
-  "dtmi:osiris:k8s:Namespace": "logical",
-  "dtmi:osiris:k8s:Workload": "logical",
+  "dtmi:osiris:k8s:Namespace": "namespaces",
+  "dtmi:osiris:k8s:Workload": "workloads",
+  "dtmi:osiris:hw:Cpu": "hardware",
+  "dtmi:osiris:hw:CpuCore": "hardware",
+  "dtmi:osiris:hw:Memory": "hardware",
+  "dtmi:osiris:hw:Disk": "hardware",
+  "dtmi:osiris:hw:Port": "hardware",
 };
 
 /**

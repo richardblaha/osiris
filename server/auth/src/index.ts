@@ -28,6 +28,9 @@ const app = createAuthApp(auth, { staticDir: config.STATIC_DIR, logo: config.APP
 // Osiris's apps, when its origins are configured and they aren't registered yet.
 const added = await auth.clients.ensure(osirisClients(config.WEB_ORIGINS, config.GATEWAY_CLIENT_SECRET));
 if (added.length) console.log(`Registered ${added.join(", ")}`);
+// Other apps calling Osiris with their users' tokens (the digital twin's chat, its alerting).
+const accepted = await auth.clients.accept("osiris-gateway", config.GATEWAY_ACCEPTS);
+if (accepted.length) console.log(`osiris-gateway accepts the tokens of ${accepted.join(", ")} too`);
 
 const cleanup = startLoop("Cleanup", 6 * 60 * 60_000, async () => {
   await auth.credentials.cleanup();

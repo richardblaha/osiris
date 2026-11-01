@@ -141,7 +141,9 @@ Kubernetes API (read-only ServiceAccount `digital-twin`, `deploy/k8s/rbac.yaml`)
 and history come from ClickHouse's `otel` database.
 
 1. In osiris-auth (`/admin`), add the app **digital-twin** (public, PKCE, redirect `https://twin.k6labs.cz/callback`)
-   and the introspection client **osiris-digital-twin** (a secret, accepting `digital-twin`'s tokens), then:
+   and the introspection client **osiris-digital-twin** (a secret, accepting `digital-twin`'s tokens). The twin's chat
+   calls Osiris with the same token: osiris-auth lets osiris-gateway accept `digital-twin` (and the alerting's
+   `osiris-twin-alerts`) itself at start (`GATEWAY_ACCEPTS` in `deploy/auth/auth.yaml`). Then:
    ```bash
    kubectl -n osiris create secret generic osiris-digital-twin --dry-run=client -o yaml \
      --from-literal=AUTH_CLIENT_SECRET="<osiris-auth secret>" --from-literal=CLICKHOUSE_PASSWORD="$OSIRIS_CLICKHOUSE_OSIRIS_PASSWORD" \
@@ -162,7 +164,7 @@ and history come from ClickHouse's `otel` database.
    B="kubectl -n osiris-auth exec deploy/auth -- node_modules/.bin/tsx src/cli.ts"
    ID=$($B service-user twin-alerts@k6labs.cz "Twin alerts" osiris-user,project:twin)
    $B client add osiris-twin-alerts "{\"name\":\"Digital twin alerts\",\"confidential\":true,\"serviceAccount\":\"$ID\"}"   # prints the secret once
-   $B client accept osiris-gateway osiris-twin-alerts
+   $B client accept osiris-gateway osiris-twin-alerts   # also done at osiris-auth's start (GATEWAY_ACCEPTS)
    kubectl -n osiris create secret generic osiris-twin-alerts --from-literal=ALERTS_CLIENT_SECRET="<the secret>"
    kubectl apply -k deploy/k8s && kubectl apply -f deploy/observability/redis.yaml
    ```

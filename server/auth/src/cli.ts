@@ -47,11 +47,9 @@ if (command === "add-admin") {
     const { secret } = await clients.update(id, { ...settings, ...JSON.parse(raw) });
     console.log(secret ? `Updated ${id}. New secret (shown once): ${secret}` : `Updated ${id}.`);
   } else if (action === "accept" && id && raw) {
-    const current = await clients.get(id);
-    if (!current) throw new Error(`No app ${id}.`);
-    const { createdAt: _c, updatedAt: _u, id: _i, ...settings } = current;
-    if (!current.acceptsTokensOf.includes(raw)) await clients.update(id, { ...settings, acceptsTokensOf: [...current.acceptsTokensOf, raw] });
-    console.log(`${id} accepts the tokens of ${[...new Set([...current.acceptsTokensOf, raw])].join(", ")}.`);
+    if (!(await clients.get(id))) throw new Error(`No app ${id}.`);
+    await clients.accept(id, [raw]);
+    console.log(`${id} accepts the tokens of ${(await clients.get(id))!.acceptsTokensOf.join(", ")}.`);
   } else if (action === "remove" && id) console.log((await clients.remove(id)) ? `Removed ${id}.` : `No app ${id}.`);
   else throw new Error("Usage: client list | client add <id> <json> | client update <id> <json> | client accept <id> <app> | client remove <id>");
 } else if (command === "service-user") {

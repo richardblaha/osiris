@@ -149,8 +149,9 @@ describe("the twin API, in the shape of Azure Digital Twins", () => {
     const models = new Map((await json<{ value: DtdlModelData[] }>("/api/instances/k8s/models")).value.map((m): [string, DtdlInterface] => [m.id, m.model]));
     const { value: twins } = await json<{ value: DigitalTwin[] }>("/api/instances/k8s/digitaltwins");
     const { value: relationships } = await json<{ value: DigitalTwinRelationship[] }>("/api/instances/k8s/relationships");
-    // cluster, node (and its card and router), namespace, workload, pod (and its eth0), container, volume claim
-    expect(twins.length).toBe(10);
+    // cluster, node (and its card and router, its CPU, memory and a disk for its root filesystem), namespace,
+    // workload, pod (and its eth0), container, volume claim
+    expect(twins.length).toBe(13);
     for (const t of twins) expect(twinErrors(t, models)).toEqual([]);
     const byId = new Map(twins.map((t) => [t.$dtId, t]));
     for (const r of relationships) expect(relationshipErrors(r, byId, models)).toEqual([]);
