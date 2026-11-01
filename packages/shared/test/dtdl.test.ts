@@ -88,3 +88,17 @@ describe("a model's own drawing (presentation.visual)", () => {
     expect(errors({ parts: [{ shape: "box", asset: "a" }] })).toMatch(/gltf part only/);
   });
 });
+
+describe("the built-in drawings (VISUAL_PRESETS)", () => {
+  it("are valid drawings, and a model may take one and add its own parts", async () => {
+    const { VISUAL_PRESETS, visualParts } = await import("../src/visual.ts");
+    const model = (visual: unknown) => ({ "@context": [DTDL_CONTEXT, PRESENTATION_CONTEXT], "@id": "dtmi:x:Box;1", "@type": "Interface", presentation: { visual } }) as never;
+    for (const [name, v] of Object.entries(VISUAL_PRESETS)) expect(interfaceErrors(model(v)), name).toEqual([]);
+    expect(interfaceErrors(model({ preset: "router" }))).toEqual([]);
+    expect(interfaceErrors(model({ preset: "nope" })).join()).toMatch(/preset is not one of/);
+    expect(interfaceErrors(model({ parts: [{ shape: "box", when: "!estimated" }] }))).toEqual([]);
+    const own = { shape: "sphere" as const };
+    expect(visualParts({ preset: "switch", parts: [own] }).at(-1)).toBe(own);
+    expect(visualParts({ preset: "switch", parts: [own] })).toHaveLength(VISUAL_PRESETS.switch!.parts!.length + 1);
+  });
+});

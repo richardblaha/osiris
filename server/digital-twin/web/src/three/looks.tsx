@@ -91,30 +91,6 @@ function useBlink(ap: Appearance, phase: number, steady = false) {
   return ref;
 }
 
-/** Its content as high (or as long, along `x`) as it is full: a unit box scaled to the level, and a frame at it. */
-function LevelFill({ size, ap, along }: { size: V3; ap: Appearance; along: boolean }) {
-  const [w, h, d] = size;
-  const k = 0.84;
-  const span = along ? w * k : h * k;
-  const level = ap.fill === undefined ? 0 : Math.max(0.001, ap.fill * span);
-  const geometry = useMemo(() => (along ? new THREE.BoxGeometry(1, h * k, d * k).translate(0.5, 0, 0) : new THREE.BoxGeometry(w * k, 1, d * k).translate(0, 0.5, 0)), [w, h, d, along]);
-  const outline = useMemo(() => (along ? frame(h * k, d * k, true) : frame(w * k, d * k)), [w, h, d, along]);
-  const base: V3 = along ? [-(w * k) / 2, 0, 0] : [0, -h / 2 + (h * (1 - k)) / 2, 0];
-  const shown = ap.fill !== undefined && !ap.hidden;
-  const scale: V3 = along ? [level, 1, 1] : [1, level, 1];
-  const at: V3 = along ? [base[0] + level, 0, 0] : [0, base[1] + level, 0];
-  return (
-    <>
-      <mesh geometry={geometry} position={base} scale={scale} visible={shown}>
-        <meshBasicMaterial {...material} color={ap.fillColor} opacity={ap.fillOpacity} />
-      </mesh>
-      <lineLoop geometry={outline} position={at} visible={shown}>
-        <lineBasicMaterial transparent color={ap.fillColor} opacity={0.9 * ap.fade} />
-      </lineLoop>
-    </>
-  );
-}
-
 const roundedBox = (box: Box, segments = 3) => new RoundedBoxGeometry(box.size[0], box.size[1], box.size[2], segments, box.radius);
 
 /** The plain look: a rounded box with its outline (a grouping's broken), and a part's load inside it. */
@@ -123,49 +99,16 @@ function BoxLook({ box, node, ap, order, total, children }: LookProps & { childr
   const outline = useMemo(() => roundedEdges(box.size, box.radius), [box.size.join(), box.radius]);
   // A grouping has broken edges: a namespace dashed, a workload dotted — sets of things, not things.
   const dash = node.dashed ? DASHED : node.look === "workload" ? DOTTED : undefined;
-  const part = (node.look === "core" || node.look === "memory" || node.look === "drive") && !node.children.length;
   return (
     <>
       <Body id={box.id} geometry={geometry} ap={ap} order={order} />
       <Outline geometry={outline} ap={ap} order={order + total} dash={dash} />
-      {part && <LevelFill size={box.size} ap={ap} along={node.look !== "core"} />}
       {children}
     </>
   );
 }
 const DASHED = { dashSize: 0.6, gapSize: 0.4 };
 const DOTTED = { dashSize: 0.12, gapSize: 0.14 };
-
-/** A machine: a mini PC's chassis — its front a panel with a vent grille over most of it, a round power button and
- * its light at the right; no badge. */
-function NodeLook(props: LookProps) {
-  const { box, ap } = props;
-  const { colors } = useLook();
-  const [w, h, d] = box.size;
-  const front = d / 2 + 0.02;
-  const gw = (w - 0.3) * 0.72;
-  const gh = (h - 0.3) * 0.7;
-  const vents = useMemo(() => ventGeometry(gw, gh), [gw, gh]);
-  const r = Math.max(0.32, h * 0.05);
-  const button = useMemo(() => ring(r).rotateX(Math.PI / 2), [r]);
-  const bx = w / 2 - Math.max(1.2, h * 0.15);
-  const by = h * 0.2;
-  return (
-    <BoxLook {...props}>
-      <Plate size={[w - 0.3, h - 0.3]} position={[0, 0, front]} color={colors.neutral} opacity={(ap.strong ? 0.12 : 0.07) * ap.fade} />
-      <lineSegments geometry={vents} position={[-(w - 0.3) / 2 + 0.8 + gw / 2, 0, front + 0.01]}>
-        <lineBasicMaterial transparent color={colors.neutral} opacity={0.35 * ap.fade} />
-      </lineSegments>
-      <lineLoop geometry={button} position={[bx, by, front + 0.01]}>
-        <lineBasicMaterial transparent color={ap.status} opacity={0.9 * ap.fade} />
-      </lineLoop>
-      <mesh position={[bx, by - r * 2.2, front + 0.02]}>
-        <boxGeometry args={[r * 1.1, r * 0.35, 0.06]} />
-        <meshBasicMaterial transparent color={ap.status} opacity={0.9 * ap.fade} />
-      </mesh>
-    </BoxLook>
-  );
-}
 
 /** The cluster: its box and the floor it stands on. */
 function ClusterLook(props: LookProps) {
@@ -184,65 +127,6 @@ function ClusterLook(props: LookProps) {
   return (
     <BoxLook {...props}>
       <primitive object={grid} position={[0, -box.size[1] / 2 + 0.02, 0]} />
-    </BoxLook>
-  );
-}
-
-/** A disk: its activity light on its front, blinking with its I/O. */
-function DriveLook(props: LookProps) {
-  const { box, ap } = props;
-  const { colors } = useLook();
-  const light = useBlink(ap, box.center[0]);
-  return (
-    <BoxLook {...props}>
-      <mesh ref={light} position={[box.size[0] / 2 - 0.2, 0, box.size[2] / 2 + 0.03]}>
-        <boxGeometry args={[0.16, Math.min(0.08, box.size[1] * 0.4), 0.04]} />
-        <meshBasicMaterial transparent color={colors.active} />
-      </mesh>
-    </BoxLook>
-  );
-}
-
-/** A LAN device's lights along the front of its top, blinking with the traffic through it. */
-function DeviceLights({ box, ap, count }: { box: Box; ap: Appearance; count: number }) {
-  const [w, h, d] = box.size;
-  return (
-    <>
-      {Array.from({ length: count }, (_, i) => (
-        <DeviceLight key={i} ap={ap} phase={i * 1.3} position={[-w / 2 + h * 0.8 + i * h * 0.5, h / 2 + 0.01, d / 2 - h * 0.4]} size={[h * 0.25, h * 0.12]} />
-      ))}
-    </>
-  );
-}
-function DeviceLight({ ap, phase, position, size }: { ap: Appearance; phase: number; position: V3; size: [number, number] }) {
-  const ref = useBlink(ap, phase, true);
-  return <Plate plateRef={ref} size={size} position={position} rotation={[-Math.PI / 2, 0, 0]} color={ap.status} opacity={0.95 * ap.fade} />;
-}
-
-/** A switch: a grey box, its light on top (its ports draw their own). */
-function SwitchLook(props: LookProps) {
-  return (
-    <BoxLook {...props}>
-      <DeviceLights box={props.box} ap={props.ap} count={1} />
-    </BoxLook>
-  );
-}
-
-/** A router: a grey box with four antennas standing up at its back and its lights along its front; no badge. */
-function RouterLook(props: LookProps) {
-  const { box, ap } = props;
-  const { colors } = useLook();
-  const [w, h, d] = box.size;
-  const length = w * 0.65;
-  return (
-    <BoxLook {...props}>
-      {[0, 1, 2, 3].map((i) => (
-        <mesh key={i} position={[-w / 2 + w * 0.08 + (i * w * 0.84) / 3, h / 2 + length / 2, -d / 2 + h * 0.4]} rotation={[0, 0, (i - 1.5) * 0.08]}>
-          <cylinderGeometry args={[h * 0.1, h * 0.14, length, 8]} />
-          <meshBasicMaterial transparent color={colors.neutral} opacity={0.85 * ap.fade} />
-        </mesh>
-      ))}
-      <DeviceLights box={box} ap={ap} count={5} />
     </BoxLook>
   );
 }
@@ -476,17 +360,27 @@ function OutlineLook({ box, node, ap, order, total }: LookProps) {
 /** The looks by name: a box's by its twin's look, any other shape by its shape. */
 export const LOOK_COMPONENTS: Record<string, LookComponent> = {
   box: BoxLook,
-  node: NodeLook,
   cluster: ClusterLook,
-  drive: DriveLook,
-  switch: SwitchLook,
-  router: RouterLook,
   cylinder: CylinderLook,
   drum: DrumLook,
   hex: HexLook,
   gate: GateLook,
   port: PortLook,
 };
+/**
+ * The looks drawn from a preset of `presentation.visual` (`VISUAL_PRESETS`) over a plain box: a machine a mini PC's
+ * front, a router and a switch their lights and antennas, a disk and a core or memory their load.
+ */
+const PRESET_LOOKS: Record<string, (node: TwinView) => string | undefined> = {
+  node: () => "mini-pc",
+  router: () => "router",
+  switch: () => "switch",
+  drive: (n) => (n.children.length ? undefined : "drive"),
+  core: (n) => (n.children.length ? undefined : "level-y"),
+  memory: (n) => (n.children.length ? undefined : "level-x"),
+};
+export const presetOf = (node: TwinView) => PRESET_LOOKS[node.look]?.(node);
+
 export const lookOf = (box: Box, node: TwinView): LookComponent => (box.shape !== "box" ? LOOK_COMPONENTS[box.shape] : LOOK_COMPONENTS[node.look]) ?? BoxLook;
 
 /** One solid of the scene at its place, drawn by its look; drawn again only when its appearance or size changes. */
@@ -495,11 +389,16 @@ export const Solid = memo(
     const { colors } = useLook();
     const visual = props.node.visual;
     // A model's own drawing goes over its look, or instead of it.
-    const Look = visual?.mode === "replace" ? OutlineLook : lookOf(props.box, props.node);
+    const replace = visual?.mode === "replace";
+    const Look = replace ? OutlineLook : lookOf(props.box, props.node);
+    // The look's own preset (unless the model draws instead of it), then the model's drawing.
+    const preset = replace || props.box.shape !== "box" ? undefined : presetOf(props.node);
+    const presetVisual = useMemo(() => (preset ? { preset } : undefined), [preset]);
     return (
       <group position={props.box.center} visible={!props.ap.hidden}>
         <Look {...props} />
-        {visual && <VisualParts parts={visual.parts} node={props.node} box={props.box} ap={props.ap} colors={colors} />}
+        {presetVisual && <VisualParts visual={presetVisual} node={props.node} box={props.box} ap={props.ap} colors={colors} />}
+        {visual && <VisualParts visual={visual} node={props.node} box={props.box} ap={props.ap} colors={colors} />}
       </group>
     );
   },

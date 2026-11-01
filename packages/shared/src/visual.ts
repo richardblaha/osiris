@@ -9,7 +9,9 @@
  */
 export interface DtdlVisual {
   mode?: "add" | "replace";
-  parts: VisualPart[];
+  /** A built-in drawing (`VISUAL_PRESETS`) drawn first, under the model's own parts. */
+  preset?: string;
+  parts?: VisualPart[];
 }
 
 export type VisualShape = "box" | "cylinder" | "sphere" | "plane" | "gltf";
@@ -25,8 +27,9 @@ export type VisualAxis = "x" | "y" | "z";
  */
 export type VisualValue = string;
 
-/** The theme's colours a part may wear by name; else `#rrggbb`. `level` is its value's band (well, warning, error). */
-export const VISUAL_COLORS = ["status", "accent", "active", "neutral", "warn", "error", "level"] as const;
+/** The theme's colours a part may wear by name; else `#rrggbb`. `level` is its value's band (well, warning, error),
+ * `body` the colour (and, without `opacity`, the opacity) the view gives the solid's body as it stands. */
+export const VISUAL_COLORS = ["status", "accent", "active", "neutral", "warn", "error", "level", "body"] as const;
 export type VisualColor = (typeof VISUAL_COLORS)[number] | `#${string}`;
 
 export interface VisualPart {
@@ -45,7 +48,7 @@ export interface VisualPart {
   opacity?: number;
   /** Its edges drawn in its colour. */
   outline?: boolean;
-  /** Shown only while the value is there and not 0, false or empty (or equals, with `name=value`). */
+  /** Shown only while the value is there and not 0, false or empty (or equals, with `name=value`); `!` turns it round. */
   when?: VisualValue;
   /** Grows from its start along `axis` (default y) as far as the value (0–1) says. */
   fill?: { value: VisualValue; axis?: VisualAxis };
@@ -59,7 +62,7 @@ export interface VisualPart {
 
 const MAX_PARTS = 64;
 const VALUE = /^[A-Za-z][A-Za-z0-9_]{0,63}(\/[A-Za-z][A-Za-z0-9_]{0,63})?$/;
-const CONDITION = /^[A-Za-z][A-Za-z0-9_]{0,63}(\/[A-Za-z][A-Za-z0-9_]{0,63})?(=[^\s=]{1,64})?$/;
+const CONDITION = /^!?[A-Za-z][A-Za-z0-9_]{0,63}(\/[A-Za-z][A-Za-z0-9_]{0,63})?(=[^\s=]{1,64})?$/;
 const AXES = ["x", "y", "z"];
 const PART_KEYS = new Set(["asset", "shape", "at", "size", "rotate", "color", "opacity", "outline", "when", "fill", "blink", "spin", "repeat"]);
 
@@ -71,8 +74,10 @@ export function visualErrors(id: string, v: unknown): string[] {
   if (!v || typeof v !== "object" || Array.isArray(v)) return [`${at} must be an object`];
   const o = v as Record<string, unknown>;
   const errors: string[] = [];
-  for (const k of Object.keys(o)) if (k !== "mode" && k !== "parts") errors.push(`${at} has an unknown key ${k}`);
+  for (const k of Object.keys(o)) if (k !== "mode" && k !== "parts" && k !== "preset") errors.push(`${at} has an unknown key ${k}`);
   if (o.mode !== undefined && o.mode !== "add" && o.mode !== "replace") errors.push(`${at}.mode must be add or replace`);
+  if (o.preset !== undefined && !(typeof o.preset === "string" && o.preset in VISUAL_PRESETS)) errors.push(`${at}.preset is not one of ${Object.keys(VISUAL_PRESETS).join(", ")}`);
+  if (o.parts === undefined && o.preset !== undefined) return errors;
   if (!Array.isArray(o.parts)) return [...errors, `${at}.parts must be a list`];
   if (o.parts.length > MAX_PARTS) errors.push(`${at}.parts has more than ${MAX_PARTS} parts`);
   o.parts.slice(0, MAX_PARTS).forEach((part, i) => {
@@ -109,3 +114,45 @@ export function visualErrors(id: string, v: unknown): string[] {
   });
   return errors;
 }
+
+/** A drawing's parts: its preset's, then its own. */
+export const visualParts = (v: DtdlVisual): VisualPart[] => [...(v.preset ? (VISUAL_PRESETS[v.preset]?.parts ?? []) : []), ...(v.parts ?? [])];
+
+/** A part's level growing with its load, paler while only estimated (a core without its own metric). */
+const level = (axis: VisualAxis): VisualPart[] => [
+  { shape: "box", size: [0.84, 0.84, 0.84], color: "level", opacity: 0.45, fill: { value: "load", axis }, when: "!estimated" },
+  { shape: "box", size: [0.84, 0.84, 0.84], color: "level", opacity: 0.25, fill: { value: "load", axis }, when: "estimated" },
+];
+/** A row of a vent grille's slits across a front, at height `y`. */
+const slits = (y: number): VisualPart => ({ shape: "plane", at: [-0.46, y, 0.503], size: [0.012, 0.012, 1], color: "neutral", opacity: 0.35, repeat: { count: 28, axis: "x", step: 0.024 } });
+
+/**
+ * The built-in drawings, each also how the view draws the look of that name: a model takes one with `preset` (and
+ * adds its own parts), or copies its parts to change them. They are drawn over the look's body and outline.
+ */
+export const VISUAL_PRESETS: Record<string, DtdlVisual> = {
+  /** A part's load: its level from the floor up (a core). */
+  "level-y": { parts: level("y") },
+  /** A part's load along its length (memory, a disk). */
+  "level-x": { parts: level("x") },
+  /** A disk: its level, and its activity light on its front, blinking with its I/O. */
+  drive: { parts: [...level("x"), { shape: "box", at: [0.44, 0, 0.51], size: [0.06, 0.4, 0.02], color: "active", opacity: 0.95, blink: "io" }] },
+  /** A mini PC's front: a panel, a vent grille over most of it, a round power button and its light at the right; no badge. */
+  "mini-pc": {
+    parts: [
+      { shape: "plane", at: [0, 0, 0.501], size: [0.98, 0.96, 1], color: "neutral", opacity: 0.07 },
+      ...[-0.3, -0.15, 0, 0.15, 0.3].map(slits),
+      { shape: "cylinder", at: [0.46, 0.2, 0.503], rotate: [90, 0, 0], size: [0.014, 0.002, 0.048], color: "status", opacity: 0.9 },
+      { shape: "box", at: [0.46, 0.05, 0.503], size: [0.012, 0.012, 0.002], color: "status", opacity: 0.9 },
+    ],
+  },
+  /** A switch: its light on top. */
+  switch: { parts: [{ shape: "plane", at: [-0.4, 0.502, 0.35], rotate: [-90, 0, 0], size: [0.03, 0.08, 1], color: "status", opacity: 0.95, blink: "traffic" }] },
+  /** A home router: four antennas standing up at its back and its lights along its front; no badge. */
+  router: {
+    parts: [
+      { shape: "cylinder", at: [-0.42, 2.64, -0.4], size: [0.04, 4.3, 0.06], color: "neutral", opacity: 0.85, repeat: { count: 4, axis: "x", step: 0.28 } },
+      { shape: "plane", at: [-0.42, 0.502, 0.4], rotate: [-90, 0, 0], size: [0.035, 0.1, 1], color: "status", opacity: 0.95, blink: "traffic", repeat: { count: 5, axis: "x", step: 0.05 } },
+    ],
+  },
+};

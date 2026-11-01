@@ -335,10 +335,17 @@ const READINGS: Record<string, (v: TwinView) => unknown> = {
   network: (v) => v.network,
   status: (v) => v.status,
   errors: (v) => v.errors,
+  // The traffic through it: its own network, else the whole twin's (a LAN device).
+  traffic: (v) => {
+    if (v.network !== undefined) return v.network;
+    let root = v;
+    while (root.parent) root = root.parent;
+    return root.network;
+  },
 };
 /**
  * The value a part of a model's drawing follows (`presentation.visual`): one of the view's readings (`fill`,
- * `network`, `status`, `errors`, a hardware or workload reading: `load`, `io`, `cpu`, `memory`, `used`, `size`), else a
+ * `network`, `traffic` (its own network, else the whole twin's), `status`, `errors`, a hardware or workload reading: `load`, `io`, `cpu`, `memory`, `used`, `size`), else a
  * property of the twin; `a/b` is one over the other (undefined unless both are numbers and `b` isn't 0).
  */
 export function visualValue(v: TwinView, name: string): unknown {
@@ -355,6 +362,7 @@ export function visualValue(v: TwinView, name: string): unknown {
 }
 /** Whether a part's `when` holds: the value is there and not 0, false or empty, or it equals `name=value`'s value. */
 export function visualWhen(v: TwinView, condition: string): boolean {
+  if (condition.startsWith("!")) return !visualWhen(v, condition.slice(1));
   const eq = condition.indexOf("=");
   const value = visualValue(v, eq > 0 ? condition.slice(0, eq) : condition);
   if (eq > 0) return String(value) === condition.slice(eq + 1);

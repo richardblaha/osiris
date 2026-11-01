@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { api, currentInstance } from "../api.ts";
-import type { VisualAxis, VisualPart } from "@osiris/shared/dtdl.ts";
+import { visualParts, type DtdlVisual, type VisualAxis, type VisualPart } from "@osiris/shared/dtdl.ts";
 import { visualNumber, visualWhen, type TwinView } from "../scene.ts";
 import type { Box } from "../TwinLayout.ts";
 import { loadLevel } from "./info.ts";
@@ -42,6 +42,7 @@ function colorOf(part: VisualPart, node: TwinView, ap: Appearance, colors: Color
   if (c === "warn") return colors.warn;
   if (c === "error") return colors.error;
   if (c === "level") return statusColor(colors, loadLevel(part.fill ? visualNumber(node, part.fill.value) : 0));
+  if (c === "body") return ap.body;
   return c;
 }
 
@@ -129,7 +130,8 @@ function Copy({ part, index, node, box, ap, colors }: { part: VisualPart; index:
     size[axis] *= share;
   }
   const color = colorOf(part, node, ap, colors);
-  const opacity = (part.opacity ?? (part.shape === "gltf" ? 1 : 0.8)) * ap.fade;
+  // The body's colour carries the body's opacity too (already faded), unless the part says its own.
+  const opacity = part.color === "body" && part.opacity === undefined ? ap.bodyOpacity : (part.opacity ?? (part.shape === "gltf" ? 1 : 0.8)) * ap.fade;
   const rotation = useMemo(() => new THREE.Euler(...((part.rotate ?? [0, 0, 0]).map((d) => d * DEG) as V3)), [part.rotate?.join()]);
   const group = useRef<THREE.Group>(null);
   const material = useRef<THREE.MeshBasicMaterial>(null);
@@ -173,8 +175,9 @@ function Copy({ part, index, node, box, ap, colors }: { part: VisualPart; index:
   );
 }
 
-/** A model's own drawing: its parts in the solid's frame, each following the twin's values. */
-export function VisualParts({ parts, node, box, ap, colors }: { parts: VisualPart[]; node: TwinView; box: Box; ap: Appearance; colors: Colors }) {
+/** A drawing (a model's own, or a look's preset): its parts in the solid's frame, each following the twin's values. */
+export function VisualParts({ visual, node, box, ap, colors }: { visual: DtdlVisual; node: TwinView; box: Box; ap: Appearance; colors: Colors }) {
+  const parts = useMemo(() => visualParts(visual), [visual]);
   return (
     <>
       {parts.map((part, i) => (

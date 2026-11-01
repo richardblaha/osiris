@@ -361,7 +361,7 @@ describe("the DTDL models are editable", () => {
       return out;
     };
     const twin = app();
-    const put = (name: string, body: Uint8Array) => twin.request(`/api/instances/k8s/assets/${name}`, { method: "PUT", headers: { "content-type": "model/gltf-binary" }, body });
+    const put = (name: string, body: Uint8Array) => twin.request(`/api/instances/k8s/assets/${name}`, { method: "PUT", headers: { "content-type": "model/gltf-binary" }, body: body as Uint8Array<ArrayBuffer> });
     const good = glb({ asset: { version: "2.0" }, scenes: [{ nodes: [] }] });
     const saved = await put("elitedesk.glb", good);
     expect(saved.status).toBe(200);
