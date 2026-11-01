@@ -3,7 +3,7 @@ import { clusterGraph, type ClusterInput } from "../src/sources/kubernetes/graph
 import type { PodObject } from "../src/sources/kubernetes/kube.ts";
 import { dtdlModel } from "../src/sources/kubernetes/models.ts";
 import { toRelationship } from "../src/twin.ts";
-import { buildScene, passes, scopeOf, type TwinView } from "../web/src/scene.ts";
+import { buildScene, passes, scopeOf, workloadLayer, type TwinView } from "../web/src/scene.ts";
 import { layoutTwin } from "../web/src/TwinLayout.ts";
 import { hasNetwork, interfacesOf, isStorage, routingOf, wiresOf } from "../web/src/scene.ts";
 import { PRESENTATION_CONTEXT, type DtdlInterface } from "@osiris/shared/dtdl.ts";
@@ -154,6 +154,15 @@ describe("the view's presentation and filters", () => {
     const pod = [...withCustom.byId.values()].find((v) => !v.of && v.model === custom["@id"])!;
     // The older single grouping layer reads as the namespaces'.
     expect([pod.look, pod.color, pod.labelProp, pod.layer, pod.visible]).toEqual(["hex", "#ff00ff", "name", "namespaces", true]);
+  });
+
+  it("puts each workload in the layer of its kind, its projections into the nodes too", () => {
+    const layers = new Map([...scene.byId.values()].filter((v) => v.look === "workload").map((v) => [`${v.of ? "~" : ""}${v.name}`, v.layer]));
+    expect(layers.get("db")).toBe("statefulsets");
+    expect(layers.get("~db")).toBe("statefulsets");
+    expect(layers.get("j")).toBe("jobs");
+    expect(layers.get("lone")).toBe("standalonePods");
+    expect([workloadLayer("Deployment"), workloadLayer("DaemonSet"), workloadLayer("CronJob"), workloadLayer("ReplicaSet"), workloadLayer("CephCluster")]).toEqual(["deployments", "daemonsets", "jobs", "replicasets", "otherWorkloads"]);
   });
 
   it("filters: a hidden model hides its twins and their children, a status and a search filter the rest", () => {

@@ -3,12 +3,15 @@ import { useMemo, useRef, useState } from "react";
 import type { MaterialIcon } from "@osiris/shared/material-icons.ts";
 import { Icon } from "./Icon.tsx";
 import { usePopupClose } from "./Telemetry.tsx";
+import { K8S_ICONS } from "./k8s-icons.ts";
 import { ALL_LAYERS, DEFAULT_DISPLAY, LAYER_KEYS, type DisplayOptions, type Layers } from "./Twin3D.tsx";
-import type { TwinScene, ViewFilters } from "./scene.ts";
+import { INFRA_LAYERS, WORKLOAD_LAYERS, type TwinScene, type ViewFilters, type ViewLayer, type WorkloadLayer } from "./scene.ts";
 import type { PanelId } from "./windowLayout.ts";
 
-/** Each layer's icon in the menu. */
-const LAYER_ICONS: Record<(typeof LAYER_KEYS)[number], MaterialIcon> = { hardware: "dashboard", network: "lan", services: "hub", storage: "storage", namespaces: "folder", workloads: "deployed_code" };
+/** Each infrastructure layer's icon in the menu. */
+const LAYER_ICONS: Record<(typeof INFRA_LAYERS)[number], MaterialIcon> = { hardware: "dashboard", network: "lan", services: "hub", storage: "storage", namespaces: "folder" };
+/** Each kind of workload's Kubernetes icon (the generated, geometry-only markup of `k8s-icons.ts`). */
+const WORKLOAD_ICONS: Record<WorkloadLayer, string> = { deployments: "deploy", statefulsets: "sts", daemonsets: "ds", jobs: "job", replicasets: "rs", standalonePods: "pod", otherWorkloads: "rs" };
 
 /**
  * The display menu in the bottom bar (its button an icon): the layers to show — the low-level network, the network
@@ -49,6 +52,12 @@ export function DisplayMenu({
     return [...m.entries()].sort((a, b) => a[1].name.localeCompare(b[1].name));
   }, [scene]);
   const count = scene ? [...scene.byId.values()].filter((v) => !v.of).length : undefined;
+  /** How many workloads of each kind the scene has. */
+  const workloads = useMemo(() => {
+    const n = new Map<ViewLayer, number>();
+    for (const v of scene?.byId.values() ?? []) if (!v.of && !v.isBand && v.look === "workload") n.set(v.layer as ViewLayer, (n.get(v.layer as ViewLayer) ?? 0) + 1);
+    return n;
+  }, [scene]);
   const off = LAYER_KEYS.filter((k) => !layers[k]).length;
   const filtered = filters.hiddenModels.size > 0 || !!filters.minStatus || !!filters.query;
   const setFilter = (change: (f: ViewFilters) => ViewFilters) => onFilters(change(filters));
@@ -70,31 +79,62 @@ export function DisplayMenu({
         {count !== undefined && <span className="text-xs text-fg-muted">{count}</span>}
       </button>
       {open && (
-        <div className="menu-popup menu-up start-0 w-80 p-3" role="dialog" aria-label={label}>
+        <div className="menu-popup menu-up start-0 w-[44rem] max-w-[calc(100vw-1.5rem)] p-3" role="dialog" aria-label={label}>
           <div className="flex items-center gap-2">
             <p className="section-header flex-1">{t("twin:display.layers")}</p>
             <button type="button" className="btn-link text-xs" onClick={reset}>
               {t("twin:display.reset")}
             </button>
           </div>
-          <ul className="mt-1 space-y-0.5">
-            {LAYER_KEYS.map((k, i) => (
-              <li key={k}>
-                <label className="layer-row" data-on={layers[k]}>
-                  <input type="checkbox" className="sr-only" checked={layers[k]} onChange={(e) => onLayers({ ...layers, [k]: e.target.checked })} />
-                  <Icon name={LAYER_ICONS[k]} className="h-5 w-5 shrink-0" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm">{t(`twin:display.layer.${k}`)}</span>
-                    <span className="block text-xs text-fg-muted">{t(`twin:display.layerHelp.${k}`)}</span>
-                  </span>
-                  <kbd className="text-[10px] text-fg-muted">{i + 1}</kbd>
-                  <span className="layer-switch" aria-hidden="true" />
-                </label>
-              </li>
+          <div className="mt-1 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+            {(
+              [
+                ["groupInfra", INFRA_LAYERS],
+                ["groupWorkloads", WORKLOAD_LAYERS],
+              ] as const
+            ).map(([group, keys]) => (
+              <div key={group}>
+                <p className="flex items-center px-2 text-xs text-fg-muted">
+                  <span className="flex-1">{t(`twin:display.${group}`)}</span>
+                  {/* Key 6 shows the workloads alone. */}
+                  {group === "groupWorkloads" && <kbd className="me-10 text-[10px]">{INFRA_LAYERS.length + 1}</kbd>}
+                </p>
+                <ul className="mt-0.5 space-y-0.5">
+                  {keys.map((k: ViewLayer) => {
+                    const workload = (WORKLOAD_LAYERS as readonly string[]).includes(k);
+                    const n = workloads.get(k);
+                    // Keys 1–5 show one infrastructure layer alone.
+                    const key = workload ? "" : String(LAYER_KEYS.indexOf(k) + 1);
+                    return (
+                      <li key={k}>
+                        <label className="layer-row" data-on={layers[k]}>
+                          <input type="checkbox" className="sr-only" checked={layers[k]} onChange={(e) => onLayers({ ...layers, [k]: e.target.checked })} />
+                          {workload ? (
+                            <svg className="k8s-icon h-5 w-5 shrink-0" viewBox={K8S_ICONS[WORKLOAD_ICONS[k as WorkloadLayer]]!.viewBox} aria-hidden="true" dangerouslySetInnerHTML={{ __html: K8S_ICONS[WORKLOAD_ICONS[k as WorkloadLayer]]!.body }} />
+                          ) : (
+                            <Icon name={LAYER_ICONS[k as (typeof INFRA_LAYERS)[number]]} className="h-5 w-5 shrink-0" />
+                          )}
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm">
+                              {t(`twin:display.layer.${k}`)}
+                              {workload && <span className="ms-1 text-xs text-fg-muted">{n ?? 0}</span>}
+                            </span>
+                            <span className="block text-xs text-fg-muted">{t(`twin:display.layerHelp.${k}`)}</span>
+                          </span>
+                          {key && <kbd className="text-[10px] text-fg-muted">{key}</kbd>}
+                          <span className="layer-switch" aria-hidden="true" />
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
 
-          <p className="section-header mt-3">{t("twin:display.drawing")}</p>
+          <div className="mt-3 grid gap-x-4 sm:grid-cols-2">
+          <div>
+          <p className="section-header">{t("twin:display.drawing")}</p>
           <label className="mt-1 flex items-center gap-2 text-sm">
             <span className="flex-1">{t("twin:display.labels")}</span>
             <select className="field py-0.5 text-xs" value={display.labels} onChange={(e) => onDisplay({ ...display, labels: e.target.value as DisplayOptions["labels"] })}>
@@ -135,7 +175,9 @@ export function DisplayMenu({
             <p className="mt-1 text-xs text-fg-muted">{t("twin:windows.help")}</p>
           )}
 
-          <p className="section-header mt-3">{t("twin:display.filters")}</p>
+          </div>
+          <div>
+          <p className="section-header mt-3 sm:mt-0">{t("twin:display.filters")}</p>
           <input
             className="field mt-1 w-full px-2 py-1 text-xs"
             placeholder={t("twin:display.search")}
@@ -148,7 +190,7 @@ export function DisplayMenu({
             <option value="error">{t("twin:display.errorOnly")}</option>
           </select>
           {modelList.length > 0 && (
-            <ul className="mt-1 max-h-36 space-y-0.5 overflow-y-auto text-xs">
+            <ul className="mt-1 max-h-48 space-y-0.5 overflow-y-auto text-xs">
               {modelList.map(([id, m]) => (
                 <li key={id}>
                   <label className="flex items-center gap-1.5">
@@ -172,6 +214,8 @@ export function DisplayMenu({
               ))}
             </ul>
           )}
+          </div>
+          </div>
           <p className="mt-3 text-xs text-fg-muted">{t("twin:display.hint")}</p>
         </div>
       )}

@@ -14,10 +14,31 @@ export interface Resources {
   estimated?: boolean;
 }
 
-/** The view's layers, the base aside (it always shows). */
-export type ViewLayer = Exclude<PresentationLayer, "base" | "logical">;
-/** A model's layer as the view switches it: the older `logical` is the namespaces' (a workload's look: the workloads'). */
-export const viewLayer = (layer: PresentationLayer, look: Look): ViewLayer | "base" => (layer === "logical" ? (look === "workload" ? "workloads" : "namespaces") : layer);
+/** The workloads' layers, one per kind of owner: Deployments, StatefulSets, DaemonSets, Jobs (a CronJob's too), bare
+ * ReplicaSets, standalone Pods and any other kind (an operator's own resource). */
+export const WORKLOAD_LAYERS = ["deployments", "statefulsets", "daemonsets", "jobs", "replicasets", "standalonePods", "otherWorkloads"] as const;
+export type WorkloadLayer = (typeof WORKLOAD_LAYERS)[number];
+const KIND_LAYERS: Record<string, WorkloadLayer> = {
+  Deployment: "deployments",
+  StatefulSet: "statefulsets",
+  DaemonSet: "daemonsets",
+  Job: "jobs",
+  CronJob: "jobs",
+  ReplicaSet: "replicasets",
+  Pod: "standalonePods",
+};
+/** The layer of a workload of this owner kind. */
+export const workloadLayer = (kind: unknown): WorkloadLayer => KIND_LAYERS[String(kind)] ?? "otherWorkloads";
+export const isWorkloadLayer = (layer: string): layer is WorkloadLayer => (WORKLOAD_LAYERS as readonly string[]).includes(layer);
+/** The infrastructure's layers, then the workloads' (the base aside: it always shows). */
+export const INFRA_LAYERS = ["hardware", "network", "services", "storage", "namespaces"] as const;
+export type ViewLayer = (typeof INFRA_LAYERS)[number] | WorkloadLayer;
+/**
+ * A twin's layer as the view switches it: its model's, but a workload's by its owner kind (`ownerKind`); the older
+ * `logical` is the namespaces' (or, with a workload's look, the workload's).
+ */
+export const viewLayer = (layer: PresentationLayer, look: Look, ownerKind?: unknown): ViewLayer | "base" =>
+  layer === "workloads" || (layer === "logical" && look === "workload") ? workloadLayer(ownerKind) : layer === "logical" ? "namespaces" : layer;
 /** The looks of a machine's parts: they stand on its floor (a deck under its workloads). */
 export const HARDWARE_LOOKS: ReadonlySet<Look> = new Set(["cpu", "memory", "drive"]);
 
@@ -147,7 +168,7 @@ export function buildScene(
   const layerOf = (t: DigitalTwin, l: ReturnType<typeof lookOfModel>): ViewLayer | "base" =>
     !l.ownLayer && l.layer === "network" && (t.kind === "loadbalancer" || t.kind === "public") ? "services"
     : !l.ownLayer && l.layer === "network" && t.kind === "physical" ? "hardware"
-    : viewLayer(l.layer, l.look);
+    : viewLayer(l.layer, l.look, t.ownerKind);
   const byId = new Map<string, TwinView>(
     twins.map((t) => {
       const own = statusOf(t);

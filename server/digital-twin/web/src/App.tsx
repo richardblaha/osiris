@@ -1,7 +1,7 @@
 import type { DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Icon } from "./Icon.tsx";
-import { buildScene, passes, scopeOf, type Resources, type TwinScene, type TwinView, type ViewFilters } from "./scene.ts";
+import { buildScene, passes, scopeOf, WORKLOAD_LAYERS, type Resources, type TwinScene, type TwinView, type ViewFilters } from "./scene.ts";
 import { t } from "i18next";
 import { api, currentInstance, setInstance, type DashboardSummary, type InstanceSummary } from "./api.ts";
 import { Instances } from "./Instances.tsx";
@@ -98,9 +98,11 @@ export function App() {
   /** The layers the 3D view shows (hardware, network, services, storage, namespaces, workloads), kept in this browser. */
   const [layers, setLayers] = useState<Layers>(() => {
     try {
-      // The older single grouping layer (`logical`) switched namespaces and workloads together.
-      const { logical, ...stored } = JSON.parse(localStorage.getItem("osiris.digital-twin.layers") ?? "{}") as Partial<Layers> & { logical?: boolean };
-      return { ...ALL_LAYERS, ...(logical === false ? { namespaces: false, workloads: false } : {}), ...stored };
+      // Older choices: one grouping layer (`logical`) for namespaces and workloads, then one for every workload.
+      const { logical, workloads, ...stored } = JSON.parse(localStorage.getItem("osiris.digital-twin.layers") ?? "{}") as Partial<Layers> & { logical?: boolean; workloads?: boolean };
+      const allWorkloads = (on: boolean) => Object.fromEntries(WORKLOAD_LAYERS.map((k) => [k, on]));
+      const known = Object.fromEntries(Object.entries(stored).filter(([k, v]) => k in ALL_LAYERS && typeof v === "boolean"));
+      return { ...ALL_LAYERS, ...(logical === false ? { namespaces: false, ...allWorkloads(false) } : {}), ...(workloads === false ? allWorkloads(false) : {}), ...known };
     } catch {
       return ALL_LAYERS;
     }

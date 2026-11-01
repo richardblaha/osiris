@@ -113,7 +113,13 @@
       "services": "Síťové služby",
       "storage": "Úložiště",
       "namespaces": "Namespaces",
-      "workloads": "Workloady"
+      "deployments": "Deploymenty",
+      "statefulsets": "StatefulSety",
+      "daemonsets": "DaemonSety",
+      "jobs": "Joby",
+      "replicasets": "ReplicaSety",
+      "standalonePods": "Samostatné pody",
+      "otherWorkloads": "Ostatní workloady"
     },
     "layerHelp": {
       "hardware": "CPU s jádry, paměť, disky, LAN a USB porty; co na nich běží",
@@ -121,7 +127,13 @@
       "services": "Load balancery, Services, Ingressy a cesta z internetu k podům",
       "storage": "Svazky, Ceph s pooly a disky",
       "namespaces": "Každý namespace jako pás přes nody",
-      "workloads": "Deploymenty, StatefulSety, DaemonSety kolem svých podů"
+      "deployments": "Bezstavové aplikace a jejich pody",
+      "statefulsets": "Aplikace s vlastní identitou a úložištěm",
+      "daemonsets": "Pod na každém nodu (agenti, síť)",
+      "jobs": "Jednorázové a plánované úlohy (CronJoby)",
+      "replicasets": "ReplicaSety bez Deploymentu",
+      "standalonePods": "Pody, které nic nespravuje",
+      "otherWorkloads": "Pody jiných vlastníků (operátory)"
     },
     "drawing": "Vykreslení",
     "labels": "Popisky",
@@ -132,7 +144,9 @@
     },
     "addresses": "Adresy u rozhraní",
     "traffic": "Pohyb provozu",
-    "hint": "Klávesy 1–6 ukážou jedinou vrstvu, 0 všechny. Klikněte na Ingress, Service nebo pod: rozsvítí se cesta jeho provozu. Klikněte na kontejner nebo CPU: rozsvítí se, co na čem běží."
+    "hint": "Klávesy 1–5 ukážou jedinou vrstvu infrastruktury, 6 jen workloady, 0 vše. Skrytý druh workloadu skryje i své pody. Klikněte na Ingress, Service nebo pod: rozsvítí se cesta jeho provozu. Klikněte na kontejner nebo CPU: rozsvítí se, co na čem běží.",
+    "groupInfra": "Infrastruktura",
+    "groupWorkloads": "Workloady"
   },
   "keysHint": "Klávesy: WASD/šipky posun, Q/E dolů/nahoru, +/- zoom, Tab výběr, H celé dvojče, 1–6 vrstvy.",
   "models": {

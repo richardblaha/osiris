@@ -8,7 +8,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { formatBytes, formatBytesRate, formatNumber } from "./i18n.ts";
 import { iconOf, kindOf, portKind } from "./icons.ts";
-import { fillOf, layoutRules, pathOf, storageOf, type TwinScene, type TwinView, type ViewLayer } from "./scene.ts";
+import { fillOf, INFRA_LAYERS, isWorkloadLayer, layoutRules, pathOf, storageOf, WORKLOAD_LAYERS, type TwinScene, type TwinView, type ViewLayer } from "./scene.ts";
 import { layoutTwin, type Box, type Link, type LinkLayer, type Scene } from "./TwinLayout.ts";
 
 /**
@@ -18,9 +18,12 @@ import { layoutTwin, type Box, type Link, type LinkLayer, type Scene } from "./T
  * storage (volume claims, Ceph with its pools and disks), the namespaces (bands) and the workloads.
  */
 export type Layers = Record<ViewLayer, boolean>;
-/** The layers in the menu's and the keys' order (1–6). */
-export const LAYER_KEYS = ["hardware", "network", "services", "storage", "namespaces", "workloads"] as const satisfies readonly ViewLayer[];
-export const ALL_LAYERS: Layers = { hardware: true, network: true, services: true, storage: true, namespaces: true, workloads: true };
+/** The layers in the menu's order: the infrastructure's (keys 1–5 show one alone), then each kind of workload (key 6
+ * shows them all, alone). */
+export const LAYER_KEYS = [...INFRA_LAYERS, ...WORKLOAD_LAYERS] as const satisfies readonly ViewLayer[];
+export const ALL_LAYERS = Object.fromEntries(LAYER_KEYS.map((k) => [k, true])) as Layers;
+/** Only these layers on. */
+const onlyLayers = (on: (k: ViewLayer) => boolean) => Object.fromEntries(LAYER_KEYS.map((k) => [k, on(k)])) as Layers;
 
 /** How the view draws: labels by level of detail, every name, or none; the interfaces' addresses; moving traffic. */
 export interface DisplayOptions {
@@ -758,8 +761,16 @@ export function Twin3D({
     let scenePaths: TwinScene | undefined;
     /** Whether a layer shows (the base always does). */
     const layerOn = (layer: LinkLayer | TwinView["layer"]) => layer === "base" || shown.current[layer];
-    /** Whether a twin is in a layer the view hides: its model's (`presentation.layer`, else the built-in one). */
-    const hidden = (node: TwinView | undefined): boolean => !!node && !layerOn(node.layer);
+    /**
+     * Whether a twin is in a layer the view hides: its model's (`presentation.layer`, else the built-in one; a
+     * workload's by its kind). A hidden workload takes what it groups with it (its pods and their containers).
+     */
+    const hidden = (node: TwinView | undefined): boolean => {
+      if (!node) return false;
+      if (!layerOn(node.layer)) return true;
+      for (let n = node.parent; n; n = n.parent) if (isWorkloadLayer(n.layer) && !layerOn(n.layer)) return true;
+      return false;
+    };
     /** Whether a twin is the selected one or inside it: outside the selection everything fades. */
     const inFocus = (node: TwinView | undefined) => {
       const focus = chosen.current;
@@ -1370,7 +1381,7 @@ export function Twin3D({
   }, [home]);
 
   // The keyboard inside the model: WASD/arrows move the look-at point, Q/E down/up, +/- zoom, Tab/Shift+Tab cycle
-  // the selection, H the whole twin, 1–6 one layer alone, 0 every layer. Keys go to inputs (the chat) first.
+  // the selection, H the whole twin, 1–5 one infrastructure layer alone, 6 the workloads alone, 0 every layer. Keys go to inputs (the chat) first.
   const onKey = (e: React.KeyboardEvent) => {
     const el = e.target as HTMLElement;
     if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable)) return;
@@ -1379,7 +1390,8 @@ export function Twin3D({
     const handled = () => e.preventDefault();
     if (k === "Tab") (handled(), onNavigate?.(e.shiftKey ? "prev" : "next"));
     else if (k === "h" || k === "H") (handled(), onNavigate?.("home"));
-    else if (k >= "1" && k <= String(LAYER_KEYS.length) && k.length === 1) (handled(), onLayersChange?.(Object.fromEntries(LAYER_KEYS.map((l, i) => [l, String(i + 1) === k])) as unknown as Layers));
+    else if (k >= "1" && k <= String(INFRA_LAYERS.length) && k.length === 1) (handled(), onLayersChange?.(onlyLayers((l) => l === INFRA_LAYERS[Number(k) - 1])));
+    else if (k === String(INFRA_LAYERS.length + 1)) (handled(), onLayersChange?.(onlyLayers(isWorkloadLayer)));
     else if (k === "0") (handled(), onLayersChange?.(ALL_LAYERS));
     else if (k === "ArrowLeft" || k === "a" || k === "A") (handled(), c?.pan(-60, 0));
     else if (k === "ArrowRight" || k === "d" || k === "D") (handled(), c?.pan(60, 0));

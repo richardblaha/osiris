@@ -105,7 +105,13 @@
       "services": "Network services",
       "storage": "Storage",
       "namespaces": "Namespaces",
-      "workloads": "Workloads"
+      "deployments": "Deployments",
+      "statefulsets": "StatefulSets",
+      "daemonsets": "DaemonSets",
+      "jobs": "Jobs",
+      "replicasets": "ReplicaSets",
+      "standalonePods": "Standalone pods",
+      "otherWorkloads": "Other workloads"
     },
     "layerHelp": {
       "hardware": "CPUs with their cores, memory, disks, LAN and USB ports; what runs on them",
@@ -113,7 +119,13 @@
       "services": "Load balancers, Services, Ingresses and the way from the internet to the pods",
       "storage": "Volumes, Ceph with its pools and disks",
       "namespaces": "Each namespace a band across the nodes",
-      "workloads": "Deployments, StatefulSets, DaemonSets around their pods"
+      "deployments": "Stateless apps and their pods",
+      "statefulsets": "Apps with their own identity and storage",
+      "daemonsets": "A pod on every node (agents, networking)",
+      "jobs": "One-off and scheduled tasks (CronJobs)",
+      "replicasets": "ReplicaSets without a Deployment",
+      "standalonePods": "Pods nothing manages",
+      "otherWorkloads": "Pods of other owners (operators)"
     },
     "drawing": "Drawing",
     "labels": "Labels",
@@ -124,7 +136,9 @@
     },
     "addresses": "Addresses at the interfaces",
     "traffic": "Moving traffic",
-    "hint": "Keys 1–6 show one layer alone, 0 all of them. Click an Ingress, a Service or a pod: the way of its traffic lights up. Click a container or a CPU: what runs on what lights up."
+    "hint": "Keys 1–5 show one infrastructure layer alone, 6 the workloads alone, 0 everything. Hiding a kind of workload hides its pods too. Click an Ingress, a Service or a pod: the way of its traffic lights up. Click a container or a CPU: what runs on what lights up.",
+    "groupInfra": "Infrastructure",
+    "groupWorkloads": "Workloads"
   },
   "keysHint": "Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1–6 layers.",
   "models": {
