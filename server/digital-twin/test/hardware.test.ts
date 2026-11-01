@@ -65,6 +65,17 @@ describe("the cluster's LAN", () => {
 });
 
 describe("the machines' layout", () => {
+  it("holds only the machines in the cluster's solid: the switch, the router and Ceph stand outside it", () => {
+    const cluster = box("k8s:c");
+    for (const n of ["control-1", "worker-1", "worker-2"]) expect(inside(box(nodeId(n)), cluster)).toBe(true);
+    const lan = lanIds("k8s:c");
+    for (const id of [lan.switch, lan.router, "k8s:c/ceph/ceph"]) {
+      const b = box(id);
+      const apart = [0, 2].some((i) => min(b, i) >= max(cluster, i) - 1e-6 || max(b, i) <= min(cluster, i) + 1e-6);
+      expect(apart, id).toBe(true);
+    }
+  });
+
   it("stacks the machines lying flat, the control plane on top, the workers below by name", () => {
     const [c1, w1, w2] = ["control-1", "worker-1", "worker-2"].map((n) => box(nodeId(n)));
     expect(c1!.center[1]).toBeGreaterThan(w1!.center[1]);
@@ -76,7 +87,7 @@ describe("the machines' layout", () => {
     expect(min(w1!, 1)).toBeGreaterThan(max(w2!, 1));
   });
 
-  it("covers a machine's floor with its CPU, memory and NVMe, its USB disks outside it but in the cluster, cabled to its side", () => {
+  it("covers a machine's floor with its CPU, memory and NVMe, its USB disks outside it and the cluster, cabled to its side", () => {
     const n = box(nodeId("worker-1"));
     const parts = ["cpu", "memory", "disk/nvme0n1"].map((p) => box(`${nodeId("worker-1")}/hw/${p}`));
     for (const p of parts) expect(inside(p, n)).toBe(true);
@@ -88,8 +99,7 @@ describe("the machines' layout", () => {
     const cluster = box("k8s:c");
     for (const d of ["sdb", "sdc"]) {
       const disk = box(`${nodeId("worker-1")}/hw/disk/${d}`);
-      expect(inside(disk, cluster)).toBe(true);
-      expect(min(disk, 0)).toBeGreaterThan(max(n, 0));
+      expect(min(disk, 0)).toBeGreaterThan(max(cluster, 0));
       const cable = layout.links.find((l) => l.kind === "cable" && l.to === disk.id)!;
       expect(cable.layer).toBe("hardware");
       // From a USB port on the machine's right wall, facing out, to the disk's side.

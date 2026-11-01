@@ -544,7 +544,9 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const ownPorts = node.children.filter((c) => isPort(c, rules));
   const devices = node.children.filter((c) => !!rules.device?.(c));
   const columns = node.children.filter((c) => !devices.includes(c) && isColumn(c, rules)).sort(stackOrder);
-  const loose = node.children.filter((c) => !columns.includes(c) && !devices.includes(c) && !isPort(c, rules));
+  // A storage cluster of its own (Ceph) stands outside, beside the machines' USB disks it stores on.
+  const stores = node.children.filter((c) => c.look === "ceph" && !columns.includes(c) && !devices.includes(c));
+  const loose = node.children.filter((c) => !columns.includes(c) && !devices.includes(c) && !stores.includes(c) && !isPort(c, rules));
   const keyOf = (v: TwinView) => v.band ?? "";
   const isPart = (v: TwinView) => !!rules.hardware?.(v);
   const isExternal = (v: TwinView) => isPart(v) && v.look === "drive" && v.twin.internal === false;
@@ -634,12 +636,23 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const lanGap = devices.length ? Math.max(2.4, 60 * u) : 0;
   const devW = devSizes.reduce((n, s) => n + s[0], 0) + devGap * Math.max(0, devices.length - 1);
 
-  const shelfX = pad + slab[0] + (shelfW ? Math.max(2.4, 40 * u) : 0);
-  const width = Math.max(shelfW ? shelfX + shelfW + pad : pad + slab[0] + pad, devW + 2 * pad, portsWidth(ownPorts, rules) + PORT[0] + PORT_GAP + 2 * pad);
-  const slabZ = pad + lanD + lanGap;
-  const depth = slabZ + slab[2] + pad;
+  // The container's own solid holds only the machines (and what of it belongs to no machine, above them); the USB
+  // disks, the storage cluster and the LAN's devices stand outside it: the disks and the storage beside it, the
+  // switch and the router behind it.
+  const clusterW = Math.max(pad + slab[0] + pad, portsWidth(ownPorts, rules) + PORT[0] + PORT_GAP + 2 * pad);
   const stackH = columns.length * slab[1] + Math.max(0, columns.length - 1) * colGap + (loose.length ? (columns.length ? colGap : 0) + looseH : 0);
-  const height = pad + Math.max(stackH, 1, devices.length ? Math.max(...devSizes.map((s) => s[1])) + MM.antenna * u : 0) + pad;
+  const clusterH = pad + Math.max(stackH, 1) + pad;
+  const zC = lanD + lanGap;
+  const clusterD = pad + slab[2] + pad;
+  const outGap = Math.max(2.4, 40 * u);
+  const shelfX = clusterW + (shelfW ? outGap : 0);
+  const storeMs = stores.map((v) => ({ node: v, m: measure(v, rules) }));
+  const storeX = (shelfW ? shelfX + shelfW : clusterW) + outGap;
+  const storesW = storeMs.reduce((n, x) => n + x.m.size[0], 0) + outGap * Math.max(0, storeMs.length - 1);
+  const width = Math.max(clusterW, shelfW ? shelfX + shelfW : 0, storeMs.length ? storeX + storesW : 0, devW);
+  const slabZ = zC + pad;
+  const depth = zC + clusterD;
+  const height = Math.max(clusterH, devices.length ? Math.max(...devSizes.map((s) => s[1])) + MM.antenna * u : 0, ...storeMs.map((x) => x.m.size[1]));
   const cx = width / 2;
   const cz = depth / 2;
   const at = (px: number, py: number, pz: number): Vec => [px - cx, py, pz - cz];
@@ -649,11 +662,17 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const ix = pad + colPad;
   const iz = slabZ + colPad;
 
-  const boxes: Box[] = [{ id: node.id, shape: shapeOf(node, rules), center: [0, height / 2, 0], size: [width, height, depth], radius: roundness([width, height, depth]) }];
+  const clusterSize: Vec = [clusterW, clusterH, clusterD];
+  const boxes: Box[] = [{ id: node.id, shape: shapeOf(node, rules), center: at(clusterW / 2, clusterH / 2, zC + clusterD / 2), size: clusterSize, radius: roundness(clusterSize) }];
   const links: Link[] = [];
   const boards: Board[] = [];
   const placed = new Map<string, Placed & { port?: Vec }>();
-  const hub: Vec = [0, pad * 0.5, -depth / 2];
+  const hub: Vec = at(clusterW / 2, pad * 0.5, zC);
+  let storeAt = storeX;
+  for (const { node: store, m } of storeMs) {
+    place(store, m, at(storeAt + m.size[0] / 2, 0, zC + clusterD / 2), boxes, links, placed, boards);
+    storeAt += m.size[0] + outGap;
+  }
   // The container's own interfaces (LoadBalancers) on its back wall, beside the hub; public addresses go outside.
   const outside = ownPorts.filter((p) => kind(p) === "public");
   mountPorts(ownPorts.filter((p) => !outside.includes(p)), [hub[0] + PORT[0] + 0.6, hub[1], hub[2]], rules, boxes);
@@ -663,13 +682,13 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const portAt = new Map<string, Vec>();
   let wan: Vec | undefined;
   {
-    let x = (width - devW) / 2;
+    let x = Math.max(0, (clusterW - devW) / 2);
     devices.forEach((device, i) => {
       const size = devSizes[i]!;
-      const front = pad + lanD;
-      const center = at(x + size[0] / 2, pad + size[1] / 2, front - size[2] / 2);
+      const front = lanD;
+      const center = at(x + size[0] / 2, size[1] / 2, front - size[2] / 2);
       boxes.push({ id: device.id, shape: "box", center, size, radius: 0.1 });
-      placed.set(device.id, { at: [center[0], pad, center[2]], size, shape: "box" });
+      placed.set(device.id, { at: [center[0], 0, center[2]], size, shape: "box" });
       const ports = device.children.filter((p) => isPort(p, rules)).sort((a, b) => (a.name === "uplink" ? -1 : b.name === "uplink" ? 1 : a.name.localeCompare(b.name, undefined, { numeric: true })));
       const ahead = ports.filter((p) => p.name !== "wan");
       const step = MM.switchPort * u;
