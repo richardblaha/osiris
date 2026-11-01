@@ -133,7 +133,9 @@
       "sourceType": "Unknown kind of source.",
       "preferenceTooLarge": "The preference is too large.",
       "connectorType": "Unknown kind of data source.",
-      "connectionInUse": "A model's data profile still reads this connection."
+      "connectionInUse": "A model's data profile still reads this connection.",
+      "assetInvalid": "The 3D asset can't be used: {{detail}}",
+      "assetTooLarge": "The 3D asset is larger than {{max}} MB"
     },
     "validation": {
       "invalid": "Invalid request.",

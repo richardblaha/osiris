@@ -238,6 +238,9 @@ export function Twin3D({
   return (
     <div ref={host} className="relative isolate h-full w-full overflow-hidden outline-none" role="application" aria-label={t("twin:view3d")} tabIndex={0} onKeyDown={onKey}>
       <Canvas flat dpr={[1, 2]} gl={{ antialias: true, alpha: true }} camera={{ fov: 45, near: 0.1, far: 5000 }}>
+        {/* Light for the 3D assets' own materials (the built-in looks are unlit). */}
+        <ambientLight intensity={1.4} />
+        <directionalLight position={[1, 2, 1.5]} intensity={1.6} />
         <LookContext.Provider value={looks}>
           {content.scene.boxes.map((box, i) => {
             const node = content.byId.get(box.id);

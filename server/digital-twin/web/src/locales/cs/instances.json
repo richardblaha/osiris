@@ -81,7 +81,8 @@
   "tab": {
     "settings": "Nastavení",
     "models": "Modely",
-    "data": "Zdroje dat"
+    "data": "Zdroje dat",
+    "assets": "3D modely"
   },
   "data": {
     "profile": "Datový profil",
@@ -145,5 +146,17 @@
       "ca": "Certifikát CA (PEM)",
       "tool": "Nástroj"
     }
+  },
+  "assets": {
+    "title": "3D modely",
+    "help": "Binární soubory glTF (.glb), které obsahují vše v sobě — žádné soubory mimo ně, žádná komprese Draco ani meshopt. Kresba modelu ho umístí podle názvu: { \"shape\": \"gltf\", \"asset\": \"<název>\" } v presentation.visual.parts.",
+    "upload": "Nahrát .glb",
+    "empty": "Zatím žádné 3D modely.",
+    "name": "Název",
+    "size": "Velikost",
+    "updated": "Změněno",
+    "copy": "Zkopírovat díl",
+    "delete": "Smazat",
+    "confirmDelete": "Smazat 3D model {{name}}? Kresby, které ho umisťují, na jeho místě nic neukážou."
   }
 }

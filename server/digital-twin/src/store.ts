@@ -22,6 +22,8 @@ const SCHEMA = [
   // Each instance's data connections (where its models' data profiles read), secrets sealed, and its active profile.
   `CREATE TABLE IF NOT EXISTS connections (instance TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, settings TEXT NOT NULL, secrets TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (instance, id))`,
   `CREATE TABLE IF NOT EXISTS data_profile (instance TEXT PRIMARY KEY, profile TEXT NOT NULL, updated_at INTEGER NOT NULL)`,
+  // Each instance's 3D assets (binary glTF a model's drawing places), base64.
+  `CREATE TABLE IF NOT EXISTS assets (instance TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL, size INTEGER NOT NULL, sha256 TEXT NOT NULL, data TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY (instance, name))`,
   // Each user's own preferences across the twins (the layout of the windows over the twin), as JSON.
   `CREATE TABLE IF NOT EXISTS preferences (owner TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, updated_at INTEGER NOT NULL, PRIMARY KEY (owner, key))`,
 ];
@@ -43,6 +45,16 @@ const FROM_V1 = [
   `ALTER TABLE dashboards RENAME TO dashboards_v1`,
   `ALTER TABLE saved_filters RENAME TO saved_filters_v1`,
 ];
+
+/** A 3D asset as listed: its name, type, size, content hash, and when and by whom it was last put. */
+export interface AssetInfo {
+  name: string;
+  type: string;
+  size: number;
+  sha256: string;
+  updatedAt: number;
+  updatedBy: string;
+}
 
 /** An instance as stored: its source's type and settings; its secrets sealed (never handed out). */
 export interface InstanceRecord {
@@ -198,7 +210,7 @@ export class TwinStore {
   async deleteInstance(id: string): Promise<boolean> {
     const results = await this.db.execute([
       run(`DELETE FROM instances WHERE id = ?`, id),
-      ...["models", "dashboards", "saved_filters", "connections", "data_profile"].map((t) => run(`DELETE FROM ${t} WHERE instance = ?`, id)),
+      ...["models", "dashboards", "saved_filters", "connections", "data_profile", "assets"].map((t) => run(`DELETE FROM ${t} WHERE instance = ?`, id)),
       run(`DELETE FROM meta WHERE key LIKE ?`, `${id}:%`),
     ]);
     return (results[0]?.rowsAffected ?? 0) > 0;
@@ -367,6 +379,30 @@ export class InstanceData {
     }
     for (const [id, row] of have) if (row.origin !== "user") statements.push(run(`DELETE FROM models WHERE instance = ? AND id = ?`, this.instance, id));
     if (statements.length) await this.db.execute(statements);
+  }
+
+  /** The instance's 3D assets, without their bytes. */
+  async assets(): Promise<AssetInfo[]> {
+    const rows = await this.db.query<{ name: string; type: string; size: number; sha256: string; updated_at: number; updated_by: string }>(
+      `SELECT name, type, size, sha256, updated_at, updated_by FROM assets WHERE instance = ? ORDER BY name`,
+      [this.instance],
+    );
+    return rows.map((r) => ({ name: r.name, type: r.type, size: Number(r.size), sha256: r.sha256, updatedAt: Number(r.updated_at), updatedBy: r.updated_by }));
+  }
+
+  /** One asset with its bytes, or undefined. */
+  async asset(name: string): Promise<(AssetInfo & { bytes: Uint8Array }) | undefined> {
+    const r = (await this.db.query<{ name: string; type: string; size: number; sha256: string; data: string; updated_at: number; updated_by: string }>(`SELECT * FROM assets WHERE instance = ? AND name = ?`, [this.instance, name]))[0];
+    return r && { name: r.name, type: r.type, size: Number(r.size), sha256: r.sha256, updatedAt: Number(r.updated_at), updatedBy: r.updated_by, bytes: new Uint8Array(Buffer.from(r.data, "base64")) };
+  }
+
+  async putAsset(name: string, type: string, bytes: Uint8Array, sha256: string, by: string, now: number): Promise<void> {
+    await this.db.execute([run(`INSERT OR REPLACE INTO assets (instance, name, type, size, sha256, data, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, this.instance, name, type, bytes.length, sha256, Buffer.from(bytes).toString("base64"), now, by)]);
+  }
+
+  async deleteAsset(name: string): Promise<boolean> {
+    const [r] = await this.db.execute([run(`DELETE FROM assets WHERE instance = ? AND name = ?`, this.instance, name)]);
+    return (r?.rowsAffected ?? 0) > 0;
   }
 
   /** Saves an admin's own model (an edit of the source's or a new one): `origin = 'user'`, never touched by the sync. */

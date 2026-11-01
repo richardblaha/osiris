@@ -81,7 +81,8 @@
   "tab": {
     "settings": "Settings",
     "models": "Models",
-    "data": "Data sources"
+    "data": "Data sources",
+    "assets": "3D models"
   },
   "data": {
     "profile": "Data profile",
@@ -141,5 +142,17 @@
       "ca": "CA certificate (PEM)",
       "tool": "Tool"
     }
+  },
+  "assets": {
+    "title": "3D models",
+    "help": "Binary glTF files (.glb) that hold everything themselves — no files outside them, no Draco or meshopt compression. A model's drawing places one by its name: { \"shape\": \"gltf\", \"asset\": \"<name>\" } in presentation.visual.parts.",
+    "upload": "Upload .glb",
+    "empty": "No 3D models yet.",
+    "name": "Name",
+    "size": "Size",
+    "updated": "Changed",
+    "copy": "Copy part",
+    "delete": "Delete",
+    "confirmDelete": "Delete the 3D model {{name}}? Drawings that place it show nothing in its place."
   }
 }

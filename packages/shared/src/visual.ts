@@ -12,8 +12,10 @@ export interface DtdlVisual {
   parts: VisualPart[];
 }
 
-export type VisualShape = "box" | "cylinder" | "sphere" | "plane";
-export const VISUAL_SHAPES: readonly VisualShape[] = ["box", "cylinder", "sphere", "plane"];
+export type VisualShape = "box" | "cylinder" | "sphere" | "plane" | "gltf";
+export const VISUAL_SHAPES: readonly VisualShape[] = ["box", "cylinder", "sphere", "plane", "gltf"];
+/** A 3D asset's name (the instance's assets: binary glTF uploaded by admins). */
+export const VISUAL_ASSET = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 export type VisualAxis = "x" | "y" | "z";
 
 /**
@@ -29,6 +31,9 @@ export type VisualColor = (typeof VISUAL_COLORS)[number] | `#${string}`;
 
 export interface VisualPart {
   shape: VisualShape;
+  /** A `gltf` part's asset, by name: fitted into the part's size keeping its proportions, in its own materials
+   * (tinted with `color` when given). */
+  asset?: string;
   /** Its center as fractions of the solid's size; default the solid's center. */
   at?: [number, number, number];
   /** Its size as fractions of the solid's size (a cylinder's and a sphere's x and z their diameter); default 1. */
@@ -56,7 +61,7 @@ const MAX_PARTS = 64;
 const VALUE = /^[A-Za-z][A-Za-z0-9_]{0,63}(\/[A-Za-z][A-Za-z0-9_]{0,63})?$/;
 const CONDITION = /^[A-Za-z][A-Za-z0-9_]{0,63}(\/[A-Za-z][A-Za-z0-9_]{0,63})?(=[^\s=]{1,64})?$/;
 const AXES = ["x", "y", "z"];
-const PART_KEYS = new Set(["shape", "at", "size", "rotate", "color", "opacity", "outline", "when", "fill", "blink", "spin", "repeat"]);
+const PART_KEYS = new Set(["asset", "shape", "at", "size", "rotate", "color", "opacity", "outline", "when", "fill", "blink", "spin", "repeat"]);
 
 const vec = (v: unknown, min: number, max: number) => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x) && x >= min && x <= max);
 
@@ -76,6 +81,8 @@ export function visualErrors(id: string, v: unknown): string[] {
     const x = part as Record<string, unknown>;
     for (const k of Object.keys(x)) if (!PART_KEYS.has(k)) errors.push(`${p} has an unknown key ${k}`);
     if (!VISUAL_SHAPES.includes(x.shape as VisualShape)) errors.push(`${p}.shape is not one of ${VISUAL_SHAPES.join(", ")}`);
+    if (x.shape === "gltf" && !(typeof x.asset === "string" && VISUAL_ASSET.test(x.asset))) errors.push(`${p}.asset must name a 3D asset (a-z, 0-9, . _ -)`);
+    if (x.shape !== "gltf" && x.asset !== undefined) errors.push(`${p}.asset belongs to a gltf part only`);
     if (x.at !== undefined && !vec(x.at, -10, 10)) errors.push(`${p}.at must be three numbers from -10 to 10`);
     if (x.size !== undefined && (!vec(x.size, 0, 10) || (x.size as number[]).some((n) => n <= 0))) errors.push(`${p}.size must be three numbers above 0, at most 10`);
     if (x.rotate !== undefined && !vec(x.rotate, -360, 360)) errors.push(`${p}.rotate must be three angles in degrees`);

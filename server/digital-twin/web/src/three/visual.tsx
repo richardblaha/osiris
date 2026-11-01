@@ -1,6 +1,8 @@
 import { useFrame } from "@react-three/fiber";
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { api, currentInstance } from "../api.ts";
 import type { VisualAxis, VisualPart } from "@osiris/shared/dtdl.ts";
 import { visualNumber, visualWhen, type TwinView } from "../scene.ts";
 import type { Box } from "../TwinLayout.ts";
@@ -12,7 +14,7 @@ const AXIS: Record<VisualAxis, 0 | 1 | 2> = { x: 0, y: 1, z: 2 };
 const DEG = Math.PI / 180;
 
 /** Each shape at unit size, centered: a part scales it to its size. */
-const UNIT: Record<VisualPart["shape"], () => THREE.BufferGeometry> = {
+const UNIT: Record<Exclude<VisualPart["shape"], "gltf">, () => THREE.BufferGeometry> = {
   box: () => new THREE.BoxGeometry(1, 1, 1),
   cylinder: () => new THREE.CylinderGeometry(0.5, 0.5, 1, 32),
   sphere: () => new THREE.SphereGeometry(0.5, 24, 16),
@@ -20,7 +22,7 @@ const UNIT: Record<VisualPart["shape"], () => THREE.BufferGeometry> = {
 };
 const geometries = new Map<string, { body: THREE.BufferGeometry; edges: THREE.BufferGeometry }>();
 /** The shapes' geometries, made once and shared by every part (never disposed: a handful for the whole app). */
-function unit(shape: VisualPart["shape"]) {
+function unit(shape: Exclude<VisualPart["shape"], "gltf">) {
   let g = geometries.get(shape);
   if (!g) {
     const body = UNIT[shape]();
@@ -57,8 +59,65 @@ function Part({ part, node, box, ap, colors }: { part: VisualPart; node: TwinVie
   );
 }
 
+/** The twin's 3D assets, loaded once each (by instance and name) and shared: every part draws its own copy. */
+const assets = new Map<string, Promise<THREE.Object3D>>();
+function loadAsset(name: string): Promise<THREE.Object3D> {
+  const key = `${currentInstance()}\u0000${name}`;
+  let p = assets.get(key);
+  if (!p) {
+    p = api.assetBytes(name).then((bytes) => new GLTFLoader().parseAsync(bytes, "").then((gltf) => gltf.scene));
+    p.catch(() => assets.delete(key));
+    assets.set(key, p);
+  }
+  return p;
+}
+
+/**
+ * A `gltf` part: the asset fitted into the part's size keeping its proportions (centered in it), in its own
+ * materials — tinted with the part's colour when it names one, faded with its solid. Nothing while it loads or when
+ * it can't.
+ */
+function Asset({ part, size, color, opacity }: { part: VisualPart; size: V3; color?: THREE.ColorRepresentation; opacity: number }) {
+  const [scene, setScene] = useState<THREE.Object3D>();
+  useEffect(() => {
+    let current = true;
+    if (part.asset) void loadAsset(part.asset).then((s) => current && setScene(s), () => {});
+    return () => void (current = false);
+  }, [part.asset]);
+  const copy = useMemo(() => {
+    if (!scene) return undefined;
+    const object = scene.clone(true);
+    const bounds = new THREE.Box3().setFromObject(object);
+    const extent = bounds.getSize(new THREE.Vector3());
+    const scale = Math.min(...[0, 1, 2].map((i) => size[i]! / Math.max(1e-6, extent.getComponent(i))));
+    const center = bounds.getCenter(new THREE.Vector3());
+    object.position.sub(center.multiplyScalar(scale));
+    object.scale.multiplyScalar(scale);
+    const fitted = new THREE.Group();
+    fitted.add(object);
+    // Each copy its own materials, so a fade or a tint never reaches another part.
+    object.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh) mesh.material = Array.isArray(mesh.material) ? mesh.material.map((m) => m.clone()) : mesh.material.clone();
+    });
+    return fitted;
+  }, [scene, size.join()]);
+  useEffect(() => {
+    copy?.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      for (const m of [mesh.material].flat() as (THREE.Material & { color?: THREE.Color })[]) {
+        m.transparent = opacity < 1;
+        m.opacity = opacity;
+        m.depthWrite = opacity >= 1;
+        if (color !== undefined && m.color) m.color.set(color);
+      }
+    });
+  }, [copy, opacity, color]);
+  return copy ? <primitive object={copy} /> : null;
+}
+
 function Copy({ part, index, node, box, ap, colors }: { part: VisualPart; index: number; node: TwinView; box: Box; ap: Appearance; colors: Colors }) {
-  const { body, edges } = unit(part.shape);
   const size: V3 = [0, 1, 2].map((i) => (part.size?.[i] ?? 1) * box.size[i]!) as V3;
   const at: V3 = [0, 1, 2].map((i) => (part.at?.[i] ?? 0) * box.size[i]!) as V3;
   if (part.repeat) at[AXIS[part.repeat.axis ?? "x"]] += index * part.repeat.step * box.size[AXIS[part.repeat.axis ?? "x"]]!;
@@ -70,7 +129,7 @@ function Copy({ part, index, node, box, ap, colors }: { part: VisualPart; index:
     size[axis] *= share;
   }
   const color = colorOf(part, node, ap, colors);
-  const opacity = (part.opacity ?? 0.8) * ap.fade;
+  const opacity = (part.opacity ?? (part.shape === "gltf" ? 1 : 0.8)) * ap.fade;
   const rotation = useMemo(() => new THREE.Euler(...((part.rotate ?? [0, 0, 0]).map((d) => d * DEG) as V3)), [part.rotate?.join()]);
   const group = useRef<THREE.Group>(null);
   const material = useRef<THREE.MeshBasicMaterial>(null);
@@ -89,6 +148,15 @@ function Copy({ part, index, node, box, ap, colors }: { part: VisualPart; index:
       group.current.rotation.y += delta * turns * Math.PI * 2;
     }
   });
+  if (part.shape === "gltf")
+    return (
+      <group position={at} rotation={rotation}>
+        <group ref={group}>
+          <Asset part={part} size={size} color={part.color ? color : undefined} opacity={opacity} />
+        </group>
+      </group>
+    );
+  const { body, edges } = unit(part.shape);
   return (
     <group position={at} rotation={rotation}>
       <group ref={group} scale={size}>

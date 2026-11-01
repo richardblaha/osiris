@@ -345,6 +345,41 @@ describe("the DTDL models are editable", () => {
     presentation: { look: "hex", label: "name", layer: "logical", color: "#ff00ff" },
   };
 
+  it("keeps 3D assets: a self-contained GLB put by an admin, read back with its hash; anything else refused", async () => {
+    /** A GLB of a JSON chunk (padded to 4 bytes) and nothing else. */
+    const glb = (gltf: unknown) => {
+      let json = new TextEncoder().encode(JSON.stringify(gltf));
+      if (json.length % 4) json = Uint8Array.from([...json, ...new Array(4 - (json.length % 4)).fill(0x20)]);
+      const out = new Uint8Array(20 + json.length);
+      const v = new DataView(out.buffer);
+      v.setUint32(0, 0x46546c67, true);
+      v.setUint32(4, 2, true);
+      v.setUint32(8, out.length, true);
+      v.setUint32(12, json.length, true);
+      v.setUint32(16, 0x4e4f534a, true);
+      out.set(json, 20);
+      return out;
+    };
+    const twin = app();
+    const put = (name: string, body: Uint8Array) => twin.request(`/api/instances/k8s/assets/${name}`, { method: "PUT", headers: { "content-type": "model/gltf-binary" }, body });
+    const good = glb({ asset: { version: "2.0" }, scenes: [{ nodes: [] }] });
+    const saved = await put("elitedesk.glb", good);
+    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ name: "elitedesk.glb", type: "model/gltf-binary", size: good.length });
+    const got = await twin.request("/api/instances/k8s/assets/elitedesk.glb");
+    expect(got.headers.get("content-type")).toBe("model/gltf-binary");
+    expect(new Uint8Array(await got.arrayBuffer())).toEqual(good);
+    expect((await twin.request("/api/instances/k8s/assets/elitedesk.glb", { headers: { "if-none-match": got.headers.get("etag")! } })).status).toBe(304);
+    expect((await json<{ value: { name: string }[] }>("/api/instances/k8s/assets")).value.map((a) => a.name)).toEqual(["elitedesk.glb"]);
+    // A file outside it, a decoder it needs, not a GLB at all, a name that isn't one.
+    expect((await put("x.glb", glb({ asset: { version: "2.0" }, buffers: [{ uri: "https://evil.example/b.bin", byteLength: 4 }] }))).status).toBe(400);
+    expect((await put("x.glb", glb({ asset: { version: "2.0" }, extensionsRequired: ["KHR_draco_mesh_compression"] }))).status).toBe(400);
+    expect((await put("x.glb", new TextEncoder().encode("<svg onload=alert(1)>"))).status).toBe(400);
+    expect((await put("..%2Fx", good)).status).toBe(400);
+    expect((await twin.request("/api/instances/k8s/assets/elitedesk.glb", { method: "DELETE" })).status).toBe(204);
+    expect((await twin.request("/api/instances/k8s/assets/elitedesk.glb")).status).toBe(404);
+  });
+
   it("lets an admin upsert a model with a presentation, and lists it", async () => {
     const res = await app().request(`/api/instances/k8s/models/${encodeURIComponent(custom["@id"])}`, {
       method: "PUT",

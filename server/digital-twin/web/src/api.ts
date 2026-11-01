@@ -63,6 +63,16 @@ export const setInstance = (id: string) => {
 export const currentInstance = () => instance;
 const tw = () => `/api/instances/${encodeURIComponent(instance)}`;
 
+/** A 3D asset of the twin: its name (what a model's drawing names), type, size and content hash. */
+export interface AssetInfo {
+  name: string;
+  type: string;
+  size: number;
+  sha256: string;
+  updatedAt: number;
+  updatedBy: string;
+}
+
 /** A digital twin as its viewers see it; `error` says why its source isn't running. */
 export interface InstanceSummary {
   id: string;
@@ -194,6 +204,21 @@ export const api = {
   putModel: (id: string, doc: DtdlInterface) => send<DtdlModelData>("PUT", `${tw()}/models/${encodeURIComponent(id)}`, doc),
   uploadModels: (docs: DtdlInterface[]) => send<{ value: DtdlModelData[] }>("POST", `${tw()}/models`, docs),
   deleteModel: (id: string) => send<void>("DELETE", `${tw()}/models/${encodeURIComponent(id)}`),
+  // The twin's 3D assets (binary glTF a model's drawing places): listed, fetched as bytes, put and deleted by admins.
+  assets: async () => (await call<{ value: AssetInfo[] }>(`${tw()}/assets`)).value,
+  assetBytes: async (name: string) => {
+    const token = await getAccessToken();
+    const res = await fetch(`${tw()}/assets/${encodeURIComponent(name)}`, { headers: token ? { authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) throw new Error(`${res.status}`);
+    return res.arrayBuffer();
+  },
+  putAsset: async (name: string, file: Blob) => {
+    const token = await getAccessToken();
+    const res = await fetch(`${tw()}/assets/${encodeURIComponent(name)}`, { method: "PUT", headers: { ...(token ? { authorization: `Bearer ${token}` } : {}), "content-type": "model/gltf-binary" }, body: file });
+    if (!res.ok) throw new Error(((await res.json().catch(() => null)) as { error?: string } | null)?.error ?? `${res.status}`);
+    return (await res.json()) as AssetInfo;
+  },
+  deleteAsset: (name: string) => send<void>("DELETE", `${tw()}/assets/${encodeURIComponent(name)}`),
   // The warn/error events the collector's twin/events processor caught (the Redis stream).
   // The twin's alerts (the alerts service's), and the conversation in which Osiris investigated one (read-only).
   alerts: async (limit = 30) => (await call<{ value: TwinAlert[] }>(`${tw()}/alerts?limit=${limit}`)).value,

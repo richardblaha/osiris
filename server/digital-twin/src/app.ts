@@ -15,6 +15,7 @@ import { errorsByTwin, valuesByTwin } from "./twin.ts";
 import type { TelemetryKind, TelemetryState, TwinStateStore } from "./state.ts";
 import { DATA_ID, SOURCE_CONNECTION, dataProfileErrors, dataProfilesOf, interfaceErrors, presentationErrors, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { bindingErrors, CONNECTOR_TYPES } from "./datasources/connectors.ts";
+import { ASSET_NAME, glbProblems, MAX_ASSET_BYTES } from "./assets/glb.ts";
 import type { DataValueStore } from "./datasources/hub.ts";
 import type { MetricType } from "./telemetry.ts";
 import { secretFields } from "./sources/registry.ts";
@@ -562,6 +563,33 @@ export function createApp(config: Config, options: AppOptions) {
       const used = (await state.twins(tw.record.id)).some((t) => t.$metadata.$model === id);
       if (used) throw new HttpError(409, "errors.digitalTwin.modelInUse");
       if (!(await tw.data.deleteModel(id))) throw new HttpError(404, "errors.digitalTwin.notFound");
+      return c.body(null, 204);
+    })
+    // The 3D assets a model's drawing places (`"shape": "gltf"`): binary glTF that holds everything itself, put by
+    // admins, read by the twin's viewers (never anything the browser would fetch from elsewhere).
+    .get(`${T}/assets`, async (c) => c.json({ value: await twinOf(c).data.assets() }))
+    .get(`${T}/assets/:name`, async (c) => {
+      const asset = await twinOf(c).data.asset(c.req.param("name"));
+      if (!asset) throw new HttpError(404, "errors.digitalTwin.notFound");
+      if (c.req.header("if-none-match") === `"${asset.sha256}"`) return c.body(null, 304);
+      return c.body(asset.bytes as Uint8Array<ArrayBuffer>, 200, { "content-type": asset.type, etag: `"${asset.sha256}"`, "cache-control": "private, no-cache", "content-security-policy": "default-src 'none'; sandbox" });
+    })
+    .put(`${T}/assets/:name`, async (c) => {
+      adminOnly(c);
+      const name = parse(z.string().regex(ASSET_NAME), c.req.param("name"));
+      const declared = Number(c.req.header("content-length") ?? 0);
+      if (declared > MAX_ASSET_BYTES) throw new HttpError(413, "errors.digitalTwin.assetTooLarge", { max: MAX_ASSET_BYTES / 1024 / 1024 });
+      const bytes = new Uint8Array(await c.req.arrayBuffer());
+      if (bytes.length > MAX_ASSET_BYTES) throw new HttpError(413, "errors.digitalTwin.assetTooLarge", { max: MAX_ASSET_BYTES / 1024 / 1024 });
+      const problems = glbProblems(bytes);
+      if (problems.length) throw new HttpError(400, "errors.digitalTwin.assetInvalid", { detail: problems.join("; ") });
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      await twinOf(c).data.putAsset(name, "model/gltf-binary", bytes, sha256, owner(c), Date.now());
+      return c.json((await twinOf(c).data.assets()).find((a) => a.name === name));
+    })
+    .delete(`${T}/assets/:name`, async (c) => {
+      adminOnly(c);
+      if (!(await twinOf(c).data.deleteAsset(c.req.param("name")))) throw new HttpError(404, "errors.digitalTwin.notFound");
       return c.body(null, 204);
     })
     .get(`${T}/digitaltwins`, async (c) => {

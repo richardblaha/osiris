@@ -4,6 +4,7 @@ import { Icon } from "./Icon.tsx";
 import type { DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { api, type InstanceRecord, type SourceField, type SourceType } from "./api.ts";
 import { Models } from "./Models.tsx";
+import { Assets } from "./Assets.tsx";
 import { DataSources } from "./DataSources.tsx";
 import { ErrorNotice, Loading, Pending } from "./ui.tsx";
 
@@ -51,8 +52,8 @@ export function Instances({
 }: {
   /** The twin shown (its models are the ones the models tab edits). */
   current?: string;
-  tab: "settings" | "models" | "data";
-  onTab: (tab: "settings" | "models" | "data") => void;
+  tab: "settings" | "models" | "data" | "assets";
+  onTab: (tab: "settings" | "models" | "data" | "assets") => void;
   onPick: (id: string) => void;
   onChanged: (id?: string) => void;
   models?: DtdlModelData[];
@@ -148,7 +149,7 @@ export function Instances({
           <h2 className="font-semibold">{isNew ? t("instances:new") : editing.name}</h2>
           {!isNew && (
             <span className="flex gap-1" role="tablist" aria-label={editing.name}>
-              {(["settings", "models", "data"] as const).map((k) => (
+              {(["settings", "models", "data", "assets"] as const).map((k) => (
                 <button key={k} type="button" role="tab" aria-selected={tab === k} className={tab === k ? "btn-primary px-2 py-1 text-xs" : "btn-secondary px-2 py-1 text-xs"} onClick={() => onTab(k)}>
                   {t(`instances:tab.${k}`)}
                 </button>
@@ -156,7 +157,15 @@ export function Instances({
             </span>
           )}
         </header>
-        {!isNew && tab === "data" ? (
+        {!isNew && tab === "assets" ? (
+          editing.id === current ? (
+            <Assets />
+          ) : (
+            <div className="relative min-h-0 flex-1">
+              <Loading show />
+            </div>
+          )
+        ) : !isNew && tab === "data" ? (
           editing.id === current ? (
             <DataSources instance={editing.id} />
           ) : (

@@ -69,6 +69,7 @@ describe("a model's own drawing (presentation.visual)", () => {
         { shape: "cylinder", size: [0.05, 0.6, 0.05], at: [-0.4, 0.8, -0.4], repeat: { count: 4, axis: "x", step: 0.25 } },
         { shape: "plane", size: [0.05, 0.05, 1], color: "#22cc66", blink: "network", when: "status=ok" },
         { shape: "sphere", spin: 0.5, repeat: { count: "readyEndpoints", step: 0.1 } },
+        { shape: "gltf", asset: "elitedesk-800-g5.glb", size: [1, 1, 1] },
       ],
     };
     expect(interfaceErrors(model(visual))).toEqual([]);
@@ -83,5 +84,7 @@ describe("a model's own drawing (presentation.visual)", () => {
     expect(errors({ parts: [{ shape: "box", repeat: { count: 1000, step: 1 } }] })).toMatch(/repeat must be/);
     expect(errors({ parts: Array.from({ length: 65 }, () => ({ shape: "box" })) })).toMatch(/more than 64/);
     expect(errors({ mode: "eval", parts: [] })).toMatch(/mode must be/);
+    expect(errors({ parts: [{ shape: "gltf", asset: "https://evil.example/x.glb" }] })).toMatch(/asset must name/);
+    expect(errors({ parts: [{ shape: "box", asset: "a" }] })).toMatch(/gltf part only/);
   });
 });
