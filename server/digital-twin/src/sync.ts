@@ -63,6 +63,8 @@ export async function startSync(options: {
 
   let last: { twins: DigitalTwin[]; relationships: DigitalTwinRelationship[] } | undefined;
   let busy = false;
+  /** The twins per model at the last round that changed them, logged then (what the source makes, at a glance). */
+  let census = "";
   /** One round; returns how many history events it sent. */
   const round = async (): Promise<number> => {
     if (busy) return 0;
@@ -71,6 +73,11 @@ export async function startSync(options: {
       const snapshot = await source.snapshot();
       const result = diffSnapshots(last, snapshot, now());
       last = { twins: result.twins, relationships: result.relationships };
+      const counts = new Map<string, number>();
+      for (const t of result.twins) counts.set(t.$metadata.$model, (counts.get(t.$metadata.$model) ?? 0) + 1);
+      const now_ = [...counts].sort(([a], [b]) => a.localeCompare(b)).map(([m, n]) => `${m.replace(/^dtmi:|;\d+$/g, "")} ${n}`).join(", ");
+      if (now_ !== census) console.log(`Twin ${store.instance}: ${result.twins.length} twins, ${result.relationships.length} relationships (${now_})`);
+      census = now_;
       await state.writeSnapshot(store.instance, result.twins, result.relationships, await telemetryState(source, telemetry, snapshot, result.ts), result.ts, options.telemetryTtlSeconds ?? intervalMs / 1000 * 3);
       options.onRound?.();
       if (!history) return 0;
