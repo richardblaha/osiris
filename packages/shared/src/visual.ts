@@ -19,6 +19,7 @@ export const VISUAL_SHAPES: readonly VisualShape[] = ["box", "cylinder", "sphere
 /** A 3D asset's name (the instance's assets: binary glTF uploaded by admins). */
 export const VISUAL_ASSET = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 export type VisualAxis = "x" | "y" | "z";
+export const VISUAL_AXES: readonly VisualAxis[] = ["x", "y", "z"];
 
 /**
  * A value of the twin a part follows, by name: one of the view's readings — `fill` (how full storage is), `network`

@@ -245,5 +245,34 @@
       "kubernetes": "Kubernetes API",
       "ceph": "Ceph manager"
     }
+  },
+  "visual": {
+    "title": "Drawing",
+    "help": "How the 3D view draws the model's twins beyond its look: a preset, and parts placed in each twin's solid (positions and sizes as fractions of its size, -0.5 to 0.5 spans it), coloured and following the twin's values (load, io, network, traffic, fill, status, a property; a/b a ratio).",
+    "preset": "Preset",
+    "copyPreset": "Copy its parts to change them",
+    "mode": "Drawn",
+    "add": "over the look",
+    "replace": "instead of the look",
+    "colorDefault": "status",
+    "opacity": "Opacity",
+    "outline": "Outline",
+    "duplicate": "Duplicate",
+    "remove": "Remove",
+    "at": "Center",
+    "size": "Size",
+    "rotate": "Turn (°)",
+    "when": "Shown if",
+    "fill": "Fill",
+    "blink": "Blinks",
+    "spin": "Spins",
+    "repeat": "Copies",
+    "addPart": "Part",
+    "proportions": "Try on",
+    "shape": {
+      "flat": "flat",
+      "cube": "cube",
+      "tall": "upright"
+    }
   }
 }

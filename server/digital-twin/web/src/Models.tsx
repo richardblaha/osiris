@@ -2,6 +2,7 @@ import { t } from "i18next";
 import { lazy, Suspense, useMemo, useState } from "react";
 import { LOOKS, PRESENTATION_CONTEXT, PRESENTATION_LAYERS, type DtdlContent, type DtdlInterface, type DtdlModelData, type DtdlPresentation, type Localized, PRIMITIVE_SCHEMAS, type DtdlSchema } from "@osiris/shared/dtdl.ts";
 import { api } from "./api.ts";
+import { VisualEditor } from "./VisualEditor.tsx";
 import { attempt, ErrorNotice } from "./ui.tsx";
 import { currentLocale } from "./i18n.ts";
 
@@ -270,6 +271,8 @@ export function Models({ models, onChanged, onPreview }: { models: DtdlModelData
                     </label>
                   </div>
                 </section>
+
+                <VisualEditor model={draft} visual={draft.presentation?.visual} onChange={(visual) => setPresentation((p) => ({ ...p, visual }))} />
               </div>
             )}
           </>

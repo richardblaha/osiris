@@ -257,5 +257,34 @@
     },
     "seconds_many": "{{count}} sekundy",
     "seconds_other": "{{count}} sekund"
+  },
+  "visual": {
+    "title": "Kresba",
+    "help": "Jak 3D pohled kreslí twiny modelu nad rámec jeho vzhledu: preset a díly umístěné v tělese každého twinu (poloha a velikost jako zlomky jeho velikosti, -0,5 až 0,5 ho vyplní), obarvené a sledující hodnoty twinu (load, io, network, traffic, fill, status, vlastnost; a/b poměr).",
+    "preset": "Preset",
+    "copyPreset": "Zkopírovat jeho díly k úpravě",
+    "mode": "Kreslit",
+    "add": "přes vzhled",
+    "replace": "místo vzhledu",
+    "colorDefault": "status",
+    "opacity": "Průhlednost",
+    "outline": "Obrys",
+    "duplicate": "Zdvojit",
+    "remove": "Odebrat",
+    "at": "Střed",
+    "size": "Velikost",
+    "rotate": "Otočení (°)",
+    "when": "Zobrazit když",
+    "fill": "Výplň",
+    "blink": "Bliká",
+    "spin": "Točí se",
+    "repeat": "Kopie",
+    "addPart": "Díl",
+    "proportions": "Vyzkoušet na",
+    "shape": {
+      "flat": "plochém",
+      "cube": "krychli",
+      "tall": "vysokém"
+    }
   }
 }
