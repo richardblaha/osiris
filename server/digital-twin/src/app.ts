@@ -1,7 +1,7 @@
 import type { AlertsClient } from "./alerts-client.ts";
 import { createHash } from "node:crypto";
 import { serveStatic } from "@hono/node-server/serve-static";
-import { Hono, type Context } from "hono";
+import { Hono, type Context, type MiddlewareHandler } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import { z } from "zod";
 import { errorResponse, HttpError, requestLocale, ValidationError } from "@osiris/platform/i18n.ts";
@@ -117,7 +117,21 @@ export function createApp(config: Config, options: AppOptions) {
   const { instances, state, verifier, cache, staticDir, ops } = options;
   const store = instances.store;
   const CSP = csp(config.AUTH_URL);
-  const page = staticDir ? serveStatic({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
+  // Vite's hashed files never change; everything else (index.html above all) is checked on every load, so a browser
+  // never keeps an old build's page (without a header it would, by heuristic, for hours).
+  const staticFiles = (options: { root: string; path?: string }): MiddlewareHandler => {
+    const files = serveStatic(options);
+    return async (c, next) => {
+      let missing = false;
+      const res = await files(c, async () => {
+        missing = true;
+        await next();
+      });
+      if (!missing && res) res.headers.set("cache-control", c.req.path.startsWith("/assets/") ? "public, max-age=31536000, immutable" : "no-cache");
+      return res;
+    };
+  };
+  const page = staticDir ? staticFiles({ root: staticDir, path: "index.html" }) : async (c: Context) => c.notFound();
   const ADMIN = config.AUTH_ADMIN_GROUP;
 
   /** An endpoint whose answer is cached: the key a hash of the query, the value fresh when the key misses. Epoch
@@ -769,7 +783,7 @@ export function createApp(config: Config, options: AppOptions) {
     })
 
     // The PWA itself: its files, and its index.html for every other path (one page app).
-    .use("*", staticDir ? serveStatic({ root: staticDir }) : async (c: Context) => c.notFound())
+    .use("*", staticDir ? staticFiles({ root: staticDir }) : async (c: Context) => c.notFound())
     .get("*", page);
 
   return app;

@@ -433,9 +433,12 @@ describe("the PWA's static files", () => {
     expect(asset.status).toBe(200);
     expect(asset.headers.get("content-type")).toContain("javascript");
     expect(await asset.text()).toContain("console.log");
-    for (const path of ["/", "/logs", "/callback"]) {
+    // Hashed files are kept; the page is checked on every load, so a new build shows at once.
+    expect(asset.headers.get("cache-control")).toBe("public, max-age=31536000, immutable");
+    for (const path of ["/", "/index.html", "/logs", "/callback"]) {
       const page = await instance.request(path);
       expect(page.status).toBe(200);
+      expect(page.headers.get("cache-control")).toBe("no-cache");
       expect(await page.text()).toContain("twin index"); // the fallback, not a missing file
       // The PWA signs in from the browser: its discovery and code redemption go to osiris-auth's origin.
       expect(page.headers.get("content-security-policy")).toContain("connect-src 'self' http://localhost:3003;");
