@@ -67,6 +67,7 @@ class OwnerTools {
   loadedAt = 0;
   lastUsed = Date.now();
   connections: McpConnection[] = [];
+  servers: { name: string; tools: StructuredToolInterface[] }[] = [];
   readonly statuses = new Map<string, McpServerStatus>();
 }
 
@@ -162,14 +163,25 @@ export class McpToolset {
   }
 
   /**
+   * Connected servers for a user's run: the project's servers and the user's own, with a personal server of the same
+   * name replacing the project's (enabled or not).
+   */
+  async activeServers(userId = ""): Promise<{ name: string; tools: StructuredToolInterface[] }[]> {
+    this.evictIdle();
+    if (!userId) {
+      await this.ownerTools("");
+      return [...this.group("").servers];
+    }
+    const [own] = await Promise.all([this.store.names(userId), this.ownerTools(""), this.ownerTools(userId)]);
+    return [...this.group("").servers.filter((s) => !own.includes(s.name)), ...this.group(userId).servers];
+  }
+
+  /**
    * Tools for a user's run: the project's servers and the user's own. A server of theirs replaces the project's of the
    * same name (enabled or not), so its tools never come twice.
    */
   async tools(userId = ""): Promise<StructuredToolInterface[]> {
-    this.evictIdle();
-    if (!userId) return this.ownerTools("");
-    const [own, project, mine] = await Promise.all([this.store.names(userId), this.ownerTools(""), this.ownerTools(userId)]);
-    return [...project.filter((t) => !own.some((name) => t.name.startsWith(`${name}_`))), ...mine];
+    return (await this.activeServers(userId)).flatMap((s) => s.tools);
   }
 
   invalidate(owner: string): void {
@@ -243,6 +255,7 @@ export class McpToolset {
 
     closeLater(group.connections, CLOSE_GRACE_MS);
     group.connections = results.flatMap((r) => (r.conn ? [r.conn] : []));
+    group.servers = results.flatMap((r) => (r.conn ? [{ name: r.name, tools: r.conn.tools }] : []));
     group.statuses.clear();
     for (const r of results) {
       group.statuses.set(r.name, r.conn ? { ok: true, tools: r.conn.tools.map((t) => t.name) } : { ok: false, error: r.error! });

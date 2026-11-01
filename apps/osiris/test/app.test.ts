@@ -1,5 +1,7 @@
 import { ChatGenerationChunk } from "@langchain/core/outputs";
 import { AIMessage, AIMessageChunk } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
 import { GUARD_REFUSAL } from "@osiris/core/agent/assistant.ts";
 import { translate } from "@osiris/platform/i18n.ts";
 import { TOKENS_EXHAUSTED, USER_TOKENS_EXHAUSTED } from "@osiris/core/agent/graph.ts";
@@ -266,7 +268,7 @@ describe("project features", () => {
     model.bindTools = ((tools: { name: string }[]) => (bound.push(tools.map((t) => t.name)), model)) as never;
     const { id } = await (await bob("/threads", { method: "POST" })).json();
     await (await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
-    expect(bound[0]).toEqual(["ask_user", "search_knowledge", "save_knowledge", "remember", "forget", "run_workflow"]);
+    expect(bound[0]).toEqual(["ask_user", "help", "search_knowledge", "save_knowledge", "remember", "forget", "run_workflow"]);
     expect(model.calls[0]?.[0]?.text).not.toContain("# DOVEDNOSTI");
   });
 
@@ -343,7 +345,7 @@ describe("project features", () => {
     model.bindTools = ((tools: { name: string }[]) => (bound.push(tools.map((t) => t.name)), model)) as never;
     const { id } = await (await bob("/threads", { method: "POST" })).json();
     await (await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Ahoj" }) })).text();
-    expect(bound[0]).toEqual(["ask_user", "search_knowledge", "save_knowledge", "load_skill", "save_skill", "remember", "run_workflow"]);
+    expect(bound[0]).toEqual(["ask_user", "help", "search_knowledge", "save_knowledge", "load_skill", "save_skill", "remember", "run_workflow"]);
 
     const tools = (await (await bob("/tools")).json()) as { name: string; feature: string; featureOn: boolean; disabled: boolean; description: string }[];
     expect(tools.find((t) => t.name === "forget")).toMatchObject({ feature: "memory", featureOn: true, disabled: true });
@@ -454,5 +456,65 @@ describe("assistant persona and rules", () => {
     expect(prompt).toMatch(/Pravidla systému:[\s\S]*Pravidla firmy:\nNemluv o politice\.[\s\S]*Pravidla uživatele:\nNepoužívej anglicismy\./);
 
     expect((await run(bob, "Dobrý den")).text).toBe("Dobrý den.");
+  });
+});
+
+describe("/help command and help tool", () => {
+  it("lists active tools, MCP servers with their tools, and skills directly on /help and via the help tool", async () => {
+    const crmTool = tool(async () => "ok", { name: "crm_lookup", description: "Vyhledá zákazníka v CRM.", schema: z.object({}) });
+    const { projects, model } = createTestProjects(
+      [
+        new AIMessage({ content: "", tool_calls: [{ id: "call_help", name: "help", args: {} }] }),
+        new AIMessage("Tady je přehled."),
+      ],
+      [{ name: "fakturace", description: "Postup pro vystavení faktury", content: "Krok 1" }],
+      async () => ({ tools: [crmTool], close: async () => {} }),
+    );
+    const app = await createTestApp(projects);
+    const as = (user: string) => (path: string, init: RequestInit = {}) =>
+      app.request(`/api${path}`, {
+        ...init,
+        headers: { authorization: `Bearer ${user}`, "content-type": "application/json", ...init.headers },
+      });
+
+    const acme = await projects.get("acme");
+    await acme.features.set({ http: false, files: false, scheduler: false, sites: false, database: false });
+    acme.features.disabled = ["forget"];
+
+    const admin = as("acme");
+    await admin("/mcp-servers/crm?scope=project", {
+      method: "PUT",
+      body: JSON.stringify({ url: "https://crm.example.com/mcp", headers: {}, enabled: true, auth: "none" }),
+    });
+    const bob = as("bob:project=acme");
+    await bob("/skills/osobni-postup?scope=personal", {
+      method: "PUT",
+      body: JSON.stringify({ description: "Osobní pracovní postup", content: "Obsah" }),
+    });
+
+    const { id } = await (await bob("/threads", { method: "POST" })).json();
+
+    // 1. Direct /help command: answers without calling the model and respects active features/tools/MCP/skills.
+    const helpEvents = await readEvents(await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: " /help " }) }));
+    const helpText = helpEvents.flatMap((e) => (e.type === "text-delta" ? [e.delta] : [])).join("");
+    expect(model.calls).toHaveLength(0);
+    expect(helpText).toContain("## Nástroje");
+    expect(helpText).toContain("- **ask_user**:");
+    expect(helpText).toContain("- **help**:");
+    expect(helpText).toContain("- **search_knowledge**:");
+    expect(helpText).not.toContain("- **forget**:");
+    expect(helpText).not.toContain("- **http_request**:");
+    expect(helpText).toContain("## MCP servery");
+    expect(helpText).toContain("- **crm**");
+    expect(helpText).toContain("  - **crm_lookup**: Vyhledá zákazníka v CRM.");
+    expect(helpText).toContain("## Dovednosti");
+    expect(helpText).toContain("- **fakturace**: Postup pro vystavení faktury");
+    expect(helpText).toContain("- **osobni-postup**: Osobní pracovní postup");
+
+    // 2. Agent calling the `help` tool during a normal turn gets the exact same summary.
+    const toolEvents = await readEvents(await bob(`/threads/${id}/runs`, { method: "POST", body: JSON.stringify({ message: "Co všechno umíš?" }) }));
+    expect(model.calls).toHaveLength(2);
+    const toolResult = toolEvents.find((e) => e.type === "tool-result" && e.toolCallId === "call_help");
+    expect(toolResult).toMatchObject({ type: "tool-result", toolCallId: "call_help", result: helpText });
   });
 });

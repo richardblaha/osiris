@@ -22,6 +22,7 @@ const file = (a: Record<string, unknown>, scope = "scope", path = "path") => `${
 
 /** What a built-in tool is doing, in words; other tools (MCP servers' `<server>_<tool>`) show their name. */
 const TOOL_LABELS: Record<string, (args: Record<string, unknown>) => string> = {
+  help: () => t("chat:tools.help"),
   search_knowledge: (a) => t("chat:tools.search_knowledge", { query: String(a.query ?? "") }),
   load_skill: (a) => t("chat:tools.load_skill", { name: String(a.name ?? "") }),
   remember: (a) => t("chat:tools.remember", { content: String(a.content ?? "") }),

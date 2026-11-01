@@ -1,4 +1,6 @@
 import { MediaReader } from "../agent/attachments.ts";
+import type { RunContext } from "../agent/context.ts";
+import { formatHelp, helpTool } from "../agent/help.ts";
 import { QuestionStore } from "../agent/questions.ts";
 import { StandardAccounts } from "../integrations/standard.ts";
 import type { AgentModels } from "../agent/model.ts";
@@ -236,8 +238,39 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
   const builtins: [Feature, StructuredToolInterface][] = modules.flatMap(({ module, set }) => set.tools.map((t): [Feature, StructuredToolInterface] => [module.feature, t]));
   const toolModules = new Map(modules.flatMap(({ module, set }) => set.tools.map((t): [string, string] => [t.name, module.name])));
   const askUser = questions.tool();
-  const reservedToolNames: ReadonlySet<string> = new Set([askUser.name, ...toolModules.keys()]);
   const customTools = new CustomTools(records.dir, secrets, { allowPrivate: deps.mcp?.allowPrivate, fetch: deps.fetch });
+  // A tool runs only when its feature is on, a system admin hasn't switched it off and .osiris/tools.json allows it.
+  const resolveCapabilities = async (ctx: RunContext) => {
+    const [on, off, policy] = await Promise.all([features.get(), features.disabledTools(), readToolPolicy(records)]);
+    const nonMcpTools: StructuredToolInterface[] = [];
+    for (const { module, set } of modules) {
+      if (!on[module.feature]) continue;
+      const usable = (await set.usable?.(ctx, on)) ?? (() => true);
+      nonMcpTools.push(...set.tools.filter((t) => !off.includes(t.name) && policy.allows(t.name, module.name) && usable(t.name)));
+    }
+    if (on.customTools) nonMcpTools.push(...(await customTools.tools(reservedToolNames)).filter((t) => !off.includes(t.name) && policy.allows(t.name, CUSTOM_MODULE)));
+    const hidden = (name: string) => modules.some(({ set }) => set.hidesMcpTool?.(name));
+    const mcpServers = on.mcp
+      ? (await mcp.activeServers(ctx.user_id)).map((s) => ({
+          name: s.name,
+          tools: s.tools.filter((t) => !hidden(t.name) && policy.allows(t.name, "mcp")),
+        }))
+      : [];
+    return { on, nonMcpTools, mcpServers };
+  };
+  let help!: StructuredToolInterface;
+  const describeHelp = async (ctx: RunContext): Promise<string> => {
+    const { on, nonMcpTools, mcpServers } = await resolveCapabilities(ctx);
+    const activeSkills = on.skills ? (await skills.list(ctx.user_id)).filter((s) => !s.overridden && (!s.requires || on[s.requires])) : [];
+    const coreTools = ctx.workflow ? [] : [askUser, help];
+    return formatHelp({
+      tools: [...coreTools, ...nonMcpTools],
+      mcpServers,
+      skills: activeSkills,
+    });
+  };
+  help = helpTool(describeHelp);
+  const reservedToolNames: ReadonlySet<string> = new Set([askUser.name, help.name, ...toolModules.keys()]);
   const graph = createAgentGraph({
     questions,
     images: async (threadId, paths) => {
@@ -250,7 +283,8 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
     projectId: id,
     model: deps.model,
     models: deps.models,
-    tools: [askUser],
+    tools: [askUser, help],
+    help: describeHelp,
     // Resolved on every step, so switching a feature or a tool applies from the next step.
     dynamicTools: async (ctx) => {
       if (ctx.channel === "public") {
@@ -271,18 +305,8 @@ export function openProject(id: string, root: string, deps: ProjectDeps): Projec
           : undefined;
         return publicTools({ knowledge, inquiries, skills, notify }, assistant);
       }
-      // A tool runs only when its feature is on, a system admin hasn't switched it off and .osiris/tools.json allows it.
-      const [on, off, policy] = await Promise.all([features.get(), features.disabledTools(), readToolPolicy(records)]);
-      const tools: StructuredToolInterface[] = [];
-      for (const { module, set } of modules) {
-        if (!on[module.feature]) continue;
-        const usable = (await set.usable?.(ctx, on)) ?? (() => true);
-        tools.push(...set.tools.filter((t) => !off.includes(t.name) && policy.allows(t.name, module.name) && usable(t.name)));
-      }
-      if (on.customTools) tools.push(...(await customTools.tools(reservedToolNames)).filter((t) => !off.includes(t.name) && policy.allows(t.name, CUSTOM_MODULE)));
-      if (!on.mcp) return tools;
-      const hidden = (name: string) => modules.some(({ set }) => set.hidesMcpTool?.(name));
-      return [...tools, ...(await mcp.tools(ctx.user_id)).filter((t) => !hidden(t.name) && policy.allows(t.name, "mcp"))];
+      const { nonMcpTools, mcpServers } = await resolveCapabilities(ctx);
+      return [...nonMcpTools, ...mcpServers.flatMap((s) => s.tools)];
     },
     features,
     usage,

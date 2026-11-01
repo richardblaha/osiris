@@ -1,5 +1,6 @@
 {
   "tools": {
+    "help": "Zobrazuji dostupné možnosti asistenta",
     "search_knowledge": "Hledám ve znalostní bázi: „{{query}}“",
     "load_skill": "Načítám postup: {{name}}",
     "remember": "Zapamatovávám si: {{content}}",

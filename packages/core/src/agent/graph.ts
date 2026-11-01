@@ -9,6 +9,7 @@ import { ToolNode } from "@langchain/langgraph/prebuilt";
 import type { DbTable, Persona } from "@osiris/shared";
 import { breaksRules, GUARD_REFUSAL, hasRules, type GuardRules } from "./assistant.ts";
 import { getRunContext, type RunContext } from "./context.ts";
+import { formatHelp, isHelpCommand } from "./help.ts";
 import type { MemoryStore } from "./memory.ts";
 import { buildSystemPrompt } from "./prompt.ts";
 import type { UserSettingsStore } from "./settings.ts";
@@ -32,6 +33,8 @@ export interface AgentDeps {
   tools: StructuredToolInterface[];
   /** Tools that can change between turns or differ per user (MCP servers), resolved on every model and tool step. */
   dynamicTools?: (ctx: RunContext) => Promise<StructuredToolInterface[]>;
+  /** Formats the active capabilities (tools, MCP servers, skills) for the `/help` chat command. */
+  help?: (ctx: RunContext) => Promise<string>;
   checkpointer: BaseCheckpointSaver;
   timezone: string;
   /** Listed in the system prompt on every call, so edits apply from the next turn. */
@@ -77,9 +80,20 @@ export function createAgentGraph(deps: AgentDeps) {
     if (!chat.bindTools) throw new Error("Chat model does not support tool calling");
   }
   const allTools = async (ctx: RunContext) => {
-    // A workflow's step has nobody to ask: its approvals are the workflow's own.
-    const own = ctx.workflow ? tools.filter((t) => t.name !== "ask_user") : tools;
+    // A workflow's step has nobody to ask: its approvals are the workflow's own. Public runs only get their configured publicTools.
+    const own = tools.filter((t) => {
+      if (ctx.workflow && (t.name === "ask_user" || t.name === "help")) return false;
+      if (ctx.channel === "public" && t.name === "help") return false;
+      return true;
+    });
     return dynamicTools ? [...own, ...(await dynamicTools(ctx))] : own;
+  };
+
+  const isHelpTurn = (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
+    const ctx = getRunContext(config);
+    if (ctx.channel === "public" || ctx.workflow) return false;
+    const last = state.messages.findLast((m) => HumanMessage.isInstance(m));
+    return !!last && isHelpCommand(last.text);
   };
 
   /** Which quota is used up: the project's, or the run's own (the member's, or the public assistant's); null for none. */
@@ -115,14 +129,14 @@ export function createAgentGraph(deps: AgentDeps) {
   /** The user's message breaking the rules gets a refusal, and the agent doesn't see it. */
   const guardInput = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const last = state.messages.at(-1);
-    if (!HumanMessage.isInstance(last) || !(await check(config, "input", last.text))) return {};
+    if (!HumanMessage.isInstance(last) || isHelpTurn(state, config) || !(await check(config, "input", last.text))) return {};
     return { messages: [new AIMessage(say(getRunContext(config), GUARD_REFUSAL))] };
   };
 
   /** A final answer breaking the rules is replaced (same id) by a refusal, in the history too. */
   const guardOutput = async (state: typeof MessagesAnnotation.State, config: RunnableConfig) => {
     const last = state.messages.at(-1);
-    if (!AIMessage.isInstance(last) || NOTICES.has(last.text) || !(await check(config, "output", last.text))) return {};
+    if (!AIMessage.isInstance(last) || isHelpTurn(state, config) || NOTICES.has(last.text) || !(await check(config, "output", last.text))) return {};
     return { messages: [new AIMessage({ id: last.id, content: say(getRunContext(config), GUARD_REFUSAL) })] };
   };
 
@@ -148,6 +162,16 @@ export function createAgentGraph(deps: AgentDeps) {
     const ctx = getRunContext(config);
     if (ctx.project_id !== projectId) throw new Error(`Run for project ${ctx.project_id} sent to graph of ${projectId}`);
     const on = (await features?.get()) ?? DEFAULT_FEATURES;
+    if (HumanMessage.isInstance(state.messages.at(-1)) && isHelpTurn(state, config)) {
+      const text = deps.help
+        ? await deps.help(ctx)
+        : formatHelp({
+            tools: await allTools(ctx),
+            mcpServers: [],
+            skills: on.skills ? ((await skills?.list(ctx.user_id))?.filter((s) => !s.overridden && (!s.requires || on[s.requires])) ?? []) : [],
+          });
+      return { messages: [new AIMessage(text)] };
+    }
     const used = await exhausted(ctx);
     if (used) return { messages: [new AIMessage(say(ctx, used))] };
     // The system prompt is not stored in the checkpoint, so it can change (date, channel, skills, memory) between turns.

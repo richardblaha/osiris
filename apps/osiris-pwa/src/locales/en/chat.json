@@ -1,5 +1,6 @@
 {
   "tools": {
+    "help": "Listing available assistant capabilities",
     "search_knowledge": "Searching the knowledge base: “{{query}}”",
     "load_skill": "Loading procedure: {{name}}",
     "remember": "Remembering: {{content}}",
