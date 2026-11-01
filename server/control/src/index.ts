@@ -77,11 +77,12 @@ if (!whatsappClient) console.log("WhatsApp is not configured: /webhooks/whatsapp
 
 /** Asks a runtime to snapshot itself now; it streams the snapshot back to /internal/runtime/backups. */
 const snapshot = async (project: string) => {
-  const res = await runtimes.request(project, "/internal/snapshot?reason=manual", {
+  const signal = AbortSignal.timeout(10 * 60_000);
+  const res = await runtimes.request(project, "/internal/snapshot?reason=manual", async () => ({
     method: "POST",
     headers: { authorization: await signer.header(projectAudience(project)) },
-    signal: AbortSignal.timeout(10 * 60_000),
-  });
+    signal,
+  }));
   if (!res.ok) throw new Error(`Snapshot of ${project} failed: ${res.status} ${await res.text()}`);
 };
 

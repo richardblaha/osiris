@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { accessFromClaims, accessibleProjects, isAuthorized, isSystemAdmin, membershipsFromClaims } from "@osiris/platform/claims.ts";
 import { CONTROL_AUDIENCE, generateInternalKeys, InternalSigner, InternalVerifier, projectAudience } from "@osiris/platform/internal-auth.ts";
 import { RuntimeClient } from "@osiris/platform/runtime-client.ts";
@@ -75,7 +75,7 @@ function setup(options: { runsPerMinute?: number; web?: { dir: string; webEvents
   });
   const as = (token: string, project?: string) => (path: string, init: RequestInit = {}) =>
     app.request(`/api${path}`, { ...init, headers: { authorization: `Bearer ${token}`, ...(project ? { "x-project-id": project } : {}), ...(init.headers as Record<string, string>) } });
-  return { app, as, calls, woken, move: (project: string) => moved.add(project) };
+  return { app, as, calls, woken, signer, move: (project: string) => moved.add(project) };
 }
 
 describe("speech", () => {
@@ -202,6 +202,15 @@ describe("gateway", () => {
     expect(res.status).toBe(200);
     expect(woken).toEqual(["beta"]);
     expect(calls).toMatchObject([{ service: "beta", method: "PUT", body: "ahoj" }]);
+  });
+
+  it("signs the request again after waking, since waking outlasts an internal token", async () => {
+    const { as, calls, signer } = setup();
+    const sign = vi.spyOn(signer, "header");
+    expect((await as("bob:project=beta")("/threads", { method: "POST" })).status).toBe(200);
+    const runtimeTokens = sign.mock.calls.filter(([audience]) => audience === projectAudience("beta"));
+    expect(runtimeTokens).toHaveLength(2);
+    expect(await sign.mock.results.at(-1)!.value).toBe(calls[0]!.auth);
   });
 
   it("resolves the runtime's endpoint again when it moved (e.g. control restarted and gave it another port)", async () => {

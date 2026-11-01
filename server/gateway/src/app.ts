@@ -192,20 +192,19 @@ export function createGatewayApp(deps: GatewayDeps) {
     if (c.req.method === "POST" && /^\/api\/threads\/[^/]+\/runs$/.test(c.req.path) && !runs.take(user.sub)) {
       throw new HttpError(429, "errors.tooManyMessages");
     }
-    const authorization = await signer.header(projectAudience(membership.projectId), {
-      user: plainUser(user),
-      project: membership.projectId,
-      role: membership.role,
-      channel: "web",
-    });
     const url = new URL(c.req.url);
-    // The body is buffered, so the request can be sent again after waking a sleeping runtime.
-    const res = await runtimes.request(membership.projectId, `${url.pathname}${url.search}`, {
+    const payload = await body(c);
+    // The body is buffered, so the request can be sent again after waking a sleeping runtime, with a new token (waking
+    // outlasts one).
+    const res = await runtimes.request(membership.projectId, `${url.pathname}${url.search}`, async () => ({
       method: c.req.method,
-      headers: forwardHeaders(c, authorization),
-      body: await body(c),
+      headers: forwardHeaders(
+        c,
+        await signer.header(projectAudience(membership.projectId), { user: plainUser(user), project: membership.projectId, role: membership.role, channel: "web" }),
+      ),
+      body: payload,
       signal: c.req.raw.signal,
-    });
+    }));
     return relay(res);
   };
 
@@ -259,14 +258,14 @@ export function createGatewayApp(deps: GatewayDeps) {
       const visitor = c.req.header("x-visitor-id") ?? "";
       if (!/^[A-Za-z0-9_-]{16,64}$/.test(visitor)) throw new HttpError(400, "errors.public.visitorMissing");
       if (!(await control.list()).some((t) => t.id === project)) throw new HTTPException(404, { message: "Not found" });
-      const authorization = await signer.header(projectAudience(project), { project, visitor, channel: "public" });
       const url = new URL(c.req.url);
-      const res = await runtimes.request(project, `${url.pathname.replace(`/public/${project}`, "/public")}${url.search}`, {
+      const payload = await body(c);
+      const res = await runtimes.request(project, `${url.pathname.replace(`/public/${project}`, "/public")}${url.search}`, async () => ({
         method: c.req.method,
-        headers: forwardHeaders(c, authorization),
-        body: await body(c),
+        headers: forwardHeaders(c, await signer.header(projectAudience(project), { project, visitor, channel: "public" })),
+        body: payload,
         signal: c.req.raw.signal,
-      });
+      }));
       return relay(res);
     })
     // Where clients sign in (the PWA, osiris-cli, VS Code): osiris-auth, an OpenID Connect provider of its own.

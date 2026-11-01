@@ -15,6 +15,8 @@ export const SLEEPING_HEADER = "x-osiris-sleeping";
 /**
  * Calls a project runtime, waking it when it sleeps (scale-to-zero): if it can't be reached, asks for a wake-up, waits
  * until `/health` answers and sends the request again. The body must therefore be repeatable (string or bytes).
+ * Waking takes longer than an internal token lives (60 s), so a caller signing one passes `init` as a function: each
+ * attempt then gets a fresh token.
  */
 export class RuntimeClient {
   constructor(
@@ -26,20 +28,22 @@ export class RuntimeClient {
     return this.options.fetchFn ?? fetch;
   }
 
-  async request(project: string, path: string, init: RequestInit = {}): Promise<Response> {
+  async request(project: string, path: string, init: RequestInit | (() => Promise<RequestInit>) = {}): Promise<Response> {
+    const attempt = typeof init === "function" ? init : async () => init;
     let base = await this.locator.endpoint(project);
+    const first = await attempt();
     try {
-      const res = await this.fetchFn(base + path, init);
+      const res = await this.fetchFn(base + path, first);
       if (!(res.status === 503 && res.headers.has(SLEEPING_HEADER))) return res;
       await res.body?.cancel();
     } catch (err) {
-      if (!isUnreachable(err) || init.signal?.aborted) throw err;
+      if (!isUnreachable(err) || first.signal?.aborted) throw err;
     }
     // The runtime slept or moved (restarted on another port, rescheduled): drop the cached endpoint and resolve
     // where it is now before sending the request again.
     this.locator.invalidate?.(project);
     base = await this.ready(project);
-    return this.fetchFn(base + path, init);
+    return this.fetchFn(base + path, await attempt());
   }
 
   /** Wakes the runtime, resolves its current base URL and waits until it answers `/health`; returns that URL. */
