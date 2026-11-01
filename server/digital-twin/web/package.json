@@ -11,6 +11,7 @@
     "@monaco-editor/react": "4.7.0",
     "@osiris/client": "workspace:*",
     "@osiris/shared": "workspace:*",
+    "@react-three/fiber": "9.8.2",
     "i18next": "26.4.2",
     "monaco-editor": "0.57.0",
     "oidc-client-ts": "^3.5.0",
