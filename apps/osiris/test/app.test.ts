@@ -467,7 +467,7 @@ describe("/help command and help tool", () => {
         new AIMessage({ content: "", tool_calls: [{ id: "call_help", name: "help", args: {} }] }),
         new AIMessage("Tady je přehled."),
       ],
-      [{ name: "fakturace", description: "Postup pro vystavení faktury", content: "Krok 1" }],
+      [{ name: "fakturace", description: "Postup pro vystavení faktury", instructions: "Krok 1" }],
       async () => ({ tools: [crmTool], close: async () => {} }),
     );
     const app = await createTestApp(projects);
@@ -482,14 +482,14 @@ describe("/help command and help tool", () => {
     acme.features.disabled = ["forget"];
 
     const admin = as("acme");
-    await admin("/mcp-servers/crm?scope=project", {
+    await admin("/mcp-servers/crm", {
       method: "PUT",
-      body: JSON.stringify({ url: "https://crm.example.com/mcp", headers: {}, enabled: true, auth: "none" }),
+      body: JSON.stringify({ url: "https://93.184.215.14/mcp", headers: {}, enabled: true, auth: "headers", scope: "project" }),
     });
     const bob = as("bob:project=acme");
-    await bob("/skills/osobni-postup?scope=personal", {
+    await bob("/skills/osobni-postup", {
       method: "PUT",
-      body: JSON.stringify({ description: "Osobní pracovní postup", content: "Obsah" }),
+      body: JSON.stringify({ description: "Osobní pracovní postup", instructions: "Obsah" }),
     });
 
     const { id } = await (await bob("/threads", { method: "POST" })).json();
