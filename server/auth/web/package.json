@@ -10,7 +10,7 @@
   "dependencies": {
     "@osiris/shared": "workspace:*",
     "@simplewebauthn/browser": "^14.0.0",
-    "i18next": "26.4.2",
+    "i18next": "26.5.11",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "react-i18next": "17.0.16",
