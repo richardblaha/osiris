@@ -16,6 +16,10 @@ import type { TelemetryKind, TelemetryState, TwinStateStore } from "./state.ts";
 import { DATA_ID, SOURCE_CONNECTION, dataProfileErrors, dataProfilesOf, interfaceErrors, presentationErrors, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { bindingErrors, CONNECTOR_TYPES } from "./datasources/connectors.ts";
 import { ASSET_NAME, glbProblems, MAX_ASSET_BYTES } from "./assets/glb.ts";
+import { builtinAssets } from "./assets/builtin.ts";
+
+/** The built-in 3D assets every twin has (read once). */
+const BUILTIN_ASSETS = builtinAssets();
 import type { DataValueStore } from "./datasources/hub.ts";
 import type { MetricType } from "./telemetry.ts";
 import { secretFields } from "./sources/registry.ts";
@@ -567,9 +571,14 @@ export function createApp(config: Config, options: AppOptions) {
     })
     // The 3D assets a model's drawing places (`"shape": "gltf"`): binary glTF that holds everything itself, put by
     // admins, read by the twin's viewers (never anything the browser would fetch from elsewhere).
-    .get(`${T}/assets`, async (c) => c.json({ value: await twinOf(c).data.assets() }))
+    .get(`${T}/assets`, async (c) => {
+      const own = await twinOf(c).data.assets();
+      const builtin = [...BUILTIN_ASSETS.values()].filter((b) => !own.some((a) => a.name === b.name)).map((b) => ({ name: b.name, type: b.type, size: b.bytes.length, sha256: b.sha256, updatedAt: 0, updatedBy: "", builtIn: true }));
+      return c.json({ value: [...own, ...builtin].sort((a, b) => a.name.localeCompare(b.name)) });
+    })
     .get(`${T}/assets/:name`, async (c) => {
-      const asset = await twinOf(c).data.asset(c.req.param("name"));
+      // The instance's own asset, else the built-in one of that name.
+      const asset = (await twinOf(c).data.asset(c.req.param("name"))) ?? BUILTIN_ASSETS.get(c.req.param("name"));
       if (!asset) throw new HttpError(404, "errors.digitalTwin.notFound");
       if (c.req.header("if-none-match") === `"${asset.sha256}"`) return c.body(null, 304);
       return c.body(asset.bytes as Uint8Array<ArrayBuffer>, 200, { "content-type": asset.type, etag: `"${asset.sha256}"`, "cache-control": "private, no-cache", "content-security-policy": "default-src 'none'; sandbox" });

@@ -149,7 +149,7 @@
   },
   "assets": {
     "title": "3D modely",
-    "help": "Binární soubory glTF (.glb), které obsahují vše v sobě — žádné soubory mimo ně, žádná komprese Draco ani meshopt. Kresba modelu ho umístí podle názvu: { \"shape\": \"gltf\", \"asset\": \"<název>\" } v presentation.visual.parts.",
+    "help": "Binární soubory glTF (.glb), které obsahují vše v sobě — žádné soubory mimo ně, žádná komprese Draco ani meshopt. Kresba modelu ho umístí podle názvu: { \"shape\": \"gltf\", \"asset\": \"<název>\" } v presentation.visual.parts. Vestavěné (mini PC, router, switch, USB disk) kreslí presety; nahrání souboru stejného názvu je v tomto dvojčeti nahradí.",
     "upload": "Nahrát .glb",
     "empty": "Zatím žádné 3D modely.",
     "name": "Název",
@@ -157,6 +157,7 @@
     "updated": "Změněno",
     "copy": "Zkopírovat díl",
     "delete": "Smazat",
-    "confirmDelete": "Smazat 3D model {{name}}? Kresby, které ho umisťují, na jeho místě nic neukážou."
+    "confirmDelete": "Smazat 3D model {{name}}? Kresby, které ho umisťují, na jeho místě nic neukážou.",
+    "builtIn": "vestavěný"
   }
 }

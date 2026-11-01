@@ -38,6 +38,8 @@ export interface VisualPart {
   /** A `gltf` part's asset, by name: fitted into the part's size keeping its proportions, in its own materials
    * (tinted with `color` when given). */
   asset?: string;
+  /** How a `gltf` part's asset fills its size: keeping its proportions (`contain`, the default) or stretched to it. */
+  fit?: "contain" | "stretch";
   /** Its center as fractions of the solid's size; default the solid's center. */
   at?: [number, number, number];
   /** Its size as fractions of the solid's size (a cylinder's and a sphere's x and z their diameter); default 1. */
@@ -65,7 +67,7 @@ const MAX_PARTS = 64;
 const VALUE = /^[A-Za-z][A-Za-z0-9_]{0,63}(\/[A-Za-z][A-Za-z0-9_]{0,63})?$/;
 const CONDITION = /^!?[A-Za-z][A-Za-z0-9_]{0,63}(\/[A-Za-z][A-Za-z0-9_]{0,63})?(=[^\s=]{1,64})?$/;
 const AXES = ["x", "y", "z"];
-const PART_KEYS = new Set(["asset", "shape", "at", "size", "rotate", "color", "opacity", "outline", "when", "fill", "blink", "spin", "repeat"]);
+const PART_KEYS = new Set(["asset", "fit", "shape", "at", "size", "rotate", "color", "opacity", "outline", "when", "fill", "blink", "spin", "repeat"]);
 
 const vec = (v: unknown, min: number, max: number) => Array.isArray(v) && v.length === 3 && v.every((x) => typeof x === "number" && Number.isFinite(x) && x >= min && x <= max);
 
@@ -89,6 +91,7 @@ export function visualErrors(id: string, v: unknown): string[] {
     if (!VISUAL_SHAPES.includes(x.shape as VisualShape)) errors.push(`${p}.shape is not one of ${VISUAL_SHAPES.join(", ")}`);
     if (x.shape === "gltf" && !(typeof x.asset === "string" && VISUAL_ASSET.test(x.asset))) errors.push(`${p}.asset must name a 3D asset (a-z, 0-9, . _ -)`);
     if (x.shape !== "gltf" && x.asset !== undefined) errors.push(`${p}.asset belongs to a gltf part only`);
+    if (x.fit !== undefined && (x.shape !== "gltf" || (x.fit !== "contain" && x.fit !== "stretch"))) errors.push(`${p}.fit must be contain or stretch, on a gltf part`);
     if (x.at !== undefined && !vec(x.at, -10, 10)) errors.push(`${p}.at must be three numbers from -10 to 10`);
     if (x.size !== undefined && (!vec(x.size, 0, 10) || (x.size as number[]).some((n) => n <= 0))) errors.push(`${p}.size must be three numbers above 0, at most 10`);
     if (x.rotate !== undefined && !vec(x.rotate, -360, 360)) errors.push(`${p}.rotate must be three angles in degrees`);
@@ -138,8 +141,16 @@ export const VISUAL_PRESETS: Record<string, DtdlVisual> = {
   "level-x": { parts: level("x") },
   /** A disk: its level, and its activity light on its front, blinking with its I/O. */
   drive: { parts: [...level("x"), { shape: "box", at: [0.44, 0, 0.51], size: [0.06, 0.4, 0.02], color: "active", opacity: 0.95, blink: "io" }] },
-  /** A mini PC's front: a panel, a vent grille over most of it, a round power button and its light at the right; no badge. */
+  /** A mini PC (the built-in asset `mini-pc.glb`, stretched to the machine's solid, see-through so what runs on it
+   * shows): graphite chassis, a vent grille, the power button and front ports; its power light the machine's status. */
   "mini-pc": {
+    parts: [
+      { shape: "gltf", asset: "mini-pc.glb", fit: "stretch", opacity: 0.3 },
+      { shape: "box", at: [0.42, 0.05, 0.506], size: [0.02, 0.03, 0.004], color: "status", opacity: 0.95 },
+    ],
+  },
+  /** A mini PC's front drawn with shapes only (no asset): a panel, a vent grille, a round power button and its light. */
+  "mini-pc-shapes": {
     parts: [
       { shape: "plane", at: [0, 0, 0.501], size: [0.98, 0.96, 1], color: "neutral", opacity: 0.07 },
       ...[-0.3, -0.15, 0, 0.15, 0.3].map(slits),
@@ -147,13 +158,26 @@ export const VISUAL_PRESETS: Record<string, DtdlVisual> = {
       { shape: "box", at: [0.46, 0.05, 0.503], size: [0.012, 0.012, 0.002], color: "status", opacity: 0.9 },
     ],
   },
-  /** A switch: its light on top. */
-  switch: { parts: [{ shape: "plane", at: [-0.4, 0.502, 0.35], rotate: [-90, 0, 0], size: [0.03, 0.08, 1], color: "status", opacity: 0.95, blink: "traffic" }] },
-  /** A home router: four antennas standing up at its back and its lights along its front; no badge. */
+  /** A desktop switch (the built-in asset `switch.glb`, stretched to its solid) and its light blinking with traffic. */
+  switch: {
+    parts: [
+      { shape: "gltf", asset: "switch.glb", fit: "stretch" },
+      { shape: "plane", at: [-0.4, 0.512, 0.35], rotate: [-90, 0, 0], size: [0.03, 0.08, 1], color: "status", opacity: 0.95, blink: "traffic" },
+    ],
+  },
+  /** A home router (the built-in asset `router.glb`: its body the solid, its four antennas above it) and its lights
+   * blinking with traffic; no badge. */
   router: {
     parts: [
-      { shape: "cylinder", at: [-0.42, 2.64, -0.4], size: [0.04, 4.3, 0.06], color: "neutral", opacity: 0.85, repeat: { count: 4, axis: "x", step: 0.28 } },
-      { shape: "plane", at: [-0.42, 0.502, 0.4], rotate: [-90, 0, 0], size: [0.035, 0.1, 1], color: "status", opacity: 0.95, blink: "traffic", repeat: { count: 5, axis: "x", step: 0.05 } },
+      { shape: "gltf", asset: "router.glb", at: [0, 2.11, 0], size: [1, 5.36, 1.01] },
+      { shape: "plane", at: [-0.12, 0.515, 0.43], rotate: [-90, 0, 0], size: [0.022, 0.06, 1], color: "status", opacity: 0.95, blink: "traffic", repeat: { count: 7, axis: "x", step: 0.052 } },
+    ],
+  },
+  /** A 2.5" USB disk (the built-in asset `usb-disk.glb`, stretched to its solid), its light blinking with its I/O. */
+  "usb-disk": {
+    parts: [
+      { shape: "gltf", asset: "usb-disk.glb", fit: "stretch" },
+      { shape: "box", at: [0.38, 0, 0.51], size: [0.05, 0.08, 0.01], color: "active", opacity: 0.95, blink: "io" },
     ],
   },
 };

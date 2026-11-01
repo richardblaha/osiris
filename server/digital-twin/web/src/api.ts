@@ -71,6 +71,8 @@ export interface AssetInfo {
   sha256: string;
   updatedAt: number;
   updatedBy: string;
+  /** One of the built-in assets every twin has (a twin's own of the same name replaces it). */
+  builtIn?: boolean;
 }
 
 /** A digital twin as its viewers see it; `error` says why its source isn't running. */

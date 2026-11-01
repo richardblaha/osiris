@@ -375,11 +375,13 @@ const PRESET_LOOKS: Record<string, (node: TwinView) => string | undefined> = {
   node: () => "mini-pc",
   router: () => "router",
   switch: () => "switch",
-  drive: (n) => (n.children.length ? undefined : "drive"),
+  drive: (n) => (n.twin.internal === false && n.twin.bus === "usb" ? "usb-disk" : n.children.length ? undefined : "drive"),
   core: (n) => (n.children.length ? undefined : "level-y"),
   memory: (n) => (n.children.length ? undefined : "level-x"),
 };
 export const presetOf = (node: TwinView) => PRESET_LOOKS[node.look]?.(node);
+/** The presets that draw a device whole (its 3D asset): its plain box gives way to the outline and the picking body. */
+const WHOLE = new Set(["router", "switch", "usb-disk"]);
 
 export const lookOf = (box: Box, node: TwinView): LookComponent => (box.shape !== "box" ? LOOK_COMPONENTS[box.shape] : LOOK_COMPONENTS[node.look]) ?? BoxLook;
 
@@ -390,9 +392,9 @@ export const Solid = memo(
     const visual = props.node.visual;
     // A model's own drawing goes over its look, or instead of it.
     const replace = visual?.mode === "replace";
-    const Look = replace ? OutlineLook : lookOf(props.box, props.node);
     // The look's own preset (unless the model draws instead of it), then the model's drawing.
     const preset = replace || props.box.shape !== "box" ? undefined : presetOf(props.node);
+    const Look = replace || (preset && WHOLE.has(preset)) ? OutlineLook : lookOf(props.box, props.node);
     const presetVisual = useMemo(() => (preset ? { preset } : undefined), [preset]);
     return (
       <group position={props.box.center} visible={!props.ap.hidden}>

@@ -370,7 +370,14 @@ describe("the DTDL models are editable", () => {
     expect(got.headers.get("content-type")).toBe("model/gltf-binary");
     expect(new Uint8Array(await got.arrayBuffer())).toEqual(good);
     expect((await twin.request("/api/instances/k8s/assets/elitedesk.glb", { headers: { "if-none-match": got.headers.get("etag")! } })).status).toBe(304);
-    expect((await json<{ value: { name: string }[] }>("/api/instances/k8s/assets")).value.map((a) => a.name)).toEqual(["elitedesk.glb"]);
+    // Its own, and the built-in ones every twin has, which the presets draw.
+    const listed = (await json<{ value: { name: string; builtIn?: boolean }[] }>("/api/instances/k8s/assets")).value;
+    expect(listed.filter((a) => !a.builtIn).map((a) => a.name)).toEqual(["elitedesk.glb"]);
+    expect(listed.filter((a) => a.builtIn).map((a) => a.name)).toEqual(["mini-pc.glb", "router.glb", "switch.glb", "usb-disk.glb"]);
+    const builtin = await twin.request("/api/instances/k8s/assets/router.glb");
+    expect(builtin.status).toBe(200);
+    expect(new DataView(await builtin.arrayBuffer()).getUint32(0, true)).toBe(0x46546c67);
+    expect((await twin.request("/api/instances/k8s/assets/router.glb", { method: "DELETE" })).status).toBe(404);
     // A file outside it, a decoder it needs, not a GLB at all, a name that isn't one.
     expect((await put("x.glb", glb({ asset: { version: "2.0" }, buffers: [{ uri: "https://evil.example/b.bin", byteLength: 4 }] }))).status).toBe(400);
     expect((await put("x.glb", glb({ asset: { version: "2.0" }, extensionsRequired: ["KHR_draco_mesh_compression"] }))).status).toBe(400);

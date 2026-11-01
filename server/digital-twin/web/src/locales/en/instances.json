@@ -145,7 +145,7 @@
   },
   "assets": {
     "title": "3D models",
-    "help": "Binary glTF files (.glb) that hold everything themselves — no files outside them, no Draco or meshopt compression. A model's drawing places one by its name: { \"shape\": \"gltf\", \"asset\": \"<name>\" } in presentation.visual.parts.",
+    "help": "Binary glTF files (.glb) that hold everything themselves — no files outside them, no Draco or meshopt compression. A model's drawing places one by its name: { \"shape\": \"gltf\", \"asset\": \"<name>\" } in presentation.visual.parts. The built-in ones (a mini PC, a router, a switch, a USB disk) are drawn by the presets; uploading one of the same name replaces it in this twin.",
     "upload": "Upload .glb",
     "empty": "No 3D models yet.",
     "name": "Name",
@@ -153,6 +153,7 @@
     "updated": "Changed",
     "copy": "Copy part",
     "delete": "Delete",
-    "confirmDelete": "Delete the 3D model {{name}}? Drawings that place it show nothing in its place."
+    "confirmDelete": "Delete the 3D model {{name}}? Drawings that place it show nothing in its place.",
+    "builtIn": "built in"
   }
 }

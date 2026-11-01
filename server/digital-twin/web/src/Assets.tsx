@@ -82,16 +82,16 @@ export function Assets() {
                 <tr key={a.name} className="border-t border-line">
                   <td className="py-1 font-mono">{a.name}</td>
                   <td className="py-1">{formatBytes(a.size)}</td>
-                  <td className="py-1">
-                    {formatDateTime(a.updatedAt)} · {a.updatedBy}
-                  </td>
+                  <td className="py-1">{a.builtIn ? <span className="badge">{t("instances:assets.builtIn")}</span> : `${formatDateTime(a.updatedAt)} · ${a.updatedBy}`}</td>
                   <td className="py-1 text-end">
                     <button type="button" className="btn-link text-xs" onClick={() => void navigator.clipboard?.writeText(`{ "shape": "gltf", "asset": "${a.name}" }`)}>
                       {t("instances:assets.copy")}
                     </button>{" "}
-                    <button type="button" className="btn-link text-xs text-error" onClick={() => void remove(a.name)}>
-                      {t("instances:assets.delete")}
-                    </button>
+                    {!a.builtIn && (
+                      <button type="button" className="btn-link text-xs text-error" onClick={() => void remove(a.name)}>
+                        {t("instances:assets.delete")}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

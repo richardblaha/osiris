@@ -90,10 +90,13 @@ function Asset({ part, size, color, opacity }: { part: VisualPart; size: V3; col
     const object = scene.clone(true);
     const bounds = new THREE.Box3().setFromObject(object);
     const extent = bounds.getSize(new THREE.Vector3());
-    const scale = Math.min(...[0, 1, 2].map((i) => size[i]! / Math.max(1e-6, extent.getComponent(i))));
+    // Its proportions kept (the least scale of the three), or stretched to the size.
+    const per = [0, 1, 2].map((i) => size[i]! / Math.max(1e-6, extent.getComponent(i)));
+    const least = Math.min(...per);
+    const scale = new THREE.Vector3(...(part.fit === "stretch" ? per : [least, least, least]));
     const center = bounds.getCenter(new THREE.Vector3());
-    object.position.sub(center.multiplyScalar(scale));
-    object.scale.multiplyScalar(scale);
+    object.position.sub(center.multiply(scale));
+    object.scale.multiply(scale);
     const fitted = new THREE.Group();
     fitted.add(object);
     // Each copy its own materials, so a fade or a tint never reaches another part.
