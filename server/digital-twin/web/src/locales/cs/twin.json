@@ -105,7 +105,6 @@
     "warnUp": "Pozor a horší",
     "errorOnly": "Jen chyby",
     "title": "Zobrazení",
-    "layers": "Vrstvy",
     "reset": "Zobrazit vše",
     "layer": {
       "hardware": "Hardware",
@@ -122,7 +121,7 @@
       "otherWorkloads": "Ostatní workloady"
     },
     "layerHelp": {
-      "hardware": "CPU s jádry, paměť, disky, LAN a USB porty; co na nich běží",
+      "hardware": "Stroje naležato s CPU, pamětí a disky, porty, kabely, switch a router",
       "network": "Rozhraní, bridge, routery, tunely a jejich zapojení",
       "services": "Load balancery, Services, Ingressy a cesta z internetu k podům",
       "storage": "Svazky, Ceph s pooly a disky",
@@ -146,7 +145,8 @@
     "traffic": "Pohyb provozu",
     "hint": "Klávesy 1–5 ukážou jedinou vrstvu infrastruktury, 6 jen workloady, 0 vše. Skrytý druh workloadu skryje i své pody. Klikněte na Ingress, Service nebo pod: rozsvítí se cesta jeho provozu. Klikněte na kontejner nebo CPU: rozsvítí se, co na čem běží.",
     "groupInfra": "Infrastruktura",
-    "groupWorkloads": "Workloady"
+    "groupWorkloads": "Workloady",
+    "close": "Zavřít"
   },
   "keysHint": "Klávesy: WASD/šipky posun, Q/E dolů/nahoru, +/- zoom, Tab výběr, H celé dvojče, 1–6 vrstvy.",
   "models": {

@@ -97,7 +97,6 @@
     "warnUp": "Warn and worse",
     "errorOnly": "Errors only",
     "title": "Display",
-    "layers": "Layers",
     "reset": "Show everything",
     "layer": {
       "hardware": "Hardware",
@@ -114,7 +113,7 @@
       "otherWorkloads": "Other workloads"
     },
     "layerHelp": {
-      "hardware": "CPUs with their cores, memory, disks, LAN and USB ports; what runs on them",
+      "hardware": "Machines lying flat with CPU, memory and disks, ports, cables, the switch and the router",
       "network": "Interfaces, bridges, routers, tunnels and their wiring",
       "services": "Load balancers, Services, Ingresses and the way from the internet to the pods",
       "storage": "Volumes, Ceph with its pools and disks",
@@ -138,7 +137,8 @@
     "traffic": "Moving traffic",
     "hint": "Keys 1–5 show one infrastructure layer alone, 6 the workloads alone, 0 everything. Hiding a kind of workload hides its pods too. Click an Ingress, a Service or a pod: the way of its traffic lights up. Click a container or a CPU: what runs on what lights up.",
     "groupInfra": "Infrastructure",
-    "groupWorkloads": "Workloads"
+    "groupWorkloads": "Workloads",
+    "close": "Close"
   },
   "keysHint": "Keys: WASD/arrows move, Q/E down/up, +/- zoom, Tab selection, H whole twin, 1–6 layers.",
   "models": {

@@ -1,7 +1,7 @@
 import type { ResourceReading } from "../../state.ts";
 import type { TelemetryReader } from "../../telemetry.ts";
 import { errorKey, otelResourceOf, type SourceTwin, type TwinSource } from "../../twin.ts";
-import { clusterGraph, CONTAINER_ATTR, CPU_ATTR, DEVICE_ATTR, NAMESPACE_ATTR, NODE_ATTR, POD_ATTR, PVC_ATTR, ROOT_FS_ATTR } from "./graph.ts";
+import { clusterGraph, CONTAINER_ATTR, type LanOptions, CPU_ATTR, DEVICE_ATTR, NAMESPACE_ATTR, NODE_ATTR, POD_ATTR, PVC_ATTR, ROOT_FS_ATTR } from "./graph.ts";
 import { MODEL } from "./models.ts";
 import { resolve4 } from "node:dns/promises";
 import { readCeph } from "./ceph.ts";
@@ -97,7 +97,7 @@ export async function kubernetesResources(telemetry: TelemetryReader, twins: Sou
 export function kubernetesSource(
   kube: Kube,
   clusterName: string,
-  options: { cephManagers?: string[]; externalBus?: "usb" | "sata"; fetchFn?: typeof fetch; resolve?: (hosts: string[]) => Promise<Record<string, string[]>> } = {},
+  options: { cephManagers?: string[]; externalBus?: "usb" | "sata"; lan?: LanOptions; fetchFn?: typeof fetch; resolve?: (hosts: string[]) => Promise<Record<string, string[]>> } = {},
 ): TwinSource {
   /** Ceph's client I/O counters at the last sync, for its read and write rates. */
   let cephBefore: { at: number; read: number; write: number } | undefined;
@@ -145,7 +145,7 @@ export function kubernetesSource(
           cephIo = { read: ((ceph.readBytes - b.read) * 1000) / (now - b.at), write: ((ceph.writeBytes - b.write) * 1000) / (now - b.at) };
         cephBefore = { at: now, read: ceph.readBytes, write: ceph.writeBytes };
       }
-      return clusterGraph({ clusterName, namespaces, pods, nodes, pvcs, pvs, replicasets, version, ceph, cephIo, services, endpointSlices, ingresses, ingressRoutes, publicAddresses, externalBus: options.externalBus });
+      return clusterGraph({ clusterName, namespaces, pods, nodes, pvcs, pvs, replicasets, version, ceph, cephIo, services, endpointSlices, ingresses, ingressRoutes, publicAddresses, externalBus: options.externalBus, lan: options.lan });
     },
   };
 }

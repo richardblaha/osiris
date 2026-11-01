@@ -37,6 +37,9 @@
       "clusterName": "Cluster's name in the twin",
       "cephManagers": "Ceph managers",
       "externalDisks": "External disks (sdX)",
+      "lan": "Network between the nodes",
+      "switchModel": "Switch (make and model)",
+      "routerModel": "Router (make and model)",
       "clickhouseUrl": "Telemetry: ClickHouse",
       "clickhouseUser": "ClickHouse user",
       "clickhousePassword": "ClickHouse password",
@@ -51,6 +54,9 @@
       "clusterName": "The root twin's label; empty: the twin's id.",
       "cephManagers": "The Ceph managers' Prometheus pages (http://host:9283/metrics), comma-separated: pools and disks in the twin.",
       "externalDisks": "How the nodes' disks other than the internal NVMe/eMMC (Ceph's sdX) are attached: drawn as USB disks on USB ports, or as internal SATA disks.",
+      "lan": "Nodes wired to one switch, the switch to the router in front of the internet: both in the twin with their ports and cables.",
+      "switchModel": "Shown in the switch's detail; empty: unknown.",
+      "routerModel": "Shown in the router's detail; empty: unknown.",
       "clickhouseUrl": "Where the cluster's OpenTelemetry Collector writes logs, metrics and traces; empty: this service's own ClickHouse.",
       "clickhouseUser": "Read-only; empty: default.",
       "clickhouseCluster": "The k8s.cluster.name the collector stamps the telemetry with; empty: everything in that ClickHouse."
@@ -65,6 +71,10 @@
       "externalDisks": {
         "usb": "USB",
         "sata": "SATA (internal)"
+      },
+      "lan": {
+        "switch": "Switch and router",
+        "none": "None"
       }
     }
   },

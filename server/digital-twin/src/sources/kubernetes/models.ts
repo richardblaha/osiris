@@ -27,6 +27,8 @@ export const MODEL = {
   Memory: "dtmi:osiris:hw:Memory;1",
   Disk: "dtmi:osiris:hw:Disk;1",
   Port: "dtmi:osiris:hw:Port;1",
+  Switch: "dtmi:osiris:net:Switch;1",
+  Router: "dtmi:osiris:net:Router;1",
 } as const;
 
 const enumOf = (...values: string[]): DtdlSchema => ({ "@type": "Enum", valueSchema: "string", enumValues: values.map((v) => ({ name: v, enumValue: v })) });
@@ -225,6 +227,7 @@ export function dtdlModel(): DtdlInterface[] {
       property("cpu", "string", l("CPU capacity", "Kapacita CPU")),
       property("memory", "string", l("Memory capacity", "Kapacita paměti")),
       property("ip", "string", l("IP address", "IP adresa"), "The node's InternalIP."),
+      property("role", { "@type": "Enum", valueSchema: "string", enumValues: [{ name: "controlPlane", enumValue: "control-plane" }, { name: "worker", enumValue: "worker" }] }, l("Role", "Role"), "A control plane (its labels say so) or a worker."),
       contains(undefined, "The pods scheduled on the node, and its hardware: CPU, memory, disks and USB ports."),
       network,
     ]),
@@ -257,6 +260,15 @@ export function dtdlModel(): DtdlInterface[] {
     iface(MODEL.Port, l("Port", "Port"), "A physical port of the node: USB with what is attached to it.", [
       property("kind", enumOf("usb", "lan"), l("Kind", "Druh")),
       relationship("attaches", MODEL.Disk, l("attaches", "připojuje"), "The disk plugged into the port."),
+    ]),
+    iface(MODEL.Switch, l("Switch", "Switch"), "The Ethernet switch the nodes' network cards are plugged into: a port per node and its uplink to the router.", [
+      property("model", "string", l("Make and model", "Výrobce a model")),
+      property("portCount", "integer", l("Ports used", "Použité porty")),
+      contains(MODEL.Interface, "Its Ethernet ports."),
+    ]),
+    iface(MODEL.Router, l("Router", "Router"), "The router between the LAN and the internet: the switch on its LAN port, the internet on its WAN port.", [
+      property("model", "string", l("Make and model", "Výrobce a model")),
+      contains(MODEL.Interface, "Its LAN and WAN ports."),
     ]),
   ];
 }

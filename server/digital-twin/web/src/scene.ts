@@ -41,6 +41,8 @@ export const viewLayer = (layer: PresentationLayer, look: Look, ownerKind?: unkn
   layer === "workloads" || (layer === "logical" && look === "workload") ? workloadLayer(ownerKind) : layer === "logical" ? "namespaces" : layer;
 /** The looks of a machine's parts: they stand on its floor (a deck under its workloads). */
 export const HARDWARE_LOOKS: ReadonlySet<Look> = new Set(["cpu", "memory", "drive"]);
+/** The looks of the LAN's devices (a switch, a router): beside the machines, cabled to their network cards. */
+export const DEVICE_LOOKS: ReadonlySet<Look> = new Set(["switch", "router"]);
 
 /** A twin in the view: the twin itself, its model, and its place in the containment tree with rolled-up status. */
 export interface TwinView {
@@ -420,6 +422,7 @@ export const layoutRules = (twin: TwinScene): LayoutRules => ({
   storageLinks: storageLinksOf(twin),
   resources: resourceLinksOf(twin),
   cables: cablesOf(twin),
+  device: (node) => (node.look === "switch" || node.look === "router" ? node.look : undefined),
 });
 
 /**

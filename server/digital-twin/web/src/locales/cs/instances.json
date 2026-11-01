@@ -37,6 +37,9 @@
       "clusterName": "Název clusteru ve dvojčeti",
       "cephManagers": "Ceph managery",
       "externalDisks": "Externí disky (sdX)",
+      "lan": "Síť mezi nody",
+      "switchModel": "Switch (výrobce a model)",
+      "routerModel": "Router (výrobce a model)",
       "clickhouseUrl": "Telemetrie: ClickHouse",
       "clickhouseUser": "Uživatel ClickHouse",
       "clickhousePassword": "Heslo ClickHouse",
@@ -51,6 +54,9 @@
       "clusterName": "Popisek kořenového dvojčete; prázdné: id dvojčete.",
       "cephManagers": "Stránky Prometheus Ceph managerů (http://host:9283/metrics) oddělené čárkami: pooly a disky ve dvojčeti.",
       "externalDisks": "Jak jsou k nodům připojené disky mimo interní NVMe/eMMC (sdX Cephu): kreslí se jako USB disky na USB portech, nebo jako interní SATA disky.",
+      "lan": "Nody zapojené do jednoho switche a switch do routeru před internetem: oba v dvojčeti se svými porty a kabely.",
+      "switchModel": "Zobrazí se v detailu switche; prázdné: neznámý.",
+      "routerModel": "Zobrazí se v detailu routeru; prázdné: neznámý.",
       "clickhouseUrl": "Kam OpenTelemetry Collector clusteru zapisuje logy, metriky a trasy; prázdné: vlastní ClickHouse této služby.",
       "clickhouseUser": "Jen pro čtení; prázdné: default.",
       "clickhouseCluster": "k8s.cluster.name, kterým collector označuje telemetrii; prázdné: vše v tom ClickHouse."
@@ -65,6 +71,10 @@
       "externalDisks": {
         "usb": "USB",
         "sata": "SATA (interní)"
+      },
+      "lan": {
+        "switch": "Switch a router",
+        "none": "Žádná"
       }
     }
   },

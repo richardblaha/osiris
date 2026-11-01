@@ -146,10 +146,14 @@ interface BoxMesh {
    * full it is) and health halo.
    */
   decor: {
-    role: "membrane" | "lock" | "track" | "gauge" | "halo" | "activity" | "rotor" | "spokes" | "sweep" | "die";
+    role:
+      | "membrane" | "lock" | "track" | "gauge" | "halo" | "activity" | "rotor" | "spokes" | "sweep" | "die"
+      | "socket" | "pins" | "tongue" | "linkLed" | "actLed" | "bezel" | "vents" | "button" | "antenna" | "deviceLed";
     object: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial> | THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
     /** How many spokes a rotor or a sweep turns between (a load balancer's nodes, a Service's endpoints). */
     steps?: number;
+    /** How often a port's activity light blinks (per second; 0 dark), from the traffic through it. */
+    rate?: number;
   }[];
   /** The fill the lid gauge was drawn for, so it is made again only when that changes. */
   gaugeAt?: number;
@@ -331,6 +335,75 @@ interface LinkPath extends Link {
   total: number;
 }
 
+/** The dark of a socket's opening. */
+const SOCKET = new THREE.Color("#07090c");
+
+/** How a port faces: the turn about y that takes a part drawn facing +z to face `normal`. */
+const facing = (normal: [number, number, number] | undefined) => {
+  const [x, , z] = normal ?? [0, 0, -1];
+  return Math.atan2(x, z);
+};
+
+/**
+ * A cable as a solid tube along its path (cylinders, a ball at each corner) with a plug at each end: a box a little
+ * thicker than the cable, along its first and its last segment.
+ */
+function cableGeometry(path: [number, number, number][], radius: number): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const up = new THREE.Vector3(0, 1, 0);
+  const along = (a: THREE.Vector3, b: THREE.Vector3) => new THREE.Quaternion().setFromUnitVectors(up, b.clone().sub(a).normalize());
+  const points = path.map((p) => new THREE.Vector3(...p));
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const length = a.distanceTo(b);
+    if (length < 1e-6) continue;
+    parts.push(new THREE.CylinderGeometry(radius, radius, length, 10, 1, true).applyQuaternion(along(a, b)).translate(...a.clone().add(b).multiplyScalar(0.5).toArray()));
+  }
+  for (const p of points.slice(1, -1)) parts.push(new THREE.SphereGeometry(radius, 10, 8).translate(p.x, p.y, p.z));
+  const plug = (end: THREE.Vector3, next: THREE.Vector3) => {
+    const length = Math.min(radius * 7, end.distanceTo(next));
+    if (length < 1e-6) return;
+    const dir = next.clone().sub(end).normalize();
+    parts.push(new THREE.BoxGeometry(radius * 3, length, radius * 2.2).applyQuaternion(along(end, next)).translate(...end.clone().addScaledVector(dir, length / 2).toArray()));
+  };
+  if (points.length > 1) {
+    plug(points[0]!, points[1]!);
+    plug(points.at(-1)!, points.at(-2)!);
+  }
+  return mergeGeometries(parts.map((g) => g.toNonIndexed()))!;
+}
+
+/** Slits in rows: a mini PC's vent grille, `w` by `h`, centered. */
+function ventGeometry(w: number, h: number): THREE.BufferGeometry {
+  const points: number[] = [];
+  const rows = Math.max(2, Math.floor(h / 0.32));
+  const slit = 0.42;
+  const cols = Math.max(2, Math.floor(w / (slit + 0.2)));
+  for (let r = 0; r < rows; r++)
+    for (let c = 0; c < cols; c++) {
+      const x = -w / 2 + c * (w / cols) + (r % 2 ? w / cols / 2 : 0);
+      const y = -h / 2 + (r + 0.5) * (h / rows);
+      if (x + slit > w / 2) continue;
+      points.push(x, y, 0, x + slit, y, 0);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
+/** An RJ45 socket's eight contacts: short lines along the top of its opening. */
+function pinGeometry(w: number, y: number, length: number): THREE.BufferGeometry {
+  const points: number[] = [];
+  for (let i = 0; i < 8; i++) {
+    const x = -w / 2 + ((i + 0.5) * w) / 8;
+    points.push(x, y, 0, x, y - length, 0);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
 /** What the scene shows of one twin: boxes, network links and labels, and the layout's shape. */
 interface Content {
   byId: Map<string, TwinView>;
@@ -346,6 +419,8 @@ interface Content {
   extras: THREE.Object3D[];
   /** The machines' boards under their hardware decks, shown with the hardware layer. */
   boards: THREE.Mesh<THREE.BoxGeometry, THREE.MeshBasicMaterial>[];
+  /** The cables drawn solid (USB, Ethernet), by the index of their link, with the opacity they pulse around. */
+  tubes: { k: number; mesh: THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>; base: number }[];
   packets: THREE.Points<THREE.BufferGeometry, THREE.PointsMaterial>;
   /** The interfaces' addresses (an IP) beside their dots, each shown while its owner is big enough on screen. */
   portLabels: { object: CSS2DObject; node: string; owner: string }[];
@@ -552,8 +627,13 @@ export function Twin3D({
         // A node's status light along the bottom of its front; the cluster stands on a floor.
         let led: BoxMesh["led"];
         if (look === "node") {
-          led = new THREE.Mesh(new THREE.BoxGeometry(box.size[0] * 0.5, 0.14, 0.06), new THREE.MeshBasicMaterial({ transparent: true }));
-          led.position.set(box.center[0], box.center[1] - box.size[1] / 2 + 0.3, box.center[2] + box.size[2] / 2 + 0.04);
+          // A mini PC's front: power button with its light at the right, no badge.
+          const front = box.center[2] + box.size[2] / 2 + 0.04;
+          const bx = box.center[0] + box.size[0] / 2 - Math.max(1.2, box.size[1] * 0.15);
+          const by = box.center[1] + box.size[1] * 0.2;
+          const r = Math.max(0.32, box.size[1] * 0.05);
+          led = new THREE.Mesh(new THREE.BoxGeometry(r * 1.1, r * 0.35, 0.06), new THREE.MeshBasicMaterial({ transparent: true }));
+          led.position.set(bx, by - r * 2.2, front);
           world.add(led);
         }
         if (look === "cluster") {
@@ -571,6 +651,73 @@ export function Twin3D({
         }
         const decor: BoxMesh["decor"] = [];
         const add = (role: BoxMesh["decor"][number]["role"], object: BoxMesh["decor"][number]["object"]) => (world.add(object), decor.push({ role, object }));
+        const flat = () => new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false, side: THREE.DoubleSide });
+        if (look === "node") {
+          // The chassis' front: a panel, a vent grille over most of it, a round power button at the right.
+          const [w, h, d] = box.size;
+          const front = box.center[2] + d / 2 + 0.02;
+          const panel = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.3, h - 0.3), flat());
+          panel.position.set(box.center[0], box.center[1], front);
+          add("bezel", panel);
+          const gw = (w - 0.3) * 0.72;
+          const gh = (h - 0.3) * 0.7;
+          const vents = new THREE.LineSegments(ventGeometry(gw, gh), new THREE.LineBasicMaterial({ transparent: true }));
+          vents.position.set(box.center[0] - (w - 0.3) / 2 + 0.8 + gw / 2, box.center[1], front + 0.01);
+          add("vents", vents);
+          const button = new THREE.LineLoop(ring(Math.max(0.32, h * 0.05)).rotateX(Math.PI / 2), new THREE.LineBasicMaterial({ transparent: true }));
+          button.position.set(box.center[0] + w / 2 - Math.max(1.2, h * 0.15), box.center[1] + h * 0.2, front + 0.01);
+          add("button", button);
+        }
+        if (look === "router") {
+          // A router's antennas standing up at its back, its lights along its front.
+          const [w, h, d] = box.size;
+          const length = w * 0.65;
+          for (let i = 0; i < 4; i++) {
+            const antenna = new THREE.Mesh(new THREE.CylinderGeometry(h * 0.1, h * 0.14, length, 8), new THREE.MeshBasicMaterial({ transparent: true }));
+            antenna.position.set(box.center[0] - w / 2 + w * 0.08 + (i * w * 0.84) / 3, box.center[1] + h / 2 + length / 2, box.center[2] - d / 2 + h * 0.4);
+            antenna.rotation.z = (i - 1.5) * 0.08;
+            add("antenna", antenna);
+          }
+        }
+        if (look === "router" || look === "switch") {
+          const [w, h, d] = box.size;
+          for (let i = 0; i < (look === "router" ? 5 : 1); i++) {
+            const light = new THREE.Mesh(new THREE.PlaneGeometry(h * 0.25, h * 0.12), flat());
+            light.rotation.x = -Math.PI / 2;
+            light.position.set(box.center[0] - w / 2 + h * 0.8 + i * h * 0.5, box.center[1] + h / 2 + 0.01, box.center[2] + d / 2 - h * 0.4);
+            add("deviceLed", light);
+          }
+        }
+        if (box.shape === "port" && (kind === "physical" || kind === "usb")) {
+          // A real socket on the port's face: an RJ45's opening with its clip's notch, its contacts and two lights; a
+          // USB-A's opening with its tongue.
+          const turn = facing(box.normal);
+          const normal = new THREE.Vector3(...(box.normal ?? [0, 0, -1]));
+          const across = Math.abs(normal.x) > 0.5 ? box.size[2] : box.size[0];
+          const out = (Math.abs(normal.x) > 0.5 ? box.size[0] : box.size[2]) / 2;
+          const h = box.size[1];
+          const onFace = (object: THREE.Object3D, x: number, y: number, lift: number) => {
+            const offset = new THREE.Vector3(x, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), turn);
+            object.position.set(box.center[0] + offset.x + normal.x * (out + lift), box.center[1] + y, box.center[2] + offset.z + normal.z * (out + lift));
+            object.rotation.y = turn;
+            return object;
+          };
+          const plate = (w: number, ph: number, x: number, y: number, lift: number) => onFace(new THREE.Mesh(new THREE.PlaneGeometry(w, ph), flat()), x, y, lift) as THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>;
+          if (kind === "physical") {
+            const sw = across * 0.7;
+            const sh = h * 0.52;
+            const sy = -h * 0.08;
+            add("socket", plate(sw, sh, 0, sy, 0.004));
+            add("socket", plate(across * 0.3, h * 0.14, 0, sy - sh / 2 - h * 0.06, 0.004));
+            add("pins", onFace(new THREE.LineSegments(pinGeometry(sw * 0.8, sy + sh / 2 - 0.02, sh * 0.3), new THREE.LineBasicMaterial({ transparent: true })), 0, 0, 0.008) as THREE.LineSegments<THREE.BufferGeometry, THREE.LineBasicMaterial>);
+            add("linkLed", plate(across * 0.14, h * 0.12, -across * 0.36, h * 0.36, 0.004));
+            add("actLed", plate(across * 0.14, h * 0.12, across * 0.36, h * 0.36, 0.004));
+          } else {
+            add("socket", plate(across * 0.84, h * 0.62, 0, 0, 0.004));
+            add("tongue", plate(across * 0.68, h * 0.2, 0, h * 0.09, 0.008));
+            add("actLed", plate(across * 0.12, h * 0.12, across * 0.5 + 0.1, h * 0.3, 0.004));
+          }
+        }
         if (box.shape === "gate") {
           // The way through the portal: a membrane traffic passes, glowing softly; a lock on the beam with TLS.
           const t = Math.min(box.size[0], box.size[1]) * 0.16;
@@ -643,7 +790,7 @@ export function Twin3D({
         } else if ((look === "core" || look === "memory" || look === "drive") && !node?.children.length) {
           // A part's load: from its floor up (a core, memory), along a flat disk from its left end.
           const [w, h, d] = box.size;
-          const along = look === "drive";
+          const along = look === "drive" || look === "memory";
           const k = 0.84;
           const body = new THREE.Mesh(
             (along ? new THREE.BoxGeometry(1, h * k, d * k).translate(0.5, 0, 0) : new THREE.BoxGeometry(w * k, 1, d * k).translate(0, 0.5, 0)) as THREE.BufferGeometry,
@@ -703,6 +850,15 @@ export function Twin3D({
       );
       dashed.computeLineDistances();
       dashed.renderOrder = -1;
+      // The cables a machine is plugged in with: solid, thick, with their plugs.
+      const tubes: Content["tubes"] = links.flatMap((l, k) => {
+        if (l.kind !== "cable" && l.kind !== "ethernet") return [];
+        const mesh = new THREE.Mesh(cableGeometry(l.path, l.radius ?? (l.kind === "cable" ? 0.1 : 0.075)), new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false }));
+        mesh.renderOrder = 2 * meshes.length - 1;
+        world.add(mesh);
+        extras.push(mesh);
+        return [{ k, mesh, base: 0.75 }];
+      });
       const packetGeometry = new THREE.BufferGeometry();
       packetGeometry.setAttribute("position", new THREE.Float32BufferAttribute(new Float32Array(links.length * MAX_PACKETS * 3), 3));
       packetGeometry.setDrawRange(0, 0);
@@ -745,6 +901,7 @@ export function Twin3D({
         vertexAt,
         extras,
         boards,
+        tubes,
         packets,
         ports,
         portLabels: portLabelsOf(scene.boxes, byId),
@@ -895,6 +1052,27 @@ export function Twin3D({
       return false;
     };
 
+    /** How fast an activity light blinks for this many bytes per second: not at all when idle, up to 13 times a second. */
+    const blinkRate = (bytes: number) => (bytes > 0 ? 1 + Math.min(12, Math.log10(1 + bytes / 1000) * 3) : 0);
+    /** Whether a port has something plugged in: a cable to it (connectedTo, attaches) either way. */
+    const portLinked = (node: TwinView) =>
+      !!scenePaths?.relationships.some((r) => (r.$relationshipName === "connectedTo" || r.$relationshipName === "attaches") && (r.$sourceId === node.id || r.$targetId === node.id));
+    /**
+     * The traffic through a port (or a LAN device): a USB port's disk's I/O, a machine's card its machine's network, a
+     * switch port the machine plugged into it, the uplink, the WAN port and the devices the whole cluster's.
+     */
+    const trafficOf = (node: TwinView): number => {
+      const byId = content!.byId;
+      const rels = scenePaths?.relationships ?? [];
+      if (portKind(node) === "usb") return byId.get(rels.find((r) => r.$relationshipName === "attaches" && r.$sourceId === node.id)?.$targetId ?? "")?.resources?.io ?? 0;
+      if (node.parent?.look === "node") return node.parent.network ?? 0;
+      const card = rels.find((r) => r.$relationshipName === "connectedTo" && r.$targetId === node.id && byId.get(r.$sourceId)?.parent?.look === "node");
+      if (card) return byId.get(card.$sourceId)!.parent!.network ?? 0;
+      let root: TwinView | undefined = node;
+      while (root?.parent) root = root.parent;
+      return root?.network ?? 0;
+    };
+
     const paint = () => {
       if (!content) return;
       const focus = chosen.current;
@@ -931,9 +1109,13 @@ export function Twin3D({
           : look === "core" || look === "memory" ? 0.1
           : look === "cpu" ? 0.14
           : look === "drive" ? 0.16
+          : look === "switch" || look === "router" ? 0.55
+          : look === "node" ? 0.06
           : leaf ? 0.2
           : 0.035;
         m.mesh.material.opacity = (strong ? Math.max(body, leaf ? 0.4 : 0.1) : body) * fade;
+        // A machine's chassis and the LAN's devices are grey metal; their outline still carries their status.
+        if ((look === "node" || look === "switch" || look === "router") && !strong) m.mesh.material.color = colors.neutral;
         if (node.isBand && !strong) {
           m.mesh.material.color = new THREE.Color().setHSL(hueOf(node.name), 0.7, 0.55);
           m.mesh.material.opacity = 0.045 * fade;
@@ -944,7 +1126,7 @@ export function Twin3D({
           m.mesh.material.color = c;
           m.edges.material.color = c;
           if (kind === "bridge") m.mesh.material.opacity = 0.4 * fade;
-          if (kind === "usb" || kind === "physical") (m.mesh.material.color = colors.neutral), (m.edges.material.color = colors.neutral);
+          if (kind === "usb" || kind === "physical") (m.mesh.material.color = colors.neutral), (m.edges.material.color = colors.neutral), (m.mesh.material.opacity = 0.8 * fade);
           if (kind === "loadbalancer") m.mesh.material.opacity = 0.3 * fade;
         }
         for (const d of m.decor) {
@@ -957,6 +1139,15 @@ export function Twin3D({
           else if (d.role === "rotor" || d.role === "sweep") (material.color = colors.active), (material.opacity = (strong ? 1 : 0.7) * fade);
           else if (d.role === "spokes") (material.color = statusColor(node.status)), (material.opacity = (strong ? 0.8 : 0.4) * fade);
           else if (d.role === "track") (material.color = colors.neutral), (material.opacity = 0.15 * fade);
+          else if (d.role === "socket") (material.color = SOCKET), (material.opacity = 0.95 * fade);
+          else if (d.role === "pins" || d.role === "antenna") (material.color = colors.neutral), (material.opacity = 0.85 * fade);
+          else if (d.role === "tongue") (material.color = colors.cyan), (material.opacity = 0.9 * fade);
+          else if (d.role === "linkLed") (material.color = statusColor(node.status)), (material.opacity = (portLinked(node) ? 0.95 : 0.12) * fade);
+          else if (d.role === "actLed") (material.color = colors.active), (d.rate = blinkRate(trafficOf(node)));
+          else if (d.role === "bezel") (material.color = colors.neutral), (material.opacity = (strong ? 0.12 : 0.07) * fade);
+          else if (d.role === "vents") (material.color = colors.neutral), (material.opacity = 0.35 * fade);
+          else if (d.role === "button") (material.color = statusColor(node.status)), (material.opacity = 0.9 * fade);
+          else if (d.role === "deviceLed") (material.color = statusColor(node.status)), (material.opacity = 0.95 * fade), (d.rate = blinkRate(trafficOf(node)));
           else if (d.role === "gauge") {
             if (m.gaugeAt !== full) {
               d.object.geometry.dispose();
@@ -995,7 +1186,7 @@ export function Twin3D({
       }
       // Each network link's share of its network's load (interfaces carry no traffic).
       const byParent = new Map<string, number>();
-      for (const l of content.links) if (l.kind !== "interface" && l.kind !== "resource" && l.kind !== "cable") byParent.set(l.parent, Math.max(byParent.get(l.parent) ?? 0, content.byId.get(l.id)?.network ?? 0));
+      for (const l of content.links) if (l.kind !== "interface" && l.kind !== "resource" && l.kind !== "cable" && l.kind !== "ethernet") byParent.set(l.parent, Math.max(byParent.get(l.parent) ?? 0, content.byId.get(l.id)?.network ?? 0));
       const linkShown = (l: Link) => layerOn(l.layer) && !hidden(content!.byId.get(l.id)) && !hidden(l.to ? content!.byId.get(l.to) : content!.byId.get(l.parent));
       /** A line of what runs on what shows only for the selection: a container (or its pod) and its node's parts, or a part
        * and everything running on it. */
@@ -1004,6 +1195,7 @@ export function Twin3D({
         if (!linkShown(l)) return 0;
         if (l.kind === "resource") return runsHere(l) ? Math.min(1, 0.25 + (content!.byId.get(l.id)?.resources?.cpu ?? 0) * 2) : 0;
         if (l.kind === "cable") return Math.min(1, Math.log1p(content!.byId.get(l.to ?? "")?.resources?.io ?? 0) / Math.log1p(50_000_000));
+        if (l.kind === "ethernet") return Math.min(1, Math.log1p(content!.byId.get(l.id)?.network ?? 0) / Math.log1p(50_000_000));
         // The selection's traffic moves along its path.
         if (path.has(l.id) && (!l.to || path.has(l.to)) && focus) return 0.6;
         if (l.kind === "wire" || l.kind === "overlay" || l.kind === "virtual" || l.kind === "lan" || l.kind === "storage") return 0;
@@ -1028,7 +1220,7 @@ export function Twin3D({
         const alpha = !visible
           ? 0
           : l.kind === "resource" ? (runsHere(l) ? 0.85 : 0)
-          : l.kind === "cable" ? 0.6 * (near ? 1 : 0.2)
+          : l.kind === "cable" || l.kind === "ethernet" ? 0
           : onPath && l.kind !== "network" && l.kind !== "internet"
             ? 0.9
             : l.kind === "virtual" ? 0.3 * (near ? 1 : 0.2)
@@ -1042,6 +1234,17 @@ export function Twin3D({
         for (let i = 0; i < (l.path.length - 1) * 2; i++) target.setXYZW(at.from + i, c.r, c.g, c.b, alpha);
         for (const e of [2 * k, 2 * k + 1]) portColor.setXYZW(e, c.r, c.g, c.b, alpha ? (near || onPath || l.kind === "resource" ? 0.95 : 0.15) : 0);
       });
+      // The cables: USB light grey, Ethernet in the network's cyan, both brighter on the selection's path.
+      for (const tube of content.tubes) {
+        const l = content.links[tube.k]!;
+        const shown = linkShown(l);
+        tube.mesh.visible = shown;
+        const near = inFocus(content.byId.get(l.parent)) || inFocus(content.byId.get(l.id)) || inFocus(l.to ? content.byId.get(l.to) : undefined);
+        const lit = !!focus && (l.id === focus.id || l.to === focus.id || content.byId.get(l.to ?? "")?.parent?.id === focus.id);
+        tube.mesh.material.color = lit ? colors.active : l.kind === "cable" ? colors.neutral : colors.cyan;
+        tube.base = (lit ? 0.95 : 0.75) * (near ? 1 : 0.2);
+        tube.mesh.material.opacity = tube.base;
+      }
       solid.needsUpdate = true;
       broken.needsUpdate = true;
       portColor.needsUpdate = true;
@@ -1325,10 +1528,21 @@ export function Twin3D({
               const rate = io > 0 ? 1 + Math.min(12, Math.log10(1 + io / 1000) * 3) : 0;
               d.object.material.opacity = d.object.visible ? (rate ? (Math.sin((time / 1000) * rate * Math.PI * 2) > 0 ? 0.95 : 0.15) : 0.1) : 0;
             }
+            if ((d.role === "actLed" || d.role === "deviceLed") && d.object.visible) {
+              const rate = d.rate ?? 0;
+              const on = rate ? Math.sin((time / 1000) * rate * Math.PI * 2 + m.box.center[0]) > -0.2 : d.role === "deviceLed";
+              d.object.material.opacity = on ? 0.95 : 0.12;
+            }
             if (d.role === "rotor") d.object.rotation.z = -(time / 1000) * (lit ? 2.4 : 0.5);
             if (d.role === "sweep" && d.steps) d.object.rotation.y = -(Math.floor(time / (lit ? 260 : 700)) % d.steps) * ((Math.PI * 2) / d.steps);
           }
       }
+      // A cable with traffic pulses: brighter and dimmer, faster the more goes through it.
+      if (content && !reducedMotion())
+        for (const tube of content.tubes) {
+          const load = loads[tube.k] ?? 0;
+          tube.mesh.material.opacity = load > 0 ? tube.base * (0.7 + 0.3 * Math.sin((time / 1000) * (1 + 6 * load) * Math.PI * 2)) : tube.base;
+        }
       renderer.render(world, camera);
       labelRenderer.render(world, camera);
       requestAnimationFrame(draw);

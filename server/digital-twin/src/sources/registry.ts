@@ -81,6 +81,9 @@ export const kubernetesType: SourceType = {
     { name: "clusterName", kind: "text" },
     { name: "cephManagers", kind: "list" },
     { name: "externalDisks", kind: "select", options: ["usb", "sata"], default: "usb" },
+    { name: "lan", kind: "select", options: ["switch", "none"], default: "switch" },
+    { name: "switchModel", kind: "text", when: { field: "lan", value: "switch" } },
+    { name: "routerModel", kind: "text", when: { field: "lan", value: "switch" } },
     { name: "clickhouseUrl", kind: "url" },
     { name: "clickhouseUser", kind: "text" },
     { name: "clickhousePassword", kind: "text", secret: true },
@@ -92,6 +95,9 @@ export const kubernetesType: SourceType = {
     clusterName: optionalText(100),
     cephManagers: httpUrls,
     externalDisks: z.enum(["usb", "sata"]).default("usb"),
+    lan: z.enum(["switch", "none"]).default("switch"),
+    switchModel: optionalText(100),
+    routerModel: optionalText(100),
     clickhouseUrl: z.string().trim().pipe(httpUrl).default(""),
     clickhouseUser: optionalText(100),
     clickhouseCluster: optionalText(100),
@@ -109,7 +115,7 @@ export const kubernetesType: SourceType = {
       ? new ClickHouse(settings.clickhouseUrl, settings.clickhouseUser || "default", secrets.clickhousePassword ?? "", defaults.fetchFn)
       : defaults.clickhouse;
     return {
-      source: kubernetesSource(kube, settings.clusterName || id, { cephManagers: list(settings.cephManagers), externalBus: settings.externalDisks === "sata" ? "sata" : "usb", fetchFn: defaults.fetchFn }),
+      source: kubernetesSource(kube, settings.clusterName || id, { cephManagers: list(settings.cephManagers), externalBus: settings.externalDisks === "sata" ? "sata" : "usb", lan: settings.lan === "switch" ? { switchModel: settings.switchModel, routerModel: settings.routerModel } : undefined, fetchFn: defaults.fetchFn }),
       telemetry: clickhouse ? new Telemetry(clickhouse, settings.clickhouseCluster || undefined) : undefined,
     };
   },

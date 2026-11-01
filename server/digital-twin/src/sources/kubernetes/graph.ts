@@ -70,8 +70,23 @@ export interface ClusterInput {
   publicAddresses?: Record<string, string[]>;
   /** How the nodes' disks other than the internal ones are attached (Ceph's sdX on mini PCs: USB). Default usb. */
   externalBus?: "usb" | "sata";
+  /** The nodes' network cards wired to one switch, and the switch to the router in front of the internet (a home
+   * lab); without, the twin has neither. */
+  lan?: LanOptions;
   version: string | null;
 }
+
+/** The LAN the nodes are on: the switch's and the router's make and model, when known (shown, never drawn). */
+export interface LanOptions {
+  switchModel?: string;
+  routerModel?: string;
+}
+
+/** A node's role: a control plane (kubeadm's and microk8s's labels) or a worker. */
+export const roleOf = (node: NodeObject): "control-plane" | "worker" => {
+  const labels = node.metadata.labels ?? {};
+  return "node-role.kubernetes.io/control-plane" in labels || "node-role.kubernetes.io/master" in labels || "node.kubernetes.io/microk8s-controlplane" in labels ? "control-plane" : "worker";
+};
 
 /** A Kubernetes quantity in base units: 4, 3500m, 6498908Ki, 100Gi, 1e3. NaN when it isn't one. */
 export function quantity(q: string | undefined): number {
@@ -109,6 +124,15 @@ export const hardwareIds = (nodeId: string) => ({
   memory: `${nodeId}/hw/memory`,
   disk: (device: string) => `${nodeId}/hw/disk/${encodeURIComponent(device)}`,
   usb: (n: number) => `${nodeId}/hw/usb/${n}`,
+});
+
+/** The LAN's switch and router and their ports, by the ids `network` gives them. */
+export const lanIds = (root: string) => ({
+  switch: `${root}/lan/switch`,
+  switchPort: (n: number) => `${root}/lan/switch/port/${n}`,
+  router: `${root}/lan/router`,
+  routerLan: `${root}/lan/router/lan1`,
+  routerWan: `${root}/lan/router/wan`,
 });
 
 const STATUSES: TwinStatus[] = ["ok", "warn", "error"];
@@ -161,6 +185,7 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
         cpu: node.status?.capacity?.cpu ?? "",
         memory: node.status?.capacity?.memory ?? "",
         ip: node.status?.addresses?.find((a) => a.type === "InternalIP")?.address ?? "",
+        role: roleOf(node),
       },
       { [NODE_ATTR]: node.metadata.name },
     );
@@ -478,6 +503,25 @@ function network(
   }
   // The overlay: every tunnel reaches every other.
   tunnels.forEach((a, i) => tunnels.slice(i + 1).forEach((b) => link("connectedTo", a, b)));
+
+  // The LAN: every node's card on a port of one switch, the switch's uplink on the router's LAN port, the router's
+  // WAN port facing the internet.
+  if (input.lan && cardOf.size) {
+    const lan = lanIds(g.root);
+    add(lan.switch, MODEL.Switch, "switch", "ok", { model: input.lan.switchModel ?? "", portCount: cardOf.size + 1 });
+    add(lan.router, MODEL.Router, "router", "ok", { model: input.lan.routerModel ?? "" });
+    link(CONTAINS, g.root, lan.switch);
+    link(CONTAINS, g.root, lan.router);
+    const port = (owner: string, id: string, name: string) => (iface(id, name, "physical", {}), link(CONTAINS, owner, id));
+    port(lan.switch, lan.switchPort(0), "uplink");
+    port(lan.router, lan.routerLan, "lan1");
+    port(lan.router, lan.routerWan, "wan");
+    link("connectedTo", lan.switchPort(0), lan.routerLan);
+    [...cardOf.entries()].sort(([a], [b]) => a.localeCompare(b)).forEach(([, card], i) => {
+      port(lan.switch, lan.switchPort(i + 1), `port${i + 1}`);
+      link("connectedTo", card, lan.switchPort(i + 1));
+    });
+  }
 
   // Pods: eth0 to the node's router (a host-network pod is the node's card).
   const podIds = new Map<string, string>();
