@@ -115,7 +115,7 @@ export const kubernetesType: SourceType = {
       ? new ClickHouse(settings.clickhouseUrl, settings.clickhouseUser || "default", secrets.clickhousePassword ?? "", defaults.fetchFn)
       : defaults.clickhouse;
     return {
-      source: kubernetesSource(kube, settings.clusterName || id, { cephManagers: list(settings.cephManagers), externalBus: settings.externalDisks === "sata" ? "sata" : "usb", lan: settings.lan === "switch" ? { switchModel: settings.switchModel, routerModel: settings.routerModel } : undefined, fetchFn: defaults.fetchFn }),
+      source: kubernetesSource(kube, settings.clusterName || id, { cephManagers: list(settings.cephManagers), externalBus: settings.externalDisks === "sata" ? "sata" : "usb", lan: settings.lan !== "none" ? { switchModel: settings.switchModel, routerModel: settings.routerModel } : undefined, fetchFn: defaults.fetchFn }),
       telemetry: clickhouse ? new Telemetry(clickhouse, settings.clickhouseCluster || undefined) : undefined,
     };
   },
