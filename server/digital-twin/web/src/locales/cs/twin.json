@@ -237,5 +237,25 @@
       "mmc": "eMMC",
       "unknown": "Disk"
     }
+  },
+  "origin": {
+    "title": "Odkud jsou data",
+    "source": "zdroj dvojčete",
+    "connection": "připojení {{name}}",
+    "metric": "Metrika",
+    "by": "Podle",
+    "formula": "Výpočet",
+    "path": "Pole",
+    "from": "Odkud",
+    "every": "Interval",
+    "seconds_one": "{{count}} sekunda",
+    "seconds_few": "{{count}} sekundy",
+    "reads": {
+      "clickhouse": "ClickHouse (telemetrie)",
+      "kubernetes": "Kubernetes API",
+      "ceph": "Ceph manager"
+    },
+    "seconds_many": "{{count}} sekundy",
+    "seconds_other": "{{count}} sekund"
   }
 }

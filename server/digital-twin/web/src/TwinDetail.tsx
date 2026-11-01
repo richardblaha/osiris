@@ -4,6 +4,7 @@ import { t } from "i18next";
 import { useEffect, useState } from "react";
 import { api, type DataPoint } from "./api.ts";
 import { currentLocale, formatBytesRate, formatDateTime, formatNumber } from "./i18n.ts";
+import { DataOrigins } from "./DataOrigins.tsx";
 import { storageText } from "./Twin3D.tsx";
 import { twinIdOf, type TwinScene, type TwinView } from "./scene.ts";
 
@@ -122,6 +123,7 @@ export function TwinDetail({ node, scene, onSelect }: { node: TwinView; scene: T
             </dl>
           </section>
         )}
+        <DataOrigins model={node.model} models={scene.models} active={Object.values(values)[0]?.profile} />
         {(outgoing.length > 0 || incoming.length > 0) && (
           <section className="mt-4">
             <h3 className="section-header mb-1">{t("twin:relationships")}</h3>

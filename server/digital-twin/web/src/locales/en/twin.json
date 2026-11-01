@@ -227,5 +227,23 @@
       "mmc": "eMMC",
       "unknown": "Disk"
     }
+  },
+  "origin": {
+    "title": "Where the data comes from",
+    "source": "the twin's source",
+    "connection": "connection {{name}}",
+    "metric": "Metric",
+    "by": "By",
+    "formula": "How",
+    "path": "Field",
+    "from": "From",
+    "every": "Every",
+    "seconds_one": "{{count}} second",
+    "seconds_other": "{{count}} seconds",
+    "reads": {
+      "clickhouse": "ClickHouse (telemetry)",
+      "kubernetes": "Kubernetes API",
+      "ceph": "Ceph manager"
+    }
   }
 }

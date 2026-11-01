@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { interfaceErrors, relationshipErrors, resolveContents, twinErrors, type DigitalTwin, type DtdlInterface } from "@osiris/shared/dtdl.ts";
+import { dataProfileErrors, interfaceErrors, relationshipErrors, SOURCE_CONNECTION, resolveContents, twinErrors, type DigitalTwin, type DtdlInterface } from "@osiris/shared/dtdl.ts";
 import { clusterGraph, nodeStatus, podStatus, type ClusterInput } from "../src/sources/kubernetes/graph.ts";
 import type { PodObject } from "../src/sources/kubernetes/kube.ts";
 import { dtdlModel, instanceId, MODEL } from "../src/sources/kubernetes/models.ts";
 import { errorKey, errorsByTwin, toRelationship } from "../src/twin.ts";
+import { kubernetesResources } from "../src/sources/kubernetes/source.ts";
+import { READINGS } from "../src/sources/kubernetes/readings.ts";
+import { readingQuery } from "../src/telemetry.ts";
 
 const pod = (over: Partial<PodObject> & { metadata: { name: string; namespace: string } }): PodObject => ({
   spec: {},
@@ -55,6 +58,33 @@ describe("the Kubernetes models", () => {
     expect(instanceId("c", ["namespace", "api.v1"])).not.toBe(instanceId("c", ["namespace", "api-v1"]));
     expect(instanceId("c", ["namespace", "A"])).not.toBe(instanceId("c", ["namespace", "a"]));
     expect(instanceId("c", ["namespace", "a/b"])).not.toBe(instanceId("c", ["namespace", "a"], ["b", ""]));
+  });
+});
+
+describe("where the values come from", () => {
+  const models = new Map(dtdlModel().map((m): [string, DtdlInterface] => [m["@id"], m]));
+  it("tells for each model's telemetry the reading, its metric and the very query the source runs", () => {
+    for (const m of models.values()) expect(dataProfileErrors(m["@id"], models)).toEqual([]);
+    const pod = models.get(MODEL.Pod)!.dataProfiles!.find((p) => p.name === "source")!;
+    const network = pod.bindings.find((b) => b.telemetry === "network")!;
+    expect(network).toMatchObject({ connection: SOURCE_CONNECTION, reads: "clickhouse", metric: "k8s.pod.network.io", by: "k8s.namespace.name, k8s.pod.name" });
+    expect(network.query).toContain("FROM otel_metrics_sum");
+    expect(network.query).toContain("MetricName = {metric:String}");
+    expect(pod.bindings.find((b) => b.telemetry === "phase")).toMatchObject({ reads: "kubernetes", path: "GET /api/v1/pods → status.phase" });
+    expect(models.get(MODEL.Ceph)!.dataProfiles![0]!.bindings.find((b) => b.telemetry === "used")).toMatchObject({ reads: "ceph", metric: "ceph_cluster_total_used_bytes" });
+  });
+
+  it("reads exactly what the models say: the same metrics, attributes and query", async () => {
+    const asked: string[] = [];
+    const reader = {
+      latest: async (metric: string, attributes: string[], _at?: number, by = {}) => (asked.push(readingQuery({ read: "latest", metric, attributes, ...by }, { cluster: "c" }).sql), new Map()),
+      rates: async (metric: string, attributes: string[], _at?: number, by = {}) => (asked.push(readingQuery({ read: "rate", metric, attributes, ...by }, { cluster: "c" }).sql), new Map()),
+    };
+    await kubernetesResources(reader, []);
+    const documented = new Set([...models.values()].flatMap((m) => (m.dataProfiles ?? []).flatMap((p) => p.bindings.map((b) => String(b.query ?? "")))));
+    const all = [...documented].join("\n\n");
+    for (const sql of asked) expect(all).toContain(sql.replace(/\n\s+/g, "\n  "));
+    expect(asked).toHaveLength(Object.values(READINGS).filter((r) => !["nodeNetwork", "podNetwork", "errors", "volumeCapacity", "volumeAvailable"].includes(Object.keys(READINGS).find((k) => READINGS[k as keyof typeof READINGS] === r)!)).length);
   });
 });
 

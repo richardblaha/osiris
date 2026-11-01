@@ -1,5 +1,6 @@
 import type { ResourceReading } from "../../state.ts";
-import type { TelemetryReader } from "../../telemetry.ts";
+import type { Reading, TelemetryReader } from "../../telemetry.ts";
+import { READINGS, type ReadingName } from "./readings.ts";
 import { errorKey, otelResourceOf, type SourceTwin, type TwinSource } from "../../twin.ts";
 import { clusterGraph, CONTAINER_ATTR, type LanOptions, CPU_ATTR, DEVICE_ATTR, NAMESPACE_ATTR, NODE_ATTR, POD_ATTR, PVC_ATTR, ROOT_FS_ATTR } from "./graph.ts";
 import { MODEL } from "./models.ts";
@@ -34,20 +35,22 @@ export async function publicAddressesOf(hosts: string[]): Promise<Record<string,
  */
 export async function kubernetesResources(telemetry: TelemetryReader, twins: SourceTwin[], at?: number): Promise<Record<string, ResourceReading>> {
   const none = () => new Map<string, number>();
-  const node = [NODE_ATTR];
-  const pod = [NAMESPACE_ATTR, POD_ATTR];
-  const container = [NAMESPACE_ATTR, POD_ATTR, CONTAINER_ATTR];
+  const read = (name: ReadingName) => {
+    const r: Reading = READINGS[name];
+    const by = { points: r.points ? [...r.points] : undefined, where: r.where };
+    return (r.read === "rate" ? telemetry.rates(r.metric!, [...r.attributes], at, by) : telemetry.latest(r.metric!, [...r.attributes], at, by)).catch(none);
+  };
   const [cpu, idle, memory, fsUsed, fsSize, io, cCpu, cMemory, pCpu, pMemory] = await Promise.all([
-    telemetry.latest("k8s.node.cpu.usage", node, at).catch(none),
-    telemetry.latest("system.cpu.utilization", node, at, { points: [CPU_ATTR], where: { state: "idle" } }).catch(none),
-    telemetry.latest("k8s.node.memory.working_set", node, at).catch(none),
-    telemetry.latest("k8s.node.filesystem.usage", node, at).catch(none),
-    telemetry.latest("k8s.node.filesystem.capacity", node, at).catch(none),
-    telemetry.rates("system.disk.io", node, at, { points: [DEVICE_ATTR] }).catch(none),
-    telemetry.latest("container.cpu.usage", container, at).catch(none),
-    telemetry.latest("container.memory.working_set", container, at).catch(none),
-    telemetry.latest("k8s.pod.cpu.usage", pod, at).catch(none),
-    telemetry.latest("k8s.pod.memory.working_set", pod, at).catch(none),
+    read("nodeCpu"),
+    read("coreIdle"),
+    read("nodeMemory"),
+    read("fsUsage"),
+    read("fsCapacity"),
+    read("diskIo"),
+    read("containerCpu"),
+    read("containerMemory"),
+    read("podCpu"),
+    read("podMemory"),
   ]);
   const share = (used: number | undefined, size: number | undefined) => (used !== undefined && size ? Math.min(1, Math.max(0, used / size)) : undefined);
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
@@ -104,14 +107,11 @@ export function kubernetesSource(
   return {
     name: "kubernetes",
     models: dtdlModel,
-    errorAttributes: [NAMESPACE_ATTR, POD_ATTR],
-    // kubeletstats' network counters: a node's and a pod's.
-    networkMetrics: [
-      { metric: "k8s.node.network.io", attributes: [NODE_ATTR] },
-      { metric: "k8s.pod.network.io", attributes: [NAMESPACE_ATTR, POD_ATTR] },
-    ],
-    // kubeletstats' volume gauges: the filesystem a claim's volume is on, and how much of it is free.
-    storageMetrics: { capacity: "k8s.volume.capacity", available: "k8s.volume.available", attributes: [NAMESPACE_ATTR, PVC_ATTR] },
+    // The readings of `READINGS` (each model shows them as where its values come from): the pods' error logs,
+    // kubeletstats' network counters of a node and a pod, its volume gauges (a claim's filesystem and how much is free).
+    errorAttributes: [...READINGS.errors.attributes],
+    networkMetrics: [READINGS.nodeNetwork, READINGS.podNetwork].map((r) => ({ metric: r.metric, attributes: [...r.attributes] })),
+    storageMetrics: { capacity: READINGS.volumeCapacity.metric, available: READINGS.volumeAvailable.metric, attributes: [...READINGS.volumeCapacity.attributes] },
     resources: kubernetesResources,
     async snapshot() {
       const [namespaces, pods, nodes, pvcs, pvs, replicasets, version, ceph, services, endpointSlices, ingresses, ingressRoutes] = await Promise.all([

@@ -1,4 +1,4 @@
-import { DTDL_CONTEXT, type DtdlContent, type DtdlInterface, type DtdlSchema, type Localized } from "@osiris/shared/dtdl.ts";
+import { DATA_CONTEXT, DTDL_CONTEXT, type DtdlContent, type DtdlInterface, type DtdlSchema, type Localized } from "@osiris/shared/dtdl.ts";
 import { TWIN_CONTAINS, TWIN_ENTITY_MODEL } from "@osiris/shared";
 
 /**
@@ -30,6 +30,7 @@ export const MODEL = {
   Switch: "dtmi:osiris:net:Switch;1",
   Router: "dtmi:osiris:net:Router;1",
 } as const;
+import { sourceProfile } from "./readings.ts";
 
 const enumOf = (...values: string[]): DtdlSchema => ({ "@type": "Enum", valueSchema: "string", enumValues: values.map((v) => ({ name: v, enumValue: v })) });
 /** English and Czech, the languages of the views. */
@@ -76,7 +77,7 @@ const iface = (id: string, displayName: Localized, description: string, contents
 
 /** The DTDL v3 interfaces the Kubernetes twins instantiate, the base Entity first. */
 export function dtdlModel(): DtdlInterface[] {
-  return [
+  return withSources([
     iface(
       MODEL.Entity,
       l("Entity", "Entita"),
@@ -270,8 +271,15 @@ export function dtdlModel(): DtdlInterface[] {
       property("model", "string", l("Make and model", "Výrobce a model")),
       contains(MODEL.Interface, "Its LAN and WAN ports."),
     ]),
-  ];
+  ]);
 }
+
+/** Each model with where its values come from (`sourceProfile`): a data profile of the source's own readings. */
+const withSources = (models: DtdlInterface[]): DtdlInterface[] =>
+  models.map((m) => {
+    const profile = sourceProfile(m["@id"]);
+    return profile ? { ...m, "@context": [DTDL_CONTEXT, DATA_CONTEXT], dataProfiles: [profile] } : m;
+  });
 
 /**
  * A twin's id (ADT's `$dtId`, any unique string): the path of kinds and names from the cluster down

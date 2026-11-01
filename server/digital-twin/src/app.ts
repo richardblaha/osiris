@@ -13,7 +13,7 @@ import type { Config } from "./config.ts";
 import type { Instances, RunningInstance } from "./instances.ts";
 import { errorsByTwin, valuesByTwin } from "./twin.ts";
 import type { TelemetryKind, TelemetryState, TwinStateStore } from "./state.ts";
-import { DATA_ID, dataProfileErrors, dataProfilesOf, interfaceErrors, presentationErrors, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
+import { DATA_ID, SOURCE_CONNECTION, dataProfileErrors, dataProfilesOf, interfaceErrors, presentationErrors, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { bindingErrors, CONNECTOR_TYPES } from "./datasources/connectors.ts";
 import type { DataValueStore } from "./datasources/hub.ts";
 import type { MetricType } from "./telemetry.ts";
@@ -211,7 +211,8 @@ export function createApp(config: Config, options: AppOptions) {
     if (!doc.dataProfiles?.length) return [];
     const types = new Map((await store.connections(tw.record.id)).map((c) => [c.id, CONNECTOR_TYPES[c.type]]));
     return doc.dataProfiles.flatMap((p) => [
-      ...p.bindings.flatMap((b) => bindingErrors(b, types.get(b.connection)).map((e) => `${doc["@id"]}: profile ${p.name}: ${e}`)),
+      // A binding to the source only tells where the source's own value comes from: nothing to connect.
+      ...p.bindings.filter((b) => b.connection !== SOURCE_CONNECTION).flatMap((b) => bindingErrors(b, types.get(b.connection)).map((e) => `${doc["@id"]}: profile ${p.name}: ${e}`)),
       ...(p.simulator && types.get(p.simulator.connection)?.mode !== "simulator" ? [`${doc["@id"]}: profile ${p.name}: simulator ${p.simulator.connection} is no simulation connection`] : []),
     ]);
   };
@@ -463,7 +464,7 @@ export function createApp(config: Config, options: AppOptions) {
       adminOnly(c);
       const running = instances.get(c.req.param("id"));
       if (!running) throw new HttpError(404, "errors.digitalTwin.instanceNotFound");
-      const conn = parse(z.string().regex(DATA_ID), c.req.param("conn"));
+      const conn = parse(z.string().regex(DATA_ID).refine((v) => v !== SOURCE_CONNECTION), c.req.param("conn"));
       const body = parse(
         z.object({
           name: z.string().trim().min(1).max(80),
@@ -598,6 +599,8 @@ export function createApp(config: Config, options: AppOptions) {
       const profiles = new Map<string, { name: string; kind: string; description?: string; models: string[] }>();
       for (const m of models)
         for (const p of dataProfilesOf(m.id, map)) {
+          // A profile of the source's own readings only tells where they come from: nothing to switch to.
+          if (p.bindings.length && p.bindings.every((b) => b.connection === SOURCE_CONNECTION)) continue;
           const e = profiles.get(p.name) ?? { name: p.name, kind: p.kind, description: p.description, models: [] };
           e.models.push(m.id);
           profiles.set(p.name, e);

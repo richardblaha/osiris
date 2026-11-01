@@ -108,6 +108,12 @@ export interface DataBinding {
   /** The connector's own parameters (a query, a topic, a JSON path, a generator's pattern). */
   [parameter: string]: unknown;
 }
+/**
+ * The connection a binding names when the instance's own source reads the value (the Kubernetes adapter, at each
+ * sync): such a binding only tells where the value comes from — its reading, metric and query — and no connector runs
+ * it. No connection of an instance may take this id.
+ */
+export const SOURCE_CONNECTION = "source";
 /** An id: a profile's name or a connection's. */
 export const DATA_ID = /^[a-z][a-z0-9-]{0,39}$/;
 /** Placeholders a binding's parameters may use: the twin's id, its name, a property, an OpenTelemetry attribute. */

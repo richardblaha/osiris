@@ -116,6 +116,71 @@ export interface KeyedBy {
 /** The queries a source's own telemetry mapping (`TwinSource.resources`) needs. */
 export type TelemetryReader = Pick<Telemetry, "latest" | "rates">;
 
+/**
+ * One of a source's readings from the telemetry: a counter's rate per second over 5 minutes (`rate`, otel_metrics_sum),
+ * a gauge's newest value in 10 minutes (`latest`, otel_metrics_gauge), or error log records in 15 minutes (`errors`,
+ * otel_logs), by the values of resource attributes (and the data points' own, `points`, only points with `where`).
+ */
+export interface Reading {
+  read: "rate" | "latest" | "errors";
+  metric?: string;
+  attributes: string[];
+  points?: string[];
+  where?: Record<string, string>;
+}
+
+/**
+ * The ClickHouse query of a reading and its parameters — the very text the twin runs, which its models also show as
+ * where their telemetry comes from. Names and values go in as parameters, never as SQL; with `cluster`, only that
+ * cluster's records; with `at`, the window before that time instead of now.
+ */
+export function readingQuery(r: Reading, o: { cluster?: string; at?: number } = {}) {
+  const points = r.points ?? [];
+  const where = Object.entries(r.where ?? {});
+  const params: Record<string, string | number> = {};
+  if (o.cluster) params.cluster = o.cluster;
+  if (o.at !== undefined) params.at = o.at;
+  r.attributes.forEach((a, i) => (params[`a${i}`] = a));
+  points.forEach((a, i) => (params[`p${i}`] = a));
+  where.forEach(([k, v], i) => ((params[`w${i}`] = k), (params[`wv${i}`] = v)));
+  const names = [...r.attributes.map((_, i) => `k${i}`), ...points.map((_, i) => `q${i}`)];
+  const columns = [...r.attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`), ...points.map((_, i) => `Attributes[{p${i}:String}] AS q${i}`)].join(", ");
+  const keys = names.join(", ");
+  const present = names.map((k) => `${k} <> ''`).join(" AND ");
+  const filter = where.map((_, i) => ` AND Attributes[{w${i}:String}] = {wv${i}:String}`).join("");
+  const clusterWhere = o.cluster ? ` AND ${CLUSTER} = {cluster:String}` : "";
+  const keyOf = (row: Record<string, string>) => errorKey(names.map((k) => row[k] ?? ""));
+  const windowOf = (column: string, minutes: number) =>
+    o.at === undefined ? `${column} >= now() - INTERVAL ${minutes} MINUTE` : `${column} BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL ${minutes} MINUTE AND fromUnixTimestamp64Milli({at:Int64})`;
+  if (r.read === "errors") {
+    params.severity = SEVERITY.error ?? 17;
+    return {
+      sql: `SELECT ${columns}, count() AS count FROM otel_logs\n       WHERE ${windowOf("Timestamp", 15)} AND ${SEVERITY_EXPR} >= {severity:UInt8} AND ${present}${clusterWhere}\n       GROUP BY ${keys}`,
+      params,
+      keyOf,
+    };
+  }
+  params.metric = r.metric ?? "";
+  const sql =
+    r.read === "rate"
+      ? `SELECT ${keys}, sum(rate) AS rate FROM (
+         SELECT ${columns}, cityHash64(Attributes, ResourceAttributes) AS src,
+                if(max(TimeUnix) > min(TimeUnix), greatest(argMax(Value, TimeUnix) - argMin(Value, TimeUnix), 0) / dateDiff('second', min(TimeUnix), max(TimeUnix)), 0) AS rate
+         FROM otel_metrics_sum
+         WHERE MetricName = {metric:String} AND ${windowOf("TimeUnix", 5)}${filter}${clusterWhere}
+         GROUP BY ${keys}, src)
+       WHERE ${present}
+       GROUP BY ${keys}`
+      : `SELECT ${keys}, max(v) AS latest FROM (
+         SELECT ${columns}, cityHash64(Attributes, ResourceAttributes) AS src, argMax(Value, TimeUnix) AS v
+         FROM otel_metrics_gauge
+         WHERE MetricName = {metric:String} AND ${windowOf("TimeUnix", 10)}${filter}${clusterWhere}
+         GROUP BY ${keys}, src)
+       WHERE ${present}
+       GROUP BY ${keys}`;
+  return { sql, params, keyOf };
+}
+
 export class Telemetry {
   constructor(
     readonly ch: ClickHouse,
@@ -172,39 +237,9 @@ export class Telemetry {
    */
   async errorCounts(attributes: string[], at?: number): Promise<ErrorCounts> {
     if (!attributes.length) return new Map();
-    const columns = attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`);
-    const present = attributes.map((_, i) => `k${i} <> ''`).join(" AND ");
-    const params: Record<string, string | number> = { ...this.of().params, severity: SEVERITY.error ?? 17 };
-    attributes.forEach((a, i) => (params[`a${i}`] = a));
-    if (at !== undefined) params.at = at;
-    const rows = await this.ch.query<Record<string, string>>(
-      `SELECT ${columns.join(", ")}, count() AS count FROM otel_logs\n       WHERE ${at === undefined ? "Timestamp >= now() - INTERVAL 15 MINUTE" : "Timestamp BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 15 MINUTE AND fromUnixTimestamp64Milli({at:Int64})"} AND ${SEVERITY_EXPR} >= {severity:UInt8} AND ${present}${this.of().where}\n       GROUP BY ${attributes.map((_, i) => `k${i}`).join(", ")}`,
-      params,
-    );
+    const q = readingQuery({ read: "errors", attributes }, { cluster: this.cluster, at });
+    const rows = await this.ch.query<Record<string, string>>(q.sql, q.params);
     return new Map(rows.map((r) => [errorKey(attributes.map((_, i) => r[`k${i}`] ?? "")), Number(r.count)]));
-  }
-
-  /**
-   * The key columns of a query by attributes: the resource attributes (`k0`…), then the data points' own (`p0`…, e.g.
-   * hostmetrics' `cpu` or `device`), and the points' required values (`where`, e.g. `state = idle`). Names and values
-   * go in as parameters, never as SQL.
-   */
-  private keyed(attributes: string[], by: KeyedBy = {}) {
-    const points = by.points ?? [];
-    const where = Object.entries(by.where ?? {});
-    const params: Record<string, string | number> = { ...this.of().params };
-    attributes.forEach((a, i) => (params[`a${i}`] = a));
-    points.forEach((a, i) => (params[`p${i}`] = a));
-    where.forEach(([k, v], i) => ((params[`w${i}`] = k), (params[`wv${i}`] = v)));
-    const names = [...attributes.map((_, i) => `k${i}`), ...points.map((_, i) => `q${i}`)];
-    return {
-      params,
-      columns: [...attributes.map((_, i) => `ResourceAttributes[{a${i}:String}] AS k${i}`), ...points.map((_, i) => `Attributes[{p${i}:String}] AS q${i}`)].join(", "),
-      keys: names.join(", "),
-      present: names.map((k) => `${k} <> ''`).join(" AND "),
-      filter: where.map((_, i) => ` AND Attributes[{w${i}:String}] = {wv${i}:String}`).join(""),
-      keyOf: (r: Record<string, string>) => errorKey(names.map((k) => r[k] ?? "")),
-    };
   }
 
   /**
@@ -214,24 +249,8 @@ export class Telemetry {
    */
   async rates(metric: string, attributes: string[], at?: number, by: KeyedBy = {}): Promise<Map<string, number>> {
     if (!attributes.length) return new Map();
-    const q = this.keyed(attributes, by);
-    const params: Record<string, string | number> = { ...q.params, metric };
-    if (at !== undefined) params.at = at;
-    const window =
-      at === undefined
-        ? "TimeUnix >= now() - INTERVAL 5 MINUTE"
-        : "TimeUnix BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 5 MINUTE AND fromUnixTimestamp64Milli({at:Int64})";
-    const rows = await this.ch.query<Record<string, string>>(
-      `SELECT ${q.keys}, sum(rate) AS rate FROM (
-         SELECT ${q.columns}, cityHash64(Attributes, ResourceAttributes) AS src,
-                if(max(TimeUnix) > min(TimeUnix), greatest(argMax(Value, TimeUnix) - argMin(Value, TimeUnix), 0) / dateDiff('second', min(TimeUnix), max(TimeUnix)), 0) AS rate
-         FROM otel_metrics_sum
-         WHERE MetricName = {metric:String} AND ${window}${q.filter}${this.of().where}
-         GROUP BY ${q.keys}, src)
-       WHERE ${q.present}
-       GROUP BY ${q.keys}`,
-      params,
-    );
+    const q = readingQuery({ read: "rate", metric, attributes, ...by }, { cluster: this.cluster, at });
+    const rows = await this.ch.query<Record<string, string>>(q.sql, q.params);
     return new Map(rows.map((r) => [q.keyOf(r), Number(r.rate)]));
   }
 
@@ -242,23 +261,8 @@ export class Telemetry {
    */
   async latest(metric: string, attributes: string[], at?: number, by: KeyedBy = {}): Promise<Map<string, number>> {
     if (!attributes.length) return new Map();
-    const q = this.keyed(attributes, by);
-    const params: Record<string, string | number> = { ...q.params, metric };
-    if (at !== undefined) params.at = at;
-    const window =
-      at === undefined
-        ? "TimeUnix >= now() - INTERVAL 10 MINUTE"
-        : "TimeUnix BETWEEN fromUnixTimestamp64Milli({at:Int64}) - INTERVAL 10 MINUTE AND fromUnixTimestamp64Milli({at:Int64})";
-    const rows = await this.ch.query<Record<string, string>>(
-      `SELECT ${q.keys}, max(v) AS latest FROM (
-         SELECT ${q.columns}, cityHash64(Attributes, ResourceAttributes) AS src, argMax(Value, TimeUnix) AS v
-         FROM otel_metrics_gauge
-         WHERE MetricName = {metric:String} AND ${window}${q.filter}${this.of().where}
-         GROUP BY ${q.keys}, src)
-       WHERE ${q.present}
-       GROUP BY ${q.keys}`,
-      params,
-    );
+    const q = readingQuery({ read: "latest", metric, attributes, ...by }, { cluster: this.cluster, at });
+    const rows = await this.ch.query<Record<string, string>>(q.sql, q.params);
     return new Map(rows.map((r) => [q.keyOf(r), Number(r.latest)]));
   }
 
