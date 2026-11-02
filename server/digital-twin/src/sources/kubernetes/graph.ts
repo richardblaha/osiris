@@ -567,6 +567,9 @@ function network(
     if (to) link("connectedTo", eth0, to);
   }
 
+  // The firewall holds the cluster's whole virtual network: the Ingresses, the Services and the LoadBalancer
+  // addresses (the public addresses stay on the internet's globe).
+  const firewallTargets: { id: string; status: TwinStatus }[] = [];
   // Services, their pods, and the LoadBalancer addresses in front of them.
   const serviceIds = new Map<string, string>();
   const ready = new Map<string, Set<string>>();
@@ -588,20 +591,21 @@ function network(
     const ports = (svc.spec?.ports ?? []).map((p) => `${p.port}/${p.protocol ?? "TCP"}${p.targetPort !== undefined && p.targetPort !== p.port ? `→${p.targetPort}` : ""}`).join(", ");
     const external = (svc.status?.loadBalancer?.ingress ?? []).map((i) => i.ip ?? i.hostname ?? "").filter(Boolean);
     const selects = Object.keys(svc.spec?.selector ?? {}).length > 0;
-    add(id, MODEL.Service, name, selects && !pods.length ? "warn" : "ok", {
+    const status: TwinStatus = selects && !pods.length ? "warn" : "ok";
+    add(id, MODEL.Service, name, status, {
       type: svc.spec?.type ?? "ClusterIP",
       clusterIP: svc.spec?.clusterIP ?? "",
       ports,
       externalIP: external.join(", "),
       readyEndpoints: pods.length,
     });
-    link(CONTAINS, g.root, id);
+    firewallTargets.push({ id, status });
     link("hasService", instanceId(cluster, ["namespace", namespace]), id);
     for (const p of pods) link("routesTo", id, p);
     for (const ip of external) {
       const lb = instanceId(cluster, ["lb", ip]);
       iface(lb, ip, "loadbalancer", { ip, ports });
-      link(CONTAINS, g.root, lb);
+      firewallTargets.push({ id: lb, status: "ok" });
       link("exposes", lb, id);
       for (const card of cardOf.values()) link("connectedTo", lb, card);
       lbs.push({ id: lb, service: key, ports });
@@ -611,7 +615,6 @@ function network(
   // Ingresses and IngressRoutes: hosts and paths to Services, served by the ingress controller's LoadBalancer. They
   // all sit in one firewall box on top of the cluster: the wall between the internet and the Services.
   const controller = lbs.find((l) => /(^|\/)(traefik|ingress-nginx-controller|ingress)$/.test(l.service))?.id ?? lbs[0]?.id;
-  const ingressIds: { id: string; status: TwinStatus }[] = [];
   const ingress = (namespace: string, name: string, kind: string, hosts: string[], routes: { host: string; path: string; service: string; port: string }[], tls: boolean, ingressClass: string) => {
     const id = instanceId(cluster, ["namespace", namespace], [`ingress-${kind.toLowerCase()}`, name]);
     const targets = routes.map((r) => serviceIds.get(`${namespace}/${r.service}`));
@@ -623,7 +626,7 @@ function network(
       tls,
       ingressClass,
     });
-    ingressIds.push({ id, status });
+    firewallTargets.push({ id, status });
     link("hasIngress", instanceId(cluster, ["namespace", namespace]), id);
     for (const t of new Set(targets)) if (t) link("routesTo", id, t);
     if (controller) link("servedBy", id, controller);
@@ -641,11 +644,11 @@ function network(
     });
     ingress(ir.metadata.namespace, ir.metadata.name, "IngressRoute", routes.flatMap((r) => r.host.split(",")).filter(Boolean), routes, !!ir.spec?.tls, "traefik");
   }
-  if (ingressIds.length) {
+  if (firewallTargets.length) {
     const firewall = instanceId(cluster, ["firewall", "firewall"]);
-    add(firewall, MODEL.Firewall, "firewall", worst(ingressIds.map((x) => x.status)), { model: "" });
+    add(firewall, MODEL.Firewall, "firewall", worst(firewallTargets.map((x) => x.status)), { model: "" });
     link(CONTAINS, g.root, firewall);
-    for (const { id } of ingressIds) link(CONTAINS, firewall, id);
+    for (const { id } of firewallTargets) link(CONTAINS, firewall, id);
   }
 
   // The public addresses, forwarded (by the router in front of the cluster) to the LoadBalancers. Hosts behind a CDN

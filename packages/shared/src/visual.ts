@@ -158,10 +158,11 @@ export const VISUAL_PRESETS: Record<string, DtdlVisual> = {
       { shape: "box", at: [0.46, 0.05, 0.503], size: [0.012, 0.012, 0.002], color: "status", opacity: 0.9 },
     ],
   },
-  /** A desktop switch (the built-in asset `switch.glb`, stretched to its solid) and its light blinking with traffic. */
+  /** A desktop switch (the built-in asset `switch.glb`, stretched to its solid, cyan and see-through) and its light
+   * blinking with traffic. */
   switch: {
     parts: [
-      { shape: "gltf", asset: "switch.glb", fit: "stretch" },
+      { shape: "gltf", asset: "switch.glb", fit: "stretch", color: "neutral", opacity: 0.45 },
       { shape: "plane", at: [-0.4, 0.512, 0.35], rotate: [-90, 0, 0], size: [0.03, 0.08, 1], color: "status", opacity: 0.95, blink: "traffic" },
     ],
   },
@@ -169,15 +170,28 @@ export const VISUAL_PRESETS: Record<string, DtdlVisual> = {
    * blinking with traffic; no badge. */
   router: {
     parts: [
-      { shape: "gltf", asset: "router.glb", at: [0, 2.11, 0], size: [1, 5.36, 1.01] },
+      { shape: "gltf", asset: "router.glb", at: [0, 2.11, 0], size: [1, 5.36, 1.01], color: "neutral", opacity: 0.45 },
       { shape: "plane", at: [-0.12, 0.515, 0.43], rotate: [-90, 0, 0], size: [0.022, 0.06, 1], color: "status", opacity: 0.95, blink: "traffic", repeat: { count: 7, axis: "x", step: 0.052 } },
     ],
   },
-  /** A 2.5" USB disk (the built-in asset `usb-disk.glb`, stretched to its solid), its light blinking with its I/O. */
+  /** A 2.5" USB disk lying flat (the built-in asset `usb-disk.glb`, stretched to its solid, cyan and see-through):
+   * its fill level along its length, its activity light, and the USB connector at its back (a physical disk only). */
   "usb-disk": {
     parts: [
-      { shape: "gltf", asset: "usb-disk.glb", fit: "stretch" },
+      { shape: "gltf", asset: "usb-disk.glb", fit: "stretch", color: "neutral", opacity: 0.55 },
+      { shape: "box", size: [0.9, 0.9, 0.9], color: "level", opacity: 0.4, fill: { value: "fill", axis: "x" }, when: "fill" },
       { shape: "box", at: [0.38, 0, 0.51], size: [0.05, 0.08, 0.01], color: "active", opacity: 0.95, blink: "io" },
+      { shape: "box", at: [0, -0.1, -0.51], size: [0.24, 0.12, 0.03], color: "neutral", opacity: 0.9, when: "bus=usb" },
+    ],
+  },
+  /** A disk standing on its edge in the Ceph array (the asset turned upright by the stretch): its fill level up its
+   * face, the activity light, and the USB connector at its back (a physical disk only — a pool has no cable). */
+  "usb-disk-up": {
+    parts: [
+      { shape: "gltf", asset: "usb-disk.glb", fit: "stretch", color: "neutral", opacity: 0.55 },
+      { shape: "box", size: [0.9, 0.9, 0.9], color: "level", opacity: 0.4, fill: { value: "fill", axis: "y" }, when: "fill" },
+      { shape: "box", at: [0.38, 0, 0.51], size: [0.05, 0.08, 0.01], color: "active", opacity: 0.95, blink: "io" },
+      { shape: "box", at: [0, -0.1, -0.51], size: [0.24, 0.12, 0.03], color: "neutral", opacity: 0.9, when: "bus=usb" },
     ],
   },
 };

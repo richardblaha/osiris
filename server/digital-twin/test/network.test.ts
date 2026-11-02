@@ -106,15 +106,19 @@ describe("the firewall, the external services and further LAN devices", () => {
   const twin = (model: string, name: string) => g.twins.find((t) => t.$metadata.$model === model && t.name === name)!;
   const has = (name: string, from: string, to: string) => expect(g.relationships).toContainEqual({ name, source: from, target: to });
 
-  it("puts every Ingress and IngressRoute in one firewall box contained in the cluster, its status their worst", () => {
+  it("puts every Ingress, Service and LoadBalancer address in one firewall box contained in the cluster, its status their worst", () => {
     const fw = twin(MODEL.Firewall, "firewall");
     expect(fw.status).toBe("error"); // the "old" IngressRoute routes to a missing Service
     has("contains", "k8s:c", fw.$dtId);
     has("contains", fw.$dtId, twin(MODEL.Ingress, "site").$dtId);
     has("contains", fw.$dtId, twin(MODEL.Ingress, "old").$dtId);
-    // The namespace still has its ingresses; the ingresses are no longer loose in the cluster.
+    has("contains", fw.$dtId, twin(MODEL.Service, "site").$dtId);
+    has("contains", fw.$dtId, twin(MODEL.Interface, "192.168.0.50").$dtId);
+    // The namespaces still have their services and ingresses; none of them is loose in the cluster anymore.
+    has("hasService", "k8s:c/namespace/web", twin(MODEL.Service, "site").$dtId);
     has("hasIngress", "k8s:c/namespace/web", twin(MODEL.Ingress, "site").$dtId);
-    expect(g.relationships.some((r) => r.name === "contains" && r.source === "k8s:c" && r.target === twin(MODEL.Ingress, "site").$dtId)).toBe(false);
+    for (const t of [twin(MODEL.Ingress, "site"), twin(MODEL.Service, "site"), twin(MODEL.Interface, "192.168.0.50")])
+      expect(g.relationships.some((r) => r.name === "contains" && r.source === "k8s:c" && r.target === t.$dtId)).toBe(false);
   });
 
   it("adds the external services as interfaces of kind external, behind the router's WAN port", () => {
@@ -145,13 +149,20 @@ describe("the firewall, the external services and further LAN devices", () => {
     const max = (b: (typeof layout.boxes)[number], i: number) => b.center[i]! + b.size[i]! / 2;
     const inside = (inner: (typeof layout.boxes)[number], outer: (typeof layout.boxes)[number]) =>
       [0, 1, 2].every((i) => min(inner, i) >= min(outer, i) - 1e-6 && max(inner, i) <= max(outer, i) + 1e-6);
-    // The firewall floats above the machines, with the ingresses inside it.
+    // The firewall is a box as big as a machine, on top of the stack, with the whole virtual network inside it.
     const fwId = twin(MODEL.Firewall, "firewall").$dtId;
     const fw = box(fwId);
     const topNode = max(box("k8s:c/node/n1"), 1);
     expect(min(fw, 1)).toBeGreaterThanOrEqual(topNode - 1e-6);
+    expect(fw.size).toEqual(box("k8s:c/node/n1").size);
     expect(inside(box(twin(MODEL.Ingress, "site").$dtId), fw)).toBe(true);
+    expect(inside(box(twin(MODEL.Service, "site").$dtId), fw)).toBe(true);
     expect(scene.byId.get(fwId)!.look).toBe("firewall");
+    // A Service's routing to its pod is a thin line ending on the inner side of the pod's eth0.
+    const routed = layout.links.find((l) => l.kind === "virtual" && l.id === twin(MODEL.Service, "site").$dtId)!;
+    const eth0 = box("k8s:c/namespace/web/pod/site-1/if/eth0");
+    expect(routed.path.at(-1)).toEqual(eth0.center);
+    expect(routed.path.at(-2)![2]).toBeGreaterThan(eth0.center[2]);
     // The external services sit on the globe behind the cluster, reached by an internet line.
     const cluster = box("k8s:c");
     const mistral = box(twin(MODEL.Interface, "api.mistral.ai").$dtId);

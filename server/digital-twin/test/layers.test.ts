@@ -124,12 +124,13 @@ describe("storage in the view", () => {
     expect(array.shape).toBe("box");
     // Outside the cluster's own solid, beside it.
     expect(array.center[0]! - array.size[0]! / 2).toBeGreaterThan(cluster.center[0]! + cluster.size[0]! / 2 - 1e-6);
-    // The bottom row: the physical USB disks (each with its OSD merged in), standing on their edge as cylinders.
+    // The bottom row: the physical USB disks (each with its OSD merged in), standing on their edge as USB disks.
     const disks = ["k8s:c/node/n1/hw/disk/sdb", "k8s:c/node/n2/hw/disk/sdb"].map((id) => layout.boxes.find((b) => b.id === id)!);
     for (const disk of disks) {
       expect(inside(disk, array), disk.id).toBe(true);
-      expect(disk.shape, disk.id).toBe("cylinder");
+      expect(disk.shape, disk.id).toBe("box");
       expect(disk.size[1]!, disk.id).toBeGreaterThan(disk.size[0]!); // on its edge: higher than wide
+      expect(disk.size[1]!, disk.id).toBeGreaterThan(disk.size[2]!);
     }
     // The top row: the pools, looking just the same, above the disks.
     const pool = layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph/pool/rbd")!;

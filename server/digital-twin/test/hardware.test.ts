@@ -102,12 +102,13 @@ describe("the machines' layout", () => {
       expect(min(disk, 0)).toBeGreaterThan(max(cluster, 0));
       const cable = layout.links.find((l) => l.kind === "cable" && l.to === disk.id)!;
       expect(cable.layer).toBe("hardware");
-      // From a USB port on the machine's right wall, facing out, to the disk's side.
+      // From a USB port on the machine's right wall, facing out, into the disk's back where its connector is.
       const port = box(cable.id);
       expect(port.normal).toEqual([1, 0, 0]);
       expect(port.center[0]).toBeCloseTo(max(n, 0));
       expect(cable.path[0]).toEqual(port.center);
-      expect(cable.path.at(-1)![0]).toBeCloseTo(min(disk, 0));
+      expect(cable.path.at(-1)![0]).toBeCloseTo(disk.center[0]);
+      expect(cable.path.at(-1)![2]).toBeCloseTo(min(disk, 2));
     }
   });
 

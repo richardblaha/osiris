@@ -299,9 +299,9 @@ export function dtdlModel(): DtdlInterface[] {
       property("model", "string", l("Make and model", "Výrobce a model")),
       contains(MODEL.Interface, "Its LAN and WAN ports."),
     ]),
-    iface(MODEL.Firewall, l("Firewall", "Firewall"), "The one box all ingresses sit in, on top of the cluster: the wall between the internet and the cluster's Services.", [
+    iface(MODEL.Firewall, l("Firewall", "Firewall"), "The one box as big as a machine, on top of the stack, holding the cluster's whole virtual network: the Ingresses and IngressRoutes, the Services with their endpoints, and the LoadBalancer addresses — the wall between the internet and the cluster.", [
       property("model", "string", l("Make and model", "Výrobce a model")),
-      contains(MODEL.Ingress, "The cluster's Ingresses and IngressRoutes."),
+      contains(undefined, "The cluster's Ingresses, Services and LoadBalancer addresses."),
     ]),
     iface(MODEL.AccessPoint, l("Access point", "Přístupový bod"), "A Wi-Fi access point of the LAN: its uplink on a switch port, its Wi-Fi network on a wireless port.", [
       property("model", "string", l("Make and model", "Výrobce a model")),

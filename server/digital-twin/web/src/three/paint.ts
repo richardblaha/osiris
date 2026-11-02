@@ -155,7 +155,7 @@ function bodyOpacity(node: TwinView, leaf: boolean): number {
     : look === "core" || look === "memory" ? 0.1
     : look === "cpu" ? 0.14
     : look === "drive" ? 0.16
-    : look === "switch" || look === "router" || look === "ap" ? 0.55
+    : look === "switch" || look === "router" || look === "ap" ? 0.12
     : look === "node" ? 0.06
     : leaf ? 0.2
     : 0.035;
