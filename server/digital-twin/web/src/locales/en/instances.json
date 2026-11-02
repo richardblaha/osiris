@@ -43,7 +43,9 @@
       "clickhouseUrl": "Telemetry: ClickHouse",
       "clickhouseUser": "ClickHouse user",
       "clickhousePassword": "ClickHouse password",
-      "clickhouseCluster": "Telemetry's cluster name"
+      "clickhouseCluster": "Telemetry's cluster name",
+      "lanDevices": "Further LAN devices",
+      "externalServices": "External services (through the internet)"
     }
   },
   "help": {
@@ -59,7 +61,9 @@
       "routerModel": "Shown in the router's detail; empty: unknown.",
       "clickhouseUrl": "Where the cluster's OpenTelemetry Collector writes logs, metrics and traces; empty: this service's own ClickHouse.",
       "clickhouseUser": "Read-only; empty: default.",
-      "clickhouseCluster": "The k8s.cluster.name the collector stamps the telemetry with; empty: everything in that ClickHouse."
+      "clickhouseCluster": "The k8s.cluster.name the collector stamps the telemetry with; empty: everything in that ClickHouse.",
+      "lanDevices": "One per line as kind:name or kind:model:name (kind: ap, switch, router): each cabled to a free port of the switch; an access point (ap) also gets its Wi-Fi port.",
+      "externalServices": "URLs probed at every sync, comma-separated: twins on the internet's globe with their status (e.g. https://api.mistral.ai for the agent's Mistral)."
     }
   },
   "option": {

@@ -12,6 +12,8 @@ export interface Resources {
   io?: number;
   cpu?: number;
   memory?: number;
+  /** Degrees Celsius (a CPU's, the memory's, an NVMe disk's sensor). */
+  temperature?: number;
   estimated?: boolean;
 }
 
@@ -42,8 +44,8 @@ export const viewLayer = (layer: PresentationLayer, look: Look, ownerKind?: unkn
   layer === "workloads" || (layer === "logical" && look === "workload") ? workloadLayer(ownerKind) : layer === "logical" ? "namespaces" : layer;
 /** The looks of a machine's parts: they stand on its floor (a deck under its workloads). */
 export const HARDWARE_LOOKS: ReadonlySet<Look> = new Set(["cpu", "memory", "drive"]);
-/** The looks of the LAN's devices (a switch, a router): beside the machines, cabled to their network cards. */
-export const DEVICE_LOOKS: ReadonlySet<Look> = new Set(["switch", "router"]);
+/** The looks of the LAN's devices (a switch, a router, an access point): beside the machines, cabled to their network cards. */
+export const DEVICE_LOOKS: ReadonlySet<Look> = new Set(["switch", "router", "ap"]);
 
 /** A twin in the view: the twin itself, its model, and its place in the containment tree with rolled-up status. */
 export interface TwinView {
@@ -171,8 +173,8 @@ export function buildScene(
   /** A twin's layer: its model's, but an interface that carries outside traffic belongs to the network services and a
    * node's network card (its LAN port) to the hardware. */
   const layerOf = (t: DigitalTwin, l: ReturnType<typeof lookOfModel>): ViewLayer | "base" =>
-    !l.ownLayer && l.layer === "network" && (t.kind === "loadbalancer" || t.kind === "public") ? "services"
-    : !l.ownLayer && l.layer === "network" && t.kind === "physical" ? "hardware"
+    !l.ownLayer && l.layer === "network" && (t.kind === "loadbalancer" || t.kind === "public" || t.kind === "external") ? "services"
+    : !l.ownLayer && l.layer === "network" && (t.kind === "physical" || t.kind === "wifi") ? "hardware"
     : viewLayer(l.layer, l.look, t.ownerKind);
   const byId = new Map<string, TwinView>(
     twins.map((t) => {
@@ -342,6 +344,8 @@ const READINGS: Record<string, (v: TwinView) => unknown> = {
     while (root.parent) root = root.parent;
     return root.network;
   },
+  // A part's temperature (a CPU's, the memory's, an NVMe disk's), for a drawing's `level` band.
+  temperature: (v) => v.resources?.temperature,
 };
 /**
  * The value a part of a model's drawing follows (`presentation.visual`): one of the view's readings (`fill`,
@@ -453,8 +457,9 @@ export const resourceLinksOf = (scene: Pick<TwinScene, "byId" | "relationships">
 /** Cables: a port to what is plugged into it (a USB disk). */
 export const cablesOf = (scene: Pick<TwinScene, "byId" | "relationships">) => pairsOf(scene, ["attaches"]);
 
-/** The solids of the looks with a shape of their own; the rest are boxes (storage leaves cylinders). */
-const SHAPES: Partial<Record<Look, Shape>> = { port: "port", hex: "hex", gate: "gate", ceph: "drum" };
+/** The solids of the looks with a shape of their own; the rest are boxes (storage leaves cylinders). A storage
+ * cluster (Ceph) is a box too: it is drawn as a disk array, its disks in the bottom row (`measureArray`). */
+const SHAPES: Partial<Record<Look, Shape>> = { port: "port", hex: "hex", gate: "gate" };
 
 /** The rules the 3D view lays a scene out by: shapes, networks, storage and every kind of line, from its models. */
 export const layoutRules = (twin: TwinScene): LayoutRules => ({
@@ -470,7 +475,7 @@ export const layoutRules = (twin: TwinScene): LayoutRules => ({
   storageLinks: storageLinksOf(twin),
   resources: resourceLinksOf(twin),
   cables: cablesOf(twin),
-  device: (node) => (node.look === "switch" || node.look === "router" ? node.look : undefined),
+  device: (node) => (node.look === "switch" || node.look === "router" || node.look === "ap" ? node.look : undefined),
 });
 
 /**

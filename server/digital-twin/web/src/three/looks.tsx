@@ -5,7 +5,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { portKind } from "../icons.ts";
 import type { TwinScene, TwinView } from "../scene.ts";
 import type { Box } from "../TwinLayout.ts";
-import { cylinderEdges, diskEdges, drumEdges, facing, frame, gateEdges, gateGeometry, gaugeGeometry, pinGeometry, ring, roundedEdges, SOCKET, spokes, ventGeometry } from "./geometry.ts";
+import { brickLines, cylinderEdges, diskEdges, drumEdges, facing, frame, gateEdges, gateGeometry, gaugeGeometry, pinGeometry, ring, roundedEdges, SOCKET, spokes, ventGeometry, wifiArcs } from "./geometry.ts";
 import { num } from "./info.ts";
 import { reducedMotion, sameAppearance, type Appearance, type Colors } from "./paint.ts";
 import { VisualParts } from "./visual.tsx";
@@ -189,6 +189,78 @@ function DrumLook({ box, node, ap, order, total }: LookProps) {
   );
 }
 
+/**
+ * A storage cluster (Ceph) as a disk array: a shelf box — its physical disks in the bottom row, each with its OSD
+ * (a virtual disk) standing on it, its pools above — with the cluster's fill as a gauge on its lid and a halo above
+ * it pulsing while it isn't healthy.
+ */
+function ArrayLook({ box, node, ap, order, total }: LookProps) {
+  const { colors } = useLook();
+  const [w, h, d] = box.size;
+  const geometry = useMemo(() => roundedBox(box), [box.size.join(), box.radius]);
+  const outline = useMemo(() => roundedEdges(box.size, box.radius), [box.size.join(), box.radius]);
+  const r = Math.min(w, d) * 0.3;
+  const track = useMemo(() => gaugeGeometry(r * 0.8, r * 0.92, 1), [r]);
+  const full = ap.fill ?? 0;
+  const gauge = useMemo(() => gaugeGeometry(r * 0.8, r * 0.92, full), [r, full]);
+  const halo = useMemo(() => ring(r * 1.15), [r]);
+  const haloRef = useRef<THREE.LineLoop>(null);
+  const ok = node.status === "ok";
+  useFrame(({ clock }) => haloRef.current?.scale.setScalar(ok || reducedMotion() ? 1 : 1 + 0.08 * (0.5 + 0.5 * Math.sin(clock.elapsedTime / 0.6))));
+  const lid = h / 2 + 0.03;
+  const gaugeColor = full >= 0.85 ? colors.error : full >= 0.75 ? colors.warn : colors.cyan;
+  return (
+    <>
+      <Body id={box.id} geometry={geometry} ap={ap} order={order} />
+      <Outline geometry={outline} ap={ap} order={order + total} />
+      <mesh geometry={track} position={[0, lid, 0]}>
+        <meshBasicMaterial {...material} side={THREE.DoubleSide} color={colors.neutral} opacity={0.15 * ap.fade} />
+      </mesh>
+      <mesh geometry={gauge} position={[0, lid + 0.01, 0]}>
+        <meshBasicMaterial {...material} side={THREE.DoubleSide} color={gaugeColor} opacity={0.75 * ap.fade} />
+      </mesh>
+      <lineLoop ref={haloRef} geometry={halo} position={[0, lid + 0.3, 0]}>
+        <lineBasicMaterial transparent color={ap.status} opacity={0.8 * ap.fade} />
+      </lineLoop>
+    </>
+  );
+}
+
+/** A firewall: the one box all ingresses sit in — a wall of bricks on its faces toward and away from the viewer. */
+function FirewallLook({ box, node, ap, order, total }: LookProps) {
+  const [w, h, d] = box.size;
+  const bricks = useMemo(() => brickLines(w * 0.92, h * 0.92), [w, h]);
+  return (
+    <BoxLook box={box} node={node} ap={ap} order={order} total={total}>
+      {[d / 2 + 0.02, -d / 2 - 0.02].map((z, i) => (
+        <lineSegments key={z} geometry={bricks} position={[0, 0, z]} rotation={[0, i ? Math.PI : 0, 0]}>
+          <lineBasicMaterial transparent color={ap.edge} opacity={0.55 * ap.fade} />
+        </lineSegments>
+      ))}
+    </BoxLook>
+  );
+}
+
+/** An access point: a flat box with Wi-Fi waves over it. */
+function ApLook({ box, node, ap, order, total }: LookProps) {
+  const { colors } = useLook();
+  const [w, h] = box.size;
+  const r = Math.min(w, box.size[2]) * 0.3;
+  const arcs = useMemo(() => wifiArcs(r).rotateX(-Math.PI / 2), [r]);
+  const act = useBlink(ap, box.center[0]);
+  return (
+    <BoxLook box={box} node={node} ap={ap} order={order} total={total}>
+      <lineSegments geometry={arcs} position={[0, h / 2 + r * 0.2, 0]}>
+        <lineBasicMaterial transparent color={colors.active} opacity={0.8 * ap.fade} />
+      </lineSegments>
+      <mesh ref={act} position={[w / 2 - 0.15, 0.12, box.size[2] / 2 + 0.01]}>
+        <planeGeometry args={[0.16, 0.16]} />
+        <meshBasicMaterial {...material} color={colors.active} opacity={0.12} />
+      </mesh>
+    </BoxLook>
+  );
+}
+
 /** A Service: a hexagonal prism, its lid's spokes one per ready pod and a sweep handing each request to the next. */
 function HexLook({ box, node, ap, order, total }: LookProps) {
   const { colors } = useLook();
@@ -279,6 +351,7 @@ function PortLook({ box, node, ap, order, total }: LookProps) {
       <Outline geometry={outline} ap={ap} order={order + total} />
       {kind === "loadbalancer" && <Rotor box={box} ap={ap} steps={Math.max(1, twin.relationships.filter((x) => x.$relationshipName === "connectedTo" && x.$sourceId === box.id).length)} colors={colors} />}
       {(kind === "physical" || kind === "usb") && <Socket box={box} ap={ap} usb={kind === "usb"} colors={colors} />}
+      {kind === "wifi" && <WifiGlyph box={box} ap={ap} colors={colors} />}
     </>
   );
 }
@@ -303,6 +376,25 @@ function Rotor({ box, ap, steps, colors }: { box: Box; ap: Appearance; steps: nu
         <lineBasicMaterial transparent color={ap.status} opacity={0.8 * ap.fade} />
       </lineLoop>
     </>
+  );
+}
+
+/** A Wi-Fi port: waves coming out of its face. */
+function WifiGlyph({ box, ap, colors }: { box: Box; ap: Appearance; colors: Colors }) {
+  const turn = facing(box.normal);
+  const normal = new THREE.Vector3(...(box.normal ?? [0, 0, -1]));
+  const sideways = Math.abs(normal.x) > 0.5;
+  const out = (sideways ? box.size[0] : box.size[2]) / 2;
+  const r = Math.min(box.size[0], box.size[1]) * 0.45;
+  const arcs = useMemo(() => wifiArcs(r), [r]);
+  return (
+    <group rotation={[0, turn, 0]}>
+      <group position={[0, 0, out + 0.01]}>
+        <lineSegments geometry={arcs}>
+          <lineBasicMaterial transparent color={colors.active} opacity={0.9 * ap.fade} />
+        </lineSegments>
+      </group>
+    </group>
   );
 }
 
@@ -366,6 +458,9 @@ export const LOOK_COMPONENTS: Record<string, LookComponent> = {
   hex: HexLook,
   gate: GateLook,
   port: PortLook,
+  ceph: ArrayLook,
+  firewall: FirewallLook,
+  ap: ApLook,
 };
 /**
  * The looks drawn from a preset of `presentation.visual` (`VISUAL_PRESETS`) over a plain box: a machine a mini PC's

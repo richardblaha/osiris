@@ -60,13 +60,19 @@ export interface ClusterInput {
   /** The nodes' network cards wired to one switch, and the switch to the router in front of the internet (a home
    * lab); without, the twin has neither. */
   lan?: LanOptions;
+  /** External services reached through the internet (their URLs, probed at every sync): twins on the globe, with
+   * their status. */
+  externalServices?: { url: string; name: string; status: TwinStatus }[];
   version: string | null;
 }
 
-/** The LAN the nodes are on: the switch's and the router's make and model, when known (shown, never drawn). */
+/** The LAN the nodes are on: the switch's and the router's make and model, when known (shown, never drawn), and any
+ * further device of it (a Wi-Fi access point): each cabled to a free port of the switch. */
 export interface LanOptions {
   switchModel?: string;
   routerModel?: string;
+  /** Extra devices of the LAN, as `kind:name` or `kind:model:name` (kind: ap, switch, router). */
+  devices?: { kind: string; name: string; model?: string }[];
 }
 
 /** A node's role: a control plane (kubeadm's and microk8s's labels) or a worker. */
@@ -113,13 +119,16 @@ export const hardwareIds = (nodeId: string) => ({
   usb: (n: number) => `${nodeId}/hw/usb/${n}`,
 });
 
-/** The LAN's switch and router and their ports, by the ids `network` gives them. */
+/** The LAN's switch and router and their ports, by the ids `network` gives them; a further device's id and ports. */
 export const lanIds = (root: string) => ({
   switch: `${root}/lan/switch`,
   switchPort: (n: number) => `${root}/lan/switch/port/${n}`,
   router: `${root}/lan/router`,
   routerLan: `${root}/lan/router/lan1`,
   routerWan: `${root}/lan/router/wan`,
+  device: (kind: string, name: string) => `${root}/lan/${kind}/${encodeURIComponent(name)}`,
+  uplink: (device: string) => `${device}/if/uplink`,
+  wifi: (device: string) => `${device}/if/wifi`,
 });
 
 const STATUSES: TwinStatus[] = ["ok", "warn", "error"];
@@ -492,14 +501,15 @@ function network(
   tunnels.forEach((a, i) => tunnels.slice(i + 1).forEach((b) => link("connectedTo", a, b)));
 
   // The LAN: every node's card on a port of one switch, the switch's uplink on the router's LAN port, the router's
-  // WAN port facing the internet.
+  // WAN port facing the internet; any further device of the LAN (a Wi-Fi access point) cabled to a free switch port.
   if (input.lan && cardOf.size) {
     const lan = lanIds(g.root);
-    add(lan.switch, MODEL.Switch, "switch", "ok", { model: input.lan.switchModel ?? "", portCount: cardOf.size + 1 });
+    const extras = (input.lan.devices ?? []).filter((d) => d.name);
+    add(lan.switch, MODEL.Switch, "switch", "ok", { model: input.lan.switchModel ?? "", portCount: cardOf.size + 1 + extras.length });
     add(lan.router, MODEL.Router, "router", "ok", { model: input.lan.routerModel ?? "" });
     link(CONTAINS, g.root, lan.switch);
     link(CONTAINS, g.root, lan.router);
-    const port = (owner: string, id: string, name: string) => (iface(id, name, "physical", {}), link(CONTAINS, owner, id));
+    const port = (owner: string, id: string, name: string, kind = "physical", properties: Record<string, unknown> = {}) => (iface(id, name, kind, properties), link(CONTAINS, owner, id));
     port(lan.switch, lan.switchPort(0), "uplink");
     port(lan.router, lan.routerLan, "lan1");
     port(lan.router, lan.routerWan, "wan");
@@ -507,6 +517,18 @@ function network(
     [...cardOf.entries()].sort(([a], [b]) => a.localeCompare(b)).forEach(([, card], i) => {
       port(lan.switch, lan.switchPort(i + 1), `port${i + 1}`);
       link("connectedTo", card, lan.switchPort(i + 1));
+    });
+    // A further device: its uplink into the next free port of the switch; an access point also its Wi-Fi network.
+    extras.forEach((d, i) => {
+      const dev = lan.device(d.kind, d.name);
+      const model = d.kind === "ap" ? MODEL.AccessPoint : d.kind === "router" ? MODEL.Router : MODEL.Switch;
+      add(dev, model, d.name, "ok", { model: d.model ?? "", ...(d.kind === "ap" ? { ssid: d.name } : {}) });
+      link(CONTAINS, g.root, dev);
+      const up = lan.uplink(dev);
+      port(dev, up, "uplink");
+      link("connectedTo", up, lan.switchPort(cardOf.size + 1 + i));
+      port(lan.switch, lan.switchPort(cardOf.size + 1 + i), `port${cardOf.size + 1 + i}`);
+      if (d.kind === "ap") port(dev, lan.wifi(dev), d.name, "wifi", { cidr: "Wi-Fi" });
     });
   }
 
@@ -565,19 +587,22 @@ function network(
     }
   }
 
-  // Ingresses and IngressRoutes: hosts and paths to Services, served by the ingress controller's LoadBalancer.
+  // Ingresses and IngressRoutes: hosts and paths to Services, served by the ingress controller's LoadBalancer. They
+  // all sit in one firewall box on top of the cluster: the wall between the internet and the Services.
   const controller = lbs.find((l) => /(^|\/)(traefik|ingress-nginx-controller|ingress)$/.test(l.service))?.id ?? lbs[0]?.id;
+  const ingressIds: { id: string; status: TwinStatus }[] = [];
   const ingress = (namespace: string, name: string, kind: string, hosts: string[], routes: { host: string; path: string; service: string; port: string }[], tls: boolean, ingressClass: string) => {
     const id = instanceId(cluster, ["namespace", namespace], [`ingress-${kind.toLowerCase()}`, name]);
     const targets = routes.map((r) => serviceIds.get(`${namespace}/${r.service}`));
-    add(id, MODEL.Ingress, name, targets.some((t) => !t) ? "error" : "ok", {
+    const status: TwinStatus = targets.some((t) => !t) ? "error" : "ok";
+    add(id, MODEL.Ingress, name, status, {
       kind,
       hosts: [...new Set(hosts)].join(", "),
       routes: routes.map((r) => `${r.host || "*"}${r.path || "/"} → ${r.service}${r.port ? `:${r.port}` : ""}`).join("\n"),
       tls,
       ingressClass,
     });
-    link(CONTAINS, g.root, id);
+    ingressIds.push({ id, status });
     link("hasIngress", instanceId(cluster, ["namespace", namespace]), id);
     for (const t of new Set(targets)) if (t) link("routesTo", id, t);
     if (controller) link("servedBy", id, controller);
@@ -594,6 +619,12 @@ function network(
       return (r.services ?? []).map((s) => ({ host: m.hosts.join(","), path: m.paths[0] ?? "/", service: s.name, port: String(s.port ?? "") }));
     });
     ingress(ir.metadata.namespace, ir.metadata.name, "IngressRoute", routes.flatMap((r) => r.host.split(",")).filter(Boolean), routes, !!ir.spec?.tls, "traefik");
+  }
+  if (ingressIds.length) {
+    const firewall = instanceId(cluster, ["firewall", "firewall"]);
+    add(firewall, MODEL.Firewall, "firewall", worst(ingressIds.map((x) => x.status)), { model: "" });
+    link(CONTAINS, g.root, firewall);
+    for (const { id } of ingressIds) link(CONTAINS, firewall, id);
   }
 
   // The public addresses, forwarded (by the router in front of the cluster) to the LoadBalancers. Hosts behind a CDN
@@ -619,6 +650,16 @@ function network(
     iface(id, "Cloudflare", "public", { ip: [...behindCdn.keys()].sort().join(", "), cidr: "CDN proxy", ports: hosts.join(", ") });
     link(CONTAINS, g.root, id);
     for (const to of origins.length ? origins : [...new Set(lbs.map((l) => l.id))]) link("connectedTo", id, to);
+  }
+
+  // The external services reached through the internet (Mistral for the agent, …): twins on the globe, their status
+  // probed at every sync, behind the router's WAN port where there is one.
+  const wanId = input.lan && cardOf.size ? lanIds(g.root).routerWan : undefined;
+  for (const s of input.externalServices ?? []) {
+    const id = instanceId(cluster, ["external", s.name]);
+    add(id, MODEL.Interface, s.name, s.status, { kind: "external", ip: s.name, url: s.url, ports: "HTTPS" });
+    link(CONTAINS, g.root, id);
+    if (wanId) link("connectedTo", wanId, id);
   }
 }
 

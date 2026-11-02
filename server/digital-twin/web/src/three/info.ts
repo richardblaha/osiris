@@ -29,6 +29,9 @@ function cephInfo(node: TwinView): string[] {
 /** A load's colour band: well up to 80 %, a warning to 95 %, then an error. */
 export const loadLevel = (load: number | undefined): TwinStatus => (load === undefined ? "ok" : load >= 0.95 ? "error" : load >= 0.8 ? "warn" : "ok");
 
+/** A temperature's colour band in degrees Celsius: well up to 80 °C, a warning to 90 °C, then an error. */
+export const tempLevel = (temp: number | undefined): TwinStatus => (temp === undefined ? "ok" : temp >= 90 ? "error" : temp >= 80 ? "warn" : "ok");
+
 /** What a piece of hardware or a workload reads, in short: a CPU's cores busy, a load, bytes of a size, a disk's bus,
  * model and I/O, a container's CPU and memory; a Service's endpoints. */
 function resourceInfo(node: TwinView): string[] {
@@ -40,6 +43,7 @@ function resourceInfo(node: TwinView): string[] {
     out.push([t(`twin:hw.bus.${bus}`, { defaultValue: bus }), typeof node.twin.model === "string" ? node.twin.model : ""].filter(Boolean).join(" "));
   }
   if (node.look === "cpu" && r.used !== undefined && r.size) out.push(t("twin:hw.cpu", { used: formatNumber(r.used, { maximumFractionDigits: 2 }), cores: r.size }));
+  if (r.temperature !== undefined) out.push(t("twin:hw.temp", { value: formatNumber(r.temperature, { maximumFractionDigits: 0 }) }));
   if (r.load !== undefined) out.push(r.estimated ? t("twin:hw.estimated", { share: percent(r.load) }) : percent(r.load));
   if ((node.look === "memory" || node.look === "drive") && r.used !== undefined && r.size) out.push(t("twin:hw.bytes", { used: formatBytes(r.used), size: formatBytes(r.size) }));
   if (node.look === "drive" && r.used === undefined && num(node.twin.size)) out.push(formatBytes(num(node.twin.size)!));

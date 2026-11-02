@@ -64,6 +64,14 @@ const httpUrls = z
 /** A list field's values: comma- or line-separated. */
 export const list = (v: string | undefined) => (v ?? "").split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
 
+/** The `lanDevices` list's entries, one per line or comma: `kind:name` or `kind:model:name` (kind: ap, switch, router). */
+export const parseLanDevices = (v: string | undefined): { kind: string; name: string; model?: string }[] =>
+  list(v).map((entry) => {
+    const parts = entry.split(":").map((s) => s.trim()).filter(Boolean);
+    if (parts.length < 2) return undefined;
+    return { kind: parts[0]!.toLowerCase(), name: parts.at(-1)!, ...(parts.length > 2 ? { model: parts.slice(1, -1).join(": ") } : {}) };
+  }).filter((d): d is { kind: string; name: string; model?: string } => !!d);
+
 /** A fetch that trusts a kubeconfig's certificate authority (or, when it says so, no certificate at all). */
 const kubeFetchFor = (ca: string | undefined, insecure: boolean | undefined) =>
   ca || insecure
@@ -84,6 +92,8 @@ export const kubernetesType: SourceType = {
     { name: "lan", kind: "select", options: ["switch", "none"], default: "switch" },
     { name: "switchModel", kind: "text", when: { field: "lan", value: "switch" } },
     { name: "routerModel", kind: "text", when: { field: "lan", value: "switch" } },
+    { name: "lanDevices", kind: "list", when: { field: "lan", value: "switch" } },
+    { name: "externalServices", kind: "list" },
     { name: "clickhouseUrl", kind: "url" },
     { name: "clickhouseUser", kind: "text" },
     { name: "clickhousePassword", kind: "text", secret: true },
@@ -98,6 +108,8 @@ export const kubernetesType: SourceType = {
     lan: z.enum(["switch", "none"]).default("switch"),
     switchModel: optionalText(100),
     routerModel: optionalText(100),
+    lanDevices: z.string().trim().max(2000).default(""),
+    externalServices: httpUrls,
     clickhouseUrl: z.string().trim().pipe(httpUrl).default(""),
     clickhouseUser: optionalText(100),
     clickhouseCluster: optionalText(100),
@@ -115,7 +127,13 @@ export const kubernetesType: SourceType = {
       ? new ClickHouse(settings.clickhouseUrl, settings.clickhouseUser || "default", secrets.clickhousePassword ?? "", defaults.fetchFn)
       : defaults.clickhouse;
     return {
-      source: kubernetesSource(kube, settings.clusterName || id, { cephManagers: list(settings.cephManagers), externalBus: settings.externalDisks === "sata" ? "sata" : "usb", lan: settings.lan !== "none" ? { switchModel: settings.switchModel, routerModel: settings.routerModel } : undefined, fetchFn: defaults.fetchFn }),
+      source: kubernetesSource(kube, settings.clusterName || id, {
+        cephManagers: list(settings.cephManagers),
+        externalBus: settings.externalDisks === "sata" ? "sata" : "usb",
+        lan: settings.lan !== "none" ? { switchModel: settings.switchModel, routerModel: settings.routerModel, devices: parseLanDevices(settings.lanDevices) } : undefined,
+        externalServices: list(settings.externalServices),
+        fetchFn: defaults.fetchFn,
+      }),
       telemetry: clickhouse ? new Telemetry(clickhouse, settings.clickhouseCluster || undefined) : undefined,
     };
   },

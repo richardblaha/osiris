@@ -29,6 +29,8 @@ export const MODEL = {
   Port: "dtmi:osiris:hw:Port;1",
   Switch: "dtmi:osiris:net:Switch;1",
   Router: "dtmi:osiris:net:Router;1",
+  Firewall: "dtmi:osiris:net:Firewall;1",
+  AccessPoint: "dtmi:osiris:net:AccessPoint;1",
 } as const;
 import { sourceProfile } from "./readings.ts";
 
@@ -65,6 +67,14 @@ const usage: DtdlContent[] = [
   { "@type": "Telemetry", name: "cpu", schema: "double", displayName: l("CPU (cores)", "CPU (jádra)"), description: "CPU used, in cores, averaged by the kubelet." },
   { "@type": "Telemetry", name: "memory", schema: "double", displayName: l("Memory", "Paměť"), description: "The working set, in bytes." },
 ];
+/** A part's temperature in degrees Celsius (node-exporter's hwmon sensors). */
+const temperature: DtdlContent = {
+  "@type": "Telemetry",
+  name: "temperature",
+  schema: "double",
+  displayName: l("Temperature", "Teplota"),
+  description: "Degrees Celsius (node-exporter's node_hwmon_temp_celsius), the hottest of the part's sensors.",
+};
 const iface = (id: string, displayName: Localized, description: string, contents: DtdlContent[], base = true): DtdlInterface => ({
   "@context": DTDL_CONTEXT,
   "@id": id,
@@ -137,11 +147,12 @@ export function dtdlModel(): DtdlInterface[] {
       { "@type": "Relationship", name: "runsOn", displayName: l("runs on", "běží na"), description: "The CPU and the memory of the node the container runs on." },
       ...usage,
     ]),
-    iface(MODEL.Interface, l("Network interface", "Síťové rozhraní"), "A point where traffic enters or leaves: a node's network card, its router (Calico routes, no bridge), the bridge of a bridge CNI (flannel's cni0), its VXLAN tunnel, a pod's eth0, a LoadBalancer address (MetalLB), the public address the internet reaches.", [
-      property("kind", enumOf("physical", "router", "bridge", "tunnel", "veth", "loadbalancer", "public"), l("Kind", "Druh")),
+    iface(MODEL.Interface, l("Network interface", "Síťové rozhraní"), "A point where traffic enters or leaves: a node's network card, its router (Calico routes, no bridge), the bridge of a bridge CNI (flannel's cni0), its VXLAN tunnel, a pod's eth0, a LoadBalancer address (MetalLB), the public address the internet reaches, an external service reached through the internet, a Wi-Fi network of an access point.", [
+      property("kind", enumOf("physical", "router", "bridge", "tunnel", "veth", "loadbalancer", "public", "external", "wifi"), l("Kind", "Druh")),
       property("ip", "string", l("IP address", "IP adresa")),
       property("cidr", "string", l("Network", "Síť")),
       property("ports", "string", l("Ports", "Porty")),
+      property("url", "string", l("URL", "URL"), "An external service's address on the internet."),
       relationship("connectedTo", MODEL.Interface, l("connected to", "propojeno s"), "The interfaces traffic goes on to."),
       relationship("exposes", MODEL.Service, l("exposes", "zpřístupňuje"), "The Service a LoadBalancer address belongs to."),
     ]),
@@ -232,9 +243,10 @@ export function dtdlModel(): DtdlInterface[] {
       contains(undefined, "The pods scheduled on the node, and its hardware: CPU, memory, disks and USB ports."),
       network,
     ]),
-    iface(MODEL.Cpu, l("CPU", "CPU"), "The node's processor: its cores, and how busy they are together.", [
+    iface(MODEL.Cpu, l("CPU", "CPU"), "The node's processor: its cores, how busy they are together and how hot it is.", [
       property("cores", "integer", l("Cores", "Jádra"), "Logical CPUs the kubelet reports."),
       load("Busy share of all cores (kubeletstats' k8s.node.cpu.usage over the cores)."),
+      temperature,
       contains(MODEL.CpuCore, "The CPU's cores."),
     ]),
     iface(MODEL.CpuCore, l("CPU core", "Jádro CPU"), "One logical CPU.", [
@@ -242,10 +254,11 @@ export function dtdlModel(): DtdlInterface[] {
       property("estimated", "boolean", l("Estimated", "Odhad"), "No per-core metric: the CPU's average stands in."),
       load("Busy share (hostmetrics' system.cpu.utilization: all but idle), else the CPU's average."),
     ]),
-    iface(MODEL.Memory, l("Memory", "Paměť"), "The node's RAM.", [
+    iface(MODEL.Memory, l("Memory", "Paměť"), "The node's RAM: how full it is and how hot it is.", [
       property("capacity", "double", l("Capacity", "Kapacita"), "Bytes."),
       load("Working set of the capacity."),
       { "@type": "Telemetry", name: "bytesUsed", schema: "double", displayName: l("Used", "Využito"), description: "The node's working set, in bytes (kubeletstats)." },
+      temperature,
     ]),
     iface(MODEL.Disk, l("Disk", "Disk"), "A physical disk of the node: internal (NVMe, SATA, eMMC) or attached over USB. A Ceph OSD on it is inside it.", [
       property("device", "string", l("Device", "Zařízení")),
@@ -256,6 +269,7 @@ export function dtdlModel(): DtdlInterface[] {
       property("size", "double", l("Size", "Velikost"), "Bytes, where known (an OSD's disk: the OSD's)."),
       load("The node's root filesystem used of its size (kubeletstats), for the disk it is on."),
       { "@type": "Telemetry", name: "io", schema: "double", displayName: l("I/O", "I/O"), description: "Bytes per second read and written (hostmetrics' system.disk.io)." },
+      temperature,
       contains(MODEL.CephOsd, "The Ceph OSD storing its data on the disk."),
     ]),
     iface(MODEL.Port, l("Port", "Port"), "A physical port of the node: USB with what is attached to it.", [
@@ -270,6 +284,15 @@ export function dtdlModel(): DtdlInterface[] {
     iface(MODEL.Router, l("Router", "Router"), "The router between the LAN and the internet: the switch on its LAN port, the internet on its WAN port.", [
       property("model", "string", l("Make and model", "Výrobce a model")),
       contains(MODEL.Interface, "Its LAN and WAN ports."),
+    ]),
+    iface(MODEL.Firewall, l("Firewall", "Firewall"), "The one box all ingresses sit in, on top of the cluster: the wall between the internet and the cluster's Services.", [
+      property("model", "string", l("Make and model", "Výrobce a model")),
+      contains(MODEL.Ingress, "The cluster's Ingresses and IngressRoutes."),
+    ]),
+    iface(MODEL.AccessPoint, l("Access point", "Přístupový bod"), "A Wi-Fi access point of the LAN: its uplink on a switch port, its Wi-Fi network on a wireless port.", [
+      property("model", "string", l("Make and model", "Výrobce a model")),
+      property("ssid", "string", l("Wi-Fi network", "Wi-Fi síť")),
+      contains(MODEL.Interface, "Its Ethernet uplink and its Wi-Fi port."),
     ]),
   ]);
 }

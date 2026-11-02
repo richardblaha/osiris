@@ -104,8 +104,8 @@ export interface LayoutRules {
   resources?: [string, string][];
   /** A port to what is plugged into it (a USB disk). */
   cables?: [string, string][];
-  /** A device of the LAN the machines are cabled to (a switch, a router); undefined for anything else. */
-  device?: (node: TwinView) => "switch" | "router" | undefined;
+  /** A device of the LAN the machines are cabled to (a switch, a router, an access point); undefined for anything else. */
+  device?: (node: TwinView) => "switch" | "router" | "ap" | undefined;
 }
 
 /** What a node's own layout measured: its size, with solids and links relative to its floor center. */
@@ -121,6 +121,8 @@ interface Measured {
   boards?: Board[];
   /** Its router's WAN port, which the internet's line reaches. */
   wan?: Vec;
+  /** The WAN's cable radius, at the machines' scale (the internet's line is drawn a solid tube). */
+  wanRadius?: number;
 }
 
 /** The space between siblings: wide between the outer shells (nodes), tight between the innermost (containers). */
@@ -202,7 +204,7 @@ const backOf = (p: Placed): Vec => [p.at[0], p.at[1] + p.size[1] / 2, p.at[2] - 
 const shapeOf = (node: TwinView, rules: LayoutRules): Shape => rules.shape?.(node) ?? (rules.storage(node) && !node.children.length ? "cylinder" : "box");
 const isPort = (node: TwinView, rules: LayoutRules) => rules.shape?.(node) === "port";
 /** Where a container's own interfaces go on its back wall, left to right: card, router, bridge (the hub), tunnel, the rest. */
-const PORT_ORDER = ["physical", "usb", "router", "bridge", "tunnel", "loadbalancer", "veth"];
+const PORT_ORDER = ["physical", "usb", "router", "bridge", "tunnel", "loadbalancer", "veth", "wifi"];
 /** How wide a row of ports is on a wall. */
 const portsWidth = (ports: TwinView[], rules: LayoutRules) => ports.reduce((n, p) => n + portSize(rules.portKind?.(p) ?? "veth")[0] + PORT_GAP, 0);
 
@@ -500,12 +502,49 @@ function layoutDeck(parts: TwinView[], w: number, d: number, rules: LayoutRules)
   return { items, height: Math.max(0, ...items.map((i) => i.m.size[1])) };
 }
 
-/** A twin whose contents' contents belong to bands (a cluster: its nodes' pods to namespaces). */
-const isBanded = (node: TwinView) => node.children.some((c) => c.band !== undefined || c.children.some((g) => g.band !== undefined));
+/**
+ * A storage cluster (Ceph) as a disk array: the physical disks in a row at the bottom — each with its OSD, a virtual
+ * disk, standing on it — and the cluster's own contents (its pools, the disks of hosts the cluster doesn't know) in a
+ * row above them.
+ */
+function measureArray(node: TwinView, disks: { node: TwinView; m: Measured }[], rules: LayoutRules): Measured {
+  const pad = padAt(node.depth);
+  const gap = Math.max(gapAt(node.depth), 0.5);
+  /** A row of cells side by side along x, each at its floor center relative to the row's center. */
+  const rowOf = (items: { node: TwinView; m: Measured }[]) => {
+    const w = items.reduce((n, x) => n + x.m.size[0], 0) + gap * Math.max(0, items.length - 1);
+    const d = Math.max(1, ...items.map((x) => x.m.size[2]));
+    const h = Math.max(0, ...items.map((x) => x.m.size[1]));
+    let x = -w / 2;
+    const placed = items.map((it) => {
+      const at: Vec = [x + it.m.size[0] / 2, 0, 0];
+      x += it.m.size[0] + gap;
+      return { ...it, at };
+    });
+    return { w, d, h, placed };
+  };
+  const bottom = rowOf(disks);
+  const own = node.children.filter((c) => !isPort(c, rules)).map((c) => ({ node: c, m: measure(c, rules) }));
+  const top = rowOf(own);
+  const size: Vec = [Math.max(bottom.w, top.w) + 2 * pad, pad + bottom.h + (own.length ? gap + top.h : 0) + pad, Math.max(bottom.d, top.d) + 2 * pad];
+  const boxes: Box[] = [{ id: node.id, shape: "box", center: [0, size[1] / 2, 0], size, radius: roundness(size) }];
+  const links: Link[] = [];
+  const placed = new Map<string, Placed & { port?: Vec }>();
+  const putRow = (row: ReturnType<typeof rowOf>, y: number) => {
+    for (const { node: child, m, at } of row.placed) place(child, m, [at[0], y, 0], boxes, links, placed);
+  };
+  putRow(bottom, pad);
+  if (own.length) putRow(top, pad + bottom.h + gap);
+  return { size, boxes, links };
+}
+
+/** A twin whose contents' contents belong to bands (a cluster: its nodes' pods to namespaces). Not the firewall: its
+ * ingresses belong to bands, yet it is one box on top, not a stack of machines. */
+const isBanded = (node: TwinView) => node.look !== "firewall" && node.children.some((c) => c.band !== undefined || c.children.some((g) => g.band !== undefined));
 /** A column of a banded container: a node, or whatever holds things of the bands (a storage cluster is not one: it
- * sits compactly with what belongs to no band). */
+ * sits compactly with what belongs to no band; neither is the firewall: one box on top, not a machine). */
 const isColumn = (c: TwinView, rules: LayoutRules) =>
-  c.band === undefined && !isPort(c, rules) && c.children.some((g) => !isPort(g, rules)) && (c.look === "node" || c.children.some((g) => g.band !== undefined));
+  c.band === undefined && !isPort(c, rules) && c.children.some((g) => !isPort(g, rules)) && (c.look === "node" || (c.look !== "firewall" && c.children.some((g) => g.band !== undefined)));
 /** The id of the band of `group` across `root` (scene.ts makes it the same way). */
 export const bandId = (root: string, group: string) => `${root}~${group}`;
 /** The machines from the top of the stack down: the control planes first, then the workers, each by name. */
@@ -515,22 +554,27 @@ const stackOrder = (a: TwinView, b: TwinView) => (a.twin.role === "control-plane
  * a USB-A port as they face out of a wall (width, height, how far they stand out), a 2.5" USB disk lying flat, a
  * desktop switch (20 mm per port) and a home router, a router's antennas, and the cables' radius.
  */
-const MM = { machine: 175, rj45: [16, 13.5, 4] as Vec, usb: [12, 4.5, 3] as Vec, disk: [120, 15, 80] as Vec, switchPort: 20, switch: [26, 70], router: [230, 35, 144] as Vec, antenna: 150, usbCable: 2.2, lanCable: 3 };
+const MM = { machine: 175, rj45: [16, 13.5, 4] as Vec, usb: [12, 4.5, 3] as Vec, disk: [120, 15, 80] as Vec, switchPort: 20, switch: [26, 70], router: [230, 35, 144] as Vec, ap: [180, 26, 180] as Vec, antenna: 150, usbCable: 2.2, lanCable: 3 };
 const mm = (v: Vec, u: number): Vec => [v[0] * u, v[1] * u, v[2] * u];
-/** A LAN device's solid at `u` scene units per millimetre: a switch as wide as its ports need, a router. */
+/** A LAN device's solid at `u` scene units per millimetre: a switch as wide as its ports need, a router, an access point. */
 const deviceSize = (device: TwinView, rules: LayoutRules, u: number): Vec =>
-  rules.device?.(device) === "switch" ? [Math.max(100, device.children.filter((p) => isPort(p, rules)).length * MM.switchPort + 20) * u, MM.switch[0]! * u, MM.switch[1]! * u] : mm(MM.router, u);
+  rules.device?.(device) === "switch"
+    ? [Math.max(100, device.children.filter((p) => isPort(p, rules)).length * MM.switchPort + 20) * u, MM.switch[0]! * u, MM.switch[1]! * u]
+    : rules.device?.(device) === "ap"
+      ? mm(MM.ap, u)
+      : mm(MM.router, u);
 
 /**
  * A container laid out in bands, its machines lying flat one on top of another like mini PCs on a shelf — the
  * control planes at the top, the workers below. Every machine has the same floor plan: its hardware covers its floor
  * (CPU, memory, internal disks side by side), and above it the bands (namespaces), each in the same place on every
  * machine, so one dashed solid around a band takes in all of it through the machines' floors. The floor plan is
- * kept as near a square as the bands allow. What belongs to no machine (a pod no node runs yet, Services, Ingresses,
- * the storage cluster) floats above the stack on the same plan. Each machine's USB disks stand on a shelf beside
- * it, cabled to the USB ports on its side; its network card (RJ45) on its back wall is cabled to the switch behind
- * the stack, the switch to the router beside it, whose WAN port faces the internet. The container's own interfaces
- * (LoadBalancers) are on its back wall; public addresses are left for the globe.
+ * kept as near a square as the bands allow. What belongs to no machine (a pod no node runs yet, Services, the
+ * firewall with the Ingresses) floats above the stack on the same plan. The storage cluster stands beside the stack
+ * as a disk array (`measureArray`): each machine's USB disks in its bottom row, cabled to the USB ports on the
+ * machines' sides; its network card (RJ45) on its back wall is cabled to the switch behind the stack, the switch to
+ * the router beside it, whose WAN port's Ethernet cable reaches the internet. The container's own interfaces
+ * (LoadBalancers) are on its back wall; public addresses and external services are left for the globe.
  */
 function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const pad = padAt(node.depth);
@@ -626,7 +670,8 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     const fit = Math.min(1, (D - USB_GAP * Math.max(0, disks.length - 1)) / Math.max(1e-9, disks.length * base[2]));
     return disks.map((v) => ({ node: v, m: measurePart(v, mm(base, fit), rules) }));
   });
-  const shelfW = Math.max(0, ...disksOf.flatMap((ds) => ds.map((x) => x.m.size[0])));
+  // With a storage cluster, the USB disks stand in its array (its bottom row), not on a shelf beside the machines.
+  const shelfW = stores.length ? 0 : Math.max(0, ...disksOf.flatMap((ds) => ds.map((x) => x.m.size[0])));
   const looseH = loose.length ? Math.max(1, cellH[holders.length - 1]!) : 0;
 
   // The LAN behind the stack: the switch and the router side by side, on the floor.
@@ -646,7 +691,8 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const clusterD = pad + slab[2] + pad;
   const outGap = Math.max(2.4, 40 * u);
   const shelfX = clusterW + (shelfW ? outGap : 0);
-  const storeMs = stores.map((v) => ({ node: v, m: measure(v, rules) }));
+  // A storage cluster is measured as a disk array: the physical USB disks in its bottom row, each with its OSD on it.
+  const storeMs = stores.map((v) => ({ node: v, m: v.look === "ceph" ? measureArray(v, disksOf.flat(), rules) : measure(v, rules) }));
   const storeX = (shelfW ? shelfX + shelfW : clusterW) + outGap;
   const storesW = storeMs.reduce((n, x) => n + x.m.size[0], 0) + outGap * Math.max(0, storeMs.length - 1);
   const width = Math.max(clusterW, shelfW ? shelfX + shelfW : 0, storeMs.length ? storeX + storesW : 0, devW);
@@ -673,8 +719,9 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     place(store, m, at(storeAt + m.size[0] / 2, 0, zC + clusterD / 2), boxes, links, placed, boards);
     storeAt += m.size[0] + outGap;
   }
-  // The container's own interfaces (LoadBalancers) on its back wall, beside the hub; public addresses go outside.
-  const outside = ownPorts.filter((p) => kind(p) === "public");
+  // The container's own interfaces (LoadBalancers) on its back wall, beside the hub; public addresses and external
+  // services go outside, onto the internet's globe.
+  const outside = ownPorts.filter((p) => kind(p) === "public" || kind(p) === "external");
   mountPorts(ownPorts.filter((p) => !outside.includes(p)), [hub[0] + PORT[0] + 0.6, hub[1], hub[2]], rules, boxes);
 
   // The LAN's devices and their ports: the switch's on its front (toward the machines), the router's LAN port on
@@ -733,7 +780,8 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
       const deckAt = at(ix + W / 2, floorY[c]! + colPad, iz + D / 2);
       for (const { node: part, m, x, z } of decks[c]!.items) place(part, m, [deckAt[0] + x, deckAt[1], deckAt[2] + z], boxes, links, placed, boards);
       if (decks[c]!.items.length) boards.push({ id: holder.id, center: [deckAt[0], deckAt[1] - 0.04, deckAt[2]], size: [W + 1.5 * colPad, 0.05, D + 1.5 * colPad] });
-      // Its USB disks on the shelf beside it, each cabled from a USB port on its side straight across.
+      // Its USB disks: on the shelf beside the machine, or in the storage cluster's array where the store placed them
+      // already; each cabled from a USB port on its side straight across.
       const disks = disksOf[c]!;
       const total = disks.reduce((n, x) => n + x.m.size[2], 0) + USB_GAP * Math.max(0, disks.length - 1);
       let z = iz + (D - total) / 2;
@@ -741,15 +789,16 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
       const ports = usbPorts(holder);
       const used = new Set<string>();
       for (const { node: disk, m } of disks) {
-        const diskAt = at(shelfX + shelfW / 2, floorY[c]!, z + m.size[2] / 2);
-        place(disk, m, diskAt, boxes, links, placed, boards);
+        if (!stores.length) place(disk, m, at(shelfX + shelfW / 2, floorY[c]!, z + m.size[2] / 2), boxes, links, placed, boards);
+        // Where the disk stands now (on the shelf, or in the storage cluster's array).
+        const db = boxes.find((b) => b.id === disk.id)!;
         const port = ports.find((p) => !used.has(p.id) && rules.cables?.some(([a, b]) => a === p.id && b === disk.id));
         if (port) {
           used.add(port.id);
-          const pc: Vec = [at(pad + slab[0], 0, 0)[0], portY, diskAt[2]];
+          const pc: Vec = [at(pad + slab[0], 0, 0)[0], portY, db.center[2]];
           boxes.push({ id: port.id, shape: "port", center: pc, size: [usb[2], usb[1], usb[0]], radius: 0.04, normal: [1, 0, 0] });
-          const left = diskAt[0] - m.size[0] / 2;
-          const y = floorY[c]! + Math.min(m.size[1], m.boxes[0]!.size[1]) / 2;
+          const left = db.center[0] - db.size[0] / 2;
+          const y = db.center[1] - db.size[1] / 2 + Math.min(m.size[1], m.boxes[0]!.size[1]) / 2;
           const out = pc[0] + 18 * u;
           links.push({ kind: "cable", layer: "hardware", id: port.id, to: disk.id, parent: holder.id, radius: MM.usbCable * u, path: orthogonal([pc, [out, pc[1], pc[2]], [out, y, pc[2]], [left, y, pc[2]]], [0, 1, 2]) });
         }
@@ -793,7 +842,7 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
     boxes.push({ id: bandId(node.id, row), shape: "box", center: at((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), size, radius: roundness(size) * 0.5 });
   });
   addInterfaces(rules, placed, links, node.id, pad);
-  return { size: [width, height, depth], boxes, links, outside, boards, wan };
+  return { size: [width, height, depth], boxes, links, outside, boards, wan, wanRadius: MM.lanCable * u };
 }
 
 /** Related siblings (a container mounting a claim): over the top of both, at right angles, under the container's
@@ -846,24 +895,25 @@ export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
       };
       const lbs = boxes.filter((b) => b.shape === "port" && node.children.some((c) => c.id === b.id && rules.portKind?.(c) === "loadbalancer"));
       // The router's WAN port reaches the internet on the network layer; the LoadBalancers' lines are the services'.
-      const starts = lbs.length ? lbs.map((b) => b.center) : r.wan ? [] : [hub];
+      const starts = lbs.length ? lbs.map((b) => b.center) : r.wan ? [shift(r.wan, at)] : [hub];
       if (r.wan) {
         const w = shift(r.wan, at);
         const e = onGlobe(0);
         const out = w[2] - gap * 0.5;
-        links.push({ kind: "internet", layer: "network", id: node.id, parent: INTERNET, path: orthogonal([w, [w[0], w[1], out], [e[0], e[1], out], e], [0, 1, 2]) });
+        // The internet goes over an Ethernet cable out of the router's WAN port, drawn a solid tube.
+        links.push({ kind: "internet", layer: "network", id: node.id, parent: INTERNET, radius: r.wanRadius, path: orthogonal([w, [w[0], w[1], out], [e[0], e[1], out], e], [0, 1, 2]) });
       }
       const publics = r.outside ?? [];
       const ends = (publics.length ? publics : [undefined]).map((p, k) => {
         const end = onGlobe((k - (publics.length - 1) / 2) * radius * 0.45);
         if (p) boxes.push({ id: p.id, shape: "port", center: end, size: PORT, radius: 0.08 });
-        return end;
+        return { id: p?.id, at: end };
       });
       // Out of the back wall, along behind the twin, up to the address's height and on into it: right angles only.
       starts.forEach((s, i) =>
-        ends.forEach((e) => {
+        ends.forEach(({ id, at: e }) => {
           const out = s[2] - gap * (0.3 + 0.08 * (i % 4));
-          links.push({ kind: "internet", layer: lbs.length ? "services" : "network", id: node.id, parent: INTERNET, path: orthogonal([s, [s[0], s[1], out], [e[0], e[1], out], e], [0, 1, 2]) });
+          links.push({ kind: "internet", layer: lbs.length ? "services" : "network", id: node.id, to: id, parent: INTERNET, path: orthogonal([s, [s[0], s[1], out], [e[0], e[1], out], e], [0, 1, 2]) });
         }),
       );
     }

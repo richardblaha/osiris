@@ -243,6 +243,37 @@ export function pinGeometry(w: number, y: number, length: number): THREE.BufferG
   return g;
 }
 
+/** A brick wall `w` by `h` (in the x/y plane, facing +z): courses with staggered vertical joints. */
+export function brickLines(w: number, h: number): THREE.BufferGeometry {
+  const points: number[] = [];
+  const rows = Math.max(2, Math.round(h / 0.3));
+  const bh = h / rows;
+  const bw = w / Math.max(2, Math.round(w / 1.1));
+  for (let r = 0; r <= rows; r++) {
+    const y = -h / 2 + r * bh;
+    points.push(-w / 2, y, 0, w / 2, y, 0);
+    if (r < rows)
+      for (let x = -w / 2 + (r % 2 ? bw / 2 : 0); x < w / 2 - 1e-6; x += bw) points.push(x, y, 0, x, y + bh, 0);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
+/** Wi-Fi waves: three arcs one above the other (in the x/y plane, facing +z). */
+export function wifiArcs(r: number): THREE.BufferGeometry {
+  const points: number[] = [];
+  for (const rr of [r * 0.35, r * 0.65, r * 0.95])
+    for (let i = 0; i < 24; i++) {
+      const a0 = Math.PI * 0.22 + (i / 24) * Math.PI * 0.56;
+      const a1 = Math.PI * 0.22 + ((i + 1) / 24) * Math.PI * 0.56;
+      points.push(Math.cos(a0) * rr, Math.sin(a0) * rr, 0, Math.cos(a1) * rr, Math.sin(a1) * rr, 0);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return g;
+}
+
 /** A soft round dot for the packets. */
 export function dotTexture() {
   const canvas = document.createElement("canvas");

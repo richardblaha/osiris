@@ -216,6 +216,7 @@
     "cpu": "{{used}} of {{cores}} cores",
     "cores": "CPU {{value}} cores",
     "io": "I/O {{rate}}",
+    "temp": "{{value}} °C",
     "estimated": "{{share}} (CPU average)",
     "bytes": "{{used}} of {{size}}",
     "endpoints_one": "{{count}} endpoint",

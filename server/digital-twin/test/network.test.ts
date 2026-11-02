@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { relationshipErrors, twinErrors, type DigitalTwin, type DtdlInterface } from "@osiris/shared/dtdl.ts";
-import { clusterGraph, type ClusterInput } from "../src/sources/kubernetes/graph.ts";
+import { clusterGraph, lanIds, type ClusterInput } from "../src/sources/kubernetes/graph.ts";
 import { dtdlModel, MODEL } from "../src/sources/kubernetes/models.ts";
-import { publicAddressesOf } from "../src/sources/kubernetes/source.ts";
+import { probeService, publicAddressesOf } from "../src/sources/kubernetes/source.ts";
 import { toRelationship } from "../src/twin.ts";
+import { buildScene, layoutRules } from "../web/src/scene.ts";
+import { layoutTwin } from "../web/src/TwinLayout.ts";
 
 const node = (name: string, ip: string, tunnel: string) => ({
   metadata: { name, annotations: { "projectcalico.org/IPv4Address": `${ip}/24`, "projectcalico.org/IPv4VXLANTunnelAddr": tunnel } },
@@ -88,5 +90,97 @@ describe("the cluster's network", () => {
 
   it("keeps only public addresses of the hosts", async () => {
     expect(await publicAddressesOf(["localhost", "*.wild", "bad name"])).toEqual({});
+  });
+});
+
+describe("the firewall, the external services and further LAN devices", () => {
+  const lanInput: ClusterInput = {
+    ...input,
+    lan: { switchModel: "TL-SG108", routerModel: "Archer C6", devices: [{ kind: "ap", name: "Office AP", model: "EAP225" }] },
+    externalServices: [
+      { url: "https://api.mistral.ai/v1/models", name: "api.mistral.ai", status: "ok" },
+      { url: "https://down.example.com", name: "down.example.com", status: "error" },
+    ],
+  };
+  const g = clusterGraph(lanInput);
+  const twin = (model: string, name: string) => g.twins.find((t) => t.$metadata.$model === model && t.name === name)!;
+  const has = (name: string, from: string, to: string) => expect(g.relationships).toContainEqual({ name, source: from, target: to });
+
+  it("puts every Ingress and IngressRoute in one firewall box contained in the cluster, its status their worst", () => {
+    const fw = twin(MODEL.Firewall, "firewall");
+    expect(fw.status).toBe("error"); // the "old" IngressRoute routes to a missing Service
+    has("contains", "k8s:c", fw.$dtId);
+    has("contains", fw.$dtId, twin(MODEL.Ingress, "site").$dtId);
+    has("contains", fw.$dtId, twin(MODEL.Ingress, "old").$dtId);
+    // The namespace still has its ingresses; the ingresses are no longer loose in the cluster.
+    has("hasIngress", "k8s:c/namespace/web", twin(MODEL.Ingress, "site").$dtId);
+    expect(g.relationships.some((r) => r.name === "contains" && r.source === "k8s:c" && r.target === twin(MODEL.Ingress, "site").$dtId)).toBe(false);
+  });
+
+  it("adds the external services as interfaces of kind external, behind the router's WAN port", () => {
+    const mistral = twin(MODEL.Interface, "api.mistral.ai");
+    expect(mistral).toMatchObject({ kind: "external", status: "ok", url: "https://api.mistral.ai/v1/models", ip: "api.mistral.ai" });
+    expect(twin(MODEL.Interface, "down.example.com").status).toBe("error");
+    has("contains", "k8s:c", mistral.$dtId);
+    has("connectedTo", lanIds("k8s:c").routerWan, mistral.$dtId);
+  });
+
+  it("cables a further LAN device (an access point) to a free switch port and gives it a Wi-Fi port", () => {
+    const ap = twin(MODEL.AccessPoint, "Office AP");
+    expect(ap).toMatchObject({ model: "EAP225", ssid: "Office AP" });
+    has("contains", "k8s:c", ap.$dtId);
+    const up = lanIds("k8s:c").uplink(ap.$dtId);
+    has("contains", ap.$dtId, up);
+    has("connectedTo", up, lanIds("k8s:c").switchPort(3)); // 2 nodes + the switch's own uplink
+    expect(twin(MODEL.Interface, "Office AP")).toMatchObject({ kind: "wifi" });
+    expect(twin(MODEL.Switch, "switch").portCount).toBe(4);
+  });
+
+  it("lays the firewall out as one box on top of the stack with the ingresses inside, the external services on the internet's globe, the WAN's line a cable", () => {
+    const models = dtdlModel().map((m) => ({ id: m["@id"], model: m, uploadTime: "", decommissioned: false }));
+    const scene = buildScene(models, g.twins.map((t) => ({ ...t, $etag: "", $metadata: { $model: t.$metadata.$model } })), g.relationships.map(toRelationship), {}, {}, {}, null);
+    const layout = layoutTwin(scene.top, layoutRules(scene));
+    const box = (id: string) => layout.boxes.find((b) => b.id === id)!;
+    const min = (b: (typeof layout.boxes)[number], i: number) => b.center[i]! - b.size[i]! / 2;
+    const max = (b: (typeof layout.boxes)[number], i: number) => b.center[i]! + b.size[i]! / 2;
+    const inside = (inner: (typeof layout.boxes)[number], outer: (typeof layout.boxes)[number]) =>
+      [0, 1, 2].every((i) => min(inner, i) >= min(outer, i) - 1e-6 && max(inner, i) <= max(outer, i) + 1e-6);
+    // The firewall floats above the machines, with the ingresses inside it.
+    const fwId = twin(MODEL.Firewall, "firewall").$dtId;
+    const fw = box(fwId);
+    const topNode = max(box("k8s:c/node/n1"), 1);
+    expect(min(fw, 1)).toBeGreaterThanOrEqual(topNode - 1e-6);
+    expect(inside(box(twin(MODEL.Ingress, "site").$dtId), fw)).toBe(true);
+    expect(scene.byId.get(fwId)!.look).toBe("firewall");
+    // The external services sit on the globe behind the cluster, reached by an internet line.
+    const cluster = box("k8s:c");
+    const mistral = box(twin(MODEL.Interface, "api.mistral.ai").$dtId);
+    expect(min(mistral, 2)).toBeLessThan(min(cluster, 2));
+    expect(layout.links.some((l) => l.kind === "internet" && l.to === mistral.id)).toBe(true);
+    // The WAN port's line to the internet is an Ethernet cable (a tube with a radius).
+    const wan = layout.links.find((l) => l.kind === "internet" && l.layer === "network")!;
+    expect(wan.path[0]).toEqual(box(lanIds("k8s:c").routerWan).center);
+    expect(wan.radius).toBeGreaterThan(0);
+    // The access point stands behind the stack with the switch, its uplink cabled to the switch.
+    const ap = box(twin(MODEL.AccessPoint, "Office AP").$dtId);
+    expect(max(ap, 2)).toBeLessThan(min(box("k8s:c/node/n2"), 2));
+    const cable = layout.links.find((l) => l.kind === "ethernet" && l.to === lanIds("k8s:c").switchPort(3))!;
+    expect(cable.path[0]).toEqual(box(lanIds("k8s:c").uplink(ap.id)).center);
+    // Every twin and relationship is valid against the models.
+    const byModel = new Map(dtdlModel().map((m): [string, DtdlInterface] => [m["@id"], m]));
+    for (const t of g.twins) expect(twinErrors(t as DigitalTwin, byModel), t.$dtId).toEqual([]);
+    const byId = new Map(g.twins.map((t) => [t.$dtId, t as DigitalTwin]));
+    for (const r of g.relationships) expect(relationshipErrors(toRelationship(r), byId, byModel), JSON.stringify(r)).toEqual([]);
+  });
+
+  it("probes an external service: any HTTP answer is up, a 5xx a warning, no answer an error", async () => {
+    const fetchFn = (async (url: string) => {
+      if (url.includes("mistral")) return new Response("{}", { status: 401 });
+      if (url.includes("busy")) return new Response("", { status: 503 });
+      throw new Error("connection refused");
+    }) as unknown as typeof fetch;
+    expect(await probeService("https://api.mistral.ai/v1/models", fetchFn)).toEqual({ url: "https://api.mistral.ai/v1/models", name: "api.mistral.ai", status: "ok" });
+    expect((await probeService("https://busy.example.com", fetchFn)).status).toBe("warn");
+    expect((await probeService("https://down.example.com", fetchFn)).status).toBe("error");
   });
 });

@@ -121,8 +121,8 @@ export const DATA_PLACEHOLDER = /\{(id|name|twin\.[A-Za-z][A-Za-z0-9_]{0,63}|ote
 
 /** How a kind of twin is drawn: a solid of its own shape, so a node, a pod, a disk and a Service are told apart
  * before any label is read. */
-export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "ceph" | "cpu" | "core" | "memory" | "drive" | "switch" | "router" | "box";
-export const LOOKS: readonly Look[] = ["cluster", "node", "workload", "pod", "container", "cylinder", "disk", "port", "hex", "gate", "ceph", "cpu", "core", "memory", "drive", "switch", "router", "box"];
+export type Look = "cluster" | "node" | "workload" | "pod" | "container" | "cylinder" | "disk" | "port" | "hex" | "gate" | "ceph" | "cpu" | "core" | "memory" | "drive" | "switch" | "router" | "firewall" | "ap" | "box";
+export const LOOKS: readonly Look[] = ["cluster", "node", "workload", "pod", "container", "cylinder", "disk", "port", "hex", "gate", "ceph", "cpu", "core", "memory", "drive", "switch", "router", "firewall", "ap", "box"];
 /** The built-in looks by model DTMI without the version, for models without a `presentation`. */
 export const BUILTIN_LOOKS: Record<string, Look> = {
   "dtmi:osiris:k8s:Cluster": "cluster",
@@ -144,6 +144,8 @@ export const BUILTIN_LOOKS: Record<string, Look> = {
   "dtmi:osiris:hw:Port": "port",
   "dtmi:osiris:net:Switch": "switch",
   "dtmi:osiris:net:Router": "router",
+  "dtmi:osiris:net:Firewall": "firewall",
+  "dtmi:osiris:net:AccessPoint": "ap",
 };
 
 /**
@@ -175,6 +177,8 @@ export const BUILTIN_LAYERS: Record<string, PresentationLayer> = {
   "dtmi:osiris:hw:Port": "hardware",
   "dtmi:osiris:net:Switch": "hardware",
   "dtmi:osiris:net:Router": "hardware",
+  "dtmi:osiris:net:Firewall": "services",
+  "dtmi:osiris:net:AccessPoint": "hardware",
 };
 
 /**

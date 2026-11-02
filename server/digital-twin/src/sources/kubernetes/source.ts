@@ -1,3 +1,4 @@
+import type { TwinStatus } from "@osiris/shared";
 import type { ResourceReading } from "../../state.ts";
 import type { Reading, TelemetryReader } from "../../telemetry.ts";
 import { READINGS, type ReadingName } from "./readings.ts";
@@ -29,9 +30,9 @@ export async function publicAddressesOf(hosts: string[]): Promise<Record<string,
 /**
  * The hardware's and the workloads' readings from the cluster's metrics: kubeletstats for a node's CPU (cores busy),
  * memory (working set) and root filesystem, and each container's and pod's CPU and memory; the node agents'
- * hostmetrics for each core (`system.cpu.utilization`, all but idle) and each disk's I/O (`system.disk.io`). Without
- * per-core metrics a core shows its CPU's average, marked estimated. A metric that fails or is missing leaves its
- * readings out.
+ * hostmetrics for each core (`system.cpu.utilization`, all but idle) and each disk's I/O (`system.disk.io`); the
+ * node-exporter's hwmon sensors for a part's temperature (the CPU's chip, the memory's, an NVMe's). Without per-core
+ * metrics a core shows its CPU's average, marked estimated. A metric that fails or is missing leaves its readings out.
  */
 export async function kubernetesResources(telemetry: TelemetryReader, twins: SourceTwin[], at?: number): Promise<Record<string, ResourceReading>> {
   const none = () => new Map<string, number>();
@@ -40,18 +41,32 @@ export async function kubernetesResources(telemetry: TelemetryReader, twins: Sou
     const by = { points: r.points ? [...r.points] : undefined, where: r.where };
     return (r.read === "rate" ? telemetry.rates(r.metric!, [...r.attributes], at, by) : telemetry.latest(r.metric!, [...r.attributes], at, by)).catch(none);
   };
-  const [cpu, idle, memory, fsUsed, fsSize, io, cCpu, cMemory, pCpu, pMemory] = await Promise.all([
+  const [cpu, idle, memory, fsUsed, fsSize, io, temps, cCpu, cMemory, pCpu, pMemory] = await Promise.all([
     read("nodeCpu"),
     read("coreIdle"),
     read("nodeMemory"),
     read("fsUsage"),
     read("fsCapacity"),
     read("diskIo"),
+    read("hwmonTemp"),
     read("containerCpu"),
     read("containerMemory"),
     read("podCpu"),
     read("podMemory"),
   ]);
+  // The hwmon sensors by what they measure: a CPU's chip (coretemp, k10temp, cpu_thermal…), the memory's (dram,
+  // dimm…), an NVMe's (nvme…); each part takes its hottest sensor.
+  const hottest = (map: Map<string, number>, node: string, value: number) => map.set(node, Math.max(map.get(node) ?? -Infinity, value));
+  const cpuTemp = new Map<string, number>();
+  const memTemp = new Map<string, number>();
+  const nvmeTemp = new Map<string, number>();
+  for (const [key, value] of temps) {
+    const [node, chip] = key.split("\u0000");
+    if (!node || !chip) continue;
+    if (/^nvme/i.test(chip)) hottest(nvmeTemp, node, value);
+    else if (/coretemp|k10temp|k8temp|cpu|zen/i.test(chip)) hottest(cpuTemp, node, value);
+    else if (/dram|dimm|mem/i.test(chip)) hottest(memTemp, node, value);
+  }
   const share = (used: number | undefined, size: number | undefined) => (used !== undefined && size ? Math.min(1, Math.max(0, used / size)) : undefined);
   const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
   const out: Record<string, ResourceReading> = {};
@@ -68,7 +83,7 @@ export async function kubernetesResources(telemetry: TelemetryReader, twins: Sou
     if (model === MODEL.Cpu) {
       const load = share(cpu.get(errorKey([n])), num(t.cores));
       if (load !== undefined) cpuLoad.set(n, load);
-      put(t.$dtId, { load, used: cpu.get(errorKey([n])), size: num(t.cores) });
+      put(t.$dtId, { load, used: cpu.get(errorKey([n])), size: num(t.cores), temperature: cpuTemp.get(n) });
     }
   }
   for (const t of twins) {
@@ -80,12 +95,12 @@ export async function kubernetesResources(telemetry: TelemetryReader, twins: Sou
       put(t.$dtId, own !== undefined ? { load: Math.min(1, Math.max(0, 1 - own)) } : { load: cpuLoad.get(n), estimated: true });
     } else if (model === MODEL.Memory) {
       const used = memory.get(errorKey([n]));
-      put(t.$dtId, { load: share(used, num(t.capacity)), used, size: num(t.capacity) });
+      put(t.$dtId, { load: share(used, num(t.capacity)), used, size: num(t.capacity), temperature: memTemp.get(n) });
     } else if (model === MODEL.Disk) {
       const root = r[ROOT_FS_ATTR] === "true";
       const used = root ? fsUsed.get(errorKey([n])) : undefined;
       const size = root ? fsSize.get(errorKey([n])) : undefined;
-      put(t.$dtId, { load: share(used, size), used, size, io: io.get(errorKey([n, r[DEVICE_ATTR] ?? ""])) });
+      put(t.$dtId, { load: share(used, size), used, size, io: io.get(errorKey([n, r[DEVICE_ATTR] ?? ""])), temperature: t.bus === "nvme" ? nvmeTemp.get(n) : undefined });
     } else if (model === MODEL.Container) {
       const k = errorKey([r[NAMESPACE_ATTR] ?? "", r[POD_ATTR] ?? "", r[CONTAINER_ATTR] ?? ""]);
       put(t.$dtId, { cpu: cCpu.get(k), memory: cMemory.get(k) });
@@ -97,10 +112,21 @@ export async function kubernetesResources(telemetry: TelemetryReader, twins: Sou
   return out;
 }
 
+/** One external service's reachability: any HTTP answer means up (a 5xx a warning), no answer an error. */
+export async function probeService(url: string, fetchFn: typeof fetch = fetch): Promise<{ url: string; name: string; status: TwinStatus }> {
+  const name = (() => { try { return new URL(url).hostname; } catch { return url; } })();
+  try {
+    const res = await fetchFn(url, { method: "HEAD", redirect: "follow", signal: AbortSignal.timeout(5000) });
+    return { url, name, status: res.status >= 500 ? "warn" : "ok" };
+  } catch {
+    return { url, name, status: "error" };
+  }
+}
+
 export function kubernetesSource(
   kube: Kube,
   clusterName: string,
-  options: { cephManagers?: string[]; externalBus?: "usb" | "sata"; lan?: LanOptions; fetchFn?: typeof fetch; resolve?: (hosts: string[]) => Promise<Record<string, string[]>> } = {},
+  options: { cephManagers?: string[]; externalBus?: "usb" | "sata"; lan?: LanOptions; externalServices?: string[]; fetchFn?: typeof fetch; resolve?: (hosts: string[]) => Promise<Record<string, string[]>> } = {},
 ): TwinSource {
   /** Ceph's client I/O counters at the last sync, for its read and write rates. */
   let cephBefore: { at: number; read: number; write: number } | undefined;
@@ -136,6 +162,8 @@ export function kubernetesSource(
         ...ingressRoutes.flatMap((r) => (r.spec?.routes ?? []).flatMap((x) => [...(x.match ?? "").matchAll(/Host\(`([^`]+)`/g)].map((m) => m[1]!))),
       ];
       const publicAddresses = await (options.resolve ?? publicAddressesOf)(hosts);
+      // The external services through the internet (Mistral for the agent, …): their status, probed now.
+      const externalServices = options.externalServices?.length ? await Promise.all(options.externalServices.map((u) => probeService(u, options.fetchFn ?? fetch))) : undefined;
       // Ceph's client I/O: its counters' change since the last sync (none on the first, or after a restart).
       let cephIo: { read: number; write: number } | undefined;
       if (ceph) {
@@ -145,7 +173,7 @@ export function kubernetesSource(
           cephIo = { read: ((ceph.readBytes - b.read) * 1000) / (now - b.at), write: ((ceph.writeBytes - b.write) * 1000) / (now - b.at) };
         cephBefore = { at: now, read: ceph.readBytes, write: ceph.writeBytes };
       }
-      return clusterGraph({ clusterName, namespaces, pods, nodes, pvcs, pvs, replicasets, version, ceph, cephIo, services, endpointSlices, ingresses, ingressRoutes, publicAddresses, externalBus: options.externalBus, lan: options.lan });
+      return clusterGraph({ clusterName, namespaces, pods, nodes, pvcs, pvs, replicasets, version, ceph, cephIo, services, endpointSlices, ingresses, ingressRoutes, publicAddresses, externalBus: options.externalBus, lan: options.lan, externalServices });
     },
   };
 }

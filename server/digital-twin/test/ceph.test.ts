@@ -110,21 +110,26 @@ describe("the hardware's and the workloads' readings", () => {
           "k8s.node.filesystem.capacity": [[k("n1"), 100]],
           "container.cpu.usage": [[k("web", "p", "app"), 0.12]],
           "container.memory.working_set": [[k("web", "p", "app"), 3e8]],
+          // node-exporter's hwmon sensors: the CPU's chip (two sensors, the hottest wins), the NVMe's, the memory's.
+          "node_hwmon_temp_celsius": [[k("n1", "coretemp", "0"), 51], [k("n1", "coretemp", "1"), 63], [k("n1", "nvme", "Composite"), 47], [k("n2", "dram", "dimm1"), 42]],
         };
         return new Map(values[metric] ?? []);
       },
       rates: async (metric: string) => new Map(metric === "system.disk.io" ? [[k("n1", "sdb"), 5e6]] : []),
     };
     const r = await kubernetesResources(reader, g.twins);
-    expect(r["k8s:c/node/n1/hw/cpu"]).toEqual({ load: 0.5, used: 1, size: 2 });
+    expect(r["k8s:c/node/n1/hw/cpu"]).toEqual({ load: 0.5, used: 1, size: 2, temperature: 63 });
     expect(r["k8s:c/node/n1/hw/cpu/core/0"]).toEqual({ load: 0.75 });
     expect(r["k8s:c/node/n1/hw/cpu/core/1"]).toEqual({ load: 0.25 });
     // n2's agent sends no per-core metric: its cores show the CPU's average, marked.
     expect(r["k8s:c/node/n2/hw/cpu/core/0"]).toEqual({ load: 0.25, estimated: true });
     expect(r["k8s:c/node/n1/hw/memory"]).toEqual({ load: 0.5, used: 2 ** 31, size: 4 * 2 ** 30 });
-    expect(r["k8s:c/node/n1/hw/disk/nvme0n1"]).toEqual({ load: 0.4, used: 40, size: 100 });
+    expect(r["k8s:c/node/n2/hw/memory"]).toMatchObject({ temperature: 42 });
+    expect(r["k8s:c/node/n1/hw/disk/nvme0n1"]).toEqual({ load: 0.4, used: 40, size: 100, temperature: 47 });
+    // A USB disk has no hwmon sensor: no temperature.
     expect(r["k8s:c/node/n1/hw/disk/sdb"]).toEqual({ io: 5e6 });
     expect(r["k8s:c/namespace/web/pod/p/container/app"]).toEqual({ cpu: 0.12, memory: 3e8 });
     expect(calls.find((c) => c.metric === "system.cpu.utilization")?.by).toEqual({ points: ["cpu"], where: { state: "idle" } });
+    expect(calls.find((c) => c.metric === "node_hwmon_temp_celsius")?.by).toEqual({ points: ["chip", "sensor"] });
   });
 });

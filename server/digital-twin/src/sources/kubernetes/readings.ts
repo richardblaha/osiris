@@ -19,6 +19,8 @@ export const READINGS = {
   fsUsage: { read: "latest", metric: "k8s.node.filesystem.usage", attributes: [NODE_ATTR] },
   fsCapacity: { read: "latest", metric: "k8s.node.filesystem.capacity", attributes: [NODE_ATTR] },
   diskIo: { read: "rate", metric: "system.disk.io", attributes: [NODE_ATTR], points: [DEVICE_ATTR] },
+  /** node-exporter's hardware temperatures, by the sensor's chip and name. */
+  hwmonTemp: { read: "latest", metric: "node_hwmon_temp_celsius", attributes: [NODE_ATTR], points: ["chip", "sensor"] },
   containerCpu: { read: "latest", metric: "container.cpu.usage", attributes: [NAMESPACE_ATTR, POD_ATTR, CONTAINER_ATTR] },
   containerMemory: { read: "latest", metric: "container.memory.working_set", attributes: [NAMESPACE_ATTR, POD_ATTR, CONTAINER_ATTR] },
   podCpu: { read: "latest", metric: "k8s.pod.cpu.usage", attributes: [NAMESPACE_ATTR, POD_ATTR] },
@@ -87,17 +89,20 @@ const ORIGINS: Record<string, Record<string, Origin>> = {
   },
   "dtmi:osiris:hw:Cpu;1": {
     load: { reading: "nodeCpu", formula: "k8s.node.cpu.usage ÷ cores" },
+    temperature: { reading: "hwmonTemp", formula: "the CPU's own chip (coretemp, k10temp, cpu_thermal…): the hottest sensor" },
     cores: { api: "GET /api/v1/nodes → status.capacity.cpu" },
   },
   "dtmi:osiris:hw:CpuCore;1": { load: { reading: "coreIdle", formula: "1 − idle of the core (cpu = cpuN); without it the CPU's average, marked estimated" } },
   "dtmi:osiris:hw:Memory;1": {
     load: { reading: "nodeMemory", formula: "working set ÷ capacity" },
     bytesUsed: { reading: "nodeMemory" },
+    temperature: { reading: "hwmonTemp", formula: "the memory's sensors (dram, dimm…): the hottest" },
     capacity: { api: "GET /api/v1/nodes → status.capacity.memory" },
   },
   "dtmi:osiris:hw:Disk;1": {
     load: { reading: ["fsUsage", "fsCapacity"], formula: "usage ÷ capacity of the node's root filesystem, on the disk holding it" },
     io: { reading: "diskIo", formula: "bytes read and written per second of the device" },
+    temperature: { reading: "hwmonTemp", formula: "the NVMe chip (nvme…): the hottest sensor — only an NVMe disk has one" },
     device: { ceph: "ceph_disk_occupation" },
     model: { ceph: "ceph_disk_occupation (device_ids)" },
     size: { ceph: "ceph_osd_stat_bytes" },

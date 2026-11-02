@@ -224,6 +224,7 @@
     "cpu": "{{used}} z {{cores}} jader",
     "cores": "CPU {{value}} jader",
     "io": "I/O {{rate}}",
+    "temp": "{{value}} °C",
     "estimated": "{{share}} (průměr CPU)",
     "bytes": "{{used}} z {{size}}",
     "endpoints_one": "{{count}} cíl",

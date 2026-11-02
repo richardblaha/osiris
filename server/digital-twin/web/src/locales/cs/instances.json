@@ -43,7 +43,9 @@
       "clickhouseUrl": "Telemetrie: ClickHouse",
       "clickhouseUser": "Uživatel ClickHouse",
       "clickhousePassword": "Heslo ClickHouse",
-      "clickhouseCluster": "Název clusteru v telemetrii"
+      "clickhouseCluster": "Název clusteru v telemetrii",
+      "lanDevices": "Další zařízení LAN",
+      "externalServices": "Externí služby (přes internet)"
     }
   },
   "help": {
@@ -59,7 +61,9 @@
       "routerModel": "Zobrazí se v detailu routeru; prázdné: neznámý.",
       "clickhouseUrl": "Kam OpenTelemetry Collector clusteru zapisuje logy, metriky a trasy; prázdné: vlastní ClickHouse této služby.",
       "clickhouseUser": "Jen pro čtení; prázdné: default.",
-      "clickhouseCluster": "k8s.cluster.name, kterým collector označuje telemetrii; prázdné: vše v tom ClickHouse."
+      "clickhouseCluster": "k8s.cluster.name, kterým collector označuje telemetrii; prázdné: vše v tom ClickHouse.",
+      "lanDevices": "Po jednom na řádek jako kind:name nebo kind:model:name (kind: ap, switch, router): každé zapojené do volného portu switche; přístupový bod (ap) dostane i svůj Wi-Fi port.",
+      "externalServices": "URL sondované při každém syncu, čárkou oddělené: dvojčata na glóbu internetu s jejich stavem (např. https://api.mistral.ai pro agentova Mistral)."
     }
   },
   "option": {

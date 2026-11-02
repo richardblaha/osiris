@@ -4,7 +4,7 @@ import { portKind } from "../icons.ts";
 import { fillOf, isWorkloadLayer, type TwinScene, type TwinView, type ViewLayer } from "../scene.ts";
 import type { Box, Link, LinkLayer, Scene } from "../TwinLayout.ts";
 import { hueOf } from "./geometry.ts";
-import { loadLevel } from "./info.ts";
+import { loadLevel, tempLevel } from "./info.ts";
 
 /** The theme's colours the scene wears, read from the page's CSS variables (light and dark scheme alike). */
 export interface Colors {
@@ -149,10 +149,11 @@ function bodyOpacity(node: TwinView, leaf: boolean): number {
     : look === "hex" ? 0.02
     : look === "gate" ? 0.3
     : look === "ceph" ? 0.07
+    : look === "firewall" ? 0.1
     : look === "core" || look === "memory" ? 0.1
     : look === "cpu" ? 0.14
     : look === "drive" ? 0.16
-    : look === "switch" || look === "router" ? 0.55
+    : look === "switch" || look === "router" || look === "ap" ? 0.55
     : look === "node" ? 0.06
     : leaf ? 0.2
     : 0.035;
@@ -170,23 +171,28 @@ export function appearanceOf(v: ViewState, node: TwinView, box: Box): Appearance
   const lit = !!focus && !isChosen && v.path.has(node.of ?? node.id);
   const fade = inFocus(v, node) ? 1 : 0.18;
   const strong = isChosen || isHovered || lit;
-  // A part of a machine carries its load's colour while it is well.
+  // A part of a machine carries its load's colour while it is well — and its temperature's where it has one; the
+  // worse of the two bands wins.
   const load = node.resources?.load;
-  const own = node.status === "ok" && load !== undefined ? loadLevel(load) : node.status;
+  const temp = node.resources?.temperature;
+  const hwPart = look === "cpu" || look === "memory" || look === "drive";
+  const bands = [load !== undefined ? loadLevel(load) : undefined, hwPart && temp !== undefined ? tempLevel(temp) : undefined].filter((s): s is TwinStatus => !!s);
+  const order = ["ok", "warn", "error"];
+  const own = node.status === "ok" && bands.length ? bands.reduce((a, b) => (order.indexOf(b) > order.indexOf(a) ? b : a)) : node.status;
   let edge = strong ? colors.active : node.color ? new THREE.Color(node.color) : statusColor(colors, own);
   let edgeOpacity = (strong ? 1 : node.depth === 0 ? 0.9 : leaf ? 0.8 : 0.6) * fade;
   let body = edge;
   const base = bodyOpacity(node, leaf);
   let opacity = (strong ? Math.max(base, leaf ? 0.4 : 0.1) : base) * fade;
   // A machine's chassis and the LAN's devices are grey metal; their outline still carries their status.
-  if ((look === "node" || look === "switch" || look === "router") && !strong) body = colors.neutral;
+  if ((look === "node" || look === "switch" || look === "router" || look === "ap") && !strong) body = colors.neutral;
   if (node.isBand && !strong) {
     body = new THREE.Color().setHSL(hueOf(node.name), 0.7, 0.55);
     opacity = 0.045 * fade;
   }
   if (look === "port" && !strong && node.status === "ok") {
     const kind = portKind(node);
-    const c = kind === "router" ? colors.neutral : kind === "loadbalancer" || kind === "public" ? colors.active : colors.cyan;
+    const c = kind === "router" ? colors.neutral : kind === "loadbalancer" || kind === "public" || kind === "external" || kind === "wifi" ? colors.active : colors.cyan;
     body = edge = c;
     if (kind === "bridge") opacity = 0.4 * fade;
     if (kind === "usb" || kind === "physical") (body = edge = colors.neutral), (opacity = 0.8 * fade);
@@ -272,10 +278,12 @@ export function linkPaintOf(v: ViewState): LinkPaint {
     // Networks in cyan by load; a node's wiring and the tunnels quieter; mounts and storage grey; routing faint,
     // glowing on the path of the selection's traffic. The cables are tubes of their own.
     const c = onPath || l.kind === "resource" ? colors.active : l.kind === "interface" || l.kind === "wire" || l.kind === "storage" || l.kind === "cable" ? colors.neutral : colors.cyan;
+    // A cable with a radius (USB, Ethernet, the WAN's line to the internet) is drawn a solid tube, not a line.
+    const tubed = l.radius !== undefined;
     const alpha = !visible
       ? 0
       : l.kind === "resource" ? (runsHere(l) ? 0.85 : 0)
-      : l.kind === "cable" || l.kind === "ethernet" ? 0
+      : tubed ? 0
       : onPath && l.kind !== "network" && l.kind !== "internet"
         ? 0.9
         : l.kind === "virtual" ? 0.3 * (near ? 1 : 0.2)
@@ -286,8 +294,8 @@ export function linkPaintOf(v: ViewState): LinkPaint {
         : (onPath ? 0.9 : 0.18 + 0.5 * loads[k]!) * (near || onPath ? 1 : 0.15);
     color.set([c.r, c.g, c.b, alpha], k * 4);
     dots[k] = alpha ? (near || onPath || l.kind === "resource" ? 0.95 : 0.15) : 0;
-    if (l.kind === "cable" || l.kind === "ethernet") {
-      // USB light grey, Ethernet in the network's cyan, both brighter on the selection's path.
+    if (tubed) {
+      // USB light grey, Ethernet (and the WAN's cable to the internet) in the network's cyan, brighter on the selection's path.
       const nearTube = near || inFocus(v, l.to ? byId.get(l.to) : undefined);
       const tubeLit = !!focus && (l.id === focus.id || l.to === focus.id || byId.get(l.to ?? "")?.parent?.id === focus.id);
       tubes.set(k, { shown: visible, color: hex(tubeLit ? colors.active : l.kind === "cable" ? colors.neutral : colors.cyan), base: (tubeLit ? 0.95 : 0.75) * (nearTube ? 1 : 0.2) });

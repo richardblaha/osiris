@@ -115,13 +115,25 @@ describe("the view's layers", () => {
 });
 
 describe("storage in the view", () => {
-  it("draws Ceph as a compact drum in the last row, not a column as tall as the nodes, with its disks linked", () => {
-    const drum = layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph")!;
-    const node = layout.boxes.find((b) => b.id === "k8s:c/node/n1")!;
-    expect(drum.shape).toBe("drum");
-    expect(drum.size[0]).toBeCloseTo(drum.size[2]);
-    expect(drum.size[1]).toBeLessThan(node.size[1]);
-    expect(drum.size[2]).toBeLessThan(node.size[2]);
+  it("draws Ceph as a disk array beside the cluster: the physical USB disks in its bottom row, each OSD on its disk, its pools above", () => {
+    const array = layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph")!;
+    const cluster = layout.boxes.find((b) => b.id === "k8s:c")!;
+    const inside = (inner: { center: number[]; size: number[] }, outer: { center: number[]; size: number[] }) =>
+      [0, 1, 2].every((i) => inner.center[i]! - inner.size[i]! / 2 >= outer.center[i]! - outer.size[i]! / 2 - 1e-6 && inner.center[i]! + inner.size[i]! / 2 <= outer.center[i]! + outer.size[i]! / 2 + 1e-6);
+    expect(array.shape).toBe("box");
+    // Outside the cluster's own solid, beside it.
+    expect(array.center[0]! - array.size[0]! / 2).toBeGreaterThan(cluster.center[0]! + cluster.size[0]! / 2 - 1e-6);
+    // The physical disks in the array, each with its OSD — a virtual disk — standing on it.
+    for (const [diskId, osdId] of [["k8s:c/node/n1/hw/disk/sdb", "k8s:c/ceph/ceph/osd/0"], ["k8s:c/node/n2/hw/disk/sdb", "k8s:c/ceph/ceph/osd/1"]] as const) {
+      const disk = layout.boxes.find((b) => b.id === diskId)!;
+      const osd = layout.boxes.find((b) => b.id === osdId)!;
+      expect(inside(disk, array), diskId).toBe(true);
+      expect(inside(osd, array), osdId).toBe(true);
+      expect(osd.center[1]! - osd.size[1]! / 2).toBeGreaterThanOrEqual(disk.center[1]! + disk.size[1]! / 2 - 1e-6);
+    }
+    // Its pools in a row above the disks.
+    expect(inside(layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph/pool/rbd")!, array)).toBe(true);
+    // Its OSDs linked to it.
     const disks = layout.links.filter((l) => l.kind === "storage" && l.id === "k8s:c/ceph/ceph").map((l) => l.to);
     expect(disks.sort()).toEqual(["k8s:c/ceph/ceph/osd/0", "k8s:c/ceph/ceph/osd/1"]);
   });

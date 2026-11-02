@@ -15,8 +15,9 @@ export interface TelemetryState {
 
 /**
  * What the view draws of a piece of hardware or a workload: a share from 0 to 1 (a core's or a CPU's busy time,
- * memory or a filesystem used), bytes used of a size, bytes per second through a disk, and a container's or a pod's CPU
- * (cores) and memory (bytes). `estimated`: a stand-in (a core shown at its CPU's average).
+ * memory or a filesystem used), bytes used of a size, bytes per second through a disk, a part's temperature in
+ * degrees Celsius, and a container's or a pod's CPU (cores) and memory (bytes). `estimated`: a stand-in (a core shown
+ * at its CPU's average).
  */
 export interface ResourceReading {
   load?: number;
@@ -25,6 +26,8 @@ export interface ResourceReading {
   io?: number;
   cpu?: number;
   memory?: number;
+  /** Degrees Celsius (node-exporter's hwmon sensors: a CPU's chip, the memory's, an NVMe's). */
+  temperature?: number;
   estimated?: boolean;
 }
 

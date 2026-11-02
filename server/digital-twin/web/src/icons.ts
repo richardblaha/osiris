@@ -30,6 +30,7 @@ const MODELS: Record<string, string> = {
   "dtmi:osiris:ceph:Cluster": "sc",
   "dtmi:osiris:ceph:Pool": "vol",
   "dtmi:osiris:ceph:Osd": "pv",
+  "dtmi:osiris:net:Firewall": "netpol",
 };
 
 /** A twin's Kubernetes icon (outline SVG markup), or undefined for a model it has none for. */
