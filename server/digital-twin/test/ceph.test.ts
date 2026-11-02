@@ -58,20 +58,22 @@ describe("Ceph from its manager's metrics", () => {
     const id = (model: string, name: string) => g.twins.find((t) => t.$metadata.$model === model && t.name === name)!.$dtId;
     const has = (name: string, from: string, to: string) => expect(g.relationships).toContainEqual({ name, source: from, target: to });
     has("contains", "k8s:c", id(MODEL.Ceph, "Ceph"));
-    // The OSD stands on its USB disk, plugged into a USB port of the node; its DB is on the internal NVMe.
+    // The OSD is merged into its USB disk (one twin): the disk carries the OSD's id, state and fill, is plugged
+    // into a USB port of the node, and its DB is on the internal NVMe.
     const sdb = "k8s:c/node/n2/hw/disk/sdb";
     const nvme = "k8s:c/node/n2/hw/disk/nvme0n1";
     has("contains", "k8s:c/node/n2", sdb);
-    has("contains", sdb, id(MODEL.CephOsd, "osd.7"));
     has("attaches", "k8s:c/node/n2/hw/usb/1", sdb);
-    has("dbOn", id(MODEL.CephOsd, "osd.7"), nvme);
-    expect(g.twins.find((t) => t.$dtId === sdb)).toMatchObject({ bus: "usb", internal: false, model: "ST500LM0 00-1EJ162", serial: "18A2", device: "/dev/sdb" });
+    has("hasOsd", id(MODEL.Ceph, "Ceph"), sdb);
+    has("dbOn", sdb, nvme);
+    expect(g.twins.find((t) => t.$dtId === sdb)).toMatchObject({ bus: "usb", internal: false, model: "ST500LM0 00-1EJ162", serial: "18A2", device: "/dev/sdb", osdId: 7, up: true, in: true, fill: 231001784320 / 2855314841600 });
     expect(g.twins.find((t) => t.$dtId === nvme)).toMatchObject({ bus: "nvme", internal: true, model: "SAMSUNG", serial: "X", otelResource: { "hw.rootfs": "true", device: "nvme0n1" } });
     // Its CPU with four cores, its memory.
     expect(g.relationships.filter((r) => r.source === "k8s:c/node/n2/hw/cpu")).toHaveLength(4);
     expect(g.twins.find((t) => t.$dtId === "k8s:c/node/n2/hw/memory")).toMatchObject({ capacity: 6498908 * 1024 });
-    // A disk of a host the cluster doesn't know stays in Ceph.
+    // A disk of a host the cluster doesn't know stays in Ceph as its own OSD twin.
     has("contains", id(MODEL.Ceph, "Ceph"), id(MODEL.CephOsd, "osd.9"));
+    has("hasOsd", id(MODEL.Ceph, "Ceph"), id(MODEL.CephOsd, "osd.9"));
     has("contains", id(MODEL.Ceph, "Ceph"), id(MODEL.CephPool, "microk8s-rbd0"));
     has("holds", id(MODEL.CephPool, "microk8s-rbd0"), id(MODEL.PersistentVolumeClaim, "data"));
     expect(g.twins.find((t) => t.name === "osd.9")).toMatchObject({ status: "error", up: false });

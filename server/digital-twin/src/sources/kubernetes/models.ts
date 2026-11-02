@@ -51,7 +51,13 @@ const contains = (target: string | undefined, description: string): DtdlContent 
   displayName: l("contains", "obsahuje"),
   description,
 });
-const relationship = (name: string, target: string, displayName: Localized, description: string): DtdlContent => ({ "@type": "Relationship", name, target, displayName, description });
+const relationship = (name: string, target: string | undefined, displayName: Localized, description: string): DtdlContent => ({
+  "@type": "Relationship",
+  name,
+  ...(target ? { target } : {}),
+  displayName,
+  description,
+});
 /** Bytes per second through a node's or a pod's network interfaces, the load the view animates. */
 const network: DtdlContent = {
   "@type": "Telemetry",
@@ -190,7 +196,7 @@ export function dtdlModel(): DtdlInterface[] {
       property("size", "double", l("Raw capacity", "Hrubá kapacita"), "Bytes of all OSDs."),
       property("used", "double", l("Raw used", "Hrubě obsazeno"), "Bytes used on all OSDs."),
       contains(undefined, "The cluster's pools, and the disks of hosts the Kubernetes cluster doesn't know."),
-      relationship("hasOsd", MODEL.CephOsd, l("has OSD", "má OSD"), "The cluster's OSDs."),
+      relationship("hasOsd", undefined, l("has OSD", "má OSD"), "The cluster's OSDs — on a USB data disk the disk twin itself carries the OSD (merged), else a Ceph OSD twin."),
     ]),
     iface(MODEL.CephPool, l("Ceph pool", "Ceph pool"), "A pool: what it stores and what it may still take.", [
       property("poolId", "integer", l("Pool id", "ID poolu")),
@@ -260,17 +266,25 @@ export function dtdlModel(): DtdlInterface[] {
       { "@type": "Telemetry", name: "bytesUsed", schema: "double", displayName: l("Used", "Využito"), description: "The node's working set, in bytes (kubeletstats)." },
       temperature,
     ]),
-    iface(MODEL.Disk, l("Disk", "Disk"), "A physical disk of the node: internal (NVMe, SATA, eMMC) or attached over USB. A Ceph OSD on it is inside it.", [
+    iface(MODEL.Disk, l("Disk", "Disk"), "A physical disk of the node: internal (NVMe, SATA, eMMC) or attached over USB. A USB data disk carries only its Ceph OSD, so the two are one twin here: the disk also holds the OSD's id, state and fill. An OSD on an internal disk is inside it.", [
       property("device", "string", l("Device", "Zařízení")),
       property("model", "string", l("Model", "Model")),
       property("serial", "string", l("Serial number", "Sériové číslo")),
       property("bus", enumOf("nvme", "sata", "usb", "mmc", "unknown"), l("Bus", "Sběrnice")),
       property("internal", "boolean", l("Internal", "Interní")),
       property("size", "double", l("Size", "Velikost"), "Bytes, where known (an OSD's disk: the OSD's)."),
+      property("osdId", "integer", l("OSD id", "ID OSD"), "The Ceph OSD this USB disk carries (merged with the disk), when it does."),
+      property("up", "boolean", l("OSD up", "OSD běží")),
+      property("in", "boolean", l("OSD in", "OSD v clusteru")),
+      property("deviceClass", "string", l("Device class", "Třída zařízení")),
+      property("dbDevice", "string", l("DB device", "Zařízení DB")),
+      property("used", "double", l("Used", "Obsazeno"), "Bytes used on the disk (a Ceph OSD's data)."),
+      property("fill", "double", l("Fill", "Zaplnění"), "Used of size."),
       load("The node's root filesystem used of its size (kubeletstats), for the disk it is on."),
       { "@type": "Telemetry", name: "io", schema: "double", displayName: l("I/O", "I/O"), description: "Bytes per second read and written (hostmetrics' system.disk.io)." },
       temperature,
-      contains(MODEL.CephOsd, "The Ceph OSD storing its data on the disk."),
+      contains(MODEL.CephOsd, "The Ceph OSD storing its data on an internal disk."),
+      relationship("dbOn", MODEL.Disk, l("keeps its DB on", "má DB na"), "The disk holding the OSD's RocksDB and WAL (an LVM volume on the node's internal disk)."),
     ]),
     iface(MODEL.Port, l("Port", "Port"), "A physical port of the node: USB with what is attached to it.", [
       property("kind", enumOf("usb", "lan"), l("Kind", "Druh")),

@@ -73,7 +73,8 @@ describe("the view's layers", () => {
     expect(layerOf("k8s:c/namespace/web/service/site")).toBe("services");
     expect(layerOf("k8s:c/namespace/web/ingress-ingress/site")).toBe("services");
     expect(layerOf("k8s:c/ceph/ceph")).toBe("storage");
-    expect(layerOf("k8s:c/ceph/ceph/osd/0")).toBe("storage");
+    // A USB disk with its OSD merged in is hardware (the OSD itself is the disk now).
+    expect(layerOf("k8s:c/node/n1/hw/disk/sdb")).toBe("hardware");
     expect(scene.bands.every((b) => b.layer === "namespaces")).toBe(true);
     expect(layerOf("k8s:c/node/n1/hw/cpu")).toBe("hardware");
     expect(layerOf("k8s:c/node/n1/if/nic")).toBe("hardware");
@@ -115,7 +116,7 @@ describe("the view's layers", () => {
 });
 
 describe("storage in the view", () => {
-  it("draws Ceph as a disk array beside the cluster: the physical USB disks in its bottom row, each OSD on its disk, its pools above", () => {
+  it("draws Ceph as a disk array with two rows of disks beside the cluster: the physical disks standing on their edge below, the pools above", () => {
     const array = layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph")!;
     const cluster = layout.boxes.find((b) => b.id === "k8s:c")!;
     const inside = (inner: { center: number[]; size: number[] }, outer: { center: number[]; size: number[] }) =>
@@ -123,25 +124,27 @@ describe("storage in the view", () => {
     expect(array.shape).toBe("box");
     // Outside the cluster's own solid, beside it.
     expect(array.center[0]! - array.size[0]! / 2).toBeGreaterThan(cluster.center[0]! + cluster.size[0]! / 2 - 1e-6);
-    // The physical disks in the array, each with its OSD — a virtual disk — standing on it.
-    for (const [diskId, osdId] of [["k8s:c/node/n1/hw/disk/sdb", "k8s:c/ceph/ceph/osd/0"], ["k8s:c/node/n2/hw/disk/sdb", "k8s:c/ceph/ceph/osd/1"]] as const) {
-      const disk = layout.boxes.find((b) => b.id === diskId)!;
-      const osd = layout.boxes.find((b) => b.id === osdId)!;
-      expect(inside(disk, array), diskId).toBe(true);
-      expect(inside(osd, array), osdId).toBe(true);
-      expect(osd.center[1]! - osd.size[1]! / 2).toBeGreaterThanOrEqual(disk.center[1]! + disk.size[1]! / 2 - 1e-6);
+    // The bottom row: the physical USB disks (each with its OSD merged in), standing on their edge as cylinders.
+    const disks = ["k8s:c/node/n1/hw/disk/sdb", "k8s:c/node/n2/hw/disk/sdb"].map((id) => layout.boxes.find((b) => b.id === id)!);
+    for (const disk of disks) {
+      expect(inside(disk, array), disk.id).toBe(true);
+      expect(disk.shape, disk.id).toBe("cylinder");
+      expect(disk.size[1]!, disk.id).toBeGreaterThan(disk.size[0]!); // on its edge: higher than wide
     }
-    // Its pools in a row above the disks.
-    expect(inside(layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph/pool/rbd")!, array)).toBe(true);
-    // Its OSDs linked to it.
-    const disks = layout.links.filter((l) => l.kind === "storage" && l.id === "k8s:c/ceph/ceph").map((l) => l.to);
-    expect(disks.sort()).toEqual(["k8s:c/ceph/ceph/osd/0", "k8s:c/ceph/ceph/osd/1"]);
+    // The top row: the pools, looking just the same, above the disks.
+    const pool = layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph/pool/rbd")!;
+    expect(inside(pool, array)).toBe(true);
+    expect(pool.center[1]! - pool.size[1]! / 2).toBeGreaterThanOrEqual(Math.max(...disks.map((d) => d.center[1]! + d.size[1]! / 2)) - 1e-6);
+    // Ceph's OSDs are the disks themselves: the storage lines run straight to them.
+    const osds = layout.links.filter((l) => l.kind === "storage" && l.id === "k8s:c/ceph/ceph").map((l) => l.to);
+    expect(osds.sort()).toEqual(["k8s:c/node/n1/hw/disk/sdb", "k8s:c/node/n2/hw/disk/sdb"]);
   });
 
   it("tells what Ceph needs watching for: disks, placement groups, monitors, I/O, raised checks; each disk its own fill", () => {
     const c = graph.twins.find((t) => t.$dtId === "k8s:c/ceph/ceph")!;
     expect(c).toMatchObject({ osdUp: 2, osdIn: 2, monitors: 3, quorum: 3, pgTotal: 64, pgClean: 60, pgDegraded: 4, checks: "PG_DEGRADED (warn)", readRate: 1000, writeRate: 2000 });
-    expect(graph.twins.find((t) => t.$dtId === "k8s:c/ceph/ceph/osd/1")).toMatchObject({ size: 1.5e12, used: 6e11, fill: 0.4 });
+    // The OSD's own bytes land on its USB disk (merged): the disk twin carries them.
+    expect(graph.twins.find((t) => t.$dtId === "k8s:c/node/n2/hw/disk/sdb")).toMatchObject({ osdId: 1, size: 1.5e12, used: 6e11, fill: 0.4 });
   });
 
   it("reads the monitors, placement groups, health checks and I/O counters from the manager", () => {
@@ -243,17 +246,19 @@ describe("the machines' hardware in the view", () => {
     }
   });
 
-  it("puts each OSD on top of the USB disk it stores on, cabled to a USB port on the node's back wall", () => {
+  it("merges each OSD into its USB disk (one twin), the disk standing in the array, cabled to a USB port on the node's side", () => {
     const disk = "k8s:c/node/n1/hw/disk/sdb";
-    const osd = "k8s:c/ceph/ceph/osd/0";
-    expect(s.byId.get(osd)!.parent!.id).toBe(disk);
-    expect(bottom(osd)).toBeGreaterThanOrEqual(top(disk));
+    // The OSD is the disk now: its id, state and fill on the disk twin; no separate OSD twin; Ceph links straight to it.
+    expect(s.byId.get(disk)!.twin).toMatchObject({ osdId: 0, up: true, in: true, fill: expect.any(Number) });
+    expect(s.byId.get("k8s:c/ceph/ceph/osd/0")).toBeUndefined();
     expect(s.byId.get(disk)!.layer).toBe("hardware");
     const cable = l.links.find((x) => x.kind === "cable" && x.to === disk)!;
     expect(cable.layer).toBe("hardware");
     expect(cable.path[0]).toEqual(box("k8s:c/node/n1/hw/usb/1").center);
-    // Its DB on the internal NVMe: a storage line.
-    expect(l.links.some((x) => x.kind === "storage" && x.id === osd && x.to === "k8s:c/node/n1/hw/disk/nvme0n1")).toBe(true);
+    // In the array the disk stands on its edge: higher than wide.
+    expect(box(disk).size[1]).toBeGreaterThan(box(disk).size[0]);
+    // Its DB on the internal NVMe: a storage line from the disk.
+    expect(l.links.some((x) => x.kind === "storage" && x.id === disk && x.to === "k8s:c/node/n1/hw/disk/nvme0n1")).toBe(true);
   });
 
   it("joins each container to its node's CPU and memory, and carries the readings", () => {

@@ -16,9 +16,11 @@ export interface Colors {
 }
 export function themeColors(): Colors {
   const css = getComputedStyle(document.documentElement);
-  const v = (name: string) => new THREE.Color(css.getPropertyValue(name).trim() || "#888888");
-  // The accent for what is well, a stronger one (--accent-active) for what is selected or hovered, the theme's --state-error for errors.
-  return { cyan: v("--accent-primary"), active: v("--accent-active"), neutral: v("--text-secondary"), warn: v("--state-warning"), error: v("--state-error") };
+  const v = (name: string, fallback: string) => new THREE.Color(css.getPropertyValue(name).trim() || fallback);
+  // Monochrome: everything the scene draws is the accent's cyan (dark scheme: #00f2fe) at some transparency —
+  // no grey, no black, no warning or error hue; what is selected or hovered glows the stronger accent.
+  const cyan = v("--accent-primary", "#00f2fe");
+  return { cyan, active: v("--accent-active", "#6ff7ff"), neutral: cyan, warn: cyan, error: cyan };
 }
 export const statusColor = (colors: Colors, status: TwinStatus) => (status === "error" ? colors.error : status === "warn" ? colors.warn : colors.cyan);
 

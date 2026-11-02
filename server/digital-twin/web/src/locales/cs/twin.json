@@ -227,6 +227,7 @@
     "temp": "{{value}} °C",
     "estimated": "{{share}} (průměr CPU)",
     "bytes": "{{used}} z {{size}}",
+    "sizeShare": "{{size}} · {{share}}",
     "endpoints_one": "{{count}} cíl",
     "endpoints_few": "{{count}} cíle",
     "endpoints_many": "{{count}} cíle",

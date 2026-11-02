@@ -47,5 +47,8 @@ export function iconOf(node: TwinView): string | undefined {
 /** What kind of thing a twin is, for people: a workload's owning kind (StatefulSet…), else its model's name. */
 export const kindOf = (node: TwinView) => (typeof node.twin.ownerKind === "string" && node.twin.ownerKind ? node.twin.ownerKind : node.modelName);
 
+/** What a twin's label calls it: a core is numbered "cpu #1" (from 1), the rest keep their name. */
+export const displayName = (node: TwinView) => (node.look === "core" ? `cpu #${Number(node.twin.core ?? 0) + 1}` : node.name);
+
 /** A network interface's kind (card, router, tunnel, veth, LoadBalancer, public address). */
 export const portKind = (node: TwinView) => String(node.twin.kind ?? "veth");

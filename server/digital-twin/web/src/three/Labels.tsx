@@ -2,7 +2,7 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
-import { iconOf, portKind } from "../icons.ts";
+import { displayName, iconOf, portKind } from "../icons.ts";
 import type { TwinView } from "../scene.ts";
 import type { Box } from "../TwinLayout.ts";
 import { kindAndInfo, LOD } from "./info.ts";
@@ -15,7 +15,8 @@ function fillLabel(el: HTMLElement, node: TwinView, focus: TwinView | undefined)
   el.dataset.dashed = String(!!node.dashed);
   const name = el.querySelector(".twin-label-name")!;
   const info = el.querySelector(".twin-label-info")!;
-  if (name.textContent !== node.name) name.textContent = node.name;
+  const shown = displayName(node);
+  if (name.textContent !== shown) name.textContent = shown;
   const line = kindAndInfo(node);
   if (info.textContent !== line) info.textContent = line;
 }
@@ -120,7 +121,10 @@ export function Labels({ view, mode, addresses }: { view: ViewState; mode: "auto
       const distance = Math.max(0.1, tmp.set(...box.center).distanceTo(cam.position));
       const px = (Math.max(box.size[0], box.size[2]) / distance) * scale;
       const near = (!focus || inFocus(view, node) || isAncestor(node, focus)) && !hidden(view, node);
-      const auto = px >= LOD.info ? 3 : px >= LOD.name ? 2 : px >= LOD.icon ? 1 : 0;
+      let auto = px >= LOD.info ? 3 : px >= LOD.name ? 2 : px >= LOD.icon ? 1 : 0;
+      // A machine's part (a core, the memory, a disk) always shows its name and readings once it is big enough to
+      // tell apart: the core's number, its load and temperature, RAM's and a disk's capacity and fill.
+      if (px >= LOD.icon && (node.look === "core" || node.look === "memory" || node.look === "drive")) auto = 3;
       const level = !near || mode === "off" ? 0 : mode === "all" ? Math.max(2, auto) : auto;
       levels.set(box.id, level);
       let label = labels.current.get(box.id);

@@ -3,7 +3,7 @@ import { t } from "i18next";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
 import { CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
-import { kindOf } from "./icons.ts";
+import { displayName, kindOf } from "./icons.ts";
 import { INFRA_LAYERS, isWorkloadLayer, layoutRules, pathOf, WORKLOAD_LAYERS, type TwinScene, type TwinView, type ViewLayer } from "./scene.ts";
 import { CameraRig, type CameraControl, type Point } from "./three/Camera.tsx";
 import { infoOf } from "./three/info.ts";
@@ -116,7 +116,7 @@ function Picker({ content, pick, onHover, onSelect, tip, host }: { content: Cont
       kind.className = "twin-tip-kind";
       kind.textContent = kindOf(node);
       const name = document.createElement("strong");
-      name.textContent = node.name;
+      name.textContent = displayName(node);
       const meta = document.createElement("span");
       meta.dataset.status = node.status;
       meta.textContent = infoOf(node);

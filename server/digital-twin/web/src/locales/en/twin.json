@@ -219,6 +219,7 @@
     "temp": "{{value}} °C",
     "estimated": "{{share}} (CPU average)",
     "bytes": "{{used}} of {{size}}",
+    "sizeShare": "{{size}} · {{share}}",
     "endpoints_one": "{{count}} endpoint",
     "endpoints_other": "{{count}} endpoints",
     "bus": {

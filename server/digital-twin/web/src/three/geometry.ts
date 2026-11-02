@@ -174,8 +174,6 @@ export function spokes(n: number, inner: number, radius: number): THREE.BufferGe
   return g;
 }
 
-/** The dark of a socket's opening. */
-export const SOCKET = new THREE.Color("#07090c");
 
 /** How a port faces: the turn about y that takes a part drawn facing +z to face `normal`. */
 export const facing = (normal: [number, number, number] | undefined) => {

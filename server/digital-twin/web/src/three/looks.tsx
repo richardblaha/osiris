@@ -5,7 +5,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { portKind } from "../icons.ts";
 import type { TwinScene, TwinView } from "../scene.ts";
 import type { Box } from "../TwinLayout.ts";
-import { brickLines, cylinderEdges, diskEdges, drumEdges, facing, frame, gateEdges, gateGeometry, gaugeGeometry, pinGeometry, ring, roundedEdges, SOCKET, spokes, ventGeometry, wifiArcs } from "./geometry.ts";
+import { brickLines, cylinderEdges, diskEdges, drumEdges, facing, frame, gateEdges, gateGeometry, gaugeGeometry, pinGeometry, ring, roundedEdges, spokes, ventGeometry, wifiArcs } from "./geometry.ts";
 import { num } from "./info.ts";
 import { reducedMotion, sameAppearance, type Appearance, type Colors } from "./paint.ts";
 import { VisualParts } from "./visual.tsx";
@@ -416,14 +416,14 @@ function Socket({ box, ap, usb, colors }: { box: Box; ap: Appearance; usb: boole
       <group position={[0, 0, out]}>
         {usb ? (
           <>
-            <Plate size={[across * 0.84, h * 0.62]} position={[0, 0, 0.004]} color={SOCKET} opacity={0.95 * ap.fade} />
+            <Plate size={[across * 0.84, h * 0.62]} position={[0, 0, 0.004]} color={colors.cyan} opacity={0.28 * ap.fade} />
             <Plate size={[across * 0.68, h * 0.2]} position={[0, h * 0.09, 0.008]} color={colors.cyan} opacity={0.9 * ap.fade} />
             <Plate plateRef={act} size={[across * 0.12, h * 0.12]} position={[across * 0.5 + 0.1, h * 0.3, 0.004]} color={colors.active} opacity={0.12} />
           </>
         ) : (
           <>
-            <Plate size={[sw, sh]} position={[0, sy, 0.004]} color={SOCKET} opacity={0.95 * ap.fade} />
-            <Plate size={[across * 0.3, h * 0.14]} position={[0, sy - sh / 2 - h * 0.06, 0.004]} color={SOCKET} opacity={0.95 * ap.fade} />
+            <Plate size={[sw, sh]} position={[0, sy, 0.004]} color={colors.cyan} opacity={0.28 * ap.fade} />
+            <Plate size={[across * 0.3, h * 0.14]} position={[0, sy - sh / 2 - h * 0.06, 0.004]} color={colors.cyan} opacity={0.28 * ap.fade} />
             <lineSegments geometry={pins} position={[0, 0, 0.008]}>
               <lineBasicMaterial transparent color={colors.neutral} opacity={0.85 * ap.fade} />
             </lineSegments>

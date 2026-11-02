@@ -502,10 +502,15 @@ function layoutDeck(parts: TwinView[], w: number, d: number, rules: LayoutRules)
   return { items, height: Math.max(0, ...items.map((i) => i.m.size[1])) };
 }
 
+/** A physical disk in the storage cluster's array, standing on its edge: a cylinder as high as the disk is long,
+ * filled as far as its OSD is full (the OSD is merged into the disk twin). */
+function measureArrayDisk(node: TwinView, size: Vec): Measured {
+  return { size, boxes: [{ id: node.id, shape: "cylinder", center: [0, size[1] / 2, 0], size, radius: size[0] / 2 }], links: [] };
+}
+
 /**
- * A storage cluster (Ceph) as a disk array: the physical disks in a row at the bottom — each with its OSD, a virtual
- * disk, standing on it — and the cluster's own contents (its pools, the disks of hosts the cluster doesn't know) in a
- * row above them.
+ * A storage cluster (Ceph) as a disk array with two rows of disks: the physical disks standing on their edge in the
+ * bottom row, and the cluster's pools — looking just the same — in the row above them.
  */
 function measureArray(node: TwinView, disks: { node: TwinView; m: Measured }[], rules: LayoutRules): Measured {
   const pad = padAt(node.depth);
@@ -667,6 +672,12 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const disksOf = columns.map((h) => {
     const disks = h.children.filter(isExternal).sort((a, b) => a.name.localeCompare(b.name));
     const base = mm(MM.disk, u);
+    // In the storage cluster's array the disks stand on their edge (a cylinder as high as the disk is long);
+    // on a shelf beside the machines they lie flat.
+    if (stores.length) {
+      const upright = mm([MM.disk[2], MM.disk[0], MM.disk[2]], u);
+      return disks.map((v) => ({ node: v, m: measureArrayDisk(v, upright) }));
+    }
     const fit = Math.min(1, (D - USB_GAP * Math.max(0, disks.length - 1)) / Math.max(1e-9, disks.length * base[2]));
     return disks.map((v) => ({ node: v, m: measurePart(v, mm(base, fit), rules) }));
   });

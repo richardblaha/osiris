@@ -333,6 +333,31 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
     link(CONTAINS, root, cephId);
     const fill = c.size > 0 ? c.used / c.size : 0;
     for (const o of c.osds) {
+      const nodeId = nodeIds.get(o.host);
+      const device = o.device.replace(/^\/dev\//, "");
+      const diskId = nodeId && device ? hardwareIds(nodeId).disk(device) : undefined;
+      const diskTwin = diskId ? twins.find((t) => t.$dtId === diskId) : undefined;
+      // A USB data disk carries only its OSD: merge the two into the disk twin — it takes the OSD's id, state and
+      // bytes, and Ceph's `hasOsd` points straight at it.
+      if (diskTwin && diskTwin.internal === false) {
+        Object.assign(diskTwin, {
+          status: !o.up ? "error" : !o.in ? "warn" : "ok",
+          osdId: o.id,
+          up: o.up,
+          in: o.in,
+          deviceClass: o.deviceClass,
+          dbDevice: o.dbDevice,
+          // The disk's own bytes where the manager reports them, else the cluster's average fill.
+          ...(o.size > 0 ? { size: o.size, used: o.used, fill: o.used / o.size } : { fill }),
+        });
+        link("hasOsd", cephId, diskId!);
+        // Its DB: the node's internal disk among its devices.
+        const db = Object.keys(o.devices ?? {}).find((d) => d !== device && busOf(d, "sata") !== "sata");
+        if (nodeId && db) link("dbOn", diskId!, hardwareIds(nodeId).disk(db));
+        continue;
+      }
+      // An OSD on an internal disk, or on a host the cluster doesn't know: its own twin, in the disk (else the node,
+      // else Ceph).
       const id = instanceId(cluster, ["ceph", "ceph"], ["osd", String(o.id)]);
       add(id, MODEL.CephOsd, `osd.${o.id}`, !o.up ? "error" : !o.in ? "warn" : "ok", {
         osdId: o.id,
@@ -346,12 +371,8 @@ export function clusterGraph(input: ClusterInput): SourceSnapshot {
         // The disk's own bytes where the manager reports them, else the cluster's average fill.
         ...(o.size > 0 ? { size: o.size, used: o.used, fill: o.used / o.size } : { fill }),
       });
-      // On the node's disk it stores its data on (the disk twin, made by `hardwareDisks`), else in the node, else in Ceph.
-      const nodeId = nodeIds.get(o.host);
-      const device = o.device.replace(/^\/dev\//, "");
       link(CONTAINS, nodeId ? (device ? hardwareIds(nodeId).disk(device) : nodeId) : cephId, id);
       link("hasOsd", cephId, id);
-      // Its DB: the node's internal disk among its devices.
       const db = Object.keys(o.devices ?? {}).find((d) => d !== device && busOf(d, "sata") !== "sata");
       if (nodeId && db) link("dbOn", id, hardwareIds(nodeId).disk(db));
     }

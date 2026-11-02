@@ -32,21 +32,30 @@ export const loadLevel = (load: number | undefined): TwinStatus => (load === und
 /** A temperature's colour band in degrees Celsius: well up to 80 °C, a warning to 90 °C, then an error. */
 export const tempLevel = (temp: number | undefined): TwinStatus => (temp === undefined ? "ok" : temp >= 90 ? "error" : temp >= 80 ? "warn" : "ok");
 
-/** What a piece of hardware or a workload reads, in short: a CPU's cores busy, a load, bytes of a size, a disk's bus,
- * model and I/O, a container's CPU and memory; a Service's endpoints. */
+/** What a piece of hardware or a workload reads, in short: a CPU's cores busy, a core's load and its CPU's
+ * temperature, RAM and a disk's capacity with how full they are now ("238 GiB · 40%"), a disk's bus, model and I/O,
+ * a container's CPU and memory; a Service's endpoints. */
 function resourceInfo(node: TwinView): string[] {
   const r = node.resources ?? {};
   const out: string[] = [];
   const percent = (v: number) => formatNumber(v, { style: "percent" });
+  // A core has no sensor of its own: it shows its CPU's temperature.
+  const temp = r.temperature ?? (node.look === "core" ? node.parent?.resources?.temperature : undefined);
   if (node.look === "drive") {
     const bus = String(node.twin.bus ?? "unknown");
     out.push([t(`twin:hw.bus.${bus}`, { defaultValue: bus }), typeof node.twin.model === "string" ? node.twin.model : ""].filter(Boolean).join(" "));
   }
   if (node.look === "cpu" && r.used !== undefined && r.size) out.push(t("twin:hw.cpu", { used: formatNumber(r.used, { maximumFractionDigits: 2 }), cores: r.size }));
-  if (r.temperature !== undefined) out.push(t("twin:hw.temp", { value: formatNumber(r.temperature, { maximumFractionDigits: 0 }) }));
-  if (r.load !== undefined) out.push(r.estimated ? t("twin:hw.estimated", { share: percent(r.load) }) : percent(r.load));
-  if ((node.look === "memory" || node.look === "drive") && r.used !== undefined && r.size) out.push(t("twin:hw.bytes", { used: formatBytes(r.used), size: formatBytes(r.size) }));
-  if (node.look === "drive" && r.used === undefined && num(node.twin.size)) out.push(formatBytes(num(node.twin.size)!));
+  // RAM and a disk carry their capacity and how full they are right now: "16 GiB · 42%".
+  if (node.look === "memory" || node.look === "drive") {
+    const size = r.size ?? num(node.twin.size);
+    const share = r.load ?? fillOf(node);
+    if (size && share !== undefined) out.push(t("twin:hw.sizeShare", { size: formatBytes(size), share: percent(share) }));
+    else if (size) out.push(formatBytes(size));
+    else if (r.used !== undefined) out.push(formatBytes(r.used));
+  }
+  if (temp !== undefined) out.push(t("twin:hw.temp", { value: formatNumber(temp, { maximumFractionDigits: 0 }) }));
+  if (r.load !== undefined && node.look !== "memory" && node.look !== "drive") out.push(r.estimated ? t("twin:hw.estimated", { share: percent(r.load) }) : percent(r.load));
   if (r.io !== undefined) out.push(t("twin:hw.io", { rate: formatBytesRate(r.io) }));
   if (r.cpu !== undefined) out.push(t("twin:hw.cores", { value: formatNumber(r.cpu, { maximumFractionDigits: r.cpu < 0.1 ? 3 : 2 }) }));
   if (r.memory !== undefined) out.push(formatBytes(r.memory));
@@ -60,7 +69,8 @@ export function infoOf(node: TwinView): string {
   const full = fillOf(node);
   const hosts = node.look === "gate" && typeof node.twin.hosts === "string" ? node.twin.hosts.split(", ").filter(Boolean) : [];
   return [
-    t(`twin:status.${node.status}`),
+    // A core's label is just its readings (its number is the name): no status word.
+    node.look === "core" ? "" : t(`twin:status.${node.status}`),
     node.network !== undefined ? formatBytesRate(node.network) : "",
     storageText(node, full),
     ...(node.look === "ceph" ? cephInfo(node) : []),
@@ -77,5 +87,5 @@ export function infoOf(node: TwinView): string {
 export const LOD = { icon: 26, name: 70, info: 150 } as const;
 
 
-/** A twin's kind and state in one line, for its label and the hover tip. */
-export const kindAndInfo = (node: TwinView) => `${kindOf(node)} · ${infoOf(node)}`;
+/** A twin's kind and state in one line, for its label and the hover tip (a core's is just its readings). */
+export const kindAndInfo = (node: TwinView) => (node.look === "core" ? infoOf(node) : `${kindOf(node)} · ${infoOf(node)}`);
