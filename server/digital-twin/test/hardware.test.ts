@@ -109,6 +109,8 @@ describe("the machines' layout", () => {
       expect(cable.path[0]).toEqual(port.center);
       expect(cable.path.at(-1)![0]).toBeCloseTo(disk.center[0]);
       expect(cable.path.at(-1)![2]).toBeCloseTo(min(disk, 2));
+      // The last stretch comes from behind the disk: the cable runs outside it, never through it.
+      expect(cable.path.at(-2)![2]).toBeLessThan(cable.path.at(-1)![2]);
     }
   });
 

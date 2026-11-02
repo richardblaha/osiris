@@ -502,46 +502,53 @@ function layoutDeck(parts: TwinView[], w: number, d: number, rules: LayoutRules)
   return { items, height: Math.max(0, ...items.map((i) => i.m.size[1])) };
 }
 
-/** A disk in the storage cluster's array, standing on its edge: a box as high as the disk is long, drawn as a USB
- * disk (the `usb-disk-up` preset: the asset turned upright, its fill level, and — a physical disk only — the USB
- * connector at its back). Pools in the row above are measured the same, minus the connector. */
+/** A physical disk in the storage cluster's array, lying flat (on its width): a USB disk (`usb-disk` preset —
+ * the asset, its fill level, and the USB connector at its back, where the cable plugs in). The OSD is merged into
+ * the disk twin. */
 function measureArrayDisk(node: TwinView, size: Vec): Measured {
   return { size, boxes: [{ id: node.id, shape: "box", center: [0, size[1] / 2, 0], size, radius: Math.min(0.12, roundness(size)) }], links: [] };
 }
 
+/** A Ceph pool in the array's right column: a flat disc, stacked like the disks but round — the distinction from a
+ * physical disk — with its fill level and no connector. */
+function measureArrayPool(node: TwinView, cell: Vec): Measured {
+  const size: Vec = [cell[0], cell[1], cell[0]];
+  return { size, boxes: [{ id: node.id, shape: "cylinder", center: [0, size[1] / 2, 0], size, radius: size[0] / 2 }], links: [] };
+}
+
 /**
- * A storage cluster (Ceph) as a disk array with two rows of disks: the physical disks standing on their edge in the
- * bottom row (each with its OSD merged in), and the cluster's pools — looking just the same, without a connector —
- * in the row above them.
+ * A storage cluster (Ceph) as a disk array of two columns: the physical disks in the left one, lying flat and
+ * stacked on one another; the cluster's pools in the right one, flat discs stacked the same way.
  */
 function measureArray(node: TwinView, disks: { node: TwinView; m: Measured }[], cell: Vec, rules: LayoutRules): Measured {
   const pad = padAt(node.depth);
   const gap = Math.max(gapAt(node.depth), 0.5);
-  /** A row of cells side by side along x, each at its floor center relative to the row's center. */
-  const rowOf = (items: { node: TwinView; m: Measured }[]) => {
-    const w = items.reduce((n, x) => n + x.m.size[0], 0) + gap * Math.max(0, items.length - 1);
+  /** A column of cells stacked along y, each at its floor center relative to the column's center. */
+  const colOf = (items: { node: TwinView; m: Measured }[]) => {
+    const w = Math.max(0, ...items.map((x) => x.m.size[0]));
     const d = Math.max(1, ...items.map((x) => x.m.size[2]));
-    const h = Math.max(0, ...items.map((x) => x.m.size[1]));
-    let x = -w / 2;
-    const placed = items.map((it) => {
-      const at: Vec = [x + it.m.size[0] / 2, 0, 0];
-      x += it.m.size[0] + gap;
-      return { ...it, at };
-    });
+    const h = items.reduce((n, x) => n + x.m.size[1], 0) + gap * Math.max(0, items.length - 1);
+    const placed: { node: TwinView; m: Measured; at: Vec }[] = [];
+    let y = 0;
+    for (const it of items) {
+      placed.push({ ...it, at: [0, y, 0] }); // the floor center, from the column's floor up
+      y += it.m.size[1] + gap;
+    }
     return { w, d, h, placed };
   };
-  const bottom = rowOf(disks);
-  const own = node.children.filter((c) => !isPort(c, rules)).map((c) => ({ node: c, m: measureArrayDisk(c, cell) }));
-  const top = rowOf(own);
-  const size: Vec = [Math.max(bottom.w, top.w) + 2 * pad, pad + bottom.h + (own.length ? gap + top.h : 0) + pad, Math.max(bottom.d, top.d) + 2 * pad];
+  const left = colOf(disks);
+  const own = node.children.filter((c) => !isPort(c, rules)).map((c) => ({ node: c, m: measureArrayPool(c, cell) }));
+  const right = colOf(own);
+  const colGap = gap * 2;
+  const size: Vec = [left.w + colGap + right.w + 2 * pad, Math.max(left.h, right.h) + 2 * pad, Math.max(left.d, right.d) + 2 * pad];
   const boxes: Box[] = [{ id: node.id, shape: "box", center: [0, size[1] / 2, 0], size, radius: roundness(size) }];
   const links: Link[] = [];
   const placed = new Map<string, Placed & { port?: Vec }>();
-  const putRow = (row: ReturnType<typeof rowOf>, y: number) => {
-    for (const { node: child, m, at } of row.placed) place(child, m, [at[0], y, 0], boxes, links, placed);
+  const putCol = (col: ReturnType<typeof colOf>, x: number) => {
+    for (const { node: child, m, at } of col.placed) place(child, m, [x, pad + at[1], 0], boxes, links, placed);
   };
-  putRow(bottom, pad);
-  if (own.length) putRow(top, pad + bottom.h + gap);
+  putCol(left, -(colGap + right.w) / 2);
+  putCol(right, (colGap + left.w) / 2);
   return { size, boxes, links };
 }
 
@@ -673,9 +680,9 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
   const usb = mm(MM.usb, u);
   // The USB disks beside each machine, one behind another, smaller where more than fit along its side.
   const USB_GAP = 12 * u;
-  // In the storage cluster's array the disks stand on their edge (as high as the disk is long); on a shelf beside
-  // the machines they lie flat.
-  const arrayCell = mm([MM.disk[1], MM.disk[0], MM.disk[2]], u);
+  // In the storage cluster's array the disks lie flat (on their width), stacked in the left column; on a shelf
+  // beside the machines they lie flat too.
+  const arrayCell = mm(MM.disk, u);
   const disksOf = columns.map((h) => {
     const disks = h.children.filter(isExternal).sort((a, b) => a.name.localeCompare(b.name));
     const base = mm(MM.disk, u);
@@ -810,11 +817,13 @@ function measureBanded(node: TwinView, rules: LayoutRules): Measured {
           used.add(port.id);
           const pc: Vec = [at(pad + slab[0], 0, 0)[0], portY, db.center[2]];
           boxes.push({ id: port.id, shape: "port", center: pc, size: [usb[2], usb[1], usb[0]], radius: 0.04, normal: [1, 0, 0] });
-          // Into the disk's back, where its USB connector is.
+          // Into the disk's back, where its USB connector is — the last stretch comes from behind the disk, so the
+          // cable never runs through it.
           const y = db.center[1] - db.size[1] / 2 + Math.min(m.size[1], m.boxes[0]!.size[1]) / 2;
           const end: Vec = [db.center[0], y, db.center[2] - db.size[2] / 2];
+          const lane = end[2] - Math.max(0.8, 6 * u);
           const out = pc[0] + 18 * u;
-          links.push({ kind: "cable", layer: "hardware", id: port.id, to: disk.id, parent: holder.id, radius: MM.usbCable * u, path: orthogonal([pc, [out, pc[1], pc[2]], [out, y, pc[2]], [end[0], y, pc[2]], end], [0, 1, 2]) });
+          links.push({ kind: "cable", layer: "hardware", id: port.id, to: disk.id, parent: holder.id, radius: MM.usbCable * u, path: orthogonal([pc, [out, pc[1], pc[2]], [out, y, pc[2]], [out, y, lane], [end[0], y, lane], end], [0, 1, 2]) });
         }
         z += m.size[2] + USB_GAP;
       }

@@ -51,13 +51,10 @@ body,
   white-space: nowrap;
   text-shadow: 0 0 4px var(--bg-editor);
 }
-/* Monochrome: the scene's overlays are cyan only (status shows through opacity). */
-.twin-label[data-status="warn"] .twin-label-body {
-  color: var(--accent-primary);
-  opacity: 0.85;
-}
+/* Monochrome cyan, with a problem in magenta. */
+.twin-label[data-status="warn"] .twin-label-body,
 .twin-label[data-status="error"] .twin-label-body {
-  color: var(--accent-primary);
+  color: var(--accent-secondary);
 }
 .twin-label[data-selected="true"] .twin-label-body {
   color: var(--accent-active);
@@ -171,12 +168,9 @@ body,
   color: var(--accent-primary);
   opacity: 0.85;
 }
-.twin-tip [data-status="error"] {
-  color: var(--accent-primary);
-}
+.twin-tip [data-status="error"],
 .twin-tip [data-status="warn"] {
-  color: var(--accent-primary);
-  opacity: 0.7;
+  color: var(--accent-secondary);
 }
 
 /* The bar over the twin: see-through, the name on the left, the pages in the middle, the user's avatar on the right.

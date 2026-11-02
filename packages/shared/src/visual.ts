@@ -184,14 +184,4 @@ export const VISUAL_PRESETS: Record<string, DtdlVisual> = {
       { shape: "box", at: [0, -0.1, -0.51], size: [0.24, 0.12, 0.03], color: "neutral", opacity: 0.9, when: "bus=usb" },
     ],
   },
-  /** A disk standing on its edge in the Ceph array (the asset turned upright by the stretch): its fill level up its
-   * face, the activity light, and the USB connector at its back (a physical disk only — a pool has no cable). */
-  "usb-disk-up": {
-    parts: [
-      { shape: "gltf", asset: "usb-disk.glb", fit: "stretch", color: "neutral", opacity: 0.55 },
-      { shape: "box", size: [0.9, 0.9, 0.9], color: "level", opacity: 0.4, fill: { value: "fill", axis: "y" }, when: "fill" },
-      { shape: "box", at: [0.38, 0, 0.51], size: [0.05, 0.08, 0.01], color: "active", opacity: 0.95, blink: "io" },
-      { shape: "box", at: [0, -0.1, -0.51], size: [0.24, 0.12, 0.03], color: "neutral", opacity: 0.9, when: "bus=usb" },
-    ],
-  },
 };

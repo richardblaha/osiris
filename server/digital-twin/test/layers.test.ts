@@ -116,7 +116,7 @@ describe("the view's layers", () => {
 });
 
 describe("storage in the view", () => {
-  it("draws Ceph as a disk array with two rows of disks beside the cluster: the physical disks standing on their edge below, the pools above", () => {
+  it("draws Ceph as a disk array of two columns beside the cluster: the physical disks flat and stacked on the left, the pools as discs on the right", () => {
     const array = layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph")!;
     const cluster = layout.boxes.find((b) => b.id === "k8s:c")!;
     const inside = (inner: { center: number[]; size: number[] }, outer: { center: number[]; size: number[] }) =>
@@ -124,18 +124,19 @@ describe("storage in the view", () => {
     expect(array.shape).toBe("box");
     // Outside the cluster's own solid, beside it.
     expect(array.center[0]! - array.size[0]! / 2).toBeGreaterThan(cluster.center[0]! + cluster.size[0]! / 2 - 1e-6);
-    // The bottom row: the physical USB disks (each with its OSD merged in), standing on their edge as USB disks.
+    // The left column: the physical USB disks (each with its OSD merged in), lying flat and stacked on one another.
     const disks = ["k8s:c/node/n1/hw/disk/sdb", "k8s:c/node/n2/hw/disk/sdb"].map((id) => layout.boxes.find((b) => b.id === id)!);
     for (const disk of disks) {
       expect(inside(disk, array), disk.id).toBe(true);
       expect(disk.shape, disk.id).toBe("box");
-      expect(disk.size[1]!, disk.id).toBeGreaterThan(disk.size[0]!); // on its edge: higher than wide
-      expect(disk.size[1]!, disk.id).toBeGreaterThan(disk.size[2]!);
+      expect(disk.size[0]!, disk.id).toBeGreaterThan(disk.size[1]!); // lying flat: wider than high
     }
-    // The top row: the pools, looking just the same, above the disks.
+    expect(disks[0]!.center[1]).not.toBeCloseTo(disks[1]!.center[1]); // stacked: one on another
+    // The right column: the pools as flat discs — round, so told apart from the disks — no connector.
     const pool = layout.boxes.find((b) => b.id === "k8s:c/ceph/ceph/pool/rbd")!;
     expect(inside(pool, array)).toBe(true);
-    expect(pool.center[1]! - pool.size[1]! / 2).toBeGreaterThanOrEqual(Math.max(...disks.map((d) => d.center[1]! + d.size[1]! / 2)) - 1e-6);
+    expect(pool.shape).toBe("cylinder");
+    expect(pool.center[0]).toBeGreaterThan(Math.max(...disks.map((d) => d.center[0]!)));
     // Ceph's OSDs are the disks themselves: the storage lines run straight to them.
     const osds = layout.links.filter((l) => l.kind === "storage" && l.id === "k8s:c/ceph/ceph").map((l) => l.to);
     expect(osds.sort()).toEqual(["k8s:c/node/n1/hw/disk/sdb", "k8s:c/node/n2/hw/disk/sdb"]);
@@ -256,8 +257,8 @@ describe("the machines' hardware in the view", () => {
     const cable = l.links.find((x) => x.kind === "cable" && x.to === disk)!;
     expect(cable.layer).toBe("hardware");
     expect(cable.path[0]).toEqual(box("k8s:c/node/n1/hw/usb/1").center);
-    // In the array the disk stands on its edge: higher than wide.
-    expect(box(disk).size[1]).toBeGreaterThan(box(disk).size[0]);
+    // In the array the disk lies flat: wider than high.
+    expect(box(disk).size[0]).toBeGreaterThan(box(disk).size[1]);
     // Its DB on the internal NVMe: a storage line from the disk.
     expect(l.links.some((x) => x.kind === "storage" && x.id === disk && x.to === "k8s:c/node/n1/hw/disk/nvme0n1")).toBe(true);
   });

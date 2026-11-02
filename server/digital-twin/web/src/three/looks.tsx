@@ -489,15 +489,9 @@ const PRESET_LOOKS: Record<string, (node: TwinView) => string | undefined> = {
   core: (n) => (n.children.length ? undefined : "level-y"),
   memory: (n) => (n.children.length ? undefined : "level-x"),
 };
-/** The preset a solid draws, by its look — and a disk or pool standing on its edge (taller than wide, in the Ceph
- * array) draws as a USB disk upright (`usb-disk-up`), whether it is a physical disk or a pool. */
-export const presetOf = (node: TwinView, box?: Box) => {
-  if (box && box.shape === "box" && box.size[1]! > box.size[0]! && box.size[1]! > box.size[2]! && (node.look === "drive" || node.look === "disk" || node.look === "cylinder"))
-    return "usb-disk-up";
-  return PRESET_LOOKS[node.look]?.(node);
-};
+export const presetOf = (node: TwinView) => PRESET_LOOKS[node.look]?.(node);
 /** The presets that draw a device whole (its 3D asset): its plain box gives way to the outline and the picking body. */
-const WHOLE = new Set(["router", "switch", "usb-disk", "usb-disk-up"]);
+const WHOLE = new Set(["router", "switch", "usb-disk"]);
 
 export const lookOf = (box: Box, node: TwinView): LookComponent => (box.shape !== "box" ? LOOK_COMPONENTS[box.shape] : LOOK_COMPONENTS[node.look]) ?? BoxLook;
 
@@ -509,7 +503,7 @@ export const Solid = memo(
     // A model's own drawing goes over its look, or instead of it.
     const replace = visual?.mode === "replace";
     // The look's own preset (unless the model draws instead of it), then the model's drawing.
-    const preset = replace || props.box.shape !== "box" ? undefined : presetOf(props.node, props.box);
+    const preset = replace || props.box.shape !== "box" ? undefined : presetOf(props.node);
     const Look = replace || (preset && WHOLE.has(preset)) ? OutlineLook : lookOf(props.box, props.node);
     const presetVisual = useMemo(() => (preset ? { preset } : undefined), [preset]);
     return (
