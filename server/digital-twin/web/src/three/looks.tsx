@@ -131,20 +131,35 @@ function ClusterLook(props: LookProps) {
   );
 }
 
-/** Storage: a cylinder filled from its floor as far as it is full, a ring at the level; a disk with its platters. */
+/** Storage: a cylinder filled from its floor as far as it is full, a ring at the level. A disk (look `disk` or
+ * `drive` — the array's physical disks) gets its platters: rings around it, like an HDD's platter stack. */
 function CylinderLook({ box, node, ap, order, total }: LookProps) {
   const r = box.size[0] / 2;
   const h = box.size[1];
   const geometry = useMemo(() => new THREE.CylinderGeometry(r, r, h, 40), [r, h]);
-  const outline = useMemo(() => (node.look === "disk" ? diskEdges(r, h) : cylinderEdges(r, h)), [r, h, node.look]);
+  const plattered = node.look === "disk" || node.look === "drive";
+  const outline = useMemo(() => (plattered ? diskEdges(r, h) : cylinderEdges(r, h)), [r, h, plattered]);
   const content = useMemo(() => new THREE.CylinderGeometry(r * 0.86, r * 0.86, 1, 40).translate(0, 0.5, 0), [r]);
   const level = useMemo(() => ring(r * 0.86), [r]);
+  // An HDD's lid: a disc with the spindle in the middle.
+  const lid = useMemo(() => new THREE.CircleGeometry(r * 0.94, 40).rotateX(-Math.PI / 2), [r]);
+  const spindle = useMemo(() => new THREE.CircleGeometry(r * 0.1, 24).rotateX(-Math.PI / 2), [r]);
   const height = ap.fill === undefined ? 0 : Math.max(0.001, ap.fill * h);
   const shown = ap.fill !== undefined && !ap.hidden;
   return (
     <>
       <Body id={box.id} geometry={geometry} ap={ap} order={order} />
       <Outline geometry={outline} ap={ap} order={order + total} />
+      {plattered && (
+        <>
+          <mesh geometry={lid} position={[0, h / 2 + 0.005, 0]}>
+            <meshBasicMaterial {...material} color={ap.edge} opacity={0.12 * ap.fade} />
+          </mesh>
+          <mesh geometry={spindle} position={[0, h / 2 + 0.01, 0]}>
+            <meshBasicMaterial {...material} color={ap.edge} opacity={0.7 * ap.fade} />
+          </mesh>
+        </>
+      )}
       <mesh geometry={content} position={[0, -h / 2, 0]} scale={[1, height, 1]} visible={shown}>
         <meshBasicMaterial {...material} color={ap.fillColor} opacity={ap.fillOpacity} />
       </mesh>
