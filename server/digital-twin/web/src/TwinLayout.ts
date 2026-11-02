@@ -136,7 +136,8 @@ const PORT: Vec = [0.55, 0.55, 0.16];
 const portSize = (kind: string): Vec =>
   kind === "bridge" ? [1.2, 0.5, 0.16]
   : kind === "router" ? [0.75, 0.75, 0.16]
-  : kind === "loadbalancer" ? [1.3, 1.3, 0.3]
+  // A LoadBalancer address is a big plate, as big as an RJ45 connector.
+  : kind === "loadbalancer" ? [0.95, 0.78, 0.24]
   : kind === "usb" ? [0.5, 0.22, 0.16]
   : kind === "physical" ? [0.6, 0.5, 0.2]
   : PORT;
@@ -922,8 +923,9 @@ export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
       };
       // The LoadBalancers wherever they sit (in the firewall box now), their lines are the services'.
       const lbs = boxes.filter((b) => b.shape === "port" && kinds.get(b.id) === "loadbalancer");
-      // The router's WAN port reaches the internet on the network layer; the LoadBalancers' lines are the services'.
-      const starts = lbs.length ? lbs.map((b) => b.center) : r.wan ? [shift(r.wan, at)] : [hub];
+      // Everything reaches the internet through the physical network: only the router's WAN port has a line to
+      // the globe (an Ethernet cable), never a LoadBalancer directly.
+      const starts = r.wan ? [shift(r.wan, at)] : lbs.length ? lbs.map((b) => b.center) : [hub];
       if (r.wan) {
         const w = shift(r.wan, at);
         const e = onGlobe(0);
@@ -941,7 +943,7 @@ export function layoutTwin(top: TwinView[], rules: LayoutRules): Scene {
       starts.forEach((s, i) =>
         ends.forEach(({ id, at: e }) => {
           const out = s[2] - gap * (0.3 + 0.08 * (i % 4));
-          links.push({ kind: "internet", layer: lbs.length ? "services" : "network", id: node.id, to: id, parent: INTERNET, path: orthogonal([s, [s[0], s[1], out], [e[0], e[1], out], e], [0, 1, 2]) });
+          links.push({ kind: "internet", layer: lbs.length && !r.wan ? "services" : "network", id: node.id, to: id, parent: INTERNET, path: orthogonal([s, [s[0], s[1], out], [e[0], e[1], out], e], [0, 1, 2]) });
         }),
       );
     }

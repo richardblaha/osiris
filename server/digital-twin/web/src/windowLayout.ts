@@ -6,8 +6,8 @@
  */
 
 /** The panels over the twin: the selection's properties, logs, metrics and traces, and the conversation with Osiris. */
-export type PanelId = "properties" | "logs" | "metrics" | "traces" | "chat";
-export const PANELS: readonly PanelId[] = ["properties", "logs", "metrics", "traces", "chat"];
+export type PanelId = "properties" | "logs" | "metrics" | "traces" | "chat" | "alerts";
+export const PANELS: readonly PanelId[] = ["properties", "logs", "metrics", "traces", "chat", "alerts"];
 
 /** A rectangle in fractions of the area: 0..1 from its top left corner. */
 export interface Rect {
@@ -18,14 +18,16 @@ export interface Rect {
 }
 
 /**
- * Where a window docks: one of the 9 areas of the grid that divides the whole area (columns and rows 20 %, 60 %,
- * 20 %: the corners, the edges' middles, the centre), or the whole area.
+ * Where a window docks: one of the 9 areas of the grid that divides the whole area, or the whole area. The columns
+ * are 20 %, 60 %, 20 %; the rows 25 %, 50 %, 25 % — so the middle row is a window half the height of the free space.
  */
 export type Snap = "tl" | "top" | "tr" | "left" | "center" | "right" | "bl" | "bottom" | "br" | "max";
 /** The grid's areas by row, then column. */
 export const GRID_AREAS: readonly Exclude<Snap, "max">[] = ["tl", "top", "tr", "left", "center", "right", "bl", "bottom", "br"];
-/** Where the grid's columns (and rows) start and end, in fractions of the area. */
+/** Where the grid's columns start and end, in fractions of the area. */
 export const GRID_LINES = [0, 0.2, 0.8, 1] as const;
+/** Where the grid's rows start and end: the middle row is half the area's height. */
+export const GRID_LINES_Y = [0, 0.25, 0.75, 1] as const;
 
 export interface WindowGroup {
   id: string;
@@ -56,6 +58,7 @@ const HOME: Record<PanelId, Rect> = {
   metrics: { x: 0.74, y: 0.51, w: 0.26, h: 0.49 },
   traces: { x: 0, y: 0.51, w: 0.26, h: 0.49 },
   chat: { x: 0.28, y: 0.52, w: 0.44, h: 0.48 },
+  alerts: { x: 0.28, y: 0.02, w: 0.44, h: 0.48 },
 };
 
 export const defaultLayout = (): WindowLayout => ({
@@ -67,10 +70,10 @@ export const defaultLayout = (): WindowLayout => ({
 /** The gap kept between windows that share the area (a fraction of it). */
 const GAP = 0.01;
 
-/** A grid line's span [from, to) of column or row `i`, with half the gap kept on each inner side. */
-const span = (i: number) => {
-  const from = GRID_LINES[i]! + (i > 0 ? GAP / 2 : 0);
-  const to = GRID_LINES[i + 1]! - (i < 2 ? GAP / 2 : 0);
+/** A grid line's span [from, to) of column or row `i` (in `lines`), with half the gap kept on each inner side. */
+const span = (i: number, lines: readonly number[]) => {
+  const from = lines[i]! + (i > 0 ? GAP / 2 : 0);
+  const to = lines[i + 1]! - (i < 2 ? GAP / 2 : 0);
   return { from, size: to - from };
 };
 
@@ -78,15 +81,16 @@ const span = (i: number) => {
 export function snapRect(snap: Snap): Rect {
   if (snap === "max") return { x: 0, y: 0, w: 1, h: 1 };
   const i = GRID_AREAS.indexOf(snap);
-  const col = span(i % 3);
-  const row = span(Math.floor(i / 3));
+  const col = span(i % 3, GRID_LINES);
+  const row = span(Math.floor(i / 3), GRID_LINES_Y);
   return { x: col.from, y: row.from, w: col.size, h: row.size };
 }
 
 /** The grid area at (x, y) in fractions of the area. */
 export function gridAreaAt(x: number, y: number): Exclude<Snap, "max"> {
-  const index = (v: number) => (v < GRID_LINES[1] ? 0 : v < GRID_LINES[2] ? 1 : 2);
-  return GRID_AREAS[index(y) * 3 + index(x)]!;
+  const col = x < GRID_LINES[1]! ? 0 : x < GRID_LINES[2]! ? 1 : 2;
+  const row = y < GRID_LINES_Y[1]! ? 0 : y < GRID_LINES_Y[2]! ? 1 : 2;
+  return GRID_AREAS[row * 3 + col]!;
 }
 
 /**

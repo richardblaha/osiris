@@ -1,12 +1,12 @@
 import { useFrame } from "@react-three/fiber";
-import { createContext, memo, useContext, useLayoutEffect, useMemo, useRef, type ComponentType, type ReactNode } from "react";
+import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, type ComponentType, type ReactNode } from "react";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { portKind } from "../icons.ts";
 import type { TwinScene, TwinView } from "../scene.ts";
 import type { Box } from "../TwinLayout.ts";
-import { brickLines, cylinderEdges, diskEdges, drumEdges, facing, frame, gateEdges, gateGeometry, gaugeGeometry, pinGeometry, ring, roundedEdges, spokes, ventGeometry, wifiArcs } from "./geometry.ts";
-import { num } from "./info.ts";
+import { cylinderEdges, diskEdges, drumEdges, facing, frame, gateEdges, gateGeometry, gaugeGeometry, pinGeometry, ring, roundedEdges, spokes, ventGeometry, wifiArcs } from "./geometry.ts";
+import { num, plateLines, type PlateLine } from "./info.ts";
 import { reducedMotion, sameAppearance, type Appearance, type Colors } from "./paint.ts";
 import { VisualParts } from "./visual.tsx";
 
@@ -241,19 +241,84 @@ function ArrayLook({ box, node, ap, order, total }: LookProps) {
   );
 }
 
-/** A firewall: the one box all ingresses sit in — a wall of bricks on its faces toward and away from the viewer. */
+/** A firewall: the one plain box as big as a machine, on top of the stack, holding the cluster's whole virtual
+ * network — no wall pattern, just the translucent shell like the machines. */
 function FirewallLook({ box, node, ap, order, total }: LookProps) {
+  return <BoxLook box={box} node={node} ap={ap} order={order} total={total} />;
+}
+
+/**
+ * Text drawn on a solid's face as a canvas texture — the only labels the view has: a machine's name, and its parts'
+ * names with their readings (a core "cpu #1", its load big, its temperature small with a thermometer). The plate
+ * lies on the solid's largest face (the front of a tall box, the top of a flat one).
+ */
+function TextPlate({ box, node, ap }: LookProps) {
+  const lines = plateLines(node);
+  const key = JSON.stringify(lines);
+  const tex = useMemo(() => {
+    const list = (lines ?? []) as PlateLine[];
+    const canvas = document.createElement("canvas");
+    canvas.width = 512;
+    canvas.height = 256;
+    const g = canvas.getContext("2d")!;
+    const px = (u: number) => u * 110;
+    const gap = 10;
+    const total = list.reduce((n, l) => n + px(l.size), 0) + gap * Math.max(0, list.length - 1);
+    let y = (256 - total) / 2;
+    g.textBaseline = "middle";
+    g.textAlign = "left";
+    const family = getComputedStyle(document.body).fontFamily;
+    for (const l of list) {
+      const size = px(l.size);
+      g.font = `${l.dim ? 500 : 700} ${size}px ${family}`;
+      g.fillStyle = ap.edge;
+      g.strokeStyle = ap.edge;
+      g.globalAlpha = (l.dim ? 0.7 : 1) * ap.fade;
+      const tw = g.measureText(l.text).width;
+      let x = (512 - tw) / 2;
+      if (l.icon === "temp") {
+        const cx = x - size * 0.45;
+        const cy = y + size / 2;
+        g.lineWidth = size * 0.11;
+        g.lineCap = "round";
+        g.beginPath();
+        g.arc(cx, cy + size * 0.2, size * 0.14, 0, Math.PI * 2);
+        g.fill();
+        g.beginPath();
+        g.moveTo(cx, cy - size * 0.32);
+        g.lineTo(cx, cy + size * 0.16);
+        g.stroke();
+      }
+      g.fillText(l.text, x, y + size / 2);
+      y += size + gap;
+    }
+    const t = new THREE.CanvasTexture(canvas);
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 4;
+    return t;
+  }, [key, ap.edge, ap.fade]);
+  useEffect(() => () => tex.dispose(), [tex]);
+  if (!lines?.length) return null;
+  // The face with the largest area; the CPU chip keeps its front (its cores sit on its top).
   const [w, h, d] = box.size;
-  const bricks = useMemo(() => brickLines(w * 0.92, h * 0.92), [w, h]);
-  return (
-    <BoxLook box={box} node={node} ap={ap} order={order} total={total}>
-      {[d / 2 + 0.02, -d / 2 - 0.02].map((z, i) => (
-        <lineSegments key={z} geometry={bricks} position={[0, 0, z]} rotation={[0, i ? Math.PI : 0, 0]}>
-          <lineBasicMaterial transparent color={ap.edge} opacity={0.55 * ap.fade} />
-        </lineSegments>
-      ))}
-    </BoxLook>
+  const front = w * h;
+  const top = w * d;
+  const side = d * h;
+  const face = node.look === "cpu" || front >= top || front >= side ? "front" : top >= side ? "top" : "side";
+  const pw = face === "side" ? d : w;
+  const ph = face === "front" ? h : face === "top" ? d : h;
+  const plateW = pw * 0.94;
+  const plateH = Math.min(ph * 0.94, plateW / 2);
+  const mesh = (
+    <mesh
+      position={face === "front" ? [0, 0, d / 2 + 0.015] : face === "top" ? [0, h / 2 + 0.015, 0] : [w / 2 + 0.015, 0, 0]}
+      rotation={face === "top" ? [-Math.PI / 2, 0, 0] : face === "side" ? [0, Math.PI / 2, 0] : [0, 0, 0]}
+    >
+      <planeGeometry args={[plateW, plateH]} />
+      <meshBasicMaterial map={tex} transparent depthWrite={false} opacity={0.95} />
+    </mesh>
   );
+  return mesh;
 }
 
 /** An access point: a flat box with Wi-Fi waves over it. */
@@ -485,6 +550,7 @@ const PRESET_LOOKS: Record<string, (node: TwinView) => string | undefined> = {
   node: () => "mini-pc",
   router: () => "router",
   switch: () => "switch",
+  container: () => "container-eth",
   drive: (n) => (n.twin.internal === false && n.twin.bus === "usb" ? "usb-disk" : n.children.length ? undefined : "drive"),
   core: (n) => (n.children.length ? undefined : "level-y"),
   memory: (n) => (n.children.length ? undefined : "level-x"),
@@ -494,6 +560,9 @@ export const presetOf = (node: TwinView) => PRESET_LOOKS[node.look]?.(node);
 const WHOLE = new Set(["router", "switch", "usb-disk"]);
 
 export const lookOf = (box: Box, node: TwinView): LookComponent => (box.shape !== "box" ? LOOK_COMPONENTS[box.shape] : LOOK_COMPONENTS[node.look]) ?? BoxLook;
+
+/** The looks whose solids carry their name and readings as text on their face (the only labels the view has). */
+const PLATED = new Set(["node", "cpu", "core", "memory", "drive"]);
 
 /** One solid of the scene at its place, drawn by its look; drawn again only when its appearance or size changes. */
 export const Solid = memo(
@@ -511,6 +580,7 @@ export const Solid = memo(
         <Look {...props} />
         {presetVisual && <VisualParts visual={presetVisual} node={props.node} box={props.box} ap={props.ap} colors={colors} />}
         {visual && <VisualParts visual={visual} node={props.node} box={props.box} ap={props.ap} colors={colors} />}
+        {PLATED.has(props.node.look) && <TextPlate {...props} />}
       </group>
     );
   },

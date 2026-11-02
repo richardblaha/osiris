@@ -31,6 +31,7 @@ export const MODEL = {
   Router: "dtmi:osiris:net:Router;1",
   Firewall: "dtmi:osiris:net:Firewall;1",
   AccessPoint: "dtmi:osiris:net:AccessPoint;1",
+  Component: "dtmi:osiris:net:Component;1",
 } as const;
 import { sourceProfile } from "./readings.ts";
 
@@ -307,6 +308,10 @@ export function dtdlModel(): DtdlInterface[] {
       property("model", "string", l("Make and model", "Výrobce a model")),
       property("ssid", "string", l("Wi-Fi network", "Wi-Fi síť")),
       contains(MODEL.Interface, "Its Ethernet uplink and its Wi-Fi port."),
+    ]),
+    iface(MODEL.Component, l("Network component", "Síťová komponenta"), "A component of the cluster's virtual network, living in the firewall box: Calico (the CNI — the nodes' routers and VXLAN tunnels) or MetalLB (the LoadBalancer addresses).", [
+      property("kind", enumOf("cni", "loadbalancer"), l("Kind", "Druh")),
+      relationship("connectedTo", MODEL.Interface, l("connected to", "propojeno s"), "The interfaces it works through: the nodes' routers and tunnels (Calico), the LoadBalancer addresses (MetalLB)."),
     ]),
   ]);
 }

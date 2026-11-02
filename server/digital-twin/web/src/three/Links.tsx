@@ -1,8 +1,6 @@
 import { useFrame } from "@react-three/fiber";
-import { t } from "i18next";
 import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
-import { CSS2DObject } from "three/addons/renderers/CSS2DRenderer.js";
 import type { Link } from "../TwinLayout.ts";
 import { cableGeometry, dotTexture } from "./geometry.ts";
 import { reducedMotion, type Colors, type Content, type LinkPaint, type LinkPath } from "./paint.ts";
@@ -152,23 +150,12 @@ export function Globes({ content, paint, colors, dim }: { content: Content; pain
 function Globe({ center, radius, shown, color, dim }: { center: [number, number, number]; radius: number; shown: boolean; color: THREE.Color; dim: boolean }) {
   const geometry = useMemo(() => new THREE.WireframeGeometry(new THREE.SphereGeometry(radius, 18, 12)), [radius]);
   const ref = useRef<THREE.LineSegments>(null);
-  const label = useMemo(() => {
-    const div = document.createElement("div");
-    div.className = "twin-label-globe";
-    div.textContent = t("twin:internet");
-    return new CSS2DObject(div);
-  }, []);
-  useEffect(() => () => void label.removeFromParent(), [label]);
   useFrame(({ clock }) => {
     if (ref.current && !reducedMotion()) ref.current.rotation.y = clock.elapsedTime / 12;
   });
-  label.visible = shown && !dim;
   return (
-    <>
-      <lineSegments ref={ref} geometry={geometry} position={center} visible={shown}>
-        <lineBasicMaterial transparent depthWrite={false} color={color} opacity={dim ? 0.08 : 0.4} />
-      </lineSegments>
-      <primitive object={label} position={[center[0], center[1] + radius * 1.25, center[2]]} />
-    </>
+    <lineSegments ref={ref} geometry={geometry} position={center} visible={shown}>
+      <lineBasicMaterial transparent depthWrite={false} color={color} opacity={dim ? 0.08 : 0.4} />
+    </lineSegments>
   );
 }

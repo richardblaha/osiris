@@ -12,7 +12,7 @@ import { attempt, ErrorNotice, Loading } from "./ui.tsx";
 import { Logs, Metrics, Traces, type Preset } from "./Telemetry.tsx";
 import { ALL_LAYERS, DEFAULT_DISPLAY, Twin3D, type CameraControl, type DisplayOptions, type Layers, type Point } from "./Twin3D.tsx";
 import { BottomBar } from "./BottomBar.tsx";
-import { chatPanel, ChatInput, useOsirisChat, type TwinAction } from "./OsirisChat.tsx";
+import { alertsPanel, chatPanel, ChatInput, useOsirisChat, type TwinAction } from "./OsirisChat.tsx";
 import { detailPanels } from "./FocusPanels.tsx";
 import { Windows, type PanelView } from "./Windows.tsx";
 import { defaultLayout, isShown, normalizeLayout, PANELS, showPanel, togglePanel, windowStep, type PanelId, type WindowLayout } from "./windowLayout.ts";
@@ -408,6 +408,7 @@ export function App() {
       ? detailPanels({ node: selected, scene, onSelect: setSelectedId, onOpenPage: openPage, onOpenTrace: (traceId) => navigate({ kind: "traces", preset: {}, traceId }) })
       : {}),
     ...(chat.open ? { chat: chatPanel(chat) } : {}),
+    alerts: alertsPanel(chat),
   };
 
   /** The bar's panel buttons: which panels show, which could (the conversation always can), showing or closing one. */
@@ -417,7 +418,7 @@ export function App() {
     show: (p: PanelId) => changeLayout(showPanel(layout, p)),
     reset: () => changeLayout(defaultLayout()),
     shown: new Set(PANELS.filter((p) => isShown(layout, p, available))),
-    available: new Set<PanelId>([...available, "chat"]),
+    available: new Set<PanelId>([...available, "chat", "alerts"]),
     toggle: (p: PanelId) => {
       if (p !== "chat") return changeLayout(togglePanel(layout, p, available));
       if (isShown(layout, "chat", available)) return chat.setOpen(false);

@@ -174,6 +174,10 @@ export const VISUAL_PRESETS: Record<string, DtdlVisual> = {
       { shape: "plane", at: [-0.12, 0.515, 0.43], rotate: [-90, 0, 0], size: [0.022, 0.06, 1], color: "status", opacity: 0.95, blink: "traffic", repeat: { count: 7, axis: "x", step: 0.052 } },
     ],
   },
+  /** A container's own network interface: the eth socket plate on its back wall, where the pod's eth0 line ends. */
+  "container-eth": {
+    parts: [{ shape: "box", at: [0, 0, -0.51], size: [0.26, 0.2, 0.02], color: "neutral", opacity: 0.85 }],
+  },
   /** A 2.5" USB disk lying flat (the built-in asset `usb-disk.glb`, stretched to its solid, cyan and see-through):
    * its fill level along its length, its activity light, and the USB connector at its back (a physical disk only). */
   "usb-disk": {

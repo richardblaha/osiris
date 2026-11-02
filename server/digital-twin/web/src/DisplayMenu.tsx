@@ -16,7 +16,7 @@ const WORKLOAD_ICONS: Record<WorkloadLayer, string> = { deployments: "deploy", s
 /**
  * The view's settings, opened from the bottom bar (its button the "tune" icon) as a dialog over the whole window: the
  * layers to show — the hardware, the low-level network, the network services, storage, namespaces and each kind of
- * workload — how the twin is drawn (labels, addresses, moving traffic), the windows, and the filters (which models,
+ * workload — how the twin is drawn (moving traffic), the windows, and the filters (which models,
  * statuses and names show). Escape, a click beside it or its close button closes it.
  */
 export function DisplayMenu({
@@ -138,20 +138,6 @@ export function DisplayMenu({
 
               <section className="display-section">
                 <p className="section-header">{t("twin:display.drawing")}</p>
-                <label className="mt-1 flex items-center gap-2 text-sm">
-                  <span className="flex-1">{t("twin:display.labels")}</span>
-                  <select className="field py-0.5 text-xs" value={display.labels} onChange={(e) => onDisplay({ ...display, labels: e.target.value as DisplayOptions["labels"] })}>
-                    {(["auto", "all", "off"] as const).map((v) => (
-                      <option key={v} value={v}>
-                        {t(`twin:display.labelMode.${v}`)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="mt-1 flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={display.addresses} onChange={(e) => onDisplay({ ...display, addresses: e.target.checked })} />
-                  {t("twin:display.addresses")}
-                </label>
                 <label className="mt-1 flex items-center gap-2 text-sm">
                   <input type="checkbox" checked={display.traffic} onChange={(e) => onDisplay({ ...display, traffic: e.target.checked })} />
                   {t("twin:display.traffic")}

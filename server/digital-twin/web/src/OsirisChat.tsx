@@ -290,6 +290,49 @@ export function chatPanel(chat: OsirisChatState): PanelView {
   };
 }
 
+/** The alerts as their own window: the problems the alerts service raised and Osiris investigated, newest first,
+ * each opened read-only in the chat. */
+export function alertsPanel(chat: OsirisChatState): PanelView {
+  return {
+    title: t("twin:chat.alertsTitle"),
+    icon: "warning",
+    flush: true,
+    body: <AlertsList chat={chat} />,
+  };
+}
+
+function AlertsList({ chat }: { chat: OsirisChatState }) {
+  const [alerts, setAlerts] = useState<TwinAlert[]>([]);
+  const [error, setError] = useState<string>();
+  useEffect(() => {
+    void twinApi.alerts(50).then(setAlerts, (e: Error) => setError(e.message));
+  }, []);
+  if (error) return <p className="p-3 text-sm text-fg-muted">{error}</p>;
+  if (!alerts.length) return <p className="p-3 text-sm text-fg-muted">{t("twin:chat.noAlerts")}</p>;
+  return (
+    <ul className="divide-y divide-line overflow-y-auto">
+      {alerts.map((a) => (
+        <li key={a.id}>
+          <button
+            type="button"
+            className="list-row flex w-full items-start gap-2 px-3 py-2 text-start"
+            data-active={a.id === chat.alert?.id}
+            onClick={() => void chat.openAlert(a)}
+          >
+            <Icon name={a.resolved ? "check_circle" : a.severity.toLowerCase() === "warn" ? "warning" : "error"} className={`mt-0.5 h-4 w-4 shrink-0 ${a.resolved ? "text-fg-muted" : ""}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm">{a.message}</span>
+              <span className="block text-xs text-fg-muted">
+                {[a.namespace, a.workload ?? a.pod ?? a.node].filter(Boolean).join(" / ")} · {new Date(a.lastSeen ?? a.firstSeen).toLocaleString()}
+              </span>
+            </span>
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 /** The conversation's messages, the question it waits on, and what went wrong; kept scrolled to the newest. */
 function ChatConversation({ chat }: { chat: OsirisChatState }) {
   const list = useRef<HTMLDivElement>(null);

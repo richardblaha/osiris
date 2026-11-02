@@ -131,7 +131,8 @@ export const kubernetesType: SourceType = {
         cephManagers: list(settings.cephManagers),
         externalBus: settings.externalDisks === "sata" ? "sata" : "usb",
         lan: settings.lan !== "none" ? { switchModel: settings.switchModel, routerModel: settings.routerModel, devices: parseLanDevices(settings.lanDevices) } : undefined,
-        externalServices: list(settings.externalServices),
+        // Osiris's agent calls Mistral's API, so it is probed (and shown on the globe) unless the setting says otherwise.
+        externalServices: list(settings.externalServices).length ? list(settings.externalServices) : ["https://api.mistral.ai/v1/models"],
         fetchFn: defaults.fetchFn,
       }),
       telemetry: clickhouse ? new Telemetry(clickhouse, settings.clickhouseCluster || undefined) : undefined,

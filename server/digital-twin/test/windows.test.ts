@@ -133,11 +133,11 @@ describe("the grid of 9 parts", () => {
     for (const k of ["x", "y", "w", "h"] as const) expect(r[k]).toBeCloseTo(e[k], 2);
   };
 
-  it("divides the area into columns and rows of 20 %, 60 % and 20 %, with gaps between", () => {
-    near(snapRect("tl"), { x: 0, y: 0, w: 0.195, h: 0.195 });
-    near(snapRect("center"), { x: 0.205, y: 0.205, w: 0.59, h: 0.59 });
-    near(snapRect("right"), { x: 0.805, y: 0.205, w: 0.195, h: 0.59 });
-    near(snapRect("bottom"), { x: 0.205, y: 0.805, w: 0.59, h: 0.195 });
+  it("divides the area into columns of 20 %, 60 %, 20 % and rows of 25 %, 50 %, 25 % (the middle row half the height), with gaps between", () => {
+    near(snapRect("tl"), { x: 0, y: 0, w: 0.195, h: 0.245 });
+    near(snapRect("center"), { x: 0.205, y: 0.255, w: 0.59, h: 0.49 });
+    near(snapRect("right"), { x: 0.805, y: 0.255, w: 0.195, h: 0.49 });
+    near(snapRect("bottom"), { x: 0.205, y: 0.755, w: 0.59, h: 0.245 });
     expect(snapRect("max")).toEqual({ x: 0, y: 0, w: 1, h: 1 });
     expect([gridAreaAt(0.1, 0.1), gridAreaAt(0.5, 0.5), gridAreaAt(0.9, 0.5), gridAreaAt(0.5, 0.95), gridAreaAt(0.95, 0.95)]).toEqual(["tl", "center", "right", "bottom", "br"]);
   });

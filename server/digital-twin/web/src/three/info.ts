@@ -89,3 +89,43 @@ export const LOD = { icon: 26, name: 70, info: 150 } as const;
 
 /** A twin's kind and state in one line, for its label and the hover tip (a core's is just its readings). */
 export const kindAndInfo = (node: TwinView) => (node.look === "core" ? infoOf(node) : `${kindOf(node)} · ${infoOf(node)}`);
+
+/** One line of the text drawn on a solid's face. */
+export interface PlateLine {
+  text: string;
+  /** Relative size (1 is the big reading). */
+  size: number;
+  /** A thermometer pictogram before the text. */
+  icon?: "temp";
+  dim?: boolean;
+}
+
+/**
+ * The text drawn on a solid's face (a canvas texture — the only labels the view has): a machine's name, and its
+ * parts' names with their readings — a core "cpu #1" with its load big and its CPU's temperature small, RAM and a
+ * disk with their capacity's share big. Nothing else is labelled.
+ */
+export function plateLines(node: TwinView): PlateLine[] | undefined {
+  const r = node.resources ?? {};
+  const percent = (v: number) => formatNumber(v, { style: "percent" });
+  const temp = r.temperature ?? (node.look === "core" ? node.parent?.resources?.temperature : undefined);
+  const tempLine = (): PlateLine[] => (temp === undefined ? [] : [{ text: `${formatNumber(temp, { maximumFractionDigits: 0 })}°`, size: 0.45, icon: "temp" as const }]);
+  switch (node.look) {
+    case "node":
+      return [{ text: node.name, size: 1 }];
+    case "cpu":
+      return [{ text: "CPU", size: 0.5, dim: true }, ...(r.load !== undefined ? [{ text: percent(r.load), size: 1 }] : []), ...tempLine()];
+    case "core":
+      return [{ text: `cpu #${Number(node.twin.core ?? 0) + 1}`, size: 0.45, dim: true }, ...(r.load !== undefined ? [{ text: percent(r.load), size: 0.95 }] : []), ...tempLine()];
+    case "memory": {
+      const share = r.load ?? fillOf(node);
+      return [{ text: "RAM", size: 0.6, dim: true }, ...(share !== undefined ? [{ text: percent(share), size: 1.1 }] : [])];
+    }
+    case "drive": {
+      const share = r.load ?? fillOf(node);
+      return [{ text: node.name, size: 0.5, dim: true }, ...(share !== undefined ? [{ text: percent(share), size: 1 }] : [])];
+    }
+    default:
+      return undefined;
+  }
+}

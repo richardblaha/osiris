@@ -95,7 +95,9 @@
       "answered": "vyřešeno",
       "failed": "selhalo",
       "skipped": "neřešeno (limit)"
-    }
+    },
+    "alertsTitle": "Alerty",
+    "noAlerts": "Žádné alerty — není co řešit."
   },
   "bottomBar": "Spodní lišta: čas, zobrazení, chat",
   "display": {
@@ -210,7 +212,8 @@
       "logs": "logy",
       "metrics": "metriky",
       "traces": "trasy",
-      "chat": "konverzaci"
+      "chat": "konverzaci",
+      "alerts": "Alerty"
     },
     "panels": "Panely",
     "open": "Zobrazit {{name}}",

@@ -9,7 +9,7 @@ import type { TwinScene, ViewFilters } from "./scene.ts";
 import { PANELS, type PanelId } from "./windowLayout.ts";
 
 /** Each panel's button in the bar, with the icon its window has. */
-const PANEL_ICONS: Record<PanelId, MaterialIcon> = { properties: "deployed_code", logs: "description", metrics: "bar_chart", traces: "schedule", chat: "chat" };
+const PANEL_ICONS: Record<PanelId, MaterialIcon> = { properties: "deployed_code", logs: "description", metrics: "bar_chart", traces: "schedule", chat: "chat", alerts: "warning" };
 
 /**
  * The bar under the 3D view: the time axis (live, or a past recorded state), the display menu (the layers, how the

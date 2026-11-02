@@ -71,7 +71,10 @@ describe("the view's layers", () => {
     expect(layerOf("k8s:c/lb/192.168.0.50")).toBe("services");
     expect(layerOf("k8s:c/public/94.230.151.215")).toBe("services");
     expect(layerOf("k8s:c/namespace/web/service/site")).toBe("services");
-    expect(layerOf("k8s:c/namespace/web/ingress-ingress/site")).toBe("services");
+    // One ingress twin (the controller) handles all the routes; the network components (calico, metallb) are services too.
+    expect(layerOf("k8s:c/ingress/traefik")).toBe("services");
+    expect(layerOf("k8s:c/component/calico")).toBe("services");
+    expect(layerOf("k8s:c/component/metallb")).toBe("services");
     expect(layerOf("k8s:c/ceph/ceph")).toBe("storage");
     // A USB disk with its OSD merged in is hardware (the OSD itself is the disk now).
     expect(layerOf("k8s:c/node/n1/hw/disk/sdb")).toBe("hardware");

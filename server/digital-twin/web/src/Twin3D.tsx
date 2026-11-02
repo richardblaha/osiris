@@ -7,7 +7,6 @@ import { displayName, kindOf } from "./icons.ts";
 import { INFRA_LAYERS, isWorkloadLayer, layoutRules, pathOf, WORKLOAD_LAYERS, type TwinScene, type TwinView, type ViewLayer } from "./scene.ts";
 import { CameraRig, type CameraControl, type Point } from "./three/Camera.tsx";
 import { infoOf } from "./three/info.ts";
-import { Labels } from "./three/Labels.tsx";
 import { Globes, Links } from "./three/Links.tsx";
 import { LookContext, Solid, type LookContextValue } from "./three/looks.tsx";
 import { appearanceOf, inFocus, linkPaintOf, themeColors, type Content, type Layers, type ViewState } from "./three/paint.ts";
@@ -29,13 +28,11 @@ export const ALL_LAYERS = Object.fromEntries(LAYER_KEYS.map((k) => [k, true])) a
 /** Only these layers on. */
 const onlyLayers = (on: (k: ViewLayer) => boolean) => Object.fromEntries(LAYER_KEYS.map((k) => [k, on(k)])) as Layers;
 
-/** How the view draws: labels by level of detail, every name, or none; the interfaces' addresses; moving traffic. */
+/** How the view draws: moving traffic. (The only labels are the text on the machines' and their parts' faces.) */
 export interface DisplayOptions {
-  labels: "auto" | "all" | "off";
-  addresses: boolean;
   traffic: boolean;
 }
-export const DEFAULT_DISPLAY: DisplayOptions = { labels: "auto", addresses: true, traffic: true };
+export const DEFAULT_DISPLAY: DisplayOptions = { traffic: true };
 
 /** The scene of a twin: its layout, every twin by id (the bands too), each box by id, the links with their lengths. */
 function contentOf(twin: TwinScene): Content {
@@ -250,7 +247,6 @@ export function Twin3D({
         </LookContext.Provider>
         <Links content={content} paint={linkPaint} traffic={display.traffic} inView={inView} colors={colors} order={2 * total} />
         <Globes content={content} paint={linkPaint} colors={colors} dim={!!selected && content.boxes.has(selected.id)} />
-        <Labels view={view} mode={display.labels} addresses={display.addresses} />
         <CameraRig content={content} selected={selected} home={home} control={control} anchor={anchor} />
         <Picker content={content} pick={pick} onHover={setHovered} onSelect={onSelect} tip={tip} host={host} />
         <Render host={host} />

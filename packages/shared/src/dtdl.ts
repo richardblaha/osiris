@@ -146,6 +146,7 @@ export const BUILTIN_LOOKS: Record<string, Look> = {
   "dtmi:osiris:net:Router": "router",
   "dtmi:osiris:net:Firewall": "firewall",
   "dtmi:osiris:net:AccessPoint": "ap",
+  "dtmi:osiris:net:Component": "hex",
 };
 
 /**
@@ -179,6 +180,7 @@ export const BUILTIN_LAYERS: Record<string, PresentationLayer> = {
   "dtmi:osiris:net:Router": "hardware",
   "dtmi:osiris:net:Firewall": "services",
   "dtmi:osiris:net:AccessPoint": "hardware",
+  "dtmi:osiris:net:Component": "services",
 };
 
 /**

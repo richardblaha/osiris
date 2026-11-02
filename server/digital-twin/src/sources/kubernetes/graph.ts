@@ -612,37 +612,68 @@ function network(
     }
   }
 
-  // Ingresses and IngressRoutes: hosts and paths to Services, served by the ingress controller's LoadBalancer. They
-  // all sit in one firewall box on top of the cluster: the wall between the internet and the Services.
+  // Ingresses and IngressRoutes: there is no object per ingress resource — the one ingress controller (Traefik,
+  // ingress-nginx, …) handles them all, so the twin has a single Ingress twin in the firewall with every host and
+  // route, served by the controller's LoadBalancer; a route to a Service that doesn't exist is an error.
   const controller = lbs.find((l) => /(^|\/)(traefik|ingress-nginx-controller|ingress)$/.test(l.service))?.id ?? lbs[0]?.id;
-  const ingress = (namespace: string, name: string, kind: string, hosts: string[], routes: { host: string; path: string; service: string; port: string }[], tls: boolean, ingressClass: string) => {
-    const id = instanceId(cluster, ["namespace", namespace], [`ingress-${kind.toLowerCase()}`, name]);
-    const targets = routes.map((r) => serviceIds.get(`${namespace}/${r.service}`));
-    const status: TwinStatus = targets.some((t) => !t) ? "error" : "ok";
-    add(id, MODEL.Ingress, name, status, {
-      kind,
-      hosts: [...new Set(hosts)].join(", "),
-      routes: routes.map((r) => `${r.host || "*"}${r.path || "/"} → ${r.service}${r.port ? `:${r.port}` : ""}`).join("\n"),
-      tls,
-      ingressClass,
-    });
-    firewallTargets.push({ id, status });
-    link("hasIngress", instanceId(cluster, ["namespace", namespace]), id);
-    for (const t of new Set(targets)) if (t) link("routesTo", id, t);
-    if (controller) link("servedBy", id, controller);
-  };
+  const controllerName = (lbs.find((l) => l.id === controller)?.service.split("/").pop()) ?? "ingress";
+  const allRoutes: { namespace: string; host: string; path: string; service: string; port: string }[] = [];
+  const allHosts = new Set<string>();
+  const namespacesWithIngress = new Set<string>();
+  let anyTls = false;
+  const classes = new Set<string>();
   for (const ing of input.ingresses ?? []) {
     const routes = (ing.spec?.rules ?? []).flatMap((r) =>
       (r.http?.paths ?? []).flatMap((p) => (p.backend?.service ? [{ host: r.host ?? "", path: p.path ?? "/", service: p.backend.service.name, port: String(p.backend.service.port?.number ?? p.backend.service.port?.name ?? "") }] : [])),
     );
-    ingress(ing.metadata.namespace, ing.metadata.name, "Ingress", (ing.spec?.rules ?? []).map((r) => r.host ?? "").filter(Boolean), routes, !!ing.spec?.tls?.length, ing.spec?.ingressClassName ?? "");
+    allRoutes.push(...routes.map((r) => ({ namespace: ing.metadata.namespace, ...r })));
+    (ing.spec?.rules ?? []).forEach((r) => r.host && allHosts.add(r.host));
+    namespacesWithIngress.add(ing.metadata.namespace);
+    if (ing.spec?.tls?.length) anyTls = true;
+    if (ing.spec?.ingressClassName) classes.add(ing.spec.ingressClassName);
   }
   for (const ir of input.ingressRoutes ?? []) {
     const routes = (ir.spec?.routes ?? []).flatMap((r) => {
       const m = matchOf(r.match);
       return (r.services ?? []).map((s) => ({ host: m.hosts.join(","), path: m.paths[0] ?? "/", service: s.name, port: String(s.port ?? "") }));
     });
-    ingress(ir.metadata.namespace, ir.metadata.name, "IngressRoute", routes.flatMap((r) => r.host.split(",")).filter(Boolean), routes, !!ir.spec?.tls, "traefik");
+    allRoutes.push(...routes.map((r) => ({ namespace: ir.metadata.namespace, ...r })));
+    routes.forEach((r) => r.host.split(",").filter(Boolean).forEach((h) => allHosts.add(h)));
+    namespacesWithIngress.add(ir.metadata.namespace);
+    if (ir.spec?.tls) anyTls = true;
+    classes.add("traefik");
+  }
+  if (allRoutes.length || allHosts.size) {
+    const id = instanceId(cluster, ["ingress", controllerName]);
+    const targets = allRoutes.map((r) => ({ r, id: serviceIds.get(`${r.namespace}/${r.service}`) }));
+    const status: TwinStatus = targets.some((t) => !t.id) ? "error" : "ok";
+    add(id, MODEL.Ingress, controllerName, status, {
+      kind: "Ingress",
+      hosts: [...allHosts].sort().join(", "),
+      routes: allRoutes.map((r) => `${r.host || "*"}${r.path || "/"} → ${r.service}${r.port ? `:${r.port}` : ""}`).join("\n"),
+      tls: anyTls,
+      ingressClass: [...classes].sort().join(", "),
+    });
+    firewallTargets.push({ id, status });
+    for (const ns of namespacesWithIngress) link("hasIngress", instanceId(cluster, ["namespace", ns]), id);
+    for (const t of new Set(targets.map((x) => x.id).filter((t): t is string => !!t))) link("routesTo", id, t);
+    if (controller) link("servedBy", id, controller);
+  }
+
+  // The network's components, in the firewall with the rest of the virtual network: Calico (the CNI: the nodes'
+  // routers and VXLAN tunnels) when the nodes run it, MetalLB when there are LoadBalancer addresses. All the
+  // containers reach the network through them.
+  if (tunnels.length || input.nodes.some((n) => (n.metadata.annotations ?? {})["projectcalico.org/IPv4Address"])) {
+    const id = instanceId(cluster, ["component", "calico"]);
+    add(id, MODEL.Component, "calico", "ok", { kind: "cni" });
+    firewallTargets.push({ id, status: "ok" });
+    for (const router of routerOf.values()) link("connectedTo", id, router);
+  }
+  if (lbs.length) {
+    const id = instanceId(cluster, ["component", "metallb"]);
+    add(id, MODEL.Component, "metallb", "ok", { kind: "loadbalancer" });
+    firewallTargets.push({ id, status: "ok" });
+    for (const l of lbs) link("connectedTo", id, l.id);
   }
   if (firewallTargets.length) {
     const firewall = instanceId(cluster, ["firewall", "firewall"]);

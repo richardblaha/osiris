@@ -177,6 +177,7 @@ body,
    Only its controls take the pointer, so the 3D view under it still turns. */
 :root {
   --app-bar: 3rem;
+  --bottom-bar: 2.75rem;
 }
 .app-bar {
   position: absolute;
@@ -545,7 +546,7 @@ button.instance-button:hover {
   border-top: 1px solid var(--border-subtle);
   background: var(--bg-sidebar);
   padding: 0.25rem 0.75rem;
-  min-height: 2.75rem;
+  min-height: var(--bottom-bar);
 }
 .osiris-input-dock {
   position: static;
@@ -611,7 +612,10 @@ button.instance-button:hover {
 /* The view's settings over the whole window: a dimmed backdrop, the dialog filling it but for a margin. */
 .display-backdrop {
   position: fixed;
-  inset: 0;
+  top: var(--app-bar);
+  bottom: var(--bottom-bar);
+  left: 0;
+  right: 0;
   z-index: 60;
   padding: 0.75rem;
   background: color-mix(in srgb, var(--bg-editor) 70%, transparent);

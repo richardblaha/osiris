@@ -64,13 +64,21 @@ describe("the cluster's network", () => {
     has("connectedTo", lb.$dtId, "k8s:c/node/n2/if/nic");
   });
 
-  it("routes Ingresses and IngressRoutes to Services, served by the controller's address, reached from the public one", () => {
-    const site = twin(MODEL.Ingress, "site");
-    expect(site).toMatchObject({ kind: "Ingress", hosts: "k6labs.cz", routes: "k6labs.cz/ → site:80", tls: true, status: "ok" });
-    has("routesTo", site.$dtId, twin(MODEL.Service, "site").$dtId);
-    has("servedBy", site.$dtId, twin(MODEL.Interface, "192.168.0.50").$dtId);
-    // A route to a Service that isn't there.
-    expect(twin(MODEL.Ingress, "old")).toMatchObject({ kind: "IngressRoute", hosts: "old.k6labs.cz", routes: "old.k6labs.cz/api → gone:80", status: "error" });
+  it("routes all Ingresses and IngressRoutes through the one ingress controller twin to Services, served by its address", () => {
+    // No object per ingress resource: one twin (named after the controller) with every host and route.
+    const controller = twin(MODEL.Ingress, "traefik");
+    expect(controller).toMatchObject({
+      kind: "Ingress",
+      hosts: "k6labs.cz, old.k6labs.cz",
+      routes: "k6labs.cz/ → site:80\nold.k6labs.cz/api → gone:80",
+      tls: true,
+      // A route to a Service that isn't there is an error.
+      status: "error",
+    });
+    expect(g.twins.filter((t) => t.$metadata.$model === MODEL.Ingress)).toHaveLength(1);
+    has("routesTo", controller.$dtId, twin(MODEL.Service, "site").$dtId);
+    has("servedBy", controller.$dtId, twin(MODEL.Interface, "192.168.0.50").$dtId);
+    has("hasIngress", "k8s:c/namespace/web", controller.$dtId);
     const pub = twin(MODEL.Interface, "94.230.151.215");
     expect(pub).toMatchObject({ kind: "public", ports: "k6labs.cz, old.k6labs.cz" });
     has("connectedTo", pub.$dtId, twin(MODEL.Interface, "192.168.0.50").$dtId);
@@ -106,18 +114,22 @@ describe("the firewall, the external services and further LAN devices", () => {
   const twin = (model: string, name: string) => g.twins.find((t) => t.$metadata.$model === model && t.name === name)!;
   const has = (name: string, from: string, to: string) => expect(g.relationships).toContainEqual({ name, source: from, target: to });
 
-  it("puts every Ingress, Service and LoadBalancer address in one firewall box contained in the cluster, its status their worst", () => {
+  it("puts the ingress controller, Services, LoadBalancer addresses and the network components in one firewall box, its status their worst", () => {
     const fw = twin(MODEL.Firewall, "firewall");
-    expect(fw.status).toBe("error"); // the "old" IngressRoute routes to a missing Service
+    expect(fw.status).toBe("error"); // the old IngressRoute routes to a missing Service
     has("contains", "k8s:c", fw.$dtId);
-    has("contains", fw.$dtId, twin(MODEL.Ingress, "site").$dtId);
-    has("contains", fw.$dtId, twin(MODEL.Ingress, "old").$dtId);
+    has("contains", fw.$dtId, twin(MODEL.Ingress, "traefik").$dtId);
     has("contains", fw.$dtId, twin(MODEL.Service, "site").$dtId);
     has("contains", fw.$dtId, twin(MODEL.Interface, "192.168.0.50").$dtId);
+    // The network's components, with what they work through.
+    has("contains", fw.$dtId, "k8s:c/component/calico");
+    has("contains", fw.$dtId, "k8s:c/component/metallb");
+    has("connectedTo", "k8s:c/component/calico", "k8s:c/node/n1/if/router");
+    has("connectedTo", "k8s:c/component/metallb", twin(MODEL.Interface, "192.168.0.50").$dtId);
     // The namespaces still have their services and ingresses; none of them is loose in the cluster anymore.
     has("hasService", "k8s:c/namespace/web", twin(MODEL.Service, "site").$dtId);
-    has("hasIngress", "k8s:c/namespace/web", twin(MODEL.Ingress, "site").$dtId);
-    for (const t of [twin(MODEL.Ingress, "site"), twin(MODEL.Service, "site"), twin(MODEL.Interface, "192.168.0.50")])
+    has("hasIngress", "k8s:c/namespace/web", twin(MODEL.Ingress, "traefik").$dtId);
+    for (const t of [twin(MODEL.Ingress, "traefik"), twin(MODEL.Service, "site"), twin(MODEL.Interface, "192.168.0.50")])
       expect(g.relationships.some((r) => r.name === "contains" && r.source === "k8s:c" && r.target === t.$dtId)).toBe(false);
   });
 
@@ -155,8 +167,10 @@ describe("the firewall, the external services and further LAN devices", () => {
     const topNode = max(box("k8s:c/node/n1"), 1);
     expect(min(fw, 1)).toBeGreaterThanOrEqual(topNode - 1e-6);
     expect(fw.size).toEqual(box("k8s:c/node/n1").size);
-    expect(inside(box(twin(MODEL.Ingress, "site").$dtId), fw)).toBe(true);
+    expect(inside(box(twin(MODEL.Ingress, "traefik").$dtId), fw)).toBe(true);
     expect(inside(box(twin(MODEL.Service, "site").$dtId), fw)).toBe(true);
+    expect(inside(box("k8s:c/component/calico"), fw)).toBe(true);
+    expect(inside(box("k8s:c/component/metallb"), fw)).toBe(true);
     expect(scene.byId.get(fwId)!.look).toBe("firewall");
     // A Service's routing to its pod is a thin line ending on the inner side of the pod's eth0.
     const routed = layout.links.find((l) => l.kind === "virtual" && l.id === twin(MODEL.Service, "site").$dtId)!;

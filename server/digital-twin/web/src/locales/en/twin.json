@@ -87,7 +87,9 @@
       "answered": "investigated",
       "failed": "failed",
       "skipped": "not investigated (limit)"
-    }
+    },
+    "alertsTitle": "Alerts",
+    "noAlerts": "No alerts — nothing to investigate."
   },
   "bottomBar": "Bottom bar: time, display, chat",
   "display": {
@@ -202,7 +204,8 @@
       "logs": "logs",
       "metrics": "metrics",
       "traces": "traces",
-      "chat": "conversation"
+      "chat": "conversation",
+      "alerts": "Alerts"
     },
     "panels": "Panels",
     "open": "Show {{name}}",
