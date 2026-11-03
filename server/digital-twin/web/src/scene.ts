@@ -96,6 +96,10 @@ export interface TwinView {
   visible: boolean;
   /** Its model's own drawing (`presentation.visual`), when it has one. */
   visual?: DtdlVisual;
+  /** Live telemetry and data source values cached in Redis for this twin (`DataValueStore`). */
+  values?: Record<string, number | string | boolean>;
+  /** Optional compiled @react-three/fiber component module SHA-256 override. */
+  component?: string;
 }
 
 /** The view's own filters (the bottom bar's display menu): hidden models, a lowest status, a name search. */
@@ -136,6 +140,8 @@ export interface TwinScene {
   at: number | null;
   /** The view's own filters (the display menu); {@link passes} tells what they let through. */
   filters?: ViewFilters;
+  /** Custom @react-three/fiber component SHA-256 hashes by target (twin id, model id, or look name). */
+  components?: Map<string, string>;
 }
 
 const STATUSES: TwinStatus[] = ["ok", "warn", "error"];
@@ -162,8 +168,11 @@ export function buildScene(
   at: number | null,
   filters?: ViewFilters,
   resources: Record<string, Resources> = {},
+  dataValues: Record<string, Record<string, { value: number | string | boolean }>> = {},
+  components: { target: string; sha256: string; builtIn?: boolean }[] = [],
 ): TwinScene {
   const modelMap = new Map(models.map((m) => [m.id, m.model]));
+  const componentMap = new Map(components.filter((c) => !c.builtIn).map((c) => [c.target, c.sha256]));
   /** The presentation a model's twins are drawn with, resolved over `extends` (fallback: the built-in look). */
   const lookOfModel = (model: string) => {
     const p = presentationOf(model, modelMap);
@@ -181,7 +190,10 @@ export function buildScene(
       const own = statusOf(t);
       const ownErrors = errors[t.$dtId] ?? 0;
       const { ownLayer: _, ...look } = lookOfModel(t.$metadata.$model);
-      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], resources: resources[t.$dtId], depth: 0, children: [], ...look, layer: layerOf(t, lookOfModel(t.$metadata.$model)) }];
+      const rawValues = dataValues[t.$dtId];
+      const values = rawValues ? Object.fromEntries(Object.entries(rawValues).map(([k, p]) => [k, p.value])) : undefined;
+      const component = componentMap.get(t.$dtId) ?? componentMap.get(t.$metadata.$model) ?? componentMap.get(look.look);
+      return [t.$dtId, { id: t.$dtId, twin: t, model: t.$metadata.$model, modelName: modelName(t.$metadata.$model, modelMap), name: String(t.name ?? t.$dtId), ownStatus: own, status: own, ownErrors, errors: ownErrors, network: network[t.$dtId], storage: storage[t.$dtId], resources: resources[t.$dtId], values, component, depth: 0, children: [], ...look, layer: layerOf(t, lookOfModel(t.$metadata.$model)) }];
     }),
   );
   for (const r of relationships) {
@@ -228,7 +240,7 @@ export function buildScene(
     if (known.length) b.network = known.reduce((n, m) => n + m.network!, 0);
     b.depth = 1;
   }
-  return { models: modelMap, byId, top: roots, bands, relationships, at, filters };
+  return { models: modelMap, byId, top: roots, bands, relationships, at, filters, components: componentMap };
 }
 
 /**
@@ -362,7 +374,9 @@ export function visualValue(v: TwinView, name: string): unknown {
   const reading = READINGS[name];
   if (reading) return reading(v);
   const resource = v.resources?.[name as keyof Resources];
-  return resource !== undefined ? resource : v.twin[name];
+  if (resource !== undefined) return resource;
+  const cachedVal = v.values?.[name];
+  return cachedVal !== undefined ? cachedVal : v.twin[name];
 }
 /** Whether a part's `when` holds: the value is there and not 0, false or empty, or it equals `name=value`'s value. */
 export function visualWhen(v: TwinView, condition: string): boolean {

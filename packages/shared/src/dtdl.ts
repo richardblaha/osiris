@@ -202,6 +202,8 @@ export interface DtdlPresentation {
   visible?: boolean;
   /** The model's own drawing: parts over (or instead of) its look, following the twin's values. */
   visual?: DtdlVisual;
+  /** User-editable React Three Fiber (@react-three/fiber) TSX component source code for rendering this model's twins. */
+  component?: string;
 }
 
 /** A model as the Azure Digital Twins API lists it (`GET /models?includeModelDefinition=true`). */
@@ -378,6 +380,8 @@ function presentationShapeErrors(id: string, p: unknown): string[] {
   if (o.layer !== undefined && !PRESENTATION_LAYERS.includes(o.layer as PresentationLayer)) errors.push(`${id}: presentation.layer is not one of ${PRESENTATION_LAYERS.join(", ")}`);
   if (o.visible !== undefined && typeof o.visible !== "boolean") errors.push(`${id}: presentation.visible must be a boolean`);
   if (o.visual !== undefined) errors.push(...visualErrors(id, o.visual));
+  if (o.component !== undefined && (typeof o.component !== "string" || !o.component.trim() || o.component.length > 64_000))
+    errors.push(`${id}: presentation.component must be a non-empty TSX string (at most 64 kB)`);
   return errors;
 }
 

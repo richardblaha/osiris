@@ -90,6 +90,11 @@ export class Instances {
     const data = store.of(id);
     const running: RunningInstance = { record, data, stop: () => {} };
     this.running.set(id, running);
+    // Load any persisted structure from SQLite into the Redis cache right away.
+    const [persistedTwins, persistedRels, currentTwins] = await Promise.all([data.twins(), data.relationships(), state.twins(id)]);
+    if (persistedTwins.length && !currentTwins.length) {
+      await state.writeSnapshot(id, persistedTwins, persistedRels, { errorLogs: {}, network: {}, storage: {}, resources: {} }, Date.now(), telemetryTtlSeconds ?? intervalMs / 1000 * 3);
+    }
     // The data profiles run whether or not the structure's source does.
     const hub = this.options.values ? new DataHub({ instance: id, store, data, state, values: this.options.values, fetchFn: defaults.fetchFn, log: this.log }).start() : undefined;
     running.hub = hub;
@@ -102,20 +107,23 @@ export class Instances {
       running.source = built.source;
       running.telemetry = built.telemetry;
       running.history = historyFrom ? new HistoryReader(historyFrom.clickhouse, id, historyFrom.service) : undefined;
-      const sync = await startSync({
-        source: built.source,
-        store: data,
-        state,
-        telemetry: built.telemetry,
-        history: emit ? new HistoryLog(emit, id, built.source.name) : undefined,
-        intervalMs,
-        telemetryTtlSeconds,
-        log: this.log,
-        onRound: (err) => {
-          running.error = err ? `${err.message}${err.cause instanceof Error ? `: ${err.cause.message}` : ""}`.slice(0, 500) : undefined;
-        },
-      });
-      running.stop = () => (sync.stop(), stopHub());
+      if (built.source) {
+        const sync = await startSync({
+          source: built.source,
+          store: data,
+          state,
+          telemetry: built.telemetry,
+          values: this.options.values,
+          history: emit ? new HistoryLog(emit, id, built.source.name) : undefined,
+          intervalMs,
+          telemetryTtlSeconds,
+          log: this.log,
+          onRound: (err) => {
+            running.error = err ? `${err.message}${err.cause instanceof Error ? `: ${err.cause.message}` : ""}`.slice(0, 500) : undefined;
+          },
+        });
+        running.stop = () => (sync.stop(), stopHub());
+      }
     } catch (err) {
       running.error = (err as Error).message.slice(0, 500);
       this.log(`The twin ${id} could not start`, err);

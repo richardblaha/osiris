@@ -1,13 +1,14 @@
 import { t } from "i18next";
-import { lazy, Suspense, useMemo, useState } from "react";
-import { LOOKS, PRESENTATION_CONTEXT, PRESENTATION_LAYERS, type DtdlContent, type DtdlInterface, type DtdlModelData, type DtdlPresentation, type Localized, PRIMITIVE_SCHEMAS, type DtdlSchema } from "@osiris/shared/dtdl.ts";
-import { api } from "./api.ts";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { BUILTIN_LOOKS, LOOKS, PRESENTATION_CONTEXT, PRESENTATION_LAYERS, type DtdlContent, type DtdlInterface, type DtdlModelData, type DtdlPresentation, type Localized, PRIMITIVE_SCHEMAS, type DtdlSchema } from "@osiris/shared/dtdl.ts";
+import { api, type ComponentInfo } from "./api.ts";
 import { VisualEditor } from "./VisualEditor.tsx";
 import { attempt, ErrorNotice } from "./ui.tsx";
 import { currentLocale } from "./i18n.ts";
 
-/** Monaco, fetched the first time the DTDL tab opens so the twin itself stays small. */
+/** Monaco, fetched the first time the DTDL or TSX tab opens so the twin itself stays small. */
 const CodeEditor = lazy(() => import("./CodeEditor.tsx"));
+const VisualPreview = lazy(() => import("./VisualPreview.tsx"));
 
 const SCHEMAS = [...PRIMITIVE_SCHEMAS, "Enum", "Map", "Object", "Array"] as const;
 
@@ -18,8 +19,11 @@ const SCHEMAS = [...PRIMITIVE_SCHEMAS, "Enum", "Map", "Object", "Array"] as cons
  */
 export function Models({ models, onChanged, onPreview }: { models: DtdlModelData[]; onChanged: () => void; onPreview?: (doc: DtdlInterface) => void }) {
   const [id, setId] = useState<string>();
-  const [tab, setTab] = useState<"visual" | "json">("visual");
+  const [tab, setTab] = useState<"visual" | "tsx" | "json">("visual");
   const [json, setJson] = useState("");
+  const [components, setComponents] = useState<ComponentInfo[]>([]);
+  const [tsxCode, setTsxCode] = useState("");
+  const [previewSha256, setPreviewSha256] = useState<string>();
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
   const selected = models.find((m) => m.id === id) ?? models[0];
@@ -31,11 +35,38 @@ export function Models({ models, onChanged, onPreview }: { models: DtdlModelData
       return undefined;
     }
   }, [selected, json]);
+
+  const loadComponents = () => {
+    void api.components().then(setComponents).catch(() => {});
+  };
+  useEffect(loadComponents, [models]);
+
+  const defaultTsxFor = (m: DtdlModelData, comps: ComponentInfo[]) => {
+    const custom = comps.find((c) => c.target === m.id);
+    if (custom) return { code: custom.code, sha256: custom.sha256, custom: !custom.builtIn };
+    if (m.model.presentation?.component) return { code: m.model.presentation.component, sha256: undefined, custom: true };
+    const look = m.model.presentation?.look ?? BUILTIN_LOOKS[m.id.replace(/;.*$/, "")] ?? "box";
+    const fallback = comps.find((c) => c.target === look) ?? comps.find((c) => c.target === "box");
+    return { code: fallback?.code ?? "", sha256: fallback?.sha256, custom: false };
+  };
+
+  useEffect(() => {
+    if (!selected || !components.length) return;
+    const def = defaultTsxFor(selected, components);
+    setTsxCode(def.code);
+    setPreviewSha256(def.sha256);
+  }, [selected?.id, components]);
+
   const pick = (m: DtdlModelData) => {
     setId(m.id);
     setJson(JSON.stringify(m.model, null, 2));
     setError(undefined);
     setTab("visual");
+    if (components.length) {
+      const def = defaultTsxFor(m, components);
+      setTsxCode(def.code);
+      setPreviewSha256(def.sha256);
+    }
   };
 
   const update = (change: (d: DtdlInterface) => DtdlInterface) => {
@@ -72,8 +103,22 @@ export function Models({ models, onChanged, onPreview }: { models: DtdlModelData
 
   const save = () =>
     attempt(setBusy, setError, async () => {
+      if (tab === "tsx" && selected) {
+        const saved = await api.putComponent(selected.id, { kind: "model", code: tsxCode });
+        setPreviewSha256(saved.sha256);
+        loadComponents();
+        onChanged();
+        return;
+      }
       if (!draft) throw new Error(t("twin:models.badJson"));
       await api.putModel(draft["@id"], draft);
+      onChanged();
+    });
+  const resetComponent = () =>
+    attempt(setBusy, setError, async () => {
+      if (!selected) return;
+      await api.deleteComponent(selected.id).catch(() => {});
+      loadComponents();
       onChanged();
     });
   const remove = () =>
@@ -85,6 +130,14 @@ export function Models({ models, onChanged, onPreview }: { models: DtdlModelData
       onChanged();
     });
   const preview = () => {
+    if (tab === "tsx") {
+      void attempt(setBusy, setError, async () => {
+        const res = await api.compileComponent(tsxCode);
+        if (res.errors.length) throw new Error(res.errors.join("; "));
+        setPreviewSha256(res.sha256);
+      });
+      return;
+    }
     if (draft && onPreview) onPreview(draft);
   };
   const newModel = () => {
@@ -131,25 +184,49 @@ export function Models({ models, onChanged, onPreview }: { models: DtdlModelData
             <div className="flex flex-wrap items-center gap-2">
               <h2 className="break-all text-sm font-semibold">{selected.id}</h2>
               <span className="flex gap-1">
-                {(["visual", "json"] as const).map((k) => (
+                {(["visual", "tsx", "json"] as const).map((k) => (
                   <button key={k} type="button" className={tab === k ? "btn-primary px-2 py-1 text-xs" : "btn-secondary px-2 py-1 text-xs"} onClick={() => setTab(k)}>
-                    {t(`twin:models.tab.${k}`)}
+                    {k === "tsx" ? "R3F (.tsx)" : t(`twin:models.tab.${k}`)}
                   </button>
                 ))}
               </span>
               <span className="flex-1" />
+              {tab === "tsx" && components.some((c) => c.target === selected.id && !c.builtIn) && (
+                <button type="button" className="btn-secondary px-2 py-1 text-xs" onClick={resetComponent} disabled={busy}>
+                  Obnovit výchozí
+                </button>
+              )}
               <button type="button" className="btn-secondary px-2 py-1 text-xs" onClick={preview} disabled={busy}>
                 {t("twin:models.preview")}
               </button>
               <button type="button" className="btn-secondary px-2 py-1 text-xs text-error" onClick={remove} disabled={busy}>
                 {t("twin:models.delete")}
               </button>
-              <button type="button" className="btn-primary px-3 py-1 text-xs" onClick={save} disabled={busy || !draft}>
+              <button type="button" className="btn-primary px-3 py-1 text-xs" onClick={save} disabled={busy || (!draft && tab !== "tsx")}>
                 {t("twin:models.save")}
               </button>
             </div>
 
-            {tab === "json" ? (
+            {tab === "tsx" ? (
+              <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
+                <div className="lg:col-span-2">
+                  <Suspense fallback={<p className="text-sm text-fg-muted">{t("common:loading")}</p>}>
+                    <CodeEditor language="typescript" path="component.tsx" value={tsxCode} onChange={setTsxCode} height="calc(100vh - var(--app-bar) - 12rem)" />
+                  </Suspense>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <p className="section-header">3D Náhled (@react-three/fiber)</p>
+                  <div className="h-72 overflow-hidden rounded-md border border-line bg-bg-sidebar">
+                    <Suspense fallback={<p className="p-3 text-xs text-fg-muted">{t("common:loading")}</p>}>
+                      {draft && <VisualPreview model={draft} visual={draft.presentation?.visual} size={[2.2, 1.6, 2.2]} componentSha256={previewSha256} />}
+                    </Suspense>
+                  </div>
+                  <p className="text-xs text-fg-muted">
+                    Komponenta dostává v <code className="font-mono">props</code> rozměry (<code className="font-mono">width, height, depth</code>), stav (<code className="font-mono">status, color</code>), DTDL vlastnosti (<code className="font-mono">twin</code>) a živé hodnoty ze zdrojů dat v Redis (<code className="font-mono">values</code>).
+                  </p>
+                </div>
+              </div>
+            ) : tab === "json" ? (
               <div className="mt-3">
                 <Suspense fallback={<p className="text-sm text-fg-muted">{t("common:loading")}</p>}>
                   <CodeEditor value={json || JSON.stringify(selected.model, null, 2)} onChange={setJson} height="calc(100vh - var(--app-bar) - 12rem)" />

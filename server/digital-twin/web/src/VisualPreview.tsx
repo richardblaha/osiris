@@ -29,7 +29,17 @@ function Orbit() {
  * well and busy — load 60 %, traffic and I/O going — turning slowly; drag to look around. It draws with the very
  * components of the 3D view, so what it shows is what the twin will.
  */
-export default function VisualPreview({ model, visual, size }: { model: DtdlInterface; visual?: DtdlVisual; size: readonly [number, number, number] }) {
+export default function VisualPreview({
+  model,
+  visual,
+  size,
+  componentSha256,
+}: {
+  model: DtdlInterface;
+  visual?: DtdlVisual;
+  size: readonly [number, number, number];
+  componentSha256?: string;
+}) {
   const [colors] = useState(themeColors);
   const look = model.presentation?.look ?? "box";
   const node: TwinView = useMemo(
@@ -45,6 +55,8 @@ export default function VisualPreview({ model, visual, size }: { model: DtdlInte
       errors: 0,
       network: 2_000_000,
       resources: { load: 0.6, io: 5_000_000, used: 3, size: 4, cpu: 0.5, memory: 1e9 },
+      values: { load: 0.6, cpu: 0.5, memory: 1e9, temperature: 45 },
+      component: componentSha256,
       depth: 1,
       children: [],
       look,
@@ -53,7 +65,7 @@ export default function VisualPreview({ model, visual, size }: { model: DtdlInte
       visible: true,
       visual,
     }),
-    [model, visual, look],
+    [model, visual, look, componentSha256],
   );
   const box: Box = useMemo(() => ({ id: "preview", shape: SHAPE[look] ?? "box", center: [0, size[1] / 2, 0], size: [...size], radius: 0.12 }), [look, size.join()]);
   const hex = (c: { getHexString(): string }) => `#${c.getHexString()}`;

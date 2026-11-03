@@ -116,6 +116,21 @@ describe("connectors", () => {
     now = 15_000;
     expect(await gen.poll!(binding, { id: "a" })).not.toBe(a);
   });
+
+  it("polls an HTTP service with twin placeholders and extracts JSON values", async () => {
+    let calledUrl = "";
+    let calledAuth = "";
+    const fetchFn = vi.fn(async (url: unknown, init?: RequestInit) => {
+      calledUrl = String(url);
+      calledAuth = new Headers(init?.headers).get("authorization") ?? "";
+      return Response.json({ status: "ok", metrics: { rpm: 1450 } });
+    });
+    const http = CONNECTOR_TYPES.http!.create({ url: "https://api.plant.lan/v1", headerName: "Authorization" }, { token: "Bearer s3cret" }, { fetchFn: fetchFn as unknown as typeof fetch });
+    const binding = CONNECTOR_TYPES.http!.binding.parse({ telemetry: "rpm", connection: "http", endpoint: "/pumps/{name}/telemetry", path: "$.metrics.rpm" });
+    expect(await http.poll!(binding as never, { id: "pump-1", name: "P1" })).toBe(1450);
+    expect(calledUrl).toBe("https://api.plant.lan/v1/pumps/P1/telemetry");
+    expect(calledAuth).toBe("Bearer s3cret");
+  });
 });
 
 describe("the data hub", () => {

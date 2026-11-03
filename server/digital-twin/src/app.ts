@@ -13,13 +13,29 @@ import type { Config } from "./config.ts";
 import type { Instances, RunningInstance } from "./instances.ts";
 import { errorsByTwin, valuesByTwin } from "./twin.ts";
 import type { TelemetryKind, TelemetryState, TwinStateStore } from "./state.ts";
-import { DATA_ID, SOURCE_CONNECTION, dataProfileErrors, dataProfilesOf, interfaceErrors, presentationErrors, type DtdlInterface, type DtdlModelData } from "@osiris/shared/dtdl.ts";
+import {
+  DATA_ID,
+  SOURCE_CONNECTION,
+  dataProfileErrors,
+  dataProfilesOf,
+  interfaceErrors,
+  presentationErrors,
+  relationshipErrors,
+  twinErrors,
+  type DigitalTwin,
+  type DigitalTwinRelationship,
+  type DtdlInterface,
+  type DtdlModelData,
+} from "@osiris/shared/dtdl.ts";
 import { bindingErrors, CONNECTOR_TYPES } from "./datasources/connectors.ts";
 import { ASSET_NAME, glbProblems, MAX_ASSET_BYTES } from "./assets/glb.ts";
 import { builtinAssets } from "./assets/builtin.ts";
+import { builtinComponents, compileComponent, getCompiledModule } from "./components/compiler.ts";
 
 /** The built-in 3D assets every twin has (read once). */
 const BUILTIN_ASSETS = builtinAssets();
+/** The built-in R3F look components every twin has (read and compiled once). */
+const BUILTIN_COMPONENTS = builtinComponents();
 import type { DataValueStore } from "./datasources/hub.ts";
 import type { MetricType } from "./telemetry.ts";
 import { secretFields } from "./sources/registry.ts";
@@ -169,9 +185,44 @@ export function createApp(config: Config, options: AppOptions) {
     if (!past) throw new HttpError(404, "errors.digitalTwin.historyMissing");
     return past;
   };
-  /** The telemetry the view draws, now (the cache) or at a past time (ClickHouse). */
+  /** The telemetry the view draws, now (the cache + DataHub values in Redis) or at a past time (ClickHouse). */
   const telemetryAt = async <K extends TelemetryKind>(tw: RunningInstance, kind: K, at: number | undefined): Promise<TelemetryState[K]> => {
-    if (at === undefined) return (await state.telemetry(tw.record.id, kind)) as TelemetryState[K];
+    if (at === undefined) {
+      const base = { ...((await state.telemetry(tw.record.id, kind)) as TelemetryState[K]) } as Record<string, unknown>;
+      if (options.values) {
+        const [active, all] = await Promise.all([store.activeProfile(tw.record.id), options.values.read(tw.record.id)]);
+        for (const [twinId, fields] of Object.entries(all)) {
+          const pickNum = (name: string): number | undefined => {
+            const p = fields[name];
+            if (!p || p.profile !== active) return undefined;
+            const n = Number(p.value);
+            return Number.isFinite(n) ? n : undefined;
+          };
+          if (kind === "errorLogs") {
+            const v = pickNum("errorLogs");
+            if (v !== undefined) base[twinId] = v;
+          } else if (kind === "network") {
+            const v = pickNum("network");
+            if (v !== undefined) base[twinId] = v;
+          } else if (kind === "storage") {
+            const used = pickNum("used");
+            const fsCapacity = pickNum("fsCapacity");
+            if (used !== undefined || fsCapacity !== undefined) {
+              const prev = (base[twinId] as { used?: number; fsCapacity?: number } | undefined) ?? {};
+              base[twinId] = { used: used ?? prev.used ?? 0, fsCapacity: fsCapacity ?? prev.fsCapacity ?? 0 };
+            }
+          } else if (kind === "resources") {
+            const patch: Record<string, number> = {};
+            for (const k of ["load", "used", "size", "io", "cpu", "memory", "temperature"]) {
+              const v = pickNum(k);
+              if (v !== undefined) patch[k] = v;
+            }
+            if (Object.keys(patch).length) base[twinId] = { ...((base[twinId] as Record<string, number> | undefined) ?? {}), ...patch };
+          }
+        }
+      }
+      return base as TelemetryState[K];
+    }
     return (await cached(tw, kind, { at }, config.CACHE_DATA_TTL_SECONDS, async (): Promise<unknown> => {
       const { source, telemetry } = tw;
       const { twins } = await stateAt(tw, at);
@@ -209,7 +260,8 @@ export function createApp(config: Config, options: AppOptions) {
   const modelErrors = (doc: DtdlInterface, existing: DtdlModelData[]): string[] => {
     const models = new Map(existing.map((m) => [m.id, m.model] as [string, DtdlInterface]));
     models.set(doc["@id"], doc);
-    return [...presentationErrors(doc["@id"], models), ...dataProfileErrors(doc["@id"], models)];
+    const compErrors = doc.presentation?.component ? compileComponent(doc.presentation.component).errors.map((e) => `${doc["@id"]}: presentation.component: ${e}`) : [];
+    return [...presentationErrors(doc["@id"], models), ...dataProfileErrors(doc["@id"], models), ...compErrors];
   };
   /** A model's data bindings against the instance's connections: each names one, with that connector's parameters. */
   const bindingProblems = async (tw: RunningInstance, doc: DtdlInterface): Promise<string[]> => {
@@ -385,6 +437,23 @@ export function createApp(config: Config, options: AppOptions) {
 
     // The PWA reads this before signing in (oidc-client-ts): where osiris-auth is and who to sign in as.
     .get("/auth-config.json", (c) => c.json(config.AUTH_URL ? { issuer: config.AUTH_URL, clientId: config.WEB_CLIENT_ID } : null))
+
+    // Compiled @react-three/fiber component ES modules (content-addressed by SHA-256, served under same-origin CSP).
+    .get("/api/components/modules/:file", async (c) => {
+      const m = /^([0-9a-f]{64})\.js$/.exec(c.req.param("file"));
+      if (!m) return c.notFound();
+      const sha256 = m[1]!;
+      let js = getCompiledModule(sha256);
+      if (!js) {
+        for (const r of instances.list()) {
+          for (const comp of await r.data.components()) if (comp.sha256 === sha256) compileComponent(comp.code);
+          for (const mod of await r.data.models()) if (mod.model.presentation?.component) compileComponent(mod.model.presentation.component);
+        }
+        js = getCompiledModule(sha256);
+      }
+      if (!js) return c.notFound();
+      return c.body(js, 200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=31536000, immutable" });
+    })
 
     .use("/api/*", async (c, next) => {
       if (!verifier) return next(); // No AUTH_URL: development without sign-in.
@@ -601,6 +670,55 @@ export function createApp(config: Config, options: AppOptions) {
       if (!(await twinOf(c).data.deleteAsset(c.req.param("name")))) throw new HttpError(404, "errors.digitalTwin.notFound");
       return c.body(null, 204);
     })
+    // User-editable @react-three/fiber components (by look, DTDL model id, or twin object id), plus default .tsx looks on disk.
+    .get(`${T}/components`, async (c) => {
+      const tw = twinOf(c);
+      const [own, models] = await Promise.all([tw.data.components(), tw.data.models()]);
+      for (const comp of own) compileComponent(comp.code);
+      const map = new Map<string, { target: string; kind: "look" | "model" | "twin"; code: string; sha256: string; updatedAt: number; updatedBy: string; builtIn: boolean }>();
+      for (const b of BUILTIN_COMPONENTS.values()) {
+        map.set(b.name, { target: b.name, kind: "look", code: b.code, sha256: b.sha256, updatedAt: 0, updatedBy: "", builtIn: true });
+      }
+      for (const m of models) {
+        if (m.model.presentation?.component) {
+          const compiled = compileComponent(m.model.presentation.component);
+          if (!compiled.errors.length) {
+            map.set(m.id, { target: m.id, kind: "model", code: m.model.presentation.component, sha256: compiled.sha256, updatedAt: 0, updatedBy: "", builtIn: false });
+          }
+        }
+      }
+      for (const comp of own) {
+        map.set(comp.target, { ...comp, builtIn: false });
+      }
+      return c.json({ value: [...map.values()].sort((a, b) => a.target.localeCompare(b.target)) });
+    })
+    .post(`${T}/components/compile`, async (c) => {
+      adminOnly(c);
+      const body = parse(z.object({ code: z.string().min(1).max(65_536) }), await c.req.json().catch(() => null));
+      const compiled = compileComponent(body.code);
+      return c.json({ sha256: compiled.sha256, errors: compiled.errors });
+    })
+    .put(`${T}/components/:target`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      const target = c.req.param("target");
+      const body = parse(
+        z.object({
+          kind: z.enum(["look", "model", "twin"]).default("model"),
+          code: z.string().min(1).max(65_536),
+        }),
+        await c.req.json().catch(() => null),
+      );
+      const compiled = compileComponent(body.code);
+      if (compiled.errors.length) return c.json({ error: "errors.digitalTwin.componentInvalid", detail: compiled.errors }, 400);
+      const saved = await tw.data.putComponent(target, body.kind, body.code, compiled.sha256, owner(c), Date.now());
+      return c.json({ ...saved, builtIn: false });
+    })
+    .delete(`${T}/components/:target`, async (c) => {
+      adminOnly(c);
+      if (!(await twinOf(c).data.deleteComponent(c.req.param("target")))) throw new HttpError(404, "errors.digitalTwin.notFound");
+      return c.body(null, 204);
+    })
     .get(`${T}/digitaltwins`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
       const twins = at === undefined ? (await stateAt(twinOf(c), undefined)).twins : (await cached(twinOf(c), "twins-at", { at }, config.CACHE_DATA_TTL_SECONDS, () => stateAt(twinOf(c), at))).twins;
@@ -617,10 +735,98 @@ export function createApp(config: Config, options: AppOptions) {
       if (!twin) throw new HttpError(404, "errors.digitalTwin.notFound");
       return c.json(twin);
     })
+    .put(`${T}/digitaltwins/:id`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      const id = c.req.param("id");
+      const doc = parse(z.record(z.string(), z.unknown()), await c.req.json().catch(() => null)) as unknown as DigitalTwin;
+      if (doc.$dtId !== id) throw new HttpError(400, "errors.digitalTwin.twinIdMismatch");
+      const models = new Map((await tw.data.models()).map((m) => [m.id, m.model] as [string, DtdlInterface]));
+      const errors = twinErrors(doc, models);
+      if (errors.length) return c.json({ error: "errors.digitalTwin.twinInvalid", detail: errors }, 400);
+      const now = Date.now();
+      await tw.data.putTwin(doc, now, "user");
+      const [twins, relationships, errorLogs, network, storage, resources] = await Promise.all([
+        tw.data.twins(),
+        tw.data.relationships(),
+        state.telemetry(tw.record.id, "errorLogs"),
+        state.telemetry(tw.record.id, "network"),
+        state.telemetry(tw.record.id, "storage"),
+        state.telemetry(tw.record.id, "resources"),
+      ]);
+      await state.writeSnapshot(tw.record.id, twins, relationships, { errorLogs, network, storage, resources }, now, config.CACHE_DATA_TTL_SECONDS * 3);
+      tw.hub?.reload();
+      return c.json(doc);
+    })
+    .delete(`${T}/digitaltwins/:id`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      const id = c.req.param("id");
+      if (!(await tw.data.deleteTwin(id))) throw new HttpError(404, "errors.digitalTwin.notFound");
+      const now = Date.now();
+      const [twins, relationships, errorLogs, network, storage, resources] = await Promise.all([
+        tw.data.twins(),
+        tw.data.relationships(),
+        state.telemetry(tw.record.id, "errorLogs"),
+        state.telemetry(tw.record.id, "network"),
+        state.telemetry(tw.record.id, "storage"),
+        state.telemetry(tw.record.id, "resources"),
+      ]);
+      await state.writeSnapshot(tw.record.id, twins, relationships, { errorLogs, network, storage, resources }, now, config.CACHE_DATA_TTL_SECONDS * 3);
+      tw.hub?.reload();
+      return c.body(null, 204);
+    })
     .get(`${T}/digitaltwins/:id/relationships`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
       const rels = at === undefined ? await state.relationships(twinOf(c).record.id, { source: c.req.param("id") }) : (await stateAt(twinOf(c), at)).relationships.filter((r) => r.$sourceId === c.req.param("id"));
       return c.json({ value: rels });
+    })
+    .put(`${T}/digitaltwins/:id/relationships/:relId`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      const sourceId = c.req.param("id");
+      const relId = c.req.param("relId");
+      const raw = parse(z.record(z.string(), z.unknown()), await c.req.json().catch(() => null));
+      const rel: DigitalTwinRelationship = {
+        ...raw,
+        $relationshipId: String(raw.$relationshipId ?? relId),
+        $sourceId: String(raw.$sourceId ?? sourceId),
+        $relationshipName: String(raw.$relationshipName ?? ""),
+        $targetId: String(raw.$targetId ?? ""),
+      };
+      if (rel.$sourceId !== sourceId || rel.$relationshipId !== relId) throw new HttpError(400, "errors.digitalTwin.relationshipIdMismatch");
+      const [modelsList, twinsList] = await Promise.all([tw.data.models(), tw.data.twins()]);
+      const models = new Map(modelsList.map((m) => [m.id, m.model] as [string, DtdlInterface]));
+      const twinMap = new Map(twinsList.map((t) => [t.$dtId, t] as [string, DigitalTwin]));
+      const errors = relationshipErrors(rel, twinMap, models);
+      if (errors.length) return c.json({ error: "errors.digitalTwin.relationshipInvalid", detail: errors }, 400);
+      const now = Date.now();
+      await tw.data.putRelationship(rel, "user");
+      const [relationships, errorLogs, network, storage, resources] = await Promise.all([
+        tw.data.relationships(),
+        state.telemetry(tw.record.id, "errorLogs"),
+        state.telemetry(tw.record.id, "network"),
+        state.telemetry(tw.record.id, "storage"),
+        state.telemetry(tw.record.id, "resources"),
+      ]);
+      await state.writeSnapshot(tw.record.id, twinsList, relationships, { errorLogs, network, storage, resources }, now, config.CACHE_DATA_TTL_SECONDS * 3);
+      return c.json(rel);
+    })
+    .delete(`${T}/digitaltwins/:id/relationships/:relId`, async (c) => {
+      adminOnly(c);
+      const tw = twinOf(c);
+      if (!(await tw.data.deleteRelationship(c.req.param("id"), c.req.param("relId")))) throw new HttpError(404, "errors.digitalTwin.notFound");
+      const now = Date.now();
+      const [twins, relationships, errorLogs, network, storage, resources] = await Promise.all([
+        tw.data.twins(),
+        tw.data.relationships(),
+        state.telemetry(tw.record.id, "errorLogs"),
+        state.telemetry(tw.record.id, "network"),
+        state.telemetry(tw.record.id, "storage"),
+        state.telemetry(tw.record.id, "resources"),
+      ]);
+      await state.writeSnapshot(tw.record.id, twins, relationships, { errorLogs, network, storage, resources }, now, config.CACHE_DATA_TTL_SECONDS * 3);
+      return c.body(null, 204);
     })
     .get(`${T}/digitaltwins/:id/incomingrelationships`, async (c) => {
       const { at } = parse(atQuery, c.req.query());
@@ -664,10 +870,10 @@ export function createApp(config: Config, options: AppOptions) {
       if (!options.values) return c.json({ value: {} });
       const active = await store.activeProfile(tw.record.id);
       const all = await options.values.read(tw.record.id, twin);
-      // Only the active profile's: a switch leaves no stale values from the other.
+      // Only the active profile's (plus source telemetry when active === "live"): a switch leaves no stale values from the other.
       const value = Object.fromEntries(
         Object.entries(all)
-          .map(([id, v]) => [id, Object.fromEntries(Object.entries(v).filter(([, p]) => p.profile === active))] as const)
+          .map(([id, v]) => [id, Object.fromEntries(Object.entries(v).filter(([, p]) => p.profile === active || (active === "live" && p.profile === SOURCE_CONNECTION)))] as const)
           .filter(([, v]) => Object.keys(v).length),
       );
       return c.json({ value });

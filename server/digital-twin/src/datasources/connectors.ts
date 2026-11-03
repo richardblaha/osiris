@@ -407,8 +407,60 @@ const kubernetesSimulation: ConnectorType = {
   },
 };
 
+/** HTTP/REST service: a GET or POST per twin (placeholders in endpoint and body), the value extracted at a JSON path. */
+const http: ConnectorType = {
+  id: "http",
+  mode: "poll",
+  fields: [
+    { name: "url", kind: "url", required: true },
+    { name: "headerName", kind: "text", default: "Authorization" },
+    { name: "token", kind: "text", secret: true },
+  ],
+  settings: z.object({ url: reachable(/^https?:$/), headerName: text(100) }),
+  binding: bindingOf({
+    endpoint: z.string().max(1000).default(""),
+    method: z.enum(["GET", "POST"]).default("GET"),
+    body: z.string().max(4000).optional(),
+    path: z.string().max(200).default(""),
+  }),
+  create(settings, secrets, ctx) {
+    const f = ctx.fetchFn ?? fetch;
+    const headersOf = (jsonBody: boolean): Record<string, string> => {
+      const h: Record<string, string> = {};
+      if (jsonBody) h["content-type"] = "application/json";
+      if (secrets.token) {
+        const header = (settings.headerName || "Authorization").trim();
+        h[header] = header.toLowerCase() === "authorization" && !/^(Bearer|Basic)\s+/i.test(secrets.token) ? `Bearer ${secrets.token}` : secrets.token;
+      }
+      return h;
+    };
+    return {
+      async poll(binding, vars) {
+        const b = binding as unknown as { endpoint?: string; method?: "GET" | "POST"; body?: string; path?: string };
+        const ep = b.endpoint ? fill(b.endpoint, vars, encodeURIComponent) : "";
+        const base = settings.url!.replace(/\/$/, "");
+        const target = ep ? `${base}/${ep.replace(/^\//, "")}` : base;
+        const body = b.method === "POST" && b.body !== undefined ? fill(b.body, vars) : undefined;
+        const res = await f(target, {
+          method: b.method ?? "GET",
+          headers: headersOf(body !== undefined),
+          body,
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (!res.ok) throw new Error(`HTTP service answered ${res.status}: ${(await res.text()).slice(0, 200)}`);
+        const payload = parsePayload(new Uint8Array(await res.arrayBuffer()));
+        return pick(payload, b.path);
+      },
+      async check() {
+        const res = await f(settings.url!, { headers: headersOf(false), signal: AbortSignal.timeout(10_000) });
+        if (!res.ok) throw new Error(`HTTP service answered ${res.status}`);
+      },
+    };
+  },
+};
+
 export const CONNECTOR_TYPES: Record<string, ConnectorType> = Object.fromEntries(
-  [clickhouse, prometheus, mqtt, kafka, rabbitmq, generator, kubernetesSimulation].map((t) => [t.id, t]),
+  [clickhouse, http, prometheus, mqtt, kafka, rabbitmq, generator, kubernetesSimulation].map((t) => [t.id, t]),
 );
 
 /** What's wrong with a binding's own parameters for its connection's kind (empty: fine). */

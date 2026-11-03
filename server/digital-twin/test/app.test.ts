@@ -607,3 +607,113 @@ describe("the twin for Osiris's agent (ops)", () => {
     expect((await ops().request("/ops/twin/models", { method: "POST", headers: { authorization: "Bearer dev-runtime:twin" }, body: "[]" })).status).toBe(404);
   });
 });
+
+describe("persistent DTDL structure in SQLite and R3F .tsx components", () => {
+  const send = (method: string, path: string, body?: unknown) =>
+    app().request(path, {
+      method,
+      headers: body ? { "content-type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+  it("persists twins and relationships in SQLite and updates the Redis cache", async () => {
+    const existing = ((await (await app().request("/api/instances/k8s/digitaltwins")).json()) as { value: DigitalTwin[] }).value;
+    const cluster = existing.find((t) => t.$metadata.$model.startsWith("dtmi:osiris:k8s:Cluster;"))!;
+    const twinDoc: DigitalTwin = {
+      $dtId: "k8s:custom-pod",
+      $metadata: { $model: "dtmi:osiris:k8s:Pod;3" },
+      name: "custom-pod",
+      status: "ok",
+    };
+    const putTwinRes = await send("PUT", `/api/instances/k8s/digitaltwins/${encodeURIComponent(twinDoc.$dtId)}`, twinDoc);
+    expect(putTwinRes.status).toBe(200);
+    // Persisted in SQLite as well as Redis cache:
+    const k8sData = store.of("k8s");
+    expect(await k8sData.twin(twinDoc.$dtId)).toMatchObject({ $dtId: "k8s:custom-pod", name: "custom-pod" });
+    expect((await (await app().request(`/api/instances/k8s/digitaltwins/${encodeURIComponent(twinDoc.$dtId)}`)).json()) as DigitalTwin).toMatchObject({
+      $dtId: "k8s:custom-pod",
+      name: "custom-pod",
+    });
+
+    // Create a relationship in SQLite + Redis:
+    const rel = {
+      $relationshipId: "contains-custom-pod",
+      $sourceId: cluster.$dtId,
+      $relationshipName: "contains",
+      $targetId: twinDoc.$dtId,
+    };
+    const putRelRes = await send(
+      "PUT",
+      `/api/instances/k8s/digitaltwins/${encodeURIComponent(rel.$sourceId)}/relationships/${encodeURIComponent(rel.$relationshipId)}`,
+      rel,
+    );
+    expect(putRelRes.status).toBe(200);
+    const rels = await k8sData.relationships({ source: rel.$sourceId });
+    expect(rels.some((r) => r.$relationshipId === "contains-custom-pod" && r.$targetId === twinDoc.$dtId)).toBe(true);
+
+    // Delete relationship and twin:
+    expect(
+      (
+        await send(
+          "DELETE",
+          `/api/instances/k8s/digitaltwins/${encodeURIComponent(rel.$sourceId)}/relationships/${encodeURIComponent(rel.$relationshipId)}`,
+        )
+      ).status,
+    ).toBe(204);
+    expect((await send("DELETE", `/api/instances/k8s/digitaltwins/${encodeURIComponent(twinDoc.$dtId)}`)).status).toBe(204);
+    expect(await k8sData.twin(twinDoc.$dtId)).toBeUndefined();
+  });
+
+  it("compiles user-editable @react-three/fiber .tsx components and serves their ES modules", async () => {
+    const listRes = await app().request("/api/instances/k8s/components");
+    expect(listRes.status).toBe(200);
+    const list = ((await listRes.json()) as { value: { target: string; sha256: string; builtIn: boolean }[] }).value;
+    const boxComp = list.find((c) => c.target === "box");
+    expect(boxComp).toMatchObject({ target: "box", builtIn: true });
+
+    // Built-in compiled module is served under /api/components/modules/<sha256>.js:
+    const modRes = await app().request(`/api/components/modules/${boxComp!.sha256}.js`);
+    expect(modRes.status).toBe(200);
+    expect(modRes.headers.get("content-type")).toContain("text/javascript");
+    expect(await modRes.text()).toContain("__OSIRIS_TWIN_SDK__");
+
+    // Save a custom R3F component for a model:
+    const customTsx = `
+      import { Body, Outline, type TwinComponentProps } from "@osiris/twin-sdk";
+      export default function CustomPod(props: TwinComponentProps) {
+        const { width, height, depth } = props;
+        return (
+          <group>
+            <Body {...props} position={[0, height / 2, 0]}>
+              <boxGeometry args={[width, height, depth]} />
+            </Body>
+            <Outline {...props} position={[0, height / 2, 0]}>
+              <boxGeometry args={[width * 1.02, height * 1.02, depth * 1.02]} />
+            </Outline>
+          </group>
+        );
+      }
+    `;
+    const putComp = await send("PUT", `/api/instances/k8s/components/${encodeURIComponent("dtmi:osiris:k8s:Pod;1")}`, {
+      kind: "model",
+      code: customTsx,
+    });
+    expect(putComp.status).toBe(200);
+    const saved = (await putComp.json()) as { target: string; sha256: string; builtIn: boolean };
+    expect(saved).toMatchObject({ target: "dtmi:osiris:k8s:Pod;1", builtIn: false });
+
+    const customMod = await app().request(`/api/components/modules/${saved.sha256}.js`);
+    expect(customMod.status).toBe(200);
+    expect(await customMod.text()).toContain("CustomPod");
+
+    // Forbids unsafe imports or globals in user TSX:
+    const badComp = await send("PUT", `/api/instances/k8s/components/${encodeURIComponent("dtmi:osiris:k8s:Pod;1")}`, {
+      kind: "model",
+      code: `import fs from "node:fs"; export default function Bad() { return null; }`,
+    });
+    expect(badComp.status).toBe(400);
+
+    // Delete custom component override:
+    expect((await send("DELETE", `/api/instances/k8s/components/${encodeURIComponent("dtmi:osiris:k8s:Pod;1")}`)).status).toBe(204);
+  });
+});

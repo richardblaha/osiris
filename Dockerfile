@@ -190,6 +190,7 @@ COPY packages/shared/src packages/shared/src
 COPY packages/platform/src packages/platform/src
 COPY server/digital-twin/src server/digital-twin/src
 COPY server/digital-twin/assets server/digital-twin/assets
+COPY server/digital-twin/components server/digital-twin/components
 COPY --from=twin-web-build /app/server/digital-twin/web/dist server/digital-twin/web/dist
 ENV PORT=3004 STATIC_DIR=/app/server/digital-twin/web/dist
 WORKDIR /app/server/digital-twin

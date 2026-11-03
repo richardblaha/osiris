@@ -1,5 +1,7 @@
+import * as Fiber from "@react-three/fiber";
 import { useFrame } from "@react-three/fiber";
-import { createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, type ComponentType, type ReactNode } from "react";
+import * as React from "react";
+import { Component, createContext, memo, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { portKind } from "../icons.ts";
@@ -564,10 +566,200 @@ export const lookOf = (box: Box, node: TwinView): LookComponent => (box.shape !=
 /** The looks whose solids carry their name and readings as text on their face (the only labels the view has). */
 const PLATED = new Set(["node", "cpu", "core", "memory", "drive"]);
 
-/** One solid of the scene at its place, drawn by its look; drawn again only when its appearance or size changes. */
+/** Props passed to a user-editable @react-three/fiber component (.tsx). */
+export interface TwinComponentProps extends LookProps {
+  twin: TwinView["twin"];
+  values: Record<string, number | string | boolean>;
+  width: number;
+  height: number;
+  depth: number;
+  status: TwinView["status"];
+  color: string;
+  selected: boolean;
+  hovered: boolean;
+  dimmed: boolean;
+  colors: Colors;
+}
+
+function SdkBody({
+  box,
+  ap,
+  order,
+  position,
+  rotation,
+  scale,
+  geometry,
+  children,
+}: Partial<TwinComponentProps> & { position?: V3; rotation?: V3; scale?: V3 | number; geometry?: THREE.BufferGeometry; children?: ReactNode }) {
+  const { pick } = useLook();
+  const ref = useRef<THREE.Mesh>(null);
+  const id = box?.id ?? "";
+  useLayoutEffect(() => {
+    const mesh = ref.current;
+    if (!mesh || !id) return;
+    mesh.userData.id = id;
+    pick.set(id, mesh);
+    return () => void (pick.get(id) === mesh && pick.delete(id));
+  }, [id, pick]);
+  return (
+    <mesh ref={ref} position={position} rotation={rotation} scale={scale} geometry={geometry} renderOrder={order ?? 0} visible={!ap?.hidden}>
+      {children}
+      <meshBasicMaterial {...material} color={ap?.body ?? "#00c8ff"} opacity={ap?.bodyOpacity ?? 0.14} />
+    </mesh>
+  );
+}
+
+function SdkOutline({
+  ap,
+  order,
+  total,
+  position,
+  rotation,
+  scale,
+  geometry,
+  children,
+}: Partial<TwinComponentProps> & { position?: V3; rotation?: V3; scale?: V3 | number; geometry?: THREE.BufferGeometry; children?: ReactNode }) {
+  return (
+    <mesh position={position} rotation={rotation} scale={scale} geometry={geometry} renderOrder={(order ?? 0) + (total ?? 1)}>
+      {children}
+      <meshBasicMaterial transparent wireframe depthWrite={false} color={ap?.edge ?? "#00c8ff"} opacity={ap?.edgeOpacity ?? 0.8} />
+    </mesh>
+  );
+}
+
+function SdkPlate({
+  size,
+  position,
+  rotation,
+  color,
+  opacity = 0.85,
+  children,
+}: {
+  size?: [number, number];
+  position?: V3;
+  rotation?: V3;
+  color: THREE.ColorRepresentation;
+  opacity?: number;
+  children?: ReactNode;
+}) {
+  return (
+    <mesh position={position} rotation={rotation}>
+      {children ?? <planeGeometry args={size ?? [1, 1]} />}
+      <meshBasicMaterial {...material} side={THREE.DoubleSide} color={color} opacity={opacity} />
+    </mesh>
+  );
+}
+
+function SdkBoxShell(props: TwinComponentProps & { children?: ReactNode }) {
+  return (
+    <group position={[0, props.height / 2, 0]}>
+      <BoxLook {...props}>{props.children}</BoxLook>
+    </group>
+  );
+}
+
+function SdkBuiltinLook(props: TwinComponentProps & { look?: string }) {
+  const { colors } = useLook();
+  const targetLook = (props.look ?? props.node.look) as TwinView["look"];
+  const nodeWithLook = useMemo(() => ({ ...props.node, look: targetLook }), [props.node, targetLook]);
+  const preset = props.box.shape !== "box" ? undefined : PRESET_LOOKS[targetLook]?.(nodeWithLook);
+  const Look = preset && WHOLE.has(preset) ? OutlineLook : (LOOK_COMPONENTS[targetLook] ?? BoxLook);
+  const presetVisual = useMemo(() => (preset ? { preset } : undefined), [preset]);
+  return (
+    <group position={[0, props.height / 2, 0]}>
+      <Look {...props} node={nodeWithLook} />
+      {presetVisual && <VisualParts visual={presetVisual} node={nodeWithLook} box={props.box} ap={props.ap} colors={colors} />}
+      {PLATED.has(targetLook) && <TextPlate {...props} node={nodeWithLook} />}
+    </group>
+  );
+}
+
+function SdkTextPlate(props: TwinComponentProps) {
+  return (
+    <group position={[0, props.height / 2, 0]}>
+      <TextPlate {...props} />
+    </group>
+  );
+}
+
+// Expose the @osiris/twin-sdk runtime on globalThis for compiled ES module components.
+(globalThis as Record<string, unknown>).__OSIRIS_TWIN_SDK__ = {
+  React,
+  Fiber,
+  THREE,
+  SDK: {
+    Body: SdkBody,
+    Outline: SdkOutline,
+    Plate: SdkPlate,
+    BoxShell: SdkBoxShell,
+    TextPlate: SdkTextPlate,
+    BuiltinLook: SdkBuiltinLook,
+    useBlink,
+    useLook,
+  },
+};
+
+const compiledCache = new Map<string, ComponentType<TwinComponentProps>>();
+const loadingCache = new Map<string, Promise<ComponentType<TwinComponentProps> | undefined>>();
+
+function useCompiledComponent(sha256: string | undefined): ComponentType<TwinComponentProps> | undefined {
+  const [comp, setComp] = useState<ComponentType<TwinComponentProps> | undefined>(() => (sha256 ? compiledCache.get(sha256) : undefined));
+  useEffect(() => {
+    if (!sha256) {
+      setComp(undefined);
+      return;
+    }
+    const cached = compiledCache.get(sha256);
+    if (cached) {
+      setComp(() => cached);
+      return;
+    }
+    let alive = true;
+    let p = loadingCache.get(sha256);
+    if (!p) {
+      const url = `/api/components/modules/${sha256}.js`;
+      p = import(/* @vite-ignore */ url)
+        .then((mod: { default?: ComponentType<TwinComponentProps> }) => {
+          if (typeof mod.default === "function") {
+            compiledCache.set(sha256, mod.default);
+            return mod.default;
+          }
+          return undefined;
+        })
+        .catch(() => undefined);
+      loadingCache.set(sha256, p);
+    }
+    void p.then((loaded) => {
+      if (alive) setComp(() => loaded);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [sha256]);
+  return comp;
+}
+
+class ComponentErrorBoundary extends Component<{ sha256: string; fallback: ReactNode; children: ReactNode }, { failed: string | null }> {
+  override state = { failed: null as string | null };
+  static getDerivedStateFromError() {
+    return { failed: "err" };
+  }
+  override componentDidUpdate(prevProps: { sha256: string }) {
+    if (prevProps.sha256 !== this.props.sha256 && this.state.failed) {
+      this.setState({ failed: null });
+    }
+  }
+  override render() {
+    return this.state.failed ? this.props.fallback : this.props.children;
+  }
+}
+
+/** One solid of the scene at its place, drawn by its look (or custom R3F .tsx component); drawn again only when its appearance or size changes. */
 export const Solid = memo(
   function Solid(props: LookProps) {
-    const { colors } = useLook();
+    const { colors, twin } = useLook();
+    const sha256 = props.node.component ?? twin.components?.get(props.node.id) ?? twin.components?.get(props.node.model) ?? twin.components?.get(props.node.look);
+    const Custom = useCompiledComponent(sha256);
     const visual = props.node.visual;
     // A model's own drawing goes over its look, or instead of it.
     const replace = visual?.mode === "replace";
@@ -575,12 +767,38 @@ export const Solid = memo(
     const preset = replace || props.box.shape !== "box" ? undefined : presetOf(props.node);
     const Look = replace || (preset && WHOLE.has(preset)) ? OutlineLook : lookOf(props.box, props.node);
     const presetVisual = useMemo(() => (preset ? { preset } : undefined), [preset]);
-    return (
-      <group position={props.box.center} visible={!props.ap.hidden}>
+    const defaultContent = (
+      <>
         <Look {...props} />
         {presetVisual && <VisualParts visual={presetVisual} node={props.node} box={props.box} ap={props.ap} colors={colors} />}
         {visual && <VisualParts visual={visual} node={props.node} box={props.box} ap={props.ap} colors={colors} />}
         {PLATED.has(props.node.look) && <TextPlate {...props} />}
+      </>
+    );
+    return (
+      <group position={props.box.center} visible={!props.ap.hidden}>
+        {Custom && sha256 ? (
+          <ComponentErrorBoundary sha256={sha256} fallback={defaultContent}>
+            <group position={[0, -props.box.size[1] / 2, 0]}>
+              <Custom
+                {...props}
+                twin={props.node.twin}
+                values={props.node.values ?? {}}
+                width={props.box.size[0]}
+                height={props.box.size[1]}
+                depth={props.box.size[2]}
+                status={props.node.status}
+                color={props.ap.edge}
+                selected={props.ap.strong}
+                hovered={props.ap.lit}
+                dimmed={props.ap.fade < 0.9}
+                colors={colors}
+              />
+            </group>
+          </ComponentErrorBoundary>
+        ) : (
+          defaultContent
+        )}
       </group>
     );
   },

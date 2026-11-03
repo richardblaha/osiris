@@ -112,6 +112,9 @@ const DTDL_SCHEMA = {
                 min: { type: "number" },
                 max: { type: "number" },
                 periodSeconds: { type: "number" },
+                endpoint: { type: "string", description: "HTTP: relative path or query with {id}, {name}, {twin.x}, {otel.x}" },
+                method: { enum: ["GET", "POST"] },
+                body: { type: "string" },
               },
             },
           },
@@ -129,6 +132,7 @@ const DTDL_SCHEMA = {
         layer: { enum: [...PRESENTATION_LAYERS] },
         visible: { type: "boolean" },
         visual: VISUAL_SCHEMA,
+        component: { type: "string", description: "User-editable @react-three/fiber component (.tsx)" },
       },
     },
   },
@@ -229,8 +233,20 @@ function defineTheme(): string {
   return name;
 }
 
-/** Monaco over a DTDL document (JSON, checked against the schema above); loaded on demand, as it's large. */
-export default function CodeEditor({ value, onChange, height = "60vh" }: { value: string; onChange?: (value: string) => void; height?: string }) {
+/** Monaco over a DTDL document (JSON) or @react-three/fiber component (.tsx); loaded on demand, as it's large. */
+export default function CodeEditor({
+  value,
+  onChange,
+  height = "60vh",
+  language = "json",
+  path,
+}: {
+  value: string;
+  onChange?: (value: string) => void;
+  height?: string;
+  language?: "json" | "typescript";
+  path?: string;
+}) {
   const [theme, setTheme] = useState(defineTheme);
   useEffect(() => {
     const query = matchMedia("(prefers-color-scheme: dark)");
@@ -244,8 +260,8 @@ export default function CodeEditor({ value, onChange, height = "60vh" }: { value
     <div className="overflow-hidden rounded-md border border-line" style={{ height }}>
       <Editor
         height="100%"
-        language="json"
-        path={DTDL_PATH}
+        language={language}
+        path={path ?? (language === "json" ? DTDL_PATH : "component.tsx")}
         value={value}
         theme={theme}
         onChange={(v) => onChange?.(v ?? "")}

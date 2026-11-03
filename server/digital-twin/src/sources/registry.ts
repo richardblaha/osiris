@@ -1,5 +1,7 @@
 import { Agent, fetch as undiciFetch } from "undici";
 import { z } from "zod";
+import { DTDL_CONTEXT } from "@osiris/shared/dtdl.ts";
+import { TWIN_ENTITY_MODEL } from "@osiris/shared";
 import { ClickHouse, Telemetry } from "../telemetry.ts";
 import type { TwinSource } from "../twin.ts";
 import { Kube } from "./kubernetes/kube.ts";
@@ -140,8 +142,61 @@ export const kubernetesType: SourceType = {
   },
 };
 
+/** A standalone DTDL digital twin: models, twins, relationships and data bindings live in SQLite, data cached in Redis. */
+export const dtdlType: SourceType = {
+  id: "dtdl",
+  fields: [
+    { name: "clickhouseUrl", kind: "url" },
+    { name: "clickhouseUser", kind: "text" },
+    { name: "clickhousePassword", kind: "text", secret: true },
+    { name: "clickhouseCluster", kind: "text" },
+  ],
+  settings: z.object({
+    clickhouseUrl: z.string().trim().pipe(httpUrl).default(""),
+    clickhouseUser: optionalText(100),
+    clickhouseCluster: optionalText(100),
+  }),
+  async create({ settings, secrets, defaults }) {
+    const clickhouse = settings.clickhouseUrl
+      ? new ClickHouse(settings.clickhouseUrl, settings.clickhouseUser || "default", secrets.clickhousePassword ?? "", defaults.fetchFn)
+      : defaults.clickhouse;
+    const source: TwinSource = {
+      name: "dtdl",
+      models: () => [
+        {
+          "@context": DTDL_CONTEXT,
+          "@id": TWIN_ENTITY_MODEL,
+          "@type": "Interface",
+          displayName: { en: "Entity", cs: "Entita" },
+          contents: [
+            { "@type": "Property", name: "name", schema: "string", displayName: { en: "Name", cs: "Název" } },
+            {
+              "@type": "Property",
+              name: "status",
+              schema: { "@type": "Enum", valueSchema: "string", enumValues: [{ name: "ok", enumValue: "ok" }, { name: "warn", enumValue: "warn" }, { name: "error", enumValue: "error" }] },
+              displayName: { en: "Status", cs: "Stav" },
+            },
+            {
+              "@type": "Property",
+              name: "otelResource",
+              schema: { "@type": "Map", mapKey: { name: "attribute", schema: "string" }, mapValue: { name: "value", schema: "string" } },
+              displayName: { en: "Telemetry", cs: "Telemetrie" },
+            },
+            { "@type": "Telemetry", name: "errorLogs", schema: "integer", displayName: { en: "Error logs", cs: "Chybové logy" } },
+          ],
+        },
+      ],
+      snapshot: async () => ({ twins: [], relationships: [] }),
+    };
+    return {
+      source,
+      telemetry: clickhouse ? new Telemetry(clickhouse, settings.clickhouseCluster || undefined) : undefined,
+    };
+  },
+};
+
 /** Every kind of system an instance can twin. */
-export const SOURCE_TYPES: Record<string, SourceType> = { [kubernetesType.id]: kubernetesType };
+export const SOURCE_TYPES: Record<string, SourceType> = { [kubernetesType.id]: kubernetesType, [dtdlType.id]: dtdlType };
 
 /** A type's secret fields' names: the only secrets an instance of it may hold. */
 export const secretFields = (type: SourceType) => type.fields.filter((f) => f.secret).map((f) => f.name);

@@ -1,22 +1,26 @@
+import { createHash } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
+import type { DigitalTwin, DigitalTwinRelationship, DtdlInterface, DtdlModelData } from "@osiris/shared/dtdl.ts";
 import { LocalDb, run, type Statement } from "@osiris/platform/db.ts";
 
 /**
- * The schema, version 3: everything belongs to an instance (a digital twin of its own, `instance`). SQLite keeps only
- * the definitions — the DTDL models (the source's, marked `origin = 'source'`, and the admins' own edits, `origin =
- * 'user'`; a deleted source model stays as a tombstone, `decommissioned`), the instances with their settings and
- * sealed secrets, dashboards, saved filters and each user's preferences. The twins' and relationships' current state is not stored here: the
- * sync writes it to Redis (the cache the API and the agent read), and the history goes out as OpenTelemetry events.
- * Version 2's twins and relationships tables are dropped; version 1's structure goes, its dashboards and filters
- * wait for the first instance (`claimLegacy`).
+ * The schema, version 4: everything belongs to an instance (a digital twin of its own, `instance`). SQLite keeps the
+ * full DTDL model and structure — the DTDL models (`models`), the twin instances (`twins`) and their relationships
+ * (`relationships`, both `origin = 'source'` from structural sync and `origin = 'user'` edited directly), the R3F
+ * rendering components (`components`, per DTDL class or twin object), the instances with their settings and sealed
+ * secrets, data source connections (`connections`), dashboards, saved filters and user preferences. Live display values
+ * and the fast query state are cached in Redis (`state.ts`, `datasources/hub.ts`), and history goes to ClickHouse.
  */
-const SCHEMA_VERSION = "3";
+const SCHEMA_VERSION = "4";
 const SCHEMA = [
   `CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS instances (id TEXT PRIMARY KEY, name TEXT NOT NULL, source_type TEXT NOT NULL, settings TEXT NOT NULL, secrets TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL)`,
   `CREATE TABLE IF NOT EXISTS models (instance TEXT NOT NULL, id TEXT NOT NULL, document TEXT NOT NULL, upload_time INTEGER NOT NULL, origin TEXT NOT NULL DEFAULT 'source', decommissioned INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (instance, id))`,
+  `CREATE TABLE IF NOT EXISTS twins (instance TEXT NOT NULL, id TEXT NOT NULL, model TEXT NOT NULL, document TEXT NOT NULL, etag TEXT NOT NULL, updated_at INTEGER NOT NULL, origin TEXT NOT NULL DEFAULT 'source', PRIMARY KEY (instance, id))`,
+  `CREATE TABLE IF NOT EXISTS relationships (instance TEXT NOT NULL, id TEXT NOT NULL, source_id TEXT NOT NULL, name TEXT NOT NULL, target_id TEXT NOT NULL, document TEXT NOT NULL, origin TEXT NOT NULL DEFAULT 'source', PRIMARY KEY (instance, source_id, id))`,
+  `CREATE INDEX IF NOT EXISTS relationships_target ON relationships (instance, target_id)`,
+  `CREATE TABLE IF NOT EXISTS components (instance TEXT NOT NULL, target TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'model', code TEXT NOT NULL, sha256 TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY (instance, target))`,
   `CREATE TABLE IF NOT EXISTS dashboards (instance TEXT NOT NULL, id TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, updated_at INTEGER NOT NULL, updated_by TEXT NOT NULL, PRIMARY KEY (instance, id))`,
   `CREATE TABLE IF NOT EXISTS saved_filters (instance TEXT NOT NULL, owner TEXT NOT NULL, id TEXT NOT NULL, kind TEXT NOT NULL, name TEXT NOT NULL, filter TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY (instance, owner, id))`,
   // Each instance's data connections (where its models' data profiles read), secrets sealed, and its active profile.
@@ -135,8 +139,8 @@ export class TwinStore {
     if (version !== SCHEMA_VERSION) {
       // A version 1 file (it has twins without instances): moved aside as described above.
       if (tables.has("twins") && !version) await db.execute(FROM_V1.filter((sql) => !/RENAME/.test(sql) || tables.has(sql.split(" ")[2]!)).map((sql) => run(sql)));
-      if (version === "2" || (version && tables.has("twins"))) {
-        // Version 2's structure moves to Redis; the models table gains origin and decommissioned where missing.
+      if (version === "2" || (version && tables.has("twins") && version !== "3" && version !== "4")) {
+        // Version 2's structure moves; the models table gains origin and decommissioned where missing.
         const columns = new Set((await db.query<{ name: string }>(`PRAGMA table_info(models)`)).map((r) => r.name));
         await db.execute(FROM_V2.filter((sql) => !sql.startsWith("ALTER") || !columns.has(sql.split("ADD COLUMN ")[1]!.split(" ")[0]!)).map((sql) => run(sql)));
       }
@@ -210,7 +214,7 @@ export class TwinStore {
   async deleteInstance(id: string): Promise<boolean> {
     const results = await this.db.execute([
       run(`DELETE FROM instances WHERE id = ?`, id),
-      ...["models", "dashboards", "saved_filters", "connections", "data_profile", "assets"].map((t) => run(`DELETE FROM ${t} WHERE instance = ?`, id)),
+      ...["models", "twins", "relationships", "components", "dashboards", "saved_filters", "connections", "data_profile", "assets"].map((t) => run(`DELETE FROM ${t} WHERE instance = ?`, id)),
       run(`DELETE FROM meta WHERE key LIKE ?`, `${id}:%`),
     ]);
     return (results[0]?.rowsAffected ?? 0) > 0;
@@ -351,16 +355,227 @@ interface InstanceRow {
   updated_at: number;
 }
 
+/** A user-editable R3F component stored in SQLite for a DTDL class (`kind = 'model'`) or twin object (`kind = 'twin'`). */
+export interface ComponentRecord {
+  target: string;
+  kind: "model" | "twin";
+  code: string;
+  sha256: string;
+  updatedAt: number;
+  updatedBy: string;
+}
+
+const twinContents = (t: { [k: string]: unknown }): Record<string, unknown> =>
+  Object.fromEntries(Object.entries(t).filter(([k]) => !k.startsWith("$")).sort(([a], [b]) => a.localeCompare(b)));
+const computeEtag = (model: string, contents: Record<string, unknown>) =>
+  `W/"${createHash("sha256").update(JSON.stringify([model, contents])).digest("hex").slice(0, 20)}"`;
+
 /**
- * One instance's definitions: its DTDL models (the source's, plus the admins' own edits — a source model an admin
- * edited is never overwritten by the sync), its meta, dashboards and users' saved filters. Its twins and
- * relationships are in Redis, not here.
+ * One instance's definitions and persisted structure: its DTDL models, its twin instances and relationships, its
+ * custom R3F rendering components, its 3D assets, meta, dashboards and users' saved filters.
  */
 export class InstanceData {
   constructor(
     private readonly db: LocalDb,
     readonly instance: string,
   ) {}
+
+  /** All persisted twins of the instance, ordered by `$dtId`. */
+  async twins(): Promise<DigitalTwin[]> {
+    const rows = await this.db.query<{ document: string }>(`SELECT document FROM twins WHERE instance = ? ORDER BY id`, [this.instance]);
+    return rows.map((r) => JSON.parse(r.document) as DigitalTwin);
+  }
+
+  /** One persisted twin by `$dtId`, or undefined. */
+  async twin(id: string): Promise<DigitalTwin | undefined> {
+    const [r] = await this.db.query<{ document: string }>(`SELECT document FROM twins WHERE instance = ? AND id = ?`, [this.instance, id]);
+    return r ? (JSON.parse(r.document) as DigitalTwin) : undefined;
+  }
+
+  /** Upserts a twin in SQLite (`origin = 'user'` when edited via API, so a structural sync never overwrites it). */
+  async putTwin(twin: DigitalTwin, now: number, origin: "source" | "user" = "user"): Promise<DigitalTwin> {
+    const contents = twinContents(twin);
+    const model = twin.$metadata.$model;
+    const etag = twin.$etag ?? computeEtag(model, contents);
+    const stored: DigitalTwin = {
+      $dtId: twin.$dtId,
+      $etag: etag,
+      $metadata: { $model: model, $lastUpdateTime: twin.$metadata.$lastUpdateTime ?? iso(now) },
+      ...contents,
+    };
+    await this.db.execute([
+      run(
+        `INSERT OR REPLACE INTO twins (instance, id, model, document, etag, updated_at, origin) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        this.instance,
+        stored.$dtId,
+        model,
+        JSON.stringify(stored),
+        etag,
+        now,
+        origin,
+      ),
+    ]);
+    return stored;
+  }
+
+  /** Deletes a twin and all relationships connected to it from SQLite. */
+  async deleteTwin(id: string): Promise<boolean> {
+    const [res] = await this.db.execute([
+      run(`DELETE FROM twins WHERE instance = ? AND id = ?`, this.instance, id),
+      run(`DELETE FROM relationships WHERE instance = ? AND (source_id = ? OR target_id = ?)`, this.instance, id, id),
+      run(`DELETE FROM components WHERE instance = ? AND target = ? AND kind = 'twin'`, this.instance, id),
+    ]);
+    return (res?.rowsAffected ?? 0) > 0;
+  }
+
+  /** All persisted relationships of the instance, optionally filtered by source and/or target. */
+  async relationships(filter: { source?: string; target?: string } = {}): Promise<DigitalTwinRelationship[]> {
+    const rows = await this.db.query<{ document: string }>(
+      `SELECT document FROM relationships WHERE instance = ?${filter.source ? ` AND source_id = ?` : ""}${filter.target ? ` AND target_id = ?` : ""} ORDER BY id`,
+      [this.instance, ...(filter.source ? [filter.source] : []), ...(filter.target ? [filter.target] : [])],
+    );
+    return rows.map((r) => JSON.parse(r.document) as DigitalTwinRelationship);
+  }
+
+  /** Upserts a relationship in SQLite. */
+  async putRelationship(rel: DigitalTwinRelationship, origin: "source" | "user" = "user"): Promise<DigitalTwinRelationship> {
+    await this.db.execute([
+      run(
+        `INSERT OR REPLACE INTO relationships (instance, id, source_id, name, target_id, document, origin) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        this.instance,
+        rel.$relationshipId,
+        rel.$sourceId,
+        rel.$relationshipName,
+        rel.$targetId,
+        JSON.stringify(rel),
+        origin,
+      ),
+    ]);
+    return rel;
+  }
+
+  /** Removes a relationship from SQLite. */
+  async deleteRelationship(sourceId: string, relId: string): Promise<boolean> {
+    const [r] = await this.db.execute([run(`DELETE FROM relationships WHERE instance = ? AND source_id = ? AND id = ?`, this.instance, sourceId, relId)]);
+    return (r?.rowsAffected ?? 0) > 0;
+  }
+
+  /**
+   * Synchronizes a source adapter's snapshot into SQLite: updates `origin = 'source'` twins and relationships while
+   * preserving any `origin = 'user'` twins and relationships, and returns the combined structure.
+   */
+  async putSnapshot(twins: DigitalTwin[], relationships: DigitalTwinRelationship[], now: number): Promise<{ twins: DigitalTwin[]; relationships: DigitalTwinRelationship[] }> {
+    const haveTwins = new Map(
+      (await this.db.query<{ id: string; document: string; etag: string; origin: string }>(`SELECT id, document, etag, origin FROM twins WHERE instance = ?`, [this.instance])).map((r) => [r.id, r]),
+    );
+    const haveRels = new Map(
+      (await this.db.query<{ key: string; source_id: string; id: string; document: string; origin: string }>(
+        `SELECT (source_id || char(0) || id) AS key, source_id, id, document, origin FROM relationships WHERE instance = ?`,
+        [this.instance],
+      )).map((r) => [r.key, r]),
+    );
+    const statements: Statement[] = [];
+    const mergedTwins = new Map<string, DigitalTwin>();
+    for (const [id, row] of haveTwins) {
+      if (row.origin === "user") mergedTwins.set(id, JSON.parse(row.document) as DigitalTwin);
+    }
+    for (const t of twins) {
+      const row = haveTwins.get(t.$dtId);
+      if (row?.origin === "user") continue;
+      const json = JSON.stringify(t);
+      const etag = t.$etag ?? computeEtag(t.$metadata.$model, twinContents(t));
+      if (row?.document !== json) {
+        statements.push(
+          run(
+            `INSERT OR REPLACE INTO twins (instance, id, model, document, etag, updated_at, origin) VALUES (?, ?, ?, ?, ?, ?, 'source')`,
+            this.instance,
+            t.$dtId,
+            t.$metadata.$model,
+            json,
+            etag,
+            now,
+          ),
+        );
+      }
+      mergedTwins.set(t.$dtId, t);
+      haveTwins.delete(t.$dtId);
+    }
+    for (const [id, row] of haveTwins) {
+      if (row.origin !== "user") statements.push(run(`DELETE FROM twins WHERE instance = ? AND id = ?`, this.instance, id));
+    }
+
+    const mergedRels = new Map<string, DigitalTwinRelationship>();
+    for (const [key, row] of haveRels) {
+      if (row.origin === "user") mergedRels.set(key, JSON.parse(row.document) as DigitalTwinRelationship);
+    }
+    for (const r of relationships) {
+      const key = `${r.$sourceId}\u0000${r.$relationshipId}`;
+      const row = haveRels.get(key);
+      if (row?.origin === "user") continue;
+      const json = JSON.stringify(r);
+      if (row?.document !== json) {
+        statements.push(
+          run(
+            `INSERT OR REPLACE INTO relationships (instance, id, source_id, name, target_id, document, origin) VALUES (?, ?, ?, ?, ?, ?, 'source')`,
+            this.instance,
+            r.$relationshipId,
+            r.$sourceId,
+            r.$relationshipName,
+            r.$targetId,
+            json,
+          ),
+        );
+      }
+      mergedRels.set(key, r);
+      haveRels.delete(key);
+    }
+    for (const [, row] of haveRels) {
+      if (row.origin !== "user") statements.push(run(`DELETE FROM relationships WHERE instance = ? AND source_id = ? AND id = ?`, this.instance, row.source_id, row.id));
+    }
+    if (statements.length) await this.db.execute(statements);
+    return {
+      twins: [...mergedTwins.values()].sort((a, b) => a.$dtId.localeCompare(b.$dtId)),
+      relationships: [...mergedRels.values()].sort((a, b) => a.$relationshipId.localeCompare(b.$relationshipId)),
+    };
+  }
+
+  /** User-editable R3F components stored in SQLite for this instance. */
+  async components(): Promise<ComponentRecord[]> {
+    const rows = await this.db.query<{ target: string; kind: string; code: string; sha256: string; updated_at: number; updated_by: string }>(
+      `SELECT target, kind, code, sha256, updated_at, updated_by FROM components WHERE instance = ? ORDER BY kind, target`,
+      [this.instance],
+    );
+    return rows.map((r) => ({ target: r.target, kind: (r.kind === "twin" ? "twin" : "model") as "model" | "twin", code: r.code, sha256: r.sha256, updatedAt: Number(r.updated_at), updatedBy: r.updated_by }));
+  }
+
+  async component(target: string): Promise<ComponentRecord | undefined> {
+    const [r] = await this.db.query<{ target: string; kind: string; code: string; sha256: string; updated_at: number; updated_by: string }>(
+      `SELECT target, kind, code, sha256, updated_at, updated_by FROM components WHERE instance = ? AND target = ?`,
+      [this.instance, target],
+    );
+    return r && { target: r.target, kind: (r.kind === "twin" ? "twin" : "model") as "model" | "twin", code: r.code, sha256: r.sha256, updatedAt: Number(r.updated_at), updatedBy: r.updated_by };
+  }
+
+  async putComponent(target: string, kind: "model" | "twin", code: string, sha256: string, by: string, now: number): Promise<ComponentRecord> {
+    await this.db.execute([
+      run(
+        `INSERT OR REPLACE INTO components (instance, target, kind, code, sha256, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        this.instance,
+        target,
+        kind,
+        code,
+        sha256,
+        now,
+        by,
+      ),
+    ]);
+    return { target, kind, code, sha256, updatedAt: now, updatedBy: by };
+  }
+
+  async deleteComponent(target: string): Promise<boolean> {
+    const [r] = await this.db.execute([run(`DELETE FROM components WHERE instance = ? AND target = ?`, this.instance, target)]);
+    return (r?.rowsAffected ?? 0) > 0;
+  }
 
   /**
    * Writes the source's models (new or changed ones get a new upload time, `origin = 'source'`); ones it no longer

@@ -75,6 +75,17 @@ export interface AssetInfo {
   builtIn?: boolean;
 }
 
+/** A user-editable @react-three/fiber component (.tsx) for a look, a DTDL model, or an individual twin object. */
+export interface ComponentInfo {
+  target: string;
+  kind: "look" | "model" | "twin";
+  code: string;
+  sha256: string;
+  updatedAt: number;
+  updatedBy: string;
+  builtIn: boolean;
+}
+
 /** A digital twin as its viewers see it; `error` says why its source isn't running. */
 export interface InstanceSummary {
   id: string;
@@ -197,6 +208,7 @@ export const api = {
   dataProfiles: () => call<DataOverview>(`${tw()}/data`),
   setDataProfile: (profile: string) => send<{ active: string }>("PUT", `${tw()}/data/profile`, { profile }),
   dataValues: async (twin: string) => (await call<{ value: Record<string, Record<string, DataPoint>> }>(`${tw()}/data/values?twin=${encodeURIComponent(twin)}`)).value[twin] ?? {},
+  allDataValues: async () => (await call<{ value: Record<string, Record<string, DataPoint>> }>(`${tw()}/data/values`)).value,
   deleteInstance: (id: string) => send<void>("DELETE", `/api/admin/instances/${encodeURIComponent(id)}`),
   // The twin, in the shape of the Azure Digital Twins API (`at`: a past time from the history).
   models: async () => (await call<{ value: DtdlModelData[] }>(`${tw()}/models`)).value,
@@ -206,6 +218,19 @@ export const api = {
   putModel: (id: string, doc: DtdlInterface) => send<DtdlModelData>("PUT", `${tw()}/models/${encodeURIComponent(id)}`, doc),
   uploadModels: (docs: DtdlInterface[]) => send<{ value: DtdlModelData[] }>("POST", `${tw()}/models`, docs),
   deleteModel: (id: string) => send<void>("DELETE", `${tw()}/models/${encodeURIComponent(id)}`),
+  // User-editable @react-three/fiber components (.tsx) for looks, models, or individual twins.
+  components: async () => (await call<{ value: ComponentInfo[] }>(`${tw()}/components`)).value,
+  compileComponent: (code: string) => send<{ sha256: string; errors: string[] }>("POST", `${tw()}/components/compile`, { code }),
+  putComponent: (target: string, body: { kind?: "look" | "model" | "twin"; code: string }) =>
+    send<ComponentInfo>("PUT", `${tw()}/components/${encodeURIComponent(target)}`, body),
+  deleteComponent: (target: string) => send<void>("DELETE", `${tw()}/components/${encodeURIComponent(target)}`),
+  // Persistent DTDL structure CRUD (twins & relationships in SQLite + Redis cache).
+  putTwin: (id: string, doc: DigitalTwin) => send<DigitalTwin>("PUT", `${tw()}/digitaltwins/${encodeURIComponent(id)}`, doc),
+  deleteTwin: (id: string) => send<void>("DELETE", `${tw()}/digitaltwins/${encodeURIComponent(id)}`),
+  putRelationship: (sourceId: string, relId: string, rel: DigitalTwinRelationship) =>
+    send<DigitalTwinRelationship>("PUT", `${tw()}/digitaltwins/${encodeURIComponent(sourceId)}/relationships/${encodeURIComponent(relId)}`, rel),
+  deleteRelationship: (sourceId: string, relId: string) =>
+    send<void>("DELETE", `${tw()}/digitaltwins/${encodeURIComponent(sourceId)}/relationships/${encodeURIComponent(relId)}`),
   // The twin's 3D assets (binary glTF a model's drawing places): listed, fetched as bytes, put and deleted by admins.
   assets: async () => (await call<{ value: AssetInfo[] }>(`${tw()}/assets`)).value,
   assetBytes: async (name: string) => {

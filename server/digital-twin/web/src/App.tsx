@@ -91,6 +91,8 @@ export function App() {
     network: Record<string, number>;
     storage: Record<string, { used: number; fsCapacity: number }>;
     resources: Record<string, Resources>;
+    values: Awaited<ReturnType<typeof api.allDataValues>>;
+    components: Awaited<ReturnType<typeof api.components>>;
     at: number | null;
   }>();
   const [selectedId, setSelectedId] = useState<string>();
@@ -240,7 +242,7 @@ export function App() {
   /** The twin loads once signed in and, live, refreshes every minute (the server syncs every 30 s). */
   const loadTwin = () =>
     attempt(setBusy, setError, async () => {
-      const [m, twins, relationships, errors, network, storage, resources] = await Promise.all([
+      const [m, twins, relationships, errors, network, storage, resources, values, components] = await Promise.all([
         models ? Promise.resolve(models) : api.models(),
         api.twins(at),
         api.relationships(at),
@@ -248,12 +250,14 @@ export function App() {
         api.network(at).catch(() => ({})),
         api.storage(at).catch(() => ({})),
         api.resources(at).catch(() => ({})),
+        at === null ? api.allDataValues().catch(() => ({})) : Promise.resolve({}),
+        api.components().catch(() => []),
       ]);
       setModels(m);
-      setData({ twins, relationships, errors, network, storage, resources, at });
+      setData({ twins, relationships, errors, network, storage, resources, values, components, at });
     });
   const scene: TwinScene | undefined = useMemo(
-    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.storage, data.at, filters, data.resources) : undefined),
+    () => (models && data ? buildScene(models, data.twins, data.relationships, data.errors, data.network, data.storage, data.at, filters, data.resources, data.values, data.components) : undefined),
     [models, data, filters],
   );
   // The selection follows the refreshed scene (its new status and properties), or goes when its twin is gone.
