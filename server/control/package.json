@@ -13,7 +13,7 @@
     "@libsql/client": "0.18.0",
     "@osiris/platform": "workspace:*",
     "@osiris/shared": "workspace:*",
-    "cron-parser": "5.10.1",
+    "cron-parser": "5.10.2",
     "hono": "4.13.13",
     "tar": "7.5.22",
     "tsx": "4.23.15",
