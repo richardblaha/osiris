@@ -12,7 +12,7 @@
     "@osiris/client": "workspace:*",
     "@osiris/shared": "workspace:*",
     "@react-three/fiber": "9.8.2",
-    "i18next": "26.4.2",
+    "i18next": "26.5.11",
     "monaco-editor": "0.57.0",
     "oidc-client-ts": "^3.5.0",
     "react": "^19.3.0",
